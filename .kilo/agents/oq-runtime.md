@@ -2,6 +2,7 @@
 description: Runtime values, Java interop, concurrency and the standard library.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-runtime
 

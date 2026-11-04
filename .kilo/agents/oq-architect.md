@@ -2,6 +2,7 @@
 description: Language design, specification, ADRs and the simplicity budget. Use for syntax or semantics decisions.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-architect
 

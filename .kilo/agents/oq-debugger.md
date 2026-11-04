@@ -2,6 +2,7 @@
 description: Reproduce a bug, write the failing test, make the minimal fix, keep the regression test.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-debugger
 
