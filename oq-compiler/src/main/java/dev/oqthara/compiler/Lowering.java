@@ -22,6 +22,7 @@ public final class Lowering {
     }
     private List<Ir.Instr> code;
     private int tempCounter = 0;
+    private int labelCounter = 0;
 
     public static Ir.Program lower(Ast.Program program) {
         return lowerWithReport(program).program();
@@ -45,8 +46,10 @@ public final class Lowering {
     private void statement(Ast.Stmt stmt) {
         switch (stmt) {
             case Ast.VarDecl decl -> {
+                // VarDecl defines a new binding in the current scope, which is not the same
+                // as assignment: assignment updates an existing binding instead of shadowing.
                 expression(decl.value());
-                code.add(new Ir.Store(decl.name()));
+                code.add(new Ir.Declare(decl.name(), false));
             }
             case Ast.Assign assign -> {
                 expression(assign.value());
@@ -151,73 +154,127 @@ public final class Lowering {
     }
 
     private void ifStatement(Ast.If conditional) {
-        List<Integer> endJumps = new ArrayList<>();
+        String end = label("end");
         for (Ast.Branch branch : conditional.branches()) {
+            String next = label("next");
             expression(branch.condition());
-            int falseJump = code.size();
-            code.add(new Ir.JumpIfFalse(-1));
+            code.add(new Ir.JumpIfFalseLabel(next));
+            code.add(new Ir.ScopeEnter());
             for (Ast.Stmt stmt : branch.body()) {
                 statement(stmt);
             }
-            endJumps.add(code.size());
-            code.add(new Ir.Jump(-1));
-            code.set(falseJump, new Ir.JumpIfFalse(code.size()));
+            code.add(new Ir.ScopeExit());
+            code.add(new Ir.JumpLabel(end));
+            code.add(new Ir.Label(next));
         }
-        for (Ast.Stmt stmt : conditional.elseBranch()) {
-            statement(stmt);
+        if (!conditional.elseBranch().isEmpty()) {
+            code.add(new Ir.ScopeEnter());
+            for (Ast.Stmt stmt : conditional.elseBranch()) {
+                statement(stmt);
+            }
+            code.add(new Ir.ScopeExit());
         }
-        int end = code.size();
-        for (int jump : endJumps) {
-            code.set(jump, new Ir.Jump(end));
-        }
+        code.add(new Ir.Label(end));
     }
 
     private void whileStatement(Ast.While loop) {
         String id = "loop" + loopCounter++;
-        String head = id + "_head";
+        // `continue` in a while loop re-tests the condition, so the continue label is the
+        // head of the loop. Keeping the `_step` name uniform lets the backend resolve
+        // break and continue by convention without threading extra state through the IR.
+        String head = id + "_step";
         String exitLabel = id + "_end";
         LoopContext context = new LoopContext(id, exitLabel, head);
         code.add(new Ir.Label(head));
         loops.add(context);
         expression(loop.condition());
-        int exit = code.size();
-        code.add(new Ir.JumpIfFalse(-1));
+        code.add(new Ir.JumpIfFalseLabel(exitLabel));
+        code.add(new Ir.ScopeEnter());
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
+        code.add(new Ir.ScopeExit());
         code.add(new Ir.JumpLabel(head));
-        code.set(exit, new Ir.JumpIfFalse(code.size()));
         loops.remove(loops.size() - 1);
         code.add(new Ir.Label(exitLabel));
     }
 
+    /**
+     * Mirrors the interpreter exactly: both bounds are evaluated once, the step is chosen from
+     * the direction, and an exclusive upper bound is turned into the last included value. A
+     * naive {@code i <= to} loop silently runs zero times for descending ranges, which is why
+     * this is spelled out instead of being simplified.
+     */
     private void forRange(Ast.ForRange loop) {
+        String from = temp("from");
+        String to = temp("to");
         String counter = temp("i");
+        String step = temp("step");
+        String last = temp("end");
         String id = "loop" + loopCounter++;
         String head = id + "_head";
-        String step = id + "_step";
+        String descending = id + "_desc";
+        String stepChosen = id + "_step_chosen";
+        String body = id + "_body";
+        String stepLabel = id + "_step";
         String exitLabel = id + "_end";
+
         expression(loop.from());
-        code.add(new Ir.Store(counter));
-        code.add(new Ir.Label(head));
-        loops.add(new LoopContext(id, exitLabel, step));
-        code.add(new Ir.Load(counter));
+        code.add(new Ir.Store(from));
         expression(loop.to());
-        code.add(new Ir.Binary(loop.inclusive() ? "<=" : "<"));
-        int exit = code.size();
-        code.add(new Ir.JumpIfFalse(-1));
+        code.add(new Ir.Store(to));
+        code.add(new Ir.Load(from));
+        code.add(new Ir.Store(counter));
+
+        code.add(new Ir.Load(from));
+        code.add(new Ir.Load(to));
+        code.add(new Ir.Binary("<="));
+        code.add(new Ir.JumpIfFalseLabel(descending));
+        code.add(new Ir.Const(1L));
+        code.add(new Ir.Store(step));
+        code.add(new Ir.JumpLabel(stepChosen));
+        code.add(new Ir.Label(descending));
+        code.add(new Ir.Const(-1L));
+        code.add(new Ir.Store(step));
+        code.add(new Ir.Label(stepChosen));
+
+        code.add(new Ir.Load(to));
+        if (!loop.inclusive()) {
+            code.add(new Ir.Load(step));
+            code.add(new Ir.Binary("-"));
+        }
+        code.add(new Ir.Store(last));
+
+        code.add(new Ir.Label(head));
+        loops.add(new LoopContext(id, exitLabel, stepLabel));
+        code.add(new Ir.Load(step));
+        code.add(new Ir.Const(0L));
+        code.add(new Ir.Binary(">"));
+        code.add(new Ir.JumpIfFalseLabel(descending + "_check"));
         code.add(new Ir.Load(counter));
-        code.add(new Ir.Store(loop.name()));
+        code.add(new Ir.Load(last));
+        code.add(new Ir.Binary("<="));
+        code.add(new Ir.JumpIfFalseLabel(exitLabel));
+        code.add(new Ir.JumpLabel(body));
+        code.add(new Ir.Label(descending + "_check"));
+        code.add(new Ir.Load(counter));
+        code.add(new Ir.Load(last));
+        code.add(new Ir.Binary(">="));
+        code.add(new Ir.JumpIfFalseLabel(exitLabel));
+        code.add(new Ir.Label(body));
+        code.add(new Ir.ScopeEnter());
+        code.add(new Ir.Load(counter));
+        code.add(new Ir.Declare(loop.name(), true));
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
-        code.add(new Ir.Label(step));
+        code.add(new Ir.ScopeExit());
+        code.add(new Ir.Label(stepLabel));
         code.add(new Ir.Load(counter));
-        code.add(new Ir.Const(1L));
+        code.add(new Ir.Load(step));
         code.add(new Ir.Binary("+"));
         code.add(new Ir.Store(counter));
         code.add(new Ir.JumpLabel(head));
-        code.set(exit, new Ir.JumpIfFalse(code.size()));
         loops.remove(loops.size() - 1);
         code.add(new Ir.Label(exitLabel));
     }
@@ -244,10 +301,12 @@ public final class Lowering {
         code.add(new Ir.Load(iterator));
         code.add(new Ir.Load(index));
         code.add(new Ir.Index());
-        code.add(new Ir.Store(loop.name()));
+        code.add(new Ir.Declare(loop.name(), true));
+        code.add(new Ir.ScopeEnter());
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
+        code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(step));
         code.add(new Ir.Load(index));
         code.add(new Ir.Const(1L));
@@ -285,26 +344,48 @@ public final class Lowering {
                 }
                 code.add(new Ir.MakeMap(map.entries().size()));
             }
-            case Ast.Unary unary -> {
-                expression(unary.operand());
-                code.add(new Ir.Unary(unary.op() == Token.Kind.KEYWORD ? "not" : operatorName(unary.op())));
+        case Ast.Unary unary -> {
+            expression(unary.operand());
+            code.add(new Ir.Unary(unary.op() == Token.Kind.KEYWORD ? "not" : operatorName(unary.op())));
+            if (unary.op() == Token.Kind.KEYWORD) {
+                code.add(new Ir.ToBool());
             }
+        }
             case Ast.Binary binary -> {
                 expression(binary.left());
                 expression(binary.right());
                 code.add(new Ir.Binary(operatorName(binary.op())));
             }
             case Ast.Logical logical -> {
+                // The interpreter short-circuits and always yields a boolean, so `1 and 2`
+                // is true, not 2. Both sides are coerced and the result lives in a temporary
+                // so every label in the IR has an empty operand stack; the classfile backend
+                // depends on that invariant to emit simple stack map frames.
+                String result = temp("bool");
+                String shortCircuit = label("logic");
+                String done = label("logic_end");
                 expression(logical.left());
+                code.add(new Ir.ToBool());
+                code.add(new Ir.JumpIfFalseLabel(shortCircuit));
                 if (logical.op().equals("and")) {
-                    int skip = code.size();
-                    code.add(new Ir.JumpIfFalse(-1));
                     expression(logical.right());
-                    code.set(skip, new Ir.JumpIfFalse(code.size()));
+                    code.add(new Ir.ToBool());
+                    code.add(new Ir.Store(result));
+                    code.add(new Ir.JumpLabel(done));
+                    code.add(new Ir.Label(shortCircuit));
+                    code.add(new Ir.Const(false));
+                    code.add(new Ir.Store(result));
                 } else {
+                    code.add(new Ir.Const(true));
+                    code.add(new Ir.Store(result));
+                    code.add(new Ir.JumpLabel(done));
+                    code.add(new Ir.Label(shortCircuit));
                     expression(logical.right());
-                    code.add(new Ir.Binary("or"));
+                    code.add(new Ir.ToBool());
+                    code.add(new Ir.Store(result));
                 }
+                code.add(new Ir.Label(done));
+                code.add(new Ir.Load(result));
             }
             case Ast.Call call -> {
                 if (call.callee() instanceof Ast.Var var) {
@@ -382,6 +463,10 @@ public final class Lowering {
 
     private String temp(String prefix) {
         return "_" + prefix + tempCounter++;
+    }
+
+    private String label(String prefix) {
+        return prefix + "_" + labelCounter++;
     }
 
     private static String operatorName(Token.Kind kind) {

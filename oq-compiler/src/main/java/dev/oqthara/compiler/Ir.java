@@ -7,10 +7,10 @@ public final class Ir {
     private Ir() {
     }
 
-    public sealed interface Instr permits Const, Load, Store, Call, CallValue, Print, Binary,
-            Unary, Jump, JumpIfFalse, Return, Pop, MakeList, MakeMap, MakeSet, Index,
+    public sealed interface Instr permits Const, Load, Store, Declare, Call, CallValue, Print, Binary,
+            Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeMap, MakeSet, Index,
             SetIndex, MakeData, GetField, SetField, Range, TryStart, TryEnd, Throw, Halt,
-            Label, JumpLabel, Break, Continue {
+            Label, JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -25,7 +25,20 @@ public final class Ir {
     public record Load(String name) implements Instr {
     }
 
+    /**
+     * Assigns to an existing visible variable, or defines it in the current scope when no
+     * binding exists. This is the interpreter's {@code assignOrDefine}.
+     */
     public record Store(String name) implements Instr {
+    }
+
+    /**
+     * Defines a new variable in the current scope, shadowing any outer binding. A plain
+     * assignment inside a block updates the outer variable instead, so the two cannot share
+     * one instruction. {@code fixed} marks bindings such as loop variables, which the
+     * language does not allow to be reassigned.
+     */
+    public record Declare(String name, boolean fixed) implements Instr {
     }
 
     public record Call(String name, int argc) implements Instr {
@@ -47,6 +60,10 @@ public final class Ir {
     }
 
     public record JumpIfFalse(int target) implements Instr {
+    }
+
+    /** Conditional jump by label name, so synthetic labels do not need index fixups. */
+    public record JumpIfFalseLabel(String label) implements Instr {
     }
 
     public record Return() implements Instr {
@@ -112,6 +129,18 @@ public final class Ir {
     public record Continue(String loopId) implements Instr {
     }
 
+    /** Converts any value to an Oqthara boolean, exactly like the interpreter's truthiness. */
+    public record ToBool() implements Instr {
+    }
+
+    /** Opens a lexical scope. Has no runtime effect; the backend resets block-local slots here. */
+    public record ScopeEnter() implements Instr {
+    }
+
+    /** Closes the matching {@link ScopeEnter}. */
+    public record ScopeExit() implements Instr {
+    }
+
     public static List<Instr> list() {
         return new ArrayList<>();
     }
@@ -142,6 +171,7 @@ public final class Ir {
             case Const c -> "const " + repr(c.value());
             case Load l -> "load " + l.name();
             case Store s -> "store " + s.name();
+            case Declare d -> "declare " + d.name() + (d.fixed() ? " const" : "");
             case Call c -> "call " + c.name() + "/" + c.argc();
             case CallValue c -> "call_value/" + c.argc();
             case Print p -> "print " + p.count();
@@ -149,6 +179,7 @@ public final class Ir {
             case Unary u -> "unary " + u.op();
             case Jump j -> "jump " + j.target();
             case JumpIfFalse j -> "jump_if_false " + j.target();
+            case JumpIfFalseLabel j -> "jump_if_false " + j.label();
             case Return r -> "return";
             case Pop p -> "pop";
             case MakeList m -> "make_list " + m.count();
@@ -168,6 +199,9 @@ public final class Ir {
             case JumpLabel j -> "jump " + j.label();
             case Break b -> "break " + b.loopId();
             case Continue c -> "continue " + c.loopId();
+            case ToBool ignored -> "to_bool";
+            case ScopeEnter ignored -> "scope_enter";
+            case ScopeExit ignored -> "scope_exit";
         };
     }
 

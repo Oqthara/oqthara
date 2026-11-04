@@ -96,7 +96,7 @@ public final class Main {
                       oq repl                    start an interactive session
                       oq fmt <file.oq>           format a program
                       oq test [dir]              run test_*.oq files
-                      oq build <file.oq>         lower a program to IR (bytecode needs JDK 24+)
+                      oq build <file.oq>         compile a program to a runnable jar
                       oq new <name>              create a new project
                       oq doc [root]              generate the stdlib reference
                       oq version                 show the version
@@ -207,6 +207,26 @@ public final class Main {
                 err.println("Missing program file. Try: oq build hello.oq");
                 return 2;
             }
+            // `oq build --help` used to be treated as a file named `--help.oq`, which is a
+            // confusing error for a very ordinary thing to type.
+            if (args[0].equals("--help") || args[0].equals("-h")) {
+                out.println("""
+                        Usage: oq build <file.oq> [--emit-ir]
+
+                        Compiles a program into a runnable jar next to the source file.
+
+                          --emit-ir   print the lowered IR before packaging
+
+                        A program compiles to real bytecode when it stays inside the supported
+                        subset; otherwise the jar launches the interpreter and the reason is
+                        printed. Either way the jar prints what `oq run` prints.""");
+                return 0;
+            }
+            if (args[0].startsWith("-")) {
+                err.println("Unknown option: " + args[0]);
+                err.println("Try: oq build <file.oq> [--emit-ir]");
+                return 2;
+            }
             String path = args[0].endsWith(".oq") ? args[0] : args[0] + ".oq";
             String source;
             try {
@@ -237,7 +257,8 @@ public final class Main {
                 err.println("warning: " + divergence + " — the interpreter is authoritative");
             }
             out.println("backend=classfile (self-contained writer, JDK " + Backends.featureVersion() + ")");
-            Path jar = Path.of(path.substring(0, path.length() - 3) + ".jar");
+            String stem = path.endsWith(".oq") ? path.substring(0, path.length() - 3) : path;
+            Path jar = Path.of(stem + ".jar");
             String className = "oq.generated.Program";
             try {
                 String selfContained = Modules.flatten(Path.of(path), source);

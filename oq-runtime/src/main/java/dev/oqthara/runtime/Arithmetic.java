@@ -33,6 +33,10 @@ public final class Arithmetic {
         return Values.modulo(a, b, Span.synthetic());
     }
 
+    public static Object power(Object a, Object b) {
+        return Values.power(a, b, Span.synthetic());
+    }
+
     public static Object negate(Object a) {
         return Values.negate(a, Span.synthetic());
     }
@@ -45,6 +49,44 @@ public final class Arithmetic {
         out().print(Values.display(value));
         out().print(System.lineSeparator());
         out().flush();
+    }
+
+    /** Truthiness, exactly as the interpreter decides it. */
+    public static boolean truthy(Object value) {
+        return Values.truthy(value);
+    }
+
+    public static Object not(Object value) {
+        return Values.not(value);
+    }
+
+    /** Converts any value to an Oqthara boolean, as the interpreter's truthiness does. */
+    public static Object toBoolean(Object value) {
+        return Values.truthy(value);
+    }
+
+    public static Object less(Object a, Object b) {
+        return Values.compare(a, b, Span.synthetic()) < 0;
+    }
+
+    public static Object lessOrEqual(Object a, Object b) {
+        return Values.compare(a, b, Span.synthetic()) <= 0;
+    }
+
+    public static Object greater(Object a, Object b) {
+        return Values.compare(a, b, Span.synthetic()) > 0;
+    }
+
+    public static Object greaterOrEqual(Object a, Object b) {
+        return Values.compare(a, b, Span.synthetic()) >= 0;
+    }
+
+    public static Object equal(Object a, Object b) {
+        return Values.equal(a, b);
+    }
+
+    public static Object notEqual(Object a, Object b) {
+        return !Values.equal(a, b);
     }
 
     /** Prints a value without a newline. */

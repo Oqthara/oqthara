@@ -59,8 +59,73 @@ class LoweringTest {
                 end
                 """);
         List<Ir.Instr> body = program.main().body();
-        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.JumpIfFalse));
-        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Jump));
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.JumpIfFalseLabel));
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.JumpLabel));
+    }
+
+    @Test
+    void logicalOperatorsProduceBooleansOnBothBackends() {
+        Ir.Program program = lower("print 1 and 2");
+        List<Ir.Instr> body = program.main().body();
+        assertTrue(body.contains(new Ir.ToBool()),
+                "each operand must be coerced to a boolean");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Const c && Boolean.FALSE.equals(c.value())),
+                "the short-circuit path must push false");
+    }
+
+    @Test
+    void descendingRangeIsNotSimplifiedIntoAnAscendingLoop() {
+        // A range whose bounds are variables cannot be decided at compile time, so the
+        // lowering must compute the step at runtime rather than emit a fixed `<=` test.
+        Ast.Program program = Parser.parse("<t>", """
+                a = 5
+                b = 1
+                for n in a to b
+                  print n
+                end
+                """);
+        Lowering.Result result = Lowering.lowerWithReport(program);
+        assertTrue(result.divergences().isEmpty());
+        List<Ir.Instr> body = result.program().main().body();
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Const c && Long.valueOf(-1L).equals(c.value())),
+                "the negative step must be materialized");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Label l && l.name().endsWith("_desc")),
+                "a descending branch must exist");
+    }
+
+    @Test
+    void blocksOpenAndCloseScopes() {
+        Ast.Program program = Parser.parse("<t>", """
+                if true
+                  x = 1
+                end
+                """);
+        List<Ir.Instr> body = Lowering.lower(program).main().body();
+        assertEquals(1, body.stream().filter(i -> i instanceof Ir.ScopeEnter).count());
+        assertEquals(1, body.stream().filter(i -> i instanceof Ir.ScopeExit).count());
+    }
+
+    @Test
+    void assignmentIsASingleStoreAndTheBackendDefinesOnFirstUse() {
+        // `x = 1` parses as Assign, not VarDecl, and the interpreter's assignOrDefine
+        // creates the binding. The IR keeps that as one Store; the backend resolves it to a
+        // new slot the first time and to the existing slot afterwards.
+        Ast.Program program = Parser.parse("<t>", "x = 1\nx = 2");
+        List<Ir.Instr> body = Lowering.lower(program).main().body();
+        assertEquals(2, body.stream().filter(i -> i instanceof Ir.Store s && s.name().equals("x")).count());
+        assertFalse(body.stream().anyMatch(i -> i instanceof Ir.Declare));
+    }
+
+    @Test
+    void loopVariablesAreDeclaredFixed() {
+        Ast.Program program = Parser.parse("<t>", """
+                for n in 1 to 3
+                  print n
+                end
+                """);
+        List<Ir.Instr> body = Lowering.lower(program).main().body();
+        assertTrue(body.contains(new Ir.Declare("n", true)),
+                "a loop variable is fixed, so assigning to it must be refused");
     }
 
     @Test

@@ -57,7 +57,7 @@ codepath: compiled bytecode
 wrote arith.jar (90 classes, 0 skipped)
 
 $ oq build fizzbuzz.oq
-codepath: interpreter launcher (instruction Store is not compiled yet)
+codepath: compiled bytecode
 wrote fizzbuzz.jar (90 classes, 0 skipped)
 ```
 
@@ -75,12 +75,20 @@ The compiled subset today:
 
 | Supported | Refused (falls back) |
 |---|---|
-| integer, decimal, text and boolean constants | branches, loops (`Jump`, `Label`) |
-| local variables: assignment, reassignment, reading | functions and calls |
-| `+ - * / %` and unary `-` | comparisons and boolean operators |
-| `+ - * / %` and unary `-` | comparisons and boolean operators |
-| `print`/`write` of one expression | functions, closures |
-| multiple statements in sequence | `if`, loops, `data`, collections, interpolation, modules |
+| integer, decimal, text and boolean constants | user functions and calls |
+| variables: assignment, reassignment, scoping, shadowing | `data`, `use`, modules |
+| `+ - * / % **` and unary `-`, unary `+` | collections, indexing, fields |
+| comparisons `== != < <= > >=` | interpolation, lambdas |
+| `if` / `else`, including `else if` chains | `try` / `catch` |
+| `while`, `for ... to`, `for ... until`, descending ranges | method calls, `spawn` |
+| `break`, `continue`, nested loops | Java interop |
+| `and`, `or`, `not` with short-circuiting | |
+| `print` / `write` of one expression | |
+
+As of T-0056, **41 of the 197 executable conformance programs** compile to real bytecode and
+produce byte-identical output to the interpreter. That number is asserted by
+`BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
+silently go down.
 
 Refusal is deliberate and visible: the compiler returns the name of the instruction it
 cannot lower, `oq build` prints it, and the launcher jar is used instead. A jar that behaved
@@ -90,8 +98,8 @@ differently from `oq run` would be worse than no jar.
 
 The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
 
-1. **Control flow.** Variables now compile, but branches and loops need `StackMapTable`
-   frames; the compiler is still straight-line, which is why no stack maps are required.
+1. **Functions.** Calls, parameters, return values and closures are not compiled; they are
+   the largest remaining gap and the reason most programs still fall back.
 2. **Lambdas.** `Lowering` still emits a placeholder constant for a lambda.
 3. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
 4. **Modules as separate artifacts.** Module sources are flattened into one program.
@@ -100,6 +108,27 @@ The compiled mode is real bytecode, but the subset is small. Remaining work for 
 
 Until items 1–5 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
 open.
+
+## How control flow is emitted
+
+Branches require a `StackMapTable` on class file version 50 and above, because those
+versions are verified by type checking rather than by type inference. The backend keeps that
+difficult in exactly one place:
+
+- Every Oqthara value is a reference (`Long`, `Double`, `Boolean`, `String` or `null`), so
+  every local is an `astore`/`aload` slot and every frame names `java/lang/Object`.
+- Labels exist only where the operand stack is empty, so every frame is a `full_frame` with
+  the same locals and an empty stack.
+- All locals are initialized to `null` in a prologue. An uninitialized slot is `top`, and no
+  frame may claim `top` is a reference; starting from `null` makes one frame shape valid at
+  every join point.
+- There is no code generation for exception handlers yet, so no frame ever needs an
+  exception on the stack.
+
+Descending ranges are the clearest example of why the IR is not simplified: the interpreter
+computes `step = from <= to ? 1 : -1` and walks downwards, so a compiled `i <= to` loop would
+print nothing for `for n in 5 to 1`. The lowering materializes the step and emits both
+direction tests.
 
 ## Why `java.lang.classfile` is not used
 
