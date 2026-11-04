@@ -36,7 +36,7 @@ jobs:
         run: ./gradlew build --no-daemon --console=plain
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-${{ matrix.os }}-${{ matrix.java }}
           path: |
@@ -59,7 +59,7 @@ jobs:
         run: ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
       - name: Smoke test
         run: java -jar oq-cli/build/libs/oq.jar examples/hello.oq | grep -q "Hello, World!"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: oq-jar
           path: oq-cli/build/libs/oq.jar

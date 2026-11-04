@@ -32,7 +32,7 @@ jobs:
           printf 'print "Hello from a released Oqthara!"\n' > hello.oq
           java -jar oq.jar hello.oq | grep -q "Hello from a released Oqthara!"
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             oq-cli/build/libs/oq.jar
