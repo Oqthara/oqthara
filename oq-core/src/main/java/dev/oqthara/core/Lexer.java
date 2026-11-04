@@ -144,7 +144,7 @@ public final class Lexer {
             }
             if (c == '{' && couldStartExpression(pos + 1)) {
                 int scan = findClosingBrace(pos);
-                if (scan < 0) {
+                if (scan < 0 || !looksLikeInterpolation(pos, scan)) {
                     raw.append(c);
                     advance();
                     continue;
@@ -164,6 +164,25 @@ public final class Lexer {
         }
         Span span = new Span(sourceName, startLine, startCol, line, column);
         tokens.add(new Token(Token.Kind.STRING, raw.toString(), raw.toString(), span));
+    }
+
+    /**
+     * A brace is interpolation only when its contents parse as a single expression. This
+     * keeps JSON objects and quoted map-like text inside strings intact: {@code "{\"a\": 1}"}
+     * is text, while {@code "{name}"} and {@code "{''.length()}"} interpolate.
+     */
+    private boolean looksLikeInterpolation(int openIndex, int closeIndex) {
+        String inner = src.substring(openIndex + 1, closeIndex);
+        if (inner.isBlank()) return false;
+        if (inner.contains(":")) return false;
+        try {
+            var tokens = Lexer.lex("<interpolation>", inner);
+            var parser = new dev.oqthara.core.Parser("<interpolation>", tokens);
+            var expr = parser.interpolationExpression();
+            return expr != null;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     private int findClosingBrace(int openIndex) {
@@ -204,7 +223,8 @@ public final class Lexer {
         if (from >= src.length()) return false;
         char next = src.charAt(from);
         if (Character.isLetterOrDigit(next) || next == '_') return true;
-        return next == '(' || next == '[' || next == '!' || next == '-';
+        return next == '(' || next == '[' || next == '!' || next == '-'
+                || next == '"' || next == '\'';
     }
 
     private boolean hasClosingBrace() {

@@ -125,11 +125,17 @@ public final class Interpreter implements OqHost {
                 env.define(function.name(),
                         new OqFunction(function.name(), function.params(), function.body(), env), true);
             } else if (stmt instanceof Ast.DataDecl data) {
-                List<Object> defaults = new ArrayList<>();
-                for (Ast.FieldDef field : data.fields()) {
-                    defaults.add(field.defaultValue() == null ? null : evaluate(field.defaultValue(), env));
+                List<Ast.FieldDef> fields = data.fields();
+                List<java.util.function.Supplier<Object>> defaults = new ArrayList<>();
+                for (Ast.FieldDef field : fields) {
+                    if (field.defaultValue() == null) {
+                        defaults.add(() -> null);
+                    } else {
+                        Ast.Expr defaultValue = field.defaultValue();
+                        defaults.add(() -> evaluate(defaultValue, env));
+                    }
                 }
-                env.define(data.name(), new DataCtor(data.name(), data.fields(), defaults), true);
+                env.define(data.name(), new DataCtor(data.name(), fields, defaults), true);
             }
         }
     }
@@ -225,9 +231,14 @@ public final class Interpreter implements OqHost {
             case Ast.DataDecl data -> {
                 if (!env.hasLocal(data.name())) {
                     List<Ast.FieldDef> fields = data.fields();
-                    List<Object> defaults = new ArrayList<>();
+                    List<java.util.function.Supplier<Object>> defaults = new ArrayList<>();
                     for (Ast.FieldDef field : fields) {
-                        defaults.add(field.defaultValue() == null ? null : evaluate(field.defaultValue(), env));
+                        if (field.defaultValue() == null) {
+                            defaults.add(() -> null);
+                        } else {
+                            Ast.Expr defaultValue = field.defaultValue();
+                            defaults.add(() -> evaluate(defaultValue, env));
+                        }
                     }
                     env.define(data.name(), new DataCtor(data.name(), fields, defaults), true);
                 }
@@ -488,7 +499,8 @@ public final class Interpreter implements OqHost {
         };
     }
 
-    public record DataCtor(String name, List<Ast.FieldDef> fields, List<Object> defaults) implements OqCallable {
+    public record DataCtor(String name, List<Ast.FieldDef> fields,
+                           List<java.util.function.Supplier<Object>> defaults) implements OqCallable {
         @Override
         public Object call(OqHost host, List<Object> args, Span span) {
             if (args.size() > fields.size()) {
@@ -499,7 +511,7 @@ public final class Interpreter implements OqHost {
             LinkedHashMap<String, Object> values = new LinkedHashMap<>();
             for (int i = 0; i < fields.size(); i++) {
                 Ast.FieldDef field = fields.get(i);
-                Object value = i < args.size() ? args.get(i) : defaults.get(i);
+                Object value = i < args.size() ? args.get(i) : defaults.get(i).get();
                 if (i >= args.size() && field.defaultValue() == null) {
                     throw new OqError("missing value for field '" + field.name() + "' of " + name, span,
                             "Pass all " + fields.size() + " fields, or give this one a default in the data declaration.");

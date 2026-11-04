@@ -1,0 +1,3 @@
+print "x: {''.chars().length()}"
+print "y: {'abc'.upper()}"
+print "z: {\"abc\".length()}"

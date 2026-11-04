@@ -1,0 +1,26 @@
+# A queue built on a list, showing mutation of a data field.
+data Queue(items = [])
+
+fun enqueue(queue, item)
+  queue.items.push(item)
+  return queue
+end
+
+fun dequeue(queue)
+  if queue.items.length() == 0
+    return nothing
+  end
+  first = queue.items.first()
+  queue.items = queue.items.skip(1)
+  return first
+end
+
+q = Queue()
+for ch in ["a", "b", "c"]
+  enqueue(q, ch)
+end
+
+print "size: {q.items.length()}"
+print "first out: {dequeue(q)}"
+print "remaining: {q.items}"
+print "empty queue: {dequeue(Queue())}"

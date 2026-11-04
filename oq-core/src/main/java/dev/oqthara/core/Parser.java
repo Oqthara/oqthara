@@ -23,6 +23,15 @@ public final class Parser {
         return new Parser(sourceName, Lexer.lex(sourceName, source)).program();
     }
 
+    /** Parses exactly one expression and requires end of input. Used by interpolation. */
+    public Ast.Expr interpolationExpression() {
+        Ast.Expr expr = expression();
+        if (!check(Token.Kind.NEWLINE) && !check(Token.Kind.EOF)) {
+            return null;
+        }
+        return expr;
+    }
+
     public Ast.Program program() {
         List<Ast.Stmt> statements = new ArrayList<>();
         skipSeparators();
@@ -631,7 +640,7 @@ public final class Parser {
                 i++;
                 continue;
             }
-            if (c == '{' && startsInterpolation(raw, i)) {
+            if (c == '{' && startsInterpolation(raw, i) && !looksLikeJsonObject(raw, i)) {
                 int depth = 1;
                 int start = i + 1;
                 int j = start;
@@ -709,11 +718,23 @@ public final class Parser {
         return result;
     }
 
+    /** {@code {"key": ...}} is data, not interpolation. */
+    private static boolean looksLikeJsonObject(String raw, int index) {
+        int close = raw.indexOf('}', index);
+        if (close < 0) return false;
+        String inner = raw.substring(index + 1, close);
+        return inner.contains(":");
+    }
+
     private static boolean startsInterpolation(String raw, int index) {
         if (index + 1 >= raw.length()) return false;
         char next = raw.charAt(index + 1);
+        if (next == '\\' && index + 2 < raw.length()) {
+            char escaped = raw.charAt(index + 2);
+            return escaped == '"' || escaped == '\'';
+        }
         return Character.isLetterOrDigit(next) || next == '_' || next == '(' || next == '['
-                || next == '!' || next == '-';
+                || next == '!' || next == '-' || next == '"' || next == '\'';
     }
 
     private Ast.Expr parseInterpolated(String source, Span span) {

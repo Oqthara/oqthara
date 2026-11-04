@@ -38,6 +38,9 @@ java -jar oq.jar examples/hello.oq
 | `hanoi.oq` | Towers of Hanoi, showing `to` as a parameter name |
 | `collatz.oq` | longest Collatz chain under 1000 |
 | `memoize.oq` | memoisation built from a closure over a map |
+| `anagrams.oq` | grouping words by sorted characters |
+| `bst.oq` | binary search tree with recursion and data mutation |
+| `queue.oq` | a queue built on a list, exposing default-value isolation |
 | `tests/` | the language-level test suite for `oq test` |
 
 `guess.oq` is interactive and `grep.oq` needs arguments, so CI runs every other

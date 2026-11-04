@@ -1,0 +1,46 @@
+# A binary search tree built from data records and recursion.
+data Node(value, left = nothing, right = nothing)
+
+fun insert(tree, value)
+  if tree == nothing
+    return Node(value)
+  end
+  if value < tree.value
+    tree.left = insert(tree.left, value)
+  else
+    tree.right = insert(tree.right, value)
+  end
+  return tree
+end
+
+fun inorder(tree, out)
+  if tree == nothing
+    return out
+  end
+  inorder(tree.left, out)
+  out.push(tree.value)
+  inorder(tree.right, out)
+  return out
+end
+
+fun contains(tree, value)
+  if tree == nothing
+    return false
+  end
+  if tree.value == value
+    return true
+  end
+  if value < tree.value
+    return contains(tree.left, value)
+  end
+  return contains(tree.right, value)
+end
+
+tree = nothing
+for v in [5, 3, 8, 1, 4, 7, 9]
+  tree = insert(tree, v)
+end
+
+print "in order: {inorder(tree, [])}"
+print "has 4: {contains(tree, 4)}"
+print "has 6: {contains(tree, 6)}"

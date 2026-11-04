@@ -1,0 +1,17 @@
+# Group words that are anagrams of each other.
+words = ["listen", "silent", "enlist", "google", "gooegl", "cat", "act"]
+
+groups = {}
+for word in words
+  key = word.chars().sort().join("")
+  if not groups.has(key)
+    groups[key] = []
+  end
+  groups[key].push(word)
+end
+
+for key in groups.keys().sort()
+  if groups[key].length() > 1
+    print groups[key].join(", ")
+  end
+end

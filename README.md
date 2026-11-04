@@ -105,7 +105,7 @@ removes the ceremony:
   not do yet
 - [`docs/stdlib/reference.md`](docs/stdlib/reference.md) — generated standard library reference
 - [`docs/adr/`](docs/adr/) — architecture decisions
-- [`examples/`](examples/) — 30 runnable programs, indexed by topic
+- [`examples/`](examples/) — 33 runnable programs, indexed by topic
 
 ## Development
 

@@ -1,0 +1,5 @@
+data Config(name, retries = 3, verbose = false)
+c = Config("app")
+print c.name
+print c.retries
+print c.verbose

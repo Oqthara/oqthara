@@ -221,6 +221,17 @@ print p
 `data` generates a constructor, field access and mutation, structural equality, a
 hash, and a readable text form. Fields may have defaults. There is no inheritance.
 
+Default expressions are evaluated **for each new instance**, so a mutable default does not
+leak between objects:
+
+```
+data Bag(items = [])
+a = Bag()
+b = Bag()
+a.items.push(1)
+print b.items      # [], not [1]
+```
+
 ## Ranges
 
 ```

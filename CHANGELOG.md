@@ -28,12 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `try`/`catch` with an error value exposing `message`, `hint`, `file`, `line`, `column`.
 - `round(value, places)` for rounding to decimal places.
 - Lexicographic list comparison, so a sort key may be a list.
-- 30 runnable examples, including a calculator, a BFS maze solver, a Sudoku validator,
+- 33 runnable examples, including a calculator, a BFS maze solver, a Sudoku validator,
   a Tower of Hanoi solver and a memoisation helper.
 - Modules: `use "oq:name"` loads another `.oq` file, searched next to the program, then in
   `modules/`, then in `lib/`; loaded once, cycle-safe, with errors that name the module.
 - `spawn`, `await`, `done` and `par_map` running on virtual threads, with task errors
   re-raised at the `await` site.
+- Three more examples (anagrams, BST, queue) and a regression suite where every test names
+  the real program that found the bug.
+- Data field defaults are evaluated per instance; a mutable default such as `items = []`
+  no longer aliases between objects.
+- Interpolation now works when the expression starts with a quoted string, while JSON-like
+  text such as `"{\"a\": 1}"` stays literal.
 - `to` and `until` are contextual keywords, so they can be used as variable and parameter
   names (`fun hanoi(n, from, to, via)` now parses).
 - `break` and `continue` outside a loop now produce a user error at the right line instead
