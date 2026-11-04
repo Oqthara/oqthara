@@ -1,6 +1,7 @@
 ---
 description: Reviews a change for correctness, safety, simplicity and Rust-ness. Writes comments only.
 mode: subagent
+steps: 40
 ---
 # oq-reviewer
 
