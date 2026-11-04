@@ -13,7 +13,7 @@ for ch in counts.keys()
   pairs.push([ch, counts[ch]])
 end
 
-ranked = pairs.sort(p -> [-p[1], p[0]])
+ranked = pairs.sort(p - > [- p[1], p[0]])
 for pair in ranked.take(5)
   print "{pair[0]}: {pair[1]}"
 end

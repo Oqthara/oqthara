@@ -1,9 +1,9 @@
 fun make_counter(start)
   n = start
   return fun()
-    n = n + 1
-    return n
-  end
+  n = n + 1
+  return n
+end
 end
 
 counter = make_counter(10)

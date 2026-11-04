@@ -8,8 +8,8 @@ start = timestamp()
 tasks = []
 for name in ["alpha", "beta", "gamma"]
   tasks.push(spawn(fun()
-    return fetch(name)
-  end))
+  return fetch(name)
+end))
 end
 
 for task in tasks
@@ -19,5 +19,5 @@ end
 elapsed = timestamp() - start
 print "elapsed: {elapsed} ms (sequential would be at least 150 ms)"
 
-squares = par_map([1, 2, 3, 4, 5], x -> x * x)
+squares = par_map([1, 2, 3, 4, 5], x - > x * x)
 print "parallel squares: {squares}"

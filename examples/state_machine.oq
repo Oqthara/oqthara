@@ -1,8 +1,8 @@
 # A tiny traffic light state machine driven by a map of transitions.
 transitions = {
-  "red": "green",
-  "green": "yellow",
-  "yellow": "red",
+"red": "green",
+"green": "yellow",
+"yellow": "red",
 }
 
 state = "red"

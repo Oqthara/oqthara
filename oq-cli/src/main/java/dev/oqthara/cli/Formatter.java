@@ -10,7 +10,15 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * A conservative, idempotent formatter. It re-indents blocks, normalises spacing around
+ * operators and after commas, and leaves text literals byte-for-byte intact. It never
+ * changes the token stream: {@code format(format(x)) == format(x)} and the formatted file
+ * must still parse.
+ */
 final class Formatter {
+    private static final int INDENT = 2;
+
     private Formatter() {
     }
 
@@ -26,6 +34,7 @@ final class Formatter {
                 String source = Files.readString(Path.of(path), StandardCharsets.UTF_8);
                 Parser.parse(path, source);
                 String formatted = format(source);
+                Parser.parse(path, formatted);
                 if (!formatted.equals(source)) {
                     Files.writeString(Path.of(path), formatted, StandardCharsets.UTF_8);
                     out.println("formatted " + path);
@@ -44,57 +53,210 @@ final class Formatter {
     }
 
     static String format(String source) {
-        List<String> lines = new ArrayList<>();
-        for (String line : source.split("\n", -1)) {
-            String trimmed = line.stripTrailing();
-            while (trimmed.contains("\t")) {
-                trimmed = trimmed.replace("\t", "  ");
+        List<String> output = new ArrayList<>();
+        int depth = 0;
+        boolean inTriple = false;
+        for (String rawLine : source.replace("\r\n", "\n").split("\n", -1)) {
+            String line = rawLine.stripTrailing();
+            String stripped = line.strip();
+
+            if (inTriple) {
+                output.add(line);
+                if (stripped.contains("\"\"\"")) inTriple = false;
+                continue;
             }
-            if (trimmed.isBlank()) {
-                if (!lines.isEmpty() && !lines.get(lines.size() - 1).isEmpty()) {
-                    lines.add("");
+
+            if (stripped.isEmpty()) {
+                if (!output.isEmpty() && !output.get(output.size() - 1).isEmpty()) {
+                    output.add("");
                 }
                 continue;
             }
-            int depth = 0;
-            String stripped = trimmed.stripLeading();
-            if (stripped.startsWith("end") || stripped.startsWith("else")) {
-                depth = 1;
+
+            if (stripped.startsWith("#")) {
+                output.add(" ".repeat(depth * INDENT) + stripped);
+                continue;
             }
-            int indent = Math.max(0, indentOf(trimmed) - depth * 2);
-            StringBuilder sb = new StringBuilder();
-            boolean inString = false;
-            char quote = 0;
-            for (int i = 0; i < stripped.length(); i++) {
-                char c = stripped.charAt(i);
-                if (inString) {
-                    sb.append(c);
-                    if (c == '\\' && i + 1 < stripped.length()) {
-                        sb.append(stripped.charAt(++i));
-                    } else if (c == quote) {
-                        inString = false;
-                    }
-                    continue;
-                }
-                if (c == '"' || c == '\'') {
-                    inString = true;
-                    quote = c;
-                    sb.append(c);
-                    continue;
-                }
-                sb.append(c);
+
+            String firstWord = firstWord(stripped);
+            boolean closes = firstWord.equals("end") || firstWord.equals("else")
+                    || firstWord.equals("catch");
+            if (closes) {
+                depth = Math.max(0, depth - 1);
             }
-            lines.add(" ".repeat(indent) + sb);
+
+            String normalised = normalise(stripped);
+            output.add(" ".repeat(depth * INDENT) + normalised);
+
+            // A single-line declaration or signature opens a block; a continued line
+            // (after a comma, or an unclosed bracket) does not.
+            if (opensBlock(normalised) && isBlockOpener(normalised)) {
+                depth++;
+            } else if (firstWord.equals("else") || firstWord.equals("catch")) {
+                depth++;
+            }
+
+            long tripleQuotes = countOccurrences(normalised, "\"\"\"");
+            if (tripleQuotes % 2 == 1) inTriple = true;
         }
-        while (!lines.isEmpty() && lines.get(lines.size() - 1).isEmpty()) {
-            lines.remove(lines.size() - 1);
+        while (!output.isEmpty() && output.get(output.size() - 1).isEmpty()) {
+            output.remove(output.size() - 1);
         }
-        return String.join("\n", lines) + "\n";
+        return String.join("\n", output) + "\n";
     }
 
-    private static int indentOf(String line) {
+    private static String firstWord(String line) {
         int i = 0;
-        while (i < line.length() && line.charAt(i) == ' ') i++;
-        return i;
+        while (i < line.length() && (Character.isLetterOrDigit(line.charAt(i)) || line.charAt(i) == '_')) {
+            i++;
+        }
+        return line.substring(0, i);
+    }
+
+    private static boolean isBlockOpener(String line) {
+        String first = firstWord(line);
+        if (first.equals("data")) {
+            // data declarations are one line and never open a block.
+            return false;
+        }
+        if (first.equals("fun")) {
+            // fun declarations open a block on the signature line.
+            return line.trim().endsWith(")") || line.contains(")");
+        }
+        if (first.equals("try")) {
+            return true;
+        }
+        return true;
+    }
+
+    private static boolean opensBlock(String line) {
+        String first = firstWord(line);
+        return switch (first) {
+            case "if", "while", "for", "fun", "data", "try" -> true;
+            default -> false;
+        };
+    }
+
+    /** Normalises operator and comma spacing outside text literals and comments. */
+    static String normalise(String line) {
+        StringBuilder out = new StringBuilder();
+        int i = 0;
+        while (i < line.length()) {
+            char c = line.charAt(i);
+            if (c == '"' || c == '\'') {
+                if (c == '"' && i + 2 < line.length()
+                        && line.charAt(i + 1) == '"' && line.charAt(i + 2) == '"') {
+                    int end = line.indexOf("\"\"\"", i + 3);
+                    if (end < 0) {
+                        out.append(line.substring(i));
+                        return out.toString().stripTrailing();
+                    }
+                    out.append(line, i, end + 3);
+                    i = end + 3;
+                    continue;
+                }
+                int end = i + 1;
+                while (end < line.length()) {
+                    char inner = line.charAt(end);
+                    if (inner == '\\') {
+                        end += 2;
+                        continue;
+                    }
+                    if (inner == c) {
+                        end++;
+                        break;
+                    }
+                    end++;
+                }
+                out.append(line, i, Math.min(end, line.length()));
+                i = Math.min(end, line.length());
+                continue;
+            }
+            if (c == '#') {
+                out.append(line.substring(i));
+                break;
+            }
+            if (isOperatorChar(c)) {
+                String operator = longestOperatorAt(line, i);
+                int before = out.length();
+                trimTrailingSpaces(out);
+                boolean needSpaceBefore = before > 0 && !out.isEmpty()
+                        && !isOpenDelimiter(out.charAt(out.length() - 1))
+                        && !isPrefixPosition(out);
+                if (needSpaceBefore) out.append(' ');
+                out.append(operator);
+                i += operator.length();
+                while (i < line.length() && line.charAt(i) == ' ') i++;
+                if (i < line.length() && !isCloseDelimiter(line.charAt(i))) {
+                    out.append(' ');
+                }
+                continue;
+            }
+            if (c == ',') {
+                trimTrailingSpaces(out);
+                out.append(',');
+                i++;
+                while (i < line.length() && line.charAt(i) == ' ') i++;
+                if (i < line.length() && !isCloseDelimiter(line.charAt(i))) out.append(' ');
+                continue;
+            }
+            if (c == ' ') {
+                if (!out.isEmpty() && out.charAt(out.length() - 1) != ' ') out.append(' ');
+                i++;
+                continue;
+            }
+            out.append(c);
+            i++;
+        }
+        String result = out.toString();
+        result = result.replaceAll("\\s+$", "");
+        result = result.replaceAll("\\(\\s+", "(");
+        result = result.replaceAll("\\s+\\)", ")");
+        result = result.replaceAll("\\[\\s+", "[");
+        result = result.replaceAll("\\s+\\]", "]");
+        return result.stripLeading();
+    }
+
+    private static boolean isPrefixPosition(StringBuilder out) {
+        if (out.isEmpty()) return true;
+        char last = out.charAt(out.length() - 1);
+        return last == '(' || last == '[' || last == '{' || last == ',' || last == ':'
+                || last == '=';
+    }
+
+    private static boolean isOperatorChar(char c) {
+        return "+-*/%<>=!".indexOf(c) >= 0;
+    }
+
+    private static boolean isOpenDelimiter(char c) {
+        return c == '(' || c == '[' || c == '{';
+    }
+
+    private static boolean isCloseDelimiter(char c) {
+        return c == ')' || c == ']' || c == '}' || c == ',';
+    }
+
+    private static String longestOperatorAt(String line, int index) {
+        String[] multi = {"**=", "**", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/="};
+        for (String operator : multi) {
+            if (line.startsWith(operator, index)) return operator;
+        }
+        return String.valueOf(line.charAt(index));
+    }
+
+    private static void trimTrailingSpaces(StringBuilder out) {
+        while (!out.isEmpty() && out.charAt(out.length() - 1) == ' ') {
+            out.setLength(out.length() - 1);
+        }
+    }
+
+    private static long countOccurrences(String text, String needle) {
+        long count = 0;
+        int index = 0;
+        while ((index = text.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 }

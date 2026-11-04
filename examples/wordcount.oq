@@ -14,7 +14,7 @@ for word in counts.keys()
   pairs.push([word, counts[word]])
 end
 
-for pair in pairs.sort(p -> -second(p)).take(10)
+for pair in pairs.sort(p - > - second(p)).take(10)
   print "{pair[0]}: {pair[1]}"
 end
 

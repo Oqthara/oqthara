@@ -1,10 +1,10 @@
 # Breadth-first search on a small grid. Demonstrates lists of lists and sets.
 grid = [
-  "S.#....",
-  ".##.##.",
-  ".....#.",
-  ".####..",
-  ".....#E",
+"S.#....",
+".##.##.",
+".....#.",
+".####..",
+".....#E",
 ]
 
 data Cell(row, col)
@@ -22,7 +22,7 @@ end
 
 fun neighbors(cell)
   result = []
-  for delta in [[-1, 0], [1, 0], [0, -1], [0, 1]]
+  for delta in [[- 1, 0], [1, 0], [0,- 1], [0, 1]]
     row = cell.row + delta[0]
     col = cell.col + delta[1]
     if row < 0 or row >= grid.length()
@@ -41,7 +41,7 @@ end
 start = find_start()
 queue = [[start, 0]]
 seen = {"{start.row},{start.col}"}
-steps = -1
+steps =- 1
 
 while queue.length() > 0
   current = queue[0]

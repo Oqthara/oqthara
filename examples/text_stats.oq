@@ -4,8 +4,8 @@ text = read(file)
 
 lines = text.lines()
 words = text.words()
-chars = text.chars().filter(c -> c != " ").length()
-sentences = text.split(".").filter(s -> s.strip().length() > 0).length()
+chars = text.chars().filter(c - > c != " ").length()
+sentences = text.split(".").filter(s - > s.strip().length() > 0).length()
 
 print "file: {file}"
 print "lines: {lines.length()}"

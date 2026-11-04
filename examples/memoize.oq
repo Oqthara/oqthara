@@ -2,25 +2,25 @@
 fun memoize(fn)
   cache = {}
   return fun(n)
-    key = text(n)
-    if cache.has(key)
-      return cache[key]
-    end
-    value = fn(n)
-    cache[key] = value
-    return value
+  key = text(n)
+  if cache.has(key)
+    return cache[key]
   end
+  value = fn(n)
+  cache[key] = value
+  return value
+end
 end
 
-slow_square = n -> n * n
+slow_square = n - > n * n
 fast_square = memoize(slow_square)
 print fast_square(12)
 print fast_square(12)
 
 calls = 0
 counted = memoize(fun(n)
-  calls = calls + 1
-  return n + 1
+calls = calls + 1
+return n + 1
 end)
 print counted(1)
 print counted(1)

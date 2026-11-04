@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq fmt` rewritten: canonical indentation and spacing, idempotent, output always parses,
+  verified against every example.
 - VS Code extension in `editors/vscode`: TextMate grammar with interpolation support,
   14 snippets, indentation rules, and tests that keep it in sync with the lexer.
 - Distribution: `scripts/install.ps1`, a multi-stage `Dockerfile`, and

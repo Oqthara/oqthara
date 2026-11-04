@@ -321,6 +321,32 @@ oq build hello.oq --emit-ir  # print the IR
 command prints an explicit diagnostic and exits with code 3 instead of crashing; `oq run`
 always works, because the interpreter needs nothing extra.
 
+## Formatting
+
+```bash
+oq fmt hello.oq           # rewrite in canonical style
+```
+
+The formatter re-indents blocks, normalises spacing around operators and commas, collapses
+runs of blank lines, and leaves text literals untouched. It is **idempotent** and the output
+always parses; both properties are enforced by tests over every example.
+
+```bash
+# before
+if x>0
+      print"positive"
+  else
+   print"other"
+end
+
+# after
+if x > 0
+  print "positive"
+else
+  print "other"
+end
+```
+
 ## Editor support
 
 The `editors/vscode` directory contains a VS Code extension with syntax highlighting,

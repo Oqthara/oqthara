@@ -40,4 +40,5 @@ java -jar oq.jar examples/hello.oq
 | `memoize.oq` | memoisation built from a closure over a map |
 | `tests/` | the language-level test suite for `oq test` |
 
-`guess.oq` is interactive; the rest are deterministic and safe to run in CI.
+`guess.oq` is interactive and `grep.oq` needs arguments, so CI runs every other
+example; both are verified by hand in the checkpoints.
