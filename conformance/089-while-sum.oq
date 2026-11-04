@@ -1,0 +1,7 @@
+total = 0
+n = 1
+while n <= 10
+  total = total + n
+  n = n + 1
+end
+print total

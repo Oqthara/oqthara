@@ -1,0 +1,5 @@
+transform = fun(x)
+  y = x + 1
+  return y * 2
+end
+print transform(4)

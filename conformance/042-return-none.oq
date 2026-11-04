@@ -1,0 +1,6 @@
+fun greet(name)
+  print "Hello, {name}"
+end
+
+result = greet("Ada")
+print result == nothing

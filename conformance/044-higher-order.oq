@@ -1,0 +1,6 @@
+fun apply(f, value)
+  return f(value)
+end
+
+print apply(x -> x + 1, 10)
+print apply(x -> x * x, 6)

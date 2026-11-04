@@ -1,0 +1,22 @@
+data Match(line, number, text)
+
+fun search(path, needle)
+  matches = []
+  line_number = 0
+  for line in read_lines(path)
+    line_number = line_number + 1
+    if line.contains(needle)
+      matches.push(Match(line_number, line_number, line))
+    end
+  end
+  return matches
+end
+
+if args().length() < 2
+  print "usage: oq grep.oq <file> <text>"
+  exit(1)
+end
+
+for match in search(args()[0], args()[1])
+  print "{match.number}: {match.text}"
+end

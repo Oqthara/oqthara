@@ -1,0 +1,10 @@
+if 0
+  print "zero truthy"
+else
+  print "zero falsy"
+end
+if ""
+  print "empty truthy"
+else
+  print "empty falsy"
+end

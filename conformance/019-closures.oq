@@ -1,0 +1,12 @@
+fun make_counter()
+  count = 0
+  return fun()
+    count = count + 1
+    return count
+  end
+end
+
+c1 = make_counter()
+print c1()
+print c1()
+print c1()

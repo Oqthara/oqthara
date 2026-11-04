@@ -1,0 +1,23 @@
+file = "README.md"
+if args().length() > 0
+  file = args()[0]
+end
+
+text = read(file)
+counts = {}
+for word in text.lower().words()
+  counts[word] = counts.get(word, 0) + 1
+end
+
+pairs = []
+for word in counts.keys()
+  pairs.push([word, counts[word]])
+end
+
+for pair in pairs.sort(p -> -second(p)).take(10)
+  print "{pair[0]}: {pair[1]}"
+end
+
+fun second(pair)
+  return pair[1]
+end

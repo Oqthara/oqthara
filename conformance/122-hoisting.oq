@@ -1,0 +1,5 @@
+print greet("Ada")
+
+fun greet(name)
+  return "Hello, {name}"
+end

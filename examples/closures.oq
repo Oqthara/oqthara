@@ -1,0 +1,12 @@
+fun make_counter(start)
+  n = start
+  return fun()
+    n = n + 1
+    return n
+  end
+end
+
+counter = make_counter(10)
+print counter()
+print counter()
+print counter()

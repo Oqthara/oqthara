@@ -1,0 +1,4 @@
+double = x -> x * 2
+print double(21)
+add = (a, b) -> a + b
+print add(3, 4)

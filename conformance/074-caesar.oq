@@ -1,0 +1,12 @@
+fun shift(s, n)
+  result = []
+  for ch in s.chars()
+    code = ch.chars().first()
+    if code == " "
+      result.push(" ")
+      continue
+    end
+    shifted = (ch.code_at(0) - 97 + n) % 26 + 97
+  end
+  return result
+end

@@ -1,0 +1,8 @@
+xs = [5, 3, 8, 1, 9, 2]
+
+print "sorted: {xs.sort()}"
+print "evens: {xs.filter(x -> x % 2 == 0)}"
+print "squares: {xs.map(x -> x * x)}"
+print "total: {xs.sum()}"
+print "max: {xs.max()}"
+print "any over 8: {xs.any(x -> x > 8)}"

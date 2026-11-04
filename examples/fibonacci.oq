@@ -1,0 +1,30 @@
+fun fib(n)
+  if n < 2
+    return n
+  end
+  return fib(n - 1) + fib(n - 2)
+end
+
+for i in 0 to 15
+  print "{i}: {fib(i)}"
+end
+
+fun fast_fib(n)
+  memo = {}
+  return compute(n, memo)
+end
+
+fun compute(n, memo)
+  if n < 2
+    return n
+  end
+  key = text(n)
+  if memo.has(key)
+    return memo[key]
+  end
+  value = compute(n - 1, memo) + compute(n - 2, memo)
+  memo[key] = value
+  return value
+end
+
+print fast_fib(70)

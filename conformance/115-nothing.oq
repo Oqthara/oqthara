@@ -1,0 +1,4 @@
+x = nothing
+print x
+print x == nothing
+print is_nothing(x)

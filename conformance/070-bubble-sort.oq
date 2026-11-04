@@ -1,0 +1,16 @@
+fun bubble(xs)
+  items = xs.clone()
+  n = items.length()
+  for i in 0 until n
+    for j in 0 until n - i - 1
+      if items[j] > items[j + 1]
+        temp = items[j]
+        items[j] = items[j + 1]
+        items[j + 1] = temp
+      end
+    end
+  end
+  return items
+end
+
+print bubble([5, 2, 9, 1, 5, 6])

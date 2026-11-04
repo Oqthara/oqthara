@@ -1,0 +1,6 @@
+s = "Hello"
+print s.upper()
+print s.lower()
+print s.length()
+print s.contains("ell")
+print s.starts_with("He")

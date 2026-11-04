@@ -1,0 +1,11 @@
+fun vowels(s)
+  count = 0
+  for ch in s.lower()
+    if "aeiou".contains(ch)
+      count = count + 1
+    end
+  end
+  return count
+end
+
+print vowels("hello world")

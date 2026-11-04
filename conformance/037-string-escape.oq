@@ -1,0 +1,3 @@
+print "line1\nline2"
+print "quote: \"hi\""
+print "tab:\there"

@@ -1,0 +1,21 @@
+fun search(items, target)
+  low = 0
+  high = items.length() - 1
+  while low <= high
+    mid = (low + high) / 2
+    mid = floor(mid)
+    if items[mid] == target
+      return mid
+    end
+    if items[mid] < target
+      low = mid + 1
+    else
+      high = mid - 1
+    end
+  end
+  return -1
+end
+
+xs = [1, 3, 5, 7, 9]
+print search(xs, 7)
+print search(xs, 4)

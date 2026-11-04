@@ -1,0 +1,5 @@
+s = {3, 1, 2, 1}
+print s.size()
+print s.has(2)
+s.add(4)
+print s.size()

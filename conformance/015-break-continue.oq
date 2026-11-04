@@ -1,0 +1,9 @@
+for n in 1 to 10
+  if n == 4
+    break
+  end
+  if n == 2
+    continue
+  end
+  print n
+end

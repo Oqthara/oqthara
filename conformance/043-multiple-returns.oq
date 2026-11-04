@@ -1,0 +1,13 @@
+fun sign(n)
+  if n > 0
+    return "positive"
+  end
+  if n < 0
+    return "negative"
+  end
+  return "zero"
+end
+
+print sign(5)
+print sign(-5)
+print sign(0)

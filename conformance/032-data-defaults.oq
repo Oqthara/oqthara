@@ -1,0 +1,4 @@
+data Person(name, age = 0)
+
+print Person("Ada")
+print Person("Bob", 30)

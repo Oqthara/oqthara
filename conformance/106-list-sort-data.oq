@@ -1,0 +1,4 @@
+data Person(name, age)
+people = [Person("C", 30), Person("A", 25), Person("B", 35)]
+sorted = people.sort(p -> p.age)
+print sorted.map(p -> p.name)

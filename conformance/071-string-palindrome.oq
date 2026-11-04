@@ -1,0 +1,8 @@
+fun is_palindrome(s)
+  clean = s.lower().replace(" ", "")
+  return clean == clean.chars().reverse().join("")
+end
+
+print is_palindrome("racecar")
+print is_palindrome("hello")
+print is_palindrome("A man a plan a canal Panama")

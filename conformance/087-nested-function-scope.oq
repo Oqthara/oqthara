@@ -1,0 +1,5 @@
+x = "outer"
+fun show()
+  print x
+end
+show()

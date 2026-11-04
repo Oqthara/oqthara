@@ -1,0 +1,4 @@
+data Point(x, y)
+
+print Point(1, 2) == Point(1, 2)
+print Point(1, 2) == Point(1, 3)

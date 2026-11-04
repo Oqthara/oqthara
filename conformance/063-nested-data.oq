@@ -1,0 +1,5 @@
+data Address(city)
+data Person(name, address)
+
+p = Person("Ada", Address("London"))
+print p.address.city

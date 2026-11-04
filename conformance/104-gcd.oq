@@ -1,0 +1,11 @@
+fun gcd(a, b)
+  while b != 0
+    t = b
+    b = a % b
+    a = t
+  end
+  return a
+end
+
+print gcd(48, 18)
+print gcd(17, 5)

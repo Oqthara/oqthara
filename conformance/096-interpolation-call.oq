@@ -1,0 +1,4 @@
+fun square(n)
+  return n * n
+end
+print "square: {square(7)}"

@@ -1,0 +1,6 @@
+m = {"one": 1, "two": 2}
+print m["one"]
+m["three"] = 3
+print m["three"]
+print m.size()
+print m.has("two")

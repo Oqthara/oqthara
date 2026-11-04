@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Oqthara — a small language for the JVM</title>
+  <meta name="description" content="Oqthara is a small language for the JVM that reads like pseudocode.">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #8b949e;
+      --accent: #7ee787;
+      --accent2: #79c0ff;
+      --card: #161b22;
+      --border: #30363d;
+      --code: #010409;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+    }
+    a { color: var(--accent2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .logo { font-weight: 700; font-size: 1.25rem; letter-spacing: -0.02em; }
+    .logo span { color: var(--accent); }
+    nav a { margin-left: 20px; color: var(--muted); font-size: 0.95rem; }
+    nav a:hover { color: var(--fg); }
+    main { max-width: 860px; margin: 0 auto; padding: 72px 24px; }
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      margin: 0 0 24px;
+    }
+    h1 em { color: var(--accent); font-style: normal; }
+    .lead { font-size: 1.25rem; color: var(--muted); max-width: 640px; margin: 0 0 40px; }
+    pre {
+      background: var(--code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      overflow-x: auto;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      margin: 0 0 24px;
+    }
+    code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+    .kw { color: #ff7b72; }
+    .str { color: var(--accent); }
+    .num { color: #79c0ff; }
+    .com { color: var(--muted); }
+    .fn { color: #d2a8ff; }
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 24px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      margin: 56px 0;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px;
+    }
+    .card h3 { margin: 0 0 10px; font-size: 1rem; }
+    .card p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+    h2 { margin-top: 72px; font-size: 1.6rem; letter-spacing: -0.02em; }
+    table { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 0.93rem; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .install { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .install pre { flex: 1; min-width: 280px; margin: 0; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">oq<span>thara</span></div>
+    <nav>
+      <a href="language.md">Docs</a>
+      <a href="https://github.com/JoaoValentimTheo/oqthara">GitHub</a>
+      <a href="https://github.com/JoaoValentimTheo/oqthara/releases">Releases</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="badge">v0.1.0-alpha.1 · JVM · MIT</div>
+    <h1>A small language<br>that reads like <em>pseudocode</em>.</h1>
+    <p class="lead">
+      Oqthara runs on the JVM and gives you every Java library, without the classes,
+      the <code>main</code>, the <code>new</code>, the semicolons, or the ceremony.
+    </p>
+
+    <pre><code><span class="kw">name</span> = <span class="str">"World"</span>
+<span class="fn">print</span> <span class="str">"Hello, {name}!"</span></code></pre>
+
+    <div class="install">
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/JoaoValentimTheo/oqthara/main/scripts/install.sh | bash</code></pre>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>No boilerplate</h3>
+        <p>Code at file level. No class, no package, no <code>public static void main</code>.</p>
+      </div>
+      <div class="card">
+        <h3>Data in one line</h3>
+        <p><code>data Point(x, y)</code> gives you a constructor, fields, equality, hash and text.</p>
+      </div>
+      <div class="card">
+        <h3>Collections that work</h3>
+        <p><code>.map</code>, <code>.filter</code>, <code>.sort</code>, <code>.sum</code> on every list. No streams.</p>
+      </div>
+      <div class="card">
+        <h3>Errors you can read</h3>
+        <p>Every diagnostic shows the line, a caret, a plain explanation and a fix.</p>
+      </div>
+      <div class="card">
+        <h3>Java when you need it</h3>
+        <p><code>use java.time.LocalDate</code> and call it with the same dot syntax.</p>
+      </div>
+      <div class="card">
+        <h3>Small surface</h3>
+        <p>18 keywords. One way to do each thing. Nothing to memorize twice.</p>
+      </div>
+    </div>
+
+    <h2>What it looks like</h2>
+    <pre><code><span class="kw">data</span> Point(x, y)
+
+<span class="kw">fun</span> <span class="fn">distance</span>(a, b)
+  dx = a.x - b.x
+  dy = a.y - b.y
+  <span class="kw">return</span> sqrt(dx * dx + dy * dy)
+<span class="kw">end</span>
+
+points = [Point(3, 4), Point(6, 8)]
+<span class="kw">for</span> p <span class="kw">in</span> points
+  <span class="fn">print</span> <span class="str">"distance: {distance(Point(0, 0), p)}"</span>
+<span class="kw">end</span></code></pre>
+
+    <pre><code><span class="com"># word count</span>
+counts = {}
+<span class="kw">for</span> word <span class="kw">in</span> read(<span class="str">"book.txt"</span>).lower().words()
+  counts[word] = counts.get(word, 0) + 1
+<span class="kw">end</span>
+
+<span class="kw">for</span> word <span class="kw">in</span> counts.keys().sort()
+  <span class="fn">print</span> <span class="str">"{word}: {counts[word]}"</span>
+<span class="kw">end</span></code></pre>
+
+    <pre><code><span class="kw">use</span> java.time.LocalDate
+
+start = LocalDate(<span class="num">2026</span>, <span class="num">1</span>, <span class="num">1</span>)
+<span class="fn">print</span> <span class="str">"days: {LocalDate.now().toEpochDay() - start.toEpochDay()}"</span></code></pre>
+
+    <h2>Java, simplified</h2>
+    <table>
+      <tr><th>Java</th><th>Oqthara</th></tr>
+      <tr><td><code>public static void main(String[] args)</code></td><td>nothing</td></tr>
+      <tr><td><code>new ArrayList&lt;&gt;()</code></td><td><code>[]</code></td></tr>
+      <tr><td><code>list.stream().map(x -&gt; x * 2).toList()</code></td><td><code>list.map(x -&gt; x * 2)</code></td></tr>
+      <tr><td>getters, setters, equals, hashCode, toString</td><td><code>data Point(x, y)</code></td></tr>
+      <tr><td><code>String.format("Hi %s", name)</code></td><td><code>"Hi {name}"</code></td></tr>
+      <tr><td>checked exceptions</td><td>none</td></tr>
+    </table>
+
+    <h2>Start here</h2>
+    <pre><code>oq new hello      <span class="com"># create a project</span>
+oq hello/main.oq  <span class="com"># run it</span>
+oq repl           <span class="com"># try things</span>
+oq fmt file.oq    <span class="com"># format</span>
+oq check file.oq  <span class="com"># parse without running</span></code></pre>
+
+    <p><a href="language.md">Read the language reference →</a></p>
+  </main>
+
+  <footer>
+    Oqthara is MIT licensed. Built on the JVM.
+  </footer>
+</body>
+</html>

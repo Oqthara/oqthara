@@ -1,0 +1,4 @@
+multi = "one\ntwo\nthree"
+for line in multi.lines()
+  print "> {line}"
+end

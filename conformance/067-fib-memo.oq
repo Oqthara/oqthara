@@ -1,0 +1,15 @@
+memo = {}
+fun fib(n)
+  key = text(n)
+  if memo.has(key)
+    return memo[key]
+  end
+  if n < 2
+    return n
+  end
+  result = fib(n - 1) + fib(n - 2)
+  memo[key] = result
+  return result
+end
+
+print fib(30)

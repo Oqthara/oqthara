@@ -1,0 +1,14 @@
+raw = """
+{
+  "name": "Oqthara",
+  "version": "0.1.0",
+  "tags": ["jvm", "simple", "small"]
+}
+"""
+
+project = json_parse(raw)
+print "name: {project[\"name\"]}"
+print "tags: {project[\"tags\"].join(\", \")}"
+
+project["stars"] = 0
+print json(project)

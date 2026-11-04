@@ -1,0 +1,7 @@
+use java.time.LocalDate
+
+start = LocalDate(2026, 1, 1)
+now = LocalDate.now()
+print "start: {start}"
+print "today: {now}"
+print "days elapsed: {now.toEpochDay() - start.toEpochDay()}"

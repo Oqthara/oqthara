@@ -1,0 +1,370 @@
+package dev.oqthara.core;
+
+import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.Span;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public final class Lexer {
+    public static final Set<String> KEYWORDS = Set.of(
+            "if", "else", "while", "for", "in", "end",
+            "fun", "return", "data", "true", "false", "nothing",
+            "and", "or", "not", "break", "continue",
+            "to", "until", "use"
+    );
+
+    private static final Map<String, Token.Kind> TWO_CHAR = new LinkedHashMap<>();
+    private static final Map<String, Token.Kind> ONE_CHAR = new LinkedHashMap<>();
+
+    static {
+        TWO_CHAR.put("**", Token.Kind.STARSTAR);
+        TWO_CHAR.put("==", Token.Kind.EQEQ);
+        TWO_CHAR.put("!=", Token.Kind.NOTEQ);
+        TWO_CHAR.put("<=", Token.Kind.LE);
+        TWO_CHAR.put(">=", Token.Kind.GE);
+        TWO_CHAR.put("+=", Token.Kind.PLUS_ASSIGN);
+        TWO_CHAR.put("-=", Token.Kind.MINUS_ASSIGN);
+        TWO_CHAR.put("*=", Token.Kind.STAR_ASSIGN);
+        TWO_CHAR.put("/=", Token.Kind.SLASH_ASSIGN);
+
+        ONE_CHAR.put("(", Token.Kind.LPAREN);
+        ONE_CHAR.put(")", Token.Kind.RPAREN);
+        ONE_CHAR.put("[", Token.Kind.LBRACKET);
+        ONE_CHAR.put("]", Token.Kind.RBRACKET);
+        ONE_CHAR.put("{", Token.Kind.LBRACE);
+        ONE_CHAR.put("}", Token.Kind.RBRACE);
+        ONE_CHAR.put(",", Token.Kind.COMMA);
+        ONE_CHAR.put(":", Token.Kind.COLON);
+        ONE_CHAR.put(".", Token.Kind.DOT);
+        ONE_CHAR.put("|", Token.Kind.PIPE);
+        ONE_CHAR.put(";", Token.Kind.SEMICOLON);
+        ONE_CHAR.put("+", Token.Kind.PLUS);
+        ONE_CHAR.put("-", Token.Kind.MINUS);
+        ONE_CHAR.put("*", Token.Kind.STAR);
+        ONE_CHAR.put("/", Token.Kind.SLASH);
+        ONE_CHAR.put("%", Token.Kind.PERCENT);
+        ONE_CHAR.put("=", Token.Kind.ASSIGN);
+        ONE_CHAR.put("<", Token.Kind.LT);
+        ONE_CHAR.put(">", Token.Kind.GT);
+    }
+
+    private final String sourceName;
+    private final String src;
+    private int pos = 0;
+    private int line = 1;
+    private int column = 1;
+    private int bracketDepth = 0;
+    private final List<Token> tokens = new ArrayList<>();
+
+    public Lexer(String sourceName, String src) {
+        this.sourceName = sourceName;
+        this.src = src;
+    }
+
+    public static List<Token> lex(String sourceName, String src) {
+        Lexer lexer = new Lexer(sourceName, src);
+        lexer.run();
+        return lexer.tokens;
+    }
+
+    private void run() {
+        while (!atEnd()) {
+            char c = peek();
+            if (c == ' ' || c == '\t' || c == '\r') {
+                advance();
+            } else if (c == '\n') {
+                newline();
+            } else if (c == '#') {
+                skipComment();
+            } else if (c == '"' || c == '\'') {
+                string(c);
+            } else if (isDigit(c)) {
+                number();
+            } else if (isIdentStart(c)) {
+                ident();
+            } else {
+                operator();
+            }
+        }
+        tokens.add(new Token(Token.Kind.NEWLINE, "\n", null, Span.at(sourceName, line, column)));
+        tokens.add(new Token(Token.Kind.EOF, "", null, Span.at(sourceName, line, column)));
+    }
+
+    private void newline() {
+        int startLine = line;
+        int startCol = column;
+        advance();
+        if (bracketDepth == 0) {
+            if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).is(Token.Kind.NEWLINE)) {
+                return;
+            }
+            tokens.add(new Token(Token.Kind.NEWLINE, "\n", null, Span.at(sourceName, startLine, startCol)));
+        }
+    }
+
+    private void skipComment() {
+        while (!atEnd() && peek() != '\n') advance();
+    }
+
+    private void string(char quote) {
+        if (quote == '"' && pos + 2 < src.length() && src.charAt(pos + 1) == '"' && src.charAt(pos + 2) == '"') {
+            multilineString();
+            return;
+        }
+        int startLine = line;
+        int startCol = column;
+        advance();
+        StringBuilder raw = new StringBuilder();
+        boolean closed = false;
+        while (!atEnd()) {
+            char c = peek();
+            if (c == '\\') {
+                raw.append(c);
+                advance();
+                if (atEnd()) break;
+                raw.append(peek());
+                advance();
+                continue;
+            }
+            if (c == quote) {
+                advance();
+                closed = true;
+                break;
+            }
+            if (c == '\n') {
+                break;
+            }
+            if (c == '{') {
+                if (peekNext() == '{') {
+                    raw.append("{{");
+                    advance();
+                    advance();
+                    continue;
+                }
+                if (!hasClosingBrace()) {
+                    raw.append(c);
+                    advance();
+                    continue;
+                }
+                raw.append(c);
+                advance();
+                int depth = 1;
+                while (!atEnd() && depth > 0) {
+                    char inner = peek();
+                    if (inner == '\\' && pos + 1 < src.length()) {
+                        raw.append(inner);
+                        advance();
+                        raw.append(peek());
+                        advance();
+                    } else if (inner == '{') {
+                        depth++;
+                        raw.append(inner);
+                        advance();
+                    } else if (inner == '}') {
+                        depth--;
+                        raw.append(inner);
+                        advance();
+                    } else if (inner == '\n') {
+                        break;
+                    } else {
+                        raw.append(inner);
+                        advance();
+                    }
+                }
+                continue;
+            }
+            raw.append(c);
+            advance();
+        }
+        if (!closed) {
+            throw new OqError("unterminated text literal", Span.at(sourceName, startLine, startCol),
+                    "Add a closing " + quote + " at the end of the text.");
+        }
+        Span span = new Span(sourceName, startLine, startCol, line, column);
+        tokens.add(new Token(Token.Kind.STRING, raw.toString(), raw.toString(), span));
+    }
+
+    private boolean hasClosingBrace() {
+        for (int i = pos + 1; i < src.length(); i++) {
+            char c = src.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '}') return true;
+            if (c == '\n') return false;
+        }
+        return false;
+    }
+
+    private void multilineString() {
+        int startLine = line;
+        int startCol = column;
+        advance();
+        advance();
+        advance();
+        StringBuilder raw = new StringBuilder();
+        boolean closed = false;
+        while (!atEnd()) {
+            if (peek() == '"' && pos + 2 < src.length()
+                    && src.charAt(pos + 1) == '"' && src.charAt(pos + 2) == '"') {
+                advance();
+                advance();
+                advance();
+                closed = true;
+                break;
+            }
+            char c = peek();
+            raw.append(c);
+            advance();
+        }
+        if (!closed) {
+            throw new OqError("unterminated multi-line text literal", Span.at(sourceName, startLine, startCol),
+                    "Add a closing \"\"\" after the last line.");
+        }
+        Span span = new Span(sourceName, startLine, startCol, line, column);
+        tokens.add(new Token(Token.Kind.STRING, raw.toString(), raw.toString(), span));
+    }
+
+    private void number() {
+        int startLine = line;
+        int startCol = column;
+        StringBuilder sb = new StringBuilder();
+        boolean decimal = false;
+        while (!atEnd() && (isDigit(peek()) || peek() == '_')) {
+            char c = peek();
+            if (c != '_') sb.append(c);
+            advance();
+        }
+        if (!atEnd() && peek() == '.' && isDigit(peekNext())) {
+            decimal = true;
+            sb.append('.');
+            advance();
+            while (!atEnd() && (isDigit(peek()) || peek() == '_')) {
+                char c = peek();
+                if (c != '_') sb.append(c);
+                advance();
+            }
+        }
+        if (!atEnd() && (peek() == 'e' || peek() == 'E')) {
+            int save = pos;
+            char savePeek = peek();
+            StringBuilder exp = new StringBuilder();
+            exp.append(savePeek);
+            advance();
+            if (!atEnd() && (peek() == '+' || peek() == '-')) {
+                exp.append(peek());
+                advance();
+            }
+            if (!atEnd() && isDigit(peek())) {
+                while (!atEnd() && isDigit(peek())) {
+                    exp.append(peek());
+                    advance();
+                }
+                sb.append(exp);
+                decimal = true;
+            } else {
+                pos = save;
+                column -= exp.length();
+            }
+        }
+        Span span = new Span(sourceName, startLine, startCol, line, column);
+        String text = sb.toString();
+        if (decimal) {
+            tokens.add(new Token(Token.Kind.NUMBER, text, Double.parseDouble(text), span));
+        } else {
+            try {
+                tokens.add(new Token(Token.Kind.NUMBER, text, Long.parseLong(text), span));
+            } catch (NumberFormatException e) {
+                throw new OqError("number " + text + " is too large", span,
+                        "The largest supported whole number is " + Long.MAX_VALUE + ".");
+            }
+        }
+    }
+
+    private void ident() {
+        int startLine = line;
+        int startCol = column;
+        StringBuilder sb = new StringBuilder();
+        while (!atEnd() && isIdentPart(peek())) {
+            sb.append(peek());
+            advance();
+        }
+        String text = sb.toString();
+        Span span = new Span(sourceName, startLine, startCol, line, column);
+        if (KEYWORDS.contains(text)) {
+            tokens.add(new Token(Token.Kind.KEYWORD, text, text, span));
+        } else {
+            tokens.add(new Token(Token.Kind.IDENT, text, text, span));
+        }
+    }
+
+    private void operator() {
+        int startLine = line;
+        int startCol = column;
+        if (pos + 1 < src.length()) {
+            String two = src.substring(pos, pos + 2);
+            Token.Kind kind = TWO_CHAR.get(two);
+            if (kind != null) {
+                advance();
+                advance();
+                if (kind == Token.Kind.LBRACKET) bracketDepth++;
+                tokens.add(new Token(kind, two, two, new Span(sourceName, startLine, startCol, line, column)));
+                return;
+            }
+        }
+        String one = String.valueOf(peek());
+        Token.Kind kind = ONE_CHAR.get(one);
+        if (kind == null) {
+            throw new OqError("unexpected character '" + one + "'", Span.at(sourceName, startLine, startCol),
+                    "Remove it or replace it with a valid operator.");
+        }
+        advance();
+        switch (kind) {
+            case LPAREN, LBRACKET, LBRACE -> bracketDepth++;
+            case RPAREN, RBRACKET, RBRACE -> bracketDepth = Math.max(0, bracketDepth - 1);
+            default -> {
+            }
+        }
+        tokens.add(new Token(kind, one, one, new Span(sourceName, startLine, startCol, line, column)));
+    }
+
+    private boolean atEnd() {
+        return pos >= src.length();
+    }
+
+    private char peek() {
+        return src.charAt(pos);
+    }
+
+    private char peekNext() {
+        return pos + 1 < src.length() ? src.charAt(pos + 1) : '\0';
+    }
+
+    private void advance() {
+        if (atEnd()) return;
+        if (src.charAt(pos) == '\n') {
+            line++;
+            column = 1;
+        } else {
+            column++;
+        }
+        pos++;
+    }
+
+    private static boolean isDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    private static boolean isIdentStart(char c) {
+        return Character.isLetter(c) || c == '_';
+    }
+
+    private static boolean isIdentPart(char c) {
+        return Character.isLetterOrDigit(c) || c == '_';
+    }
+}

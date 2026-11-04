@@ -1,0 +1,7 @@
+xs = [1, 2]
+if xs.length() > 0
+  print "not empty"
+end
+if xs.contains(2)
+  print "has two"
+end

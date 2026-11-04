@@ -1,0 +1,4 @@
+data Pair(a, b)
+p = Pair(1, "one")
+print p.a
+print p.b

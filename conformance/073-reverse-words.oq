@@ -1,0 +1,2 @@
+words = "the quick brown fox".split(" ")
+print words.reverse().join(" ")

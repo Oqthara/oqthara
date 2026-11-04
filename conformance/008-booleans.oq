@@ -1,0 +1,5 @@
+print true
+print false
+print not true
+print true and false
+print true or false

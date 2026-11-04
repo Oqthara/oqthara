@@ -1,0 +1,270 @@
+# Oqthara language reference
+
+Version: 0.1.0-alpha.1
+
+## Running a program
+
+```
+oq hello.oq
+```
+
+A file is a script. It runs from the top. There is no `main`, no class, no package.
+
+```
+print "Hello, World!"
+```
+
+## Values
+
+| Type | Example | Notes |
+|---|---|---|
+| number | `42`, `-7`, `1000` | 64-bit whole numbers |
+| decimal | `3.14`, `1e9` | 64-bit floating point |
+| text | `"hi"`, `'hi'` | UTF-8, immutable |
+| boolean | `true`, `false` | |
+| nothing | `nothing` | the absent value |
+| list | `[1, 2, 3]` | ordered, mutable |
+| map | `{"a": 1}` | key to value, insertion ordered |
+| set | `{1, 2, 3}` | unique values |
+| range | `1 to 5`, `0 until 5` | produced by range expressions |
+| data | `Point(1, 2)` | declared with `data` |
+| function | `x -> x + 1` | first-class values |
+| Java object | `Path("a")` | anything from the JVM |
+
+## Variables
+
+```
+name = "Ada"
+count = 0
+count = count + 1
+```
+
+Assignment creates the variable if it does not exist yet. There is no `let`, no `var`,
+no `const`. Values are snapshotted on assignment: assigning a list to another variable
+does not alias it for math purposes; both names still refer to the same list, and
+methods that mutate a list (`.push`, index assignment) are visible through both.
+
+## Text
+
+```
+greeting = "Hello, {name}!"
+print "2 + 2 = {2 + 2}"
+print "a tab:\tand a newline:\n"
+print "literal braces: {{like this}}"
+```
+
+`{...}` interpolates any expression. `{{` produces a literal `{`.
+
+Useful methods: `.upper()`, `.lower()`, `.trim()`, `.split(",")`, `.lines()`,
+`.words()`, `.chars()`, `.replace(a, b)`, `.contains(s)`, `.starts_with(s)`,
+`.ends_with(s)`, `.slice(from, to)`, `.repeat(n)`, `.pad_start(n, fill)`,
+`.pad_end(n, fill)`, `.number()`.
+
+## Numbers
+
+```
+print 2 + 3        # 5
+print 10 / 4       # 2.5
+print 10 / 2       # 5
+print 7 % 3        # 1
+print 2 ** 10      # 1024
+```
+
+Division produces a whole number when it is exact and a decimal otherwise. There is
+no separate integer division operator.
+
+Built-in functions: `abs`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `min`, `max`,
+`clamp`, `random`.
+
+## Booleans and conditions
+
+```
+if score >= 90
+  print "A"
+else if score >= 80
+  print "B"
+else
+  print "C"
+end
+```
+
+Operators: `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`.
+
+Truthiness: `nothing`, `false`, `0`, `0.0`, `""`, empty collections and empty ranges
+are falsy. Everything else is truthy.
+
+## Loops
+
+```
+for n in 1 to 5
+  print n
+end
+
+for n in 0 until 5
+  print n
+end
+
+for item in ["a", "b"]
+  print item
+end
+
+while running
+  running = step()
+end
+```
+
+`to` includes the end value. `until` excludes it. Loop variables are local to the
+loop body. `break` and `continue` work inside all loops.
+
+## Functions
+
+```
+fun add(a, b)
+  return a + b
+end
+
+print add(2, 3)
+```
+
+A function without an explicit `return` returns `nothing`.
+
+Anonymous functions:
+
+```
+double = x -> x * 2
+add = (a, b) -> a + b
+```
+
+Anonymous functions with a body:
+
+```
+handler = fun(x)
+  y = x * 2
+  return y + 1
+end
+```
+
+Closures capture their environment:
+
+```
+fun counter()
+  n = 0
+  return fun()
+    n = n + 1
+    return n
+  end
+end
+```
+
+## Collections
+
+```
+xs = [1, 2, 3]
+xs.push(4)
+print xs[0]
+print xs[-1]
+xs[1] = 20
+
+m = {"a": 1}
+m["b"] = 2
+print m.keys()
+
+s = {1, 2, 3}
+s.add(4)
+```
+
+List methods: `.length()`, `.push(x)`, `.pop()`, `.first()`, `.last()`, `.get(i)`,
+`.insert(i, x)`, `.remove(i)`, `.map(f)`, `.filter(f)`, `.each(f)`, `.any(f)`,
+`.all(f)`, `.find(f)`, `.find_index(f)`, `.reduce(f, start)`, `.sort()`,
+`.sort(key)`, `.reverse()`, `.join(sep)`, `.contains(x)`, `.unique()`, `.flatten()`,
+`.take(n)`, `.skip(n)`, `.sum()`, `.min()`, `.max()`, `.clone()`.
+
+Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallback)`,
+`.set(k, v)`, `.has(k)`, `.has_value(v)`, `.remove(k)`, `.clear()`, `.each(f)`,
+`.map(f)`, `.clone()`.
+
+Set methods: `.length()`, `.add(x)`, `.remove(x)`, `.has(x)`, `.items()`,
+`.union(other)`, `.intersection(other)`, `.difference(other)`.
+
+## Data types
+
+```
+data Point(x, y)
+data Person(name, age = 0)
+
+p = Point(3, 4)
+print p.x
+p.y = 5
+print p
+```
+
+`data` generates a constructor, field access and mutation, structural equality, a
+hash, and a readable text form. Fields may have defaults. There is no inheritance.
+
+## Ranges
+
+```
+r = 1 to 5
+print length(r)
+for n in r
+  print n
+end
+```
+
+`a to b` includes `b`. `a until b` excludes it. If `a > b`, the range counts down.
+
+## Errors
+
+Any runtime error raises an exception with a precise position:
+
+```
+error: index 5 is out of range for a list of length 3
+  --> app.oq:3:10
+   3 | print xs[5]
+              ^
+
+  help: Valid indexes are 0 to 2, or negative from the end.
+```
+
+Raise your own with `error("message")`. Guard with `assert(condition, "message")`.
+`exit(n)` stops the program with status `n`.
+
+## The standard library
+
+Text: `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `regex`,
+`matches`, `format`.
+
+Files: `read`, `read_lines`, `save`, `append`, `exists`, `list_files`, `delete`,
+`make_dir`, `file_size`, `path_join`, `path_name`, `path_parent`, `cwd`.
+
+JSON: `json_parse(text)`, `json(value)`.
+
+Time: `now()`, `today()`, `datetime()`, `timestamp()`, `sleep(seconds)`.
+
+HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
+`.body` and `.ok`.
+
+Processes: `run_command(line)` returns `.code` and `.output`. `env(name)`,
+`cpu_count()`, `memory_mb()`.
+
+Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
+
+## Interoperability with Java
+
+```
+use java.time.LocalDate
+use java.util.ArrayList
+
+today = LocalDate(2026, 1, 1)
+print today.plusDays(30)
+
+list = ArrayList()
+list.add("a")
+print list.size()
+```
+
+`use` imports a class by fully qualified name. Short names resolve against
+`java.lang` and `java.util`. Constructors, instance methods and static methods are
+called with the same dot syntax used for Oqthara values. Common Java types are
+converted automatically: `int`, `long`, `double`, `boolean`, `char`, `String`,
+`List`, `Map`, `Path` and enums.

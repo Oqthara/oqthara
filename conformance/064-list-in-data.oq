@@ -1,0 +1,7 @@
+data Team(name, members)
+
+t = Team("Core", ["Ada", "Bob"])
+print t.members.length()
+for m in t.members
+  print m
+end

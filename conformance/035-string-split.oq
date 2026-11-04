@@ -1,0 +1,2 @@
+print "a,b,c".split(",")
+print "one two  three".words()

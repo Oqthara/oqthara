@@ -1,0 +1,7 @@
+fun count_down(n)
+  if n == 0
+    return 0
+  end
+  return count_down(n - 1) + 1
+end
+print count_down(100)

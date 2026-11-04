@@ -1,0 +1,9 @@
+for n in 1 to 20
+  if n % 2 == 0
+    if n % 4 == 0
+      print "{n} divisible by 4"
+    else
+      print "{n} even"
+    end
+  end
+end

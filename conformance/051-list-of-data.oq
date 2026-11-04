@@ -1,0 +1,6 @@
+data Item(name, price)
+
+items = [Item("apple", 3), Item("pear", 5)]
+for item in items
+  print "{item.name}: {item.price}"
+end

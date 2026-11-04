@@ -1,0 +1,5 @@
+data User(name)
+
+users = [User("Ada"), User("Bob")]
+names = users.map(u -> u.name)
+print names

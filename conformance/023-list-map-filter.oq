@@ -1,0 +1,4 @@
+xs = [1, 2, 3, 4, 5]
+print xs.map(x -> x * x)
+print xs.filter(x -> x % 2 == 0)
+print xs.sum()

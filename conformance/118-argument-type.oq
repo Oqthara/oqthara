@@ -1,0 +1,7 @@
+print type_of(1)
+print type_of(1.5)
+print type_of("x")
+print type_of(true)
+print type_of(nothing)
+print type_of([1])
+print type_of({"a": 1})

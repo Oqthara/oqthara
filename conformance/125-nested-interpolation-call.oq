@@ -1,0 +1,3 @@
+data Point(x, y)
+p = Point(2, 3)
+print "point is {p}, sum is {p.x + p.y}"

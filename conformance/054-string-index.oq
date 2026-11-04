@@ -1,0 +1,4 @@
+print "abc"[0]
+print "abc"[-1]
+print "abc".slice(1)
+print "abc".slice(0, 2)

@@ -1,0 +1,13 @@
+fun first_negative(xs)
+  result = nothing
+  for x in xs
+    if x < 0
+      result = x
+      break
+    end
+  end
+  return result
+end
+
+print first_negative([1, 2, -3, 4])
+print first_negative([1, 2, 3])

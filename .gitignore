@@ -1,0 +1,14 @@
+.gradle/
+build/
+out/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.kilo/agent-manager.json
+.oqthara-ai/
+tmp/
+node_modules/
+
+# Kilo local state
+.kilo/agent-manager.json

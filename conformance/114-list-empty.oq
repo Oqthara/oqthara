@@ -1,0 +1,4 @@
+xs = []
+print xs
+print length(xs)
+print xs.sum()

@@ -1,0 +1,3 @@
+data Point(x, y)
+p = Point(1, 2)
+print "(x={p.x}, y={p.y})"

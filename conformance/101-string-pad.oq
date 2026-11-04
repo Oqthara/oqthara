@@ -1,0 +1,2 @@
+print "7".pad_start(3, "0")
+print "ab".pad_end(5, ".")

@@ -1,0 +1,3 @@
+print 1.5 + 2.25
+print 10 / 4
+print 3.0 * 2
