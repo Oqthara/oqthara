@@ -1,0 +1,11 @@
+{
+  "latest": "v0.1.0-alpha.1",
+  "versions": [
+    {
+      "tag": "v0.1.0-alpha.1",
+      "path": "0.1.0-alpha.1",
+      "commit": "dbd86804cc8b98f0a85af7c1ee30bfe55e2c31c4",
+      "files": 4
+    }
+  ]
+}

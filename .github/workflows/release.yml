@@ -20,6 +20,26 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Build and test
         run: ./gradlew build :oq-cli:standaloneJar --no-daemon --console=plain
+      - name: Verify the release version matches the tag
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          code=$(grep -oE 'VERSION = "[^"]+"' oq-cli/src/main/java/dev/oqthara/cli/Main.java | head -1 | cut -d'"' -f2)
+          echo "tag=$tag code=$code"
+          test "$tag" = "$code"
+      - name: Verify documentation matches this release
+        run: |
+          set -euo pipefail
+          java -jar oq-cli/build/libs/oq.jar doc .
+          git diff --exit-code docs/stdlib/reference.md
+          python3 scripts/check-links.py
+          python3 scripts/check-docs-sync.py
+      - name: Verify the changelog describes this release
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          grep -q "$version" CHANGELOG.md
+          echo "changelog mentions $version"
       - name: Checksums
         run: |
           cd oq-cli/build/libs

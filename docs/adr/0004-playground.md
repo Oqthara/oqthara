@@ -27,15 +27,17 @@ the install command. No code is executed in the browser.
 
 Groundwork that makes a real playground cheap later:
 
-- programs live in `site/playground.js` as plain strings, so a future backend only has to
-  replace the "run" action;
+- programs live in `site/src/components/Playground.jsx` as plain strings, so a future
+  backend only has to replace the "run" action;
 - the CLI stays a single jar with no native dependencies, which is exactly what CheerpJ
   needs;
-- the site has no build step, so adding a bundle later does not restructure anything.
+- the site is a React application with a real production build (ADR-0008), so adding a
+  browser backend later means adding a component, not restructuring the site.
 
 ## Consequences
 
-- The Pages deployment stays fast and has no third-party scripts.
+- The Pages deployment stays fast: the pages are prerendered to static HTML, so no script
+  is needed to read them.
 - Evaluating CheerpJ or TeaVM is a backlog item with a clear trigger: after 1.0, or
   earlier if a sponsor needs in-browser execution.
 - The site must not claim interactivity it does not have. The text says "copy it and run
