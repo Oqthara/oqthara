@@ -87,12 +87,20 @@ def website_claims_match_reality():
     # The status page must be honest about the backend's boundaries.
     if "compiled" not in status.lower():
         problems.append("status page says nothing about the compiled backend")
-    # Anything listed as a gap must actually be a gap: no function compilation exists yet.
-    lowering = read("oq-compiler/src/main/java/dev/oqthara/compiler/Lowering.java")
-    if "functions are not compiled yet" not in read(
-            "oq-compiler/src/main/java/dev/oqthara/compiler/BytecodeCompiler.java"):
-        if "functions" in status and "fall back" not in status:
-            problems.append("status page does not say functions fall back to the launcher")
+    # Anything listed as a gap must actually be a gap. The compiler either refuses every
+    # function or it emits real function methods; the status page must agree with whichever
+    # is true, in both directions.
+    compiler = read("oq-compiler/src/main/java/dev/oqthara/compiler/BytecodeCompiler.java")
+    if "functions are not compiled yet" in compiler:
+        if "Bytecode for functions" not in status:
+            problems.append("the compiler refuses functions but the status page hides that gap")
+    else:
+        if "functionDescriptor" not in compiler:
+            problems.append("the compiler does not refuse functions but has no function descriptor")
+        if "Calls, closures and user functions fall back" in status:
+            problems.append("the status page still says user functions fall back, but they compile")
+        if "real bytecode for functions" not in status:
+            problems.append("the status page does not say functions compile to real bytecode")
     note("status page claims match the implemented backend")
 
 

@@ -75,20 +75,29 @@ The compiled subset today:
 
 | Supported | Refused (falls back) |
 |---|---|
-| integer, decimal, text and boolean constants | user functions and calls |
-| variables: assignment, reassignment, scoping, shadowing | `data`, `use`, modules |
+| integer, decimal, text and boolean constants | functions that read or write a top-level variable |
+| variables: assignment, reassignment, scoping, shadowing | lambdas, callbacks, closures |
+| top-level `fun` with parameters, `return`, recursion, mutual recursion | `data`, `use`, modules |
 | `+ - * / % **` and unary `-`, unary `+` | collections, indexing, fields |
-| comparisons `== != < <= > >=` | interpolation, lambdas |
+| comparisons `== != < <= > >=` | interpolation |
 | `if` / `else`, including `else if` chains | `try` / `catch` |
 | `while`, `for ... to`, `for ... until`, descending ranges | method calls, `spawn` |
 | `break`, `continue`, nested loops | Java interop |
 | `and`, `or`, `not` with short-circuiting | |
 | `print` / `write` of one expression | |
 
-As of T-0056, **41 of the 197 executable conformance programs** compile to real bytecode and
+As of T-0059, **52 of the 197 executable conformance programs** compile to real bytecode and
 produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
 silently go down.
+
+Functions become real static methods: every parameter is one boxed `java/lang/Object`, the
+descriptor is `(Ljava/lang/Object;...)Ljava/lang/Object;`, calls are `invokestatic` against
+the generated class, and `return` is `areturn`. A function may only use its own parameters
+and locals; reading or assigning a variable of the top-level program is refused by name,
+because that would be a closure or a global mutation and the interpreter handles those with
+an environment chain. Recursion and mutual recursion work because the functions are all
+methods of the same class.
 
 Refusal is deliberate and visible: the compiler returns the name of the instruction it
 cannot lower, `oq build` prints it, and the launcher jar is used instead. A jar that behaved
@@ -98,15 +107,15 @@ differently from `oq run` would be worse than no jar.
 
 The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
 
-1. **Functions.** Calls, parameters, return values and closures are not compiled; they are
-   the largest remaining gap and the reason most programs still fall back.
-2. **Lambdas.** `Lowering` still emits a placeholder constant for a lambda.
-3. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
-4. **Modules as separate artifacts.** Module sources are flattened into one program.
-5. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
+1. **Closures and lambdas.** A function that touches an enclosing variable is refused, and
+   `Lowering` still emits a placeholder constant for a lambda. Captured environments need a
+   generated environment class, which is the next stage of the backend.
+2. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
+3. **Modules as separate artifacts.** Module sources are flattened into one program.
+4. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
    above 10%" gate cannot be evaluated.
 
-Until items 1–5 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
+Until items 1–4 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
 open.
 
 ## How control flow is emitted
