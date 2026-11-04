@@ -98,6 +98,25 @@
       color: var(--muted);
       font-size: 0.9rem;
     }
+    .playground { margin: 24px 0 8px; }
+    .playground-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .playground select, .playground button {
+      background: var(--card); color: var(--fg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; cursor: pointer;
+    }
+    .playground button:hover { border-color: var(--accent); }
+    #playground-code {
+      width: 100%; min-height: 260px; resize: vertical; background: var(--code);
+      color: var(--fg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 18px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem; line-height: 1.55; tab-size: 2;
+    }
+    #playground-code:focus { outline: 2px solid var(--accent2); outline-offset: 1px; }
+    .playground-output {
+      margin-top: 12px; color: var(--muted); font-size: 0.86rem;
+      white-space: pre-wrap; background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px;
+    }
     .install { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
     .install pre { flex: 1; min-width: 280px; margin: 0; }
   </style>
@@ -107,6 +126,7 @@
     <div class="logo">oq<span>thara</span></div>
     <nav>
       <a href="language.md">Docs</a>
+      <a href="#playground">Playground</a>
       <a href="https://github.com/Oqthara/oqthara">GitHub</a>
       <a href="https://github.com/Oqthara/oqthara/releases">Releases</a>
     </nav>
@@ -152,6 +172,26 @@
         <h3>Small surface</h3>
         <p>18 keywords. One way to do each thing. Nothing to memorize twice.</p>
       </div>
+    </div>
+
+    <h2 id="playground">Playground</h2>
+    <p class="lead" style="font-size:1rem">
+      Edit a real program here and copy it. Running it needs the JVM, so the playground
+      stays honest about that instead of pretending to execute in the browser.
+    </p>
+    <div class="playground">
+      <div class="playground-bar">
+        <select id="example-select" aria-label="Choose an example">
+          <option value="hello">hello</option>
+          <option value="fizzbuzz">fizzbuzz</option>
+          <option value="records">records</option>
+          <option value="wordcount">word count</option>
+          <option value="interop">java interop</option>
+        </select>
+        <button id="copy-example" type="button">Copy program</button>
+      </div>
+      <textarea id="playground-code" spellcheck="false" aria-label="Oqthara program"></textarea>
+      <pre id="playground-output" class="playground-output"></pre>
     </div>
 
     <h2>What it looks like</h2>
@@ -211,6 +251,7 @@ oq check file.oq  <span class="com"># parse without running</span></code></pre>
     <p><a href="language.md">Read the language reference →</a></p>
   </main>
 
+  <script src="playground.js"></script>
   <footer>
     Oqthara is MIT licensed. Built on the JVM.
   </footer>

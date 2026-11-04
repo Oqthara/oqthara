@@ -23,11 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: actions/configure-pages@v6
+      - name: Check documentation links
+        run: python3 scripts/check-links.py
       - name: Assemble site
         run: |
           mkdir -p _site
           cp -R site/* _site/
-          cp docs/spec/language.md _site/language.md
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
