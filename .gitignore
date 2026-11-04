@@ -19,3 +19,5 @@ node_modules/
 
 # Jazzer generated corpus (CI artifacts, not source)
 .cifuzz-corpus/
+
+site/_site/
