@@ -178,7 +178,13 @@ counts = {}
   <span class="fn">print</span> <span class="str">"{word}: {counts[word]}"</span>
 <span class="kw">end</span></code></pre>
 
-    <pre><code><span class="kw">use</span> java.time.LocalDate
+    <pre><code><span class="kw">try</span>
+  parse(<span class="str">"not json"</span>)
+<span class="kw">catch</span> err
+  <span class="fn">print</span> <span class="str">"line {err.line}: {err.message}"</span>
+<span class="kw">end</span>
+
+<span class="kw">use</span> java.time.LocalDate
 
 start = LocalDate(<span class="num">2026</span>, <span class="num">1</span>, <span class="num">1</span>)
 <span class="fn">print</span> <span class="str">"days: {LocalDate.now().toEpochDay() - start.toEpochDay()}"</span></code></pre>

@@ -62,6 +62,7 @@ public final class Parser {
                 yield new Ast.Continue(token.span());
             }
             case "use" -> useStatement(token);
+            case "try" -> tryStatement(token);
             default -> throw error(token, "unexpected keyword '" + token.lexeme() + "'",
                     "This keyword cannot start a statement.");
         };
@@ -219,6 +220,21 @@ public final class Parser {
         return new Ast.Return(value, keyword.span());
     }
 
+    private Ast.Stmt tryStatement(Token keyword) {
+        endStatement();
+        List<Ast.Stmt> body = block();
+        expectKeyword("catch", "after the try block");
+        String errorName = "error";
+        if (check(Token.Kind.IDENT)) {
+            errorName = advance().lexeme();
+        }
+        endStatement();
+        List<Ast.Stmt> handler = block();
+        expectKeyword("end", "to close this 'try'");
+        endStatement();
+        return new Ast.TryStmt(body, errorName, handler, keyword.span());
+    }
+
     private Ast.Stmt useStatement(Token keyword) {
         StringBuilder path = new StringBuilder();
         if (check(Token.Kind.STRING)) {
@@ -241,7 +257,8 @@ public final class Parser {
         List<Ast.Stmt> statements = new ArrayList<>();
         skipSeparators();
         while (!check(Token.Kind.EOF) && !(check(Token.Kind.KEYWORD)
-                && (peek().lexeme().equals("end") || peek().lexeme().equals("else")))) {
+                && (peek().lexeme().equals("end") || peek().lexeme().equals("else")
+                || peek().lexeme().equals("catch")))) {
             statements.add(statement());
             skipSeparators();
         }

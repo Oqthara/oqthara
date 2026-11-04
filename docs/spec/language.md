@@ -215,7 +215,21 @@ end
 
 ## Errors
 
-Any runtime error raises an exception with a precise position:
+Any runtime error raises an exception with a precise position. Catch it with `try`:
+
+```
+try
+  risky()
+catch err
+  print "failed: {err.message} at line {err.line}"
+end
+```
+
+`err` is a data value with `message`, `hint`, `file`, `line` and `column`. If the handler
+itself raises, the new error propagates; `try` does not swallow silently. There is no
+`finally` and no typed catch: one handler per `try` keeps the surface small.
+
+Uncaught errors stop the program with status 1 and a diagnostic like this:
 
 ```
 error: index 5 is out of range for a list of length 3

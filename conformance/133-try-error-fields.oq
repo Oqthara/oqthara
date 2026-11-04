@@ -1,0 +1,7 @@
+try
+  print 1 / 0
+catch err
+  print err.message
+  print err.line
+  print err.file
+end

@@ -15,7 +15,7 @@ public final class Ast {
     public sealed interface Stmt extends Node permits
             VarDecl, Assign, CompoundAssign, If, While, ForEach, ForRange,
             FuncDecl, Return, Break, Continue, DataDecl, ExprStmt, IndexAssign, FieldAssign,
-            UseStmt, ImportStmt, Command {
+            UseStmt, ImportStmt, Command, TryStmt {
     }
 
     public sealed interface Expr extends Node permits
@@ -80,6 +80,9 @@ public final class Ast {
     }
 
     public record Command(String name, List<Expr> args, Span span) implements Stmt {
+    }
+
+    public record TryStmt(List<Stmt> body, String errorName, List<Stmt> handler, Span span) implements Stmt {
     }
 
     public record UseStmt(String path, Span span) implements Stmt {

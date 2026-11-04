@@ -1,0 +1,6 @@
+try
+  print "inside"
+catch err
+  print "handler must not run"
+end
+print "after"

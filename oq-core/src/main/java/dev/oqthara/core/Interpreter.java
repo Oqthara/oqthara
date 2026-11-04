@@ -251,6 +251,15 @@ public final class Interpreter implements OqHost {
                             assign.span());
                 }
             }
+            case Ast.TryStmt attempt -> {
+                try {
+                    executeBlock(attempt.body(), new Env(env));
+                } catch (OqError error) {
+                    Env local = new Env(env);
+                    local.defineConst(attempt.errorName(), error.toValue());
+                    executeBlock(attempt.handler(), local);
+                }
+            }
             case Ast.UseStmt use -> javaTypes.put(simpleName(use.path()), loadClass(use.path(), use.span()));
             case Ast.ImportStmt ignored -> {
                 // Modules are resolved by the CLI before execution.

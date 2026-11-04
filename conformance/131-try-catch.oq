@@ -1,0 +1,6 @@
+try
+  print [1, 2][5]
+catch err
+  print "caught: {err.message}"
+end
+print "after"

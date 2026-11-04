@@ -1,0 +1,10 @@
+try
+  try
+    error("inner")
+  catch e
+    print "first: {e.message}"
+    error("outer")
+  end
+catch e2
+  print "second: {e2.message}"
+end

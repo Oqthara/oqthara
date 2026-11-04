@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `oq test` discovers `test_*.oq`, `*_test.oq` and anything under `tests/`, prints a
   pass/fail line per file, and exits non-zero when a test fails.
 - `examples/tests/` contains the first language-level test suite.
+- `try`/`catch` with an error value exposing `message`, `hint`, `file`, `line`, `column`.
 
 ## [0.1.0-alpha.1] - 2026-11-04
 

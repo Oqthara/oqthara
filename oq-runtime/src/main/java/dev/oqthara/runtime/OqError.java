@@ -27,4 +27,14 @@ public class OqError extends RuntimeException {
     public static OqError type(String message, Span span) {
         return new OqError(message, span);
     }
+
+    public OqData toValue() {
+        java.util.LinkedHashMap<String, Object> fields = new java.util.LinkedHashMap<>();
+        fields.put("message", getMessage());
+        fields.put("hint", hint);
+        fields.put("line", (long) span.line());
+        fields.put("column", (long) span.column());
+        fields.put("file", span.source());
+        return new OqData("Error", fields);
+    }
 }
