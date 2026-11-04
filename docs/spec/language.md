@@ -321,6 +321,30 @@ oq build hello.oq --emit-ir  # print the IR
 command prints an explicit diagnostic and exits with code 3 instead of crashing; `oq run`
 always works, because the interpreter needs nothing extra.
 
+## Installation
+
+```bash
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/Oqthara/oqthara/main/scripts/install.sh | bash
+
+# Windows PowerShell
+irm https://raw.githubusercontent.com/Oqthara/oqthara/main/scripts/install.ps1 | iex
+
+# Docker
+docker run --rm -v "$PWD:/work" oqthara/oq:latest hello.oq
+```
+
+From source, the native launcher is built with `jpackage`:
+
+```bash
+./gradlew :oq-cli:packageApp
+# macOS:   oq-cli/build/package/oq.app/Contents/MacOS/oq
+# Windows: oq-cli/build/package/oq/oq.exe
+# Linux:   oq-cli/build/package/oq/bin/oq
+```
+
+The launcher embeds a Java runtime, so the machine it is copied to does not need a JDK.
+
 ## Testing
 
 Any file named `test_*.oq`, `*_test.oq`, or any `.oq` file inside a `tests/` directory is

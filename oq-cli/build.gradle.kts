@@ -39,3 +39,37 @@ tasks.register<Jar>("standaloneJar") {
             .map { zipTree(it) }
     })
 }
+
+val packageApp by tasks.registering(Exec::class) {
+    group = "distribution"
+    description = "Builds a native launcher with jpackage (JDK 17+). Run per OS."
+    dependsOn("standaloneJar")
+    val outDir = layout.buildDirectory.dir("package").get().asFile
+    val jar = layout.buildDirectory.file("libs/oq.jar").get().asFile
+    doFirst {
+        outDir.deleteRecursively()
+        outDir.mkdirs()
+    }
+    commandLine(
+        "${System.getProperty("java.home")}/bin/jpackage",
+        "--type", "app-image",
+        "--name", "oq",
+        "--input", jar.parentFile.absolutePath,
+        "--main-jar", jar.name,
+        "--main-class", "dev.oqthara.cli.Main",
+        "--app-version", "1.0.0",
+        "--dest", outDir.absolutePath,
+        "--java-options", "-Xmx512m",
+    )
+    isIgnoreExitValue = false
+    doLast {
+        val hint = when {
+            System.getProperty("os.name").lowercase().contains("mac") ->
+                "$outDir/oq.app/Contents/MacOS/oq"
+            System.getProperty("os.name").lowercase().contains("win") ->
+                "$outDir/oq/oq.exe"
+            else -> "$outDir/oq/bin/oq"
+        }
+        println("native launcher: $hint")
+    }
+}

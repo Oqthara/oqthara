@@ -22,6 +22,8 @@ Requires Java 21 or newer.
 curl -fsSL https://raw.githubusercontent.com/Oqthara/oqthara/main/scripts/install.sh | bash
 ```
 
+On Windows: `irm https://raw.githubusercontent.com/Oqthara/oqthara/main/scripts/install.ps1 | iex`
+
 Or build from source:
 
 ```bash
@@ -29,6 +31,13 @@ git clone https://github.com/Oqthara/oqthara
 cd oqthara
 ./gradlew :oq-cli:standaloneJar
 java -jar oq-cli/build/libs/oq.jar examples/hello.oq
+./gradlew :oq-cli:packageApp   # native launcher with an embedded JRE
+```
+
+Docker:
+
+```bash
+docker run --rm -v "$PWD:/work" oqthara/oq:latest hello.oq
 ```
 
 ## A tour
