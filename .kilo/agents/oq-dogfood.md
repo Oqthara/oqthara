@@ -1,6 +1,6 @@
 ---
 description: Writes real Oqthara programs to find gaps and friction.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-dogfood

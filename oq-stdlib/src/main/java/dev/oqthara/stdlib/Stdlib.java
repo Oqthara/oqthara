@@ -532,7 +532,12 @@ public final class Stdlib {
 
     private static Path resolve(OqHost host, Object value) {
         Path path = Path.of(Values.display(value));
-        return path.isAbsolute() ? path : Path.of("").toAbsolutePath().resolve(path);
+        if (path.isAbsolute()) return path;
+        // Relative paths resolve against the interpreter's working directory, so `oq run`
+        // and a generated jar behave identically no matter where the process was started.
+        Path base = host.workingDirectory();
+        if (base == null) base = Path.of("").toAbsolutePath();
+        return base.toAbsolutePath().resolve(path).normalize();
     }
 
     private static Pattern compilePattern(Object value, Span span) {

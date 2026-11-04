@@ -29,6 +29,10 @@ subprojects {
 
     tasks.withType<Test>().configureEach {
         useJUnitPlatform()
+        // Deterministic text handling: the suite compares generated output byte for byte,
+        // so the test JVM must not depend on the platform default charset.
+        systemProperty("file.encoding", "UTF-8")
+        jvmArgs("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8")
         testLogging {
             events("failed", "skipped")
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

@@ -130,7 +130,17 @@ def stop_requested() -> bool:
     return STOP_FILE.exists()
 
 
-def run_one_cycle(binary: str, agent: str, timeout: int) -> int:
+def read_cycle_state() -> tuple[int, str, str]:
+    """Returns (cycle, checkpoint, status) from state.json, or zeros when unreadable."""
+    state = read_state()
+    try:
+        cycle = int(state.get("cycle") or 0)
+    except (TypeError, ValueError):
+        cycle = 0
+    return cycle, str(state.get("last_checkpoint") or "?"), str(state.get("status") or "?")
+
+
+def run_one_cycle(binary: str, agent: str, timeout: int) -> tuple[int, str, str]:
     age = heartbeat_age()
     if age is not None and age > HEARTBEAT_STALE_SECONDS:
         log(f"STALLED heartbeat_age={age}s before start")
@@ -142,12 +152,18 @@ def run_one_cycle(binary: str, agent: str, timeout: int) -> int:
         code = completed.returncode
     except subprocess.TimeoutExpired:
         log(f"TIMEOUT after {timeout}s; the process was terminated")
-        return 124
+        return 124, "timeout", "unknown"
     except OSError as error:
         log(f"ERROR cannot start kilo: {error}")
-        return 127
+        return 127, "error", "unknown"
     log(f"EXIT code={code}")
-    return code
+    cycle, checkpoint, status = read_cycle_state()
+    log(f"STATE cycle={cycle} checkpoint={checkpoint} status={status}")
+    print(
+        f"CYCLE | cycle={cycle} | exit={code} | checkpoint={checkpoint} | status={status}",
+        flush=True,
+    )
+    return code, checkpoint, status
 
 
 def parse_args(argv: list[str]) -> dict:
@@ -165,6 +181,12 @@ def parse_args(argv: list[str]) -> dict:
 
 def print_help() -> None:
     print(__doc__.strip())
+
+
+def persist_ok() -> bool:
+    """A cycle counts as persisted when state.json parses and its heartbeat is fresh."""
+    age = heartbeat_age()
+    return age is not None and age < 900
 
 
 def main() -> int:
@@ -218,7 +240,9 @@ def main() -> int:
 
             cycle += 1
             log(f"CYCLE {cycle} begin")
-            code = run_one_cycle(binary, agent, timeout)
+            code, _checkpoint, _status = run_one_cycle(binary, agent, timeout)
+            if not persist_ok():
+                log("WARNING state.json did not advance; a later cycle must recover")
 
             if code == 0:
                 consecutive_failures = 0

@@ -1,6 +1,6 @@
 ---
 description: README, tutorial, reference prose, generated docs, site and documented examples.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-docs

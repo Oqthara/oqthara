@@ -1,6 +1,6 @@
 ---
 description: Language design, specification, ADRs and the simplicity budget. Use for syntax or semantics decisions.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-architect

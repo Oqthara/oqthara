@@ -1,6 +1,6 @@
 ---
 description: The oq CLI, REPL, formatter, test runner, doc generator and editor support.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-tooling

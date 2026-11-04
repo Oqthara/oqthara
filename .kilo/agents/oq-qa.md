@@ -1,6 +1,6 @@
 ---
 description: Tests, conformance cases, fuzzing, coverage and benchmarks.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-qa

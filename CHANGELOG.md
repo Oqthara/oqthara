@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq build` now produces an executable jar: a real class file written by Oqthara's own
+  emitter, the interpreter and stdlib bundled in, the program source and its original name
+  embedded. `java -jar app.jar` matches `oq run app.oq` exactly across all 28 deterministic
+  examples. Works on JDK 21 and 25, with no external library.
+- Relative file paths resolve against the program's directory, so runs are identical from
+  any working directory.
+- Generated jars pass program arguments through (`args()` works), encode the constant pool
+  as modified UTF-8 so emoji survive, embed module sources, and reject unsafe jar entry
+  names.
 - `oq build` now lowers `break` and `continue` to real labeled jumps; nested loops target
   the innermost loop and the divergence warning is gone.
 - `docs/spec/backend.md` records exactly what `oq build` does not do yet (no class files,

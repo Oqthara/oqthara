@@ -1,6 +1,6 @@
 ---
 description: GitHub Actions, CircleCI, Docker, versioning, changelog and releases.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-ci-release
