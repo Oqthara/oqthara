@@ -92,6 +92,12 @@ public final class Interpreter implements OqHost {
         } catch (OqFunction.ReturnSignal signal) {
             throw new OqError("'return' outside a function", Span.synthetic(),
                     "Put it inside a 'fun' block.");
+        } catch (BreakSignal signal) {
+            throw new OqError("'break' outside a loop", signal.span(),
+                    "'break' only works inside 'for' or 'while'. Remove it, or wrap the code in a loop.");
+        } catch (ContinueSignal signal) {
+            throw new OqError("'continue' outside a loop", signal.span(),
+                    "'continue' only works inside 'for' or 'while'.");
         }
         return null;
     }
@@ -214,8 +220,8 @@ public final class Interpreter implements OqHost {
             }
             case Ast.Return ret -> throw new OqFunction.ReturnSignal(
                     ret.value() == null ? null : evaluate(ret.value(), env));
-            case Ast.Break ignored -> throw new BreakSignal();
-            case Ast.Continue ignored -> throw new ContinueSignal();
+            case Ast.Break brk -> throw new BreakSignal(brk.span());
+            case Ast.Continue cont -> throw new ContinueSignal(cont.span());
             case Ast.DataDecl data -> {
                 if (!env.hasLocal(data.name())) {
                     List<Ast.FieldDef> fields = data.fields();
@@ -506,15 +512,29 @@ public final class Interpreter implements OqHost {
 
     public static final class BreakSignal extends RuntimeException {
         private static final long serialVersionUID = 1L;
-        public BreakSignal() {
+        private final transient Span span;
+
+        public BreakSignal(Span span) {
             super(null, null, false, false);
+            this.span = span;
+        }
+
+        public Span span() {
+            return span;
         }
     }
 
     public static final class ContinueSignal extends RuntimeException {
         private static final long serialVersionUID = 1L;
-        public ContinueSignal() {
+        private final transient Span span;
+
+        public ContinueSignal(Span span) {
             super(null, null, false, false);
+            this.span = span;
+        }
+
+        public Span span() {
+            return span;
         }
     }
 

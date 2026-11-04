@@ -120,6 +120,10 @@ public final class JavaBridge {
     }
 
     public static Object readField(Object receiver, String name, Span span) {
+        if (receiver instanceof Long || receiver instanceof Double || receiver instanceof Boolean
+                || receiver instanceof String) {
+            return NOT_FOUND;
+        }
         try {
             Field field = receiver.getClass().getField(name);
             return normalize(field.get(receiver));

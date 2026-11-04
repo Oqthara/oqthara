@@ -168,13 +168,25 @@ public final class Values {
             return Integer.compare(x.size(), y.size());
         }
         throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
-                "Comparison works between two numbers, two texts, two booleans or two lists.");
+                "Comparison works between two numbers, two texts, two booleans or two lists."
+                        + hintFor(a, b));
     }
 
     public static Object negate(Object value, Span span) {
         if (value instanceof Long l) return -l;
         if (value instanceof Double d) return -d;
-        throw new OqError("cannot negate " + typeName(value), span, "The '-' operator needs a number.");
+        throw new OqError("cannot negate " + typeName(value), span,
+                "The '-' operator needs a number, but this is " + typeName(value) + ". "
+                        + "Use text(number) to convert a number to text, or number(text) the other way.");
+    }
+
+    private static String hintFor(Object a, Object b) {
+        if (isNumber(a) != isNumber(b)) {
+            return " One side is a number and the other is " + typeName(isNumber(a) ? b : a)
+                    + "; convert it with number(...) or text(...).";
+        }
+        if (a instanceof String && b instanceof String) return "";
+        return " Both sides must be the same kind of value.";
     }
 
     public static Object not(Object value) {
@@ -372,7 +384,10 @@ public final class Values {
             return chars;
         }
         throw new OqError("cannot loop over " + typeName(value), span,
-                "Loops work with lists, sets, maps (keys), ranges and text.");
+                "Loops work with lists, sets, maps (keys), ranges and text. "
+                        + (isNumber(value)
+                        ? "For a count, use a range: for n in 1 to " + display(value)
+                        : "This is " + typeName(value) + "."));
     }
 
     public static boolean contains(Object container, Object item, Span span) {
