@@ -47,6 +47,15 @@ deeply nested parentheses, module imports that fail, emoji, NUL bytes. They are 
 Jazzer's own generated corpus is cached between runs and uploaded as a CI artifact
 (`build/fuzz-artifacts`). Crashing inputs are preserved there before any fix is made.
 
+## Findings so far
+
+| Cycle | Target | Finding | Fixed by |
+|---|---|---|---|
+| 17 | `fuzzParserNesting` | 390 levels of nested parentheses crashed `oq check` with a raw `StackOverflowError` and exit 70 | explicit `MAX_NESTING = 128` guard that raises a normal diagnostic, plus regression tests at depths 200/390/500/2000 |
+
+This is the whole point of fuzzing: the defect was invisible to unit tests and would have
+been reported as "internal error: StackOverflowError" to a user.
+
 ## Adding a target
 
 1. Add the `@FuzzTest` method to a class under `<module>/src/fuzz/java`.
@@ -59,5 +68,7 @@ Jazzer's own generated corpus is cached between runs and uploaded as a CI artifa
 
 - JSON parsing and the rest of the stdlib (next iteration).
 - Semantic analysis, which has no separate pass yet.
+- The same nesting limit does not yet exist for deeply nested *statements* (`if` inside `if`),
+  only for expressions. Tracked as T-0052.
 - Class files are checked for magic only; full verification happens when the JVM loads the
   generated class in `BytecodeCompilerTest`.

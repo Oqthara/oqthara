@@ -10,9 +10,18 @@ import java.util.Set;
 public final class Parser {
     private static final Set<String> COMMANDS = Set.of("print", "write", "assert");
 
+    /**
+     * Maximum expression nesting. The parser is recursive descent, so hostile input such as
+     * "((((...1...))))" would otherwise overflow the JVM stack and crash without a
+     * diagnostic. The limit is far above any real program, and exceeding it produces a
+     * normal Oqthara error instead of a StackOverflowError.
+     */
+    private static final int MAX_NESTING = 128;
+
     private final List<Token> tokens;
     private final String sourceName;
     private int current = 0;
+    private int nesting = 0;
 
     public Parser(String sourceName, List<Token> tokens) {
         this.sourceName = sourceName;
@@ -438,6 +447,24 @@ public final class Parser {
     }
 
     private Ast.Expr primary() {
+        enterNesting();
+        try {
+            return primaryInner();
+        } finally {
+            nesting--;
+        }
+    }
+
+    private void enterNesting() {
+        if (++nesting > MAX_NESTING) {
+            nesting--;
+            throw error(peek(), "expression is nested too deeply",
+                    "The limit is " + MAX_NESTING + " levels. Split the expression into "
+                            + "named values or smaller functions.");
+        }
+    }
+
+    private Ast.Expr primaryInner() {
         if (match(Token.Kind.NUMBER)) {
             Token token = previous();
             return new Ast.NumberLit(token.literal(), token.span());

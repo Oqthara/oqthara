@@ -32,6 +32,27 @@ class CuratedCorpusTest {
         }
     }
 
+    @Test
+    void deeplyNestedExpressionIsRejectedWithADiagnostic() {
+        // Found by Jazzer: 390 levels of parentheses overflowed the JVM stack and crashed
+        // check with a raw StackOverflowError instead of a diagnostic.
+        for (int depth : new int[]{200, 390, 500, 2000}) {
+            String source = "x = " + "(".repeat(depth) + "1" + ")".repeat(depth);
+            OqError error = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                    () -> Parser.parse("<deep>", source),
+                    "depth " + depth + " must produce an OqError, not crash");
+            assertTrue(error.getMessage().contains("nested too deeply"),
+                    "unexpected message at depth " + depth + ": " + error.getMessage());
+        }
+    }
+
+    @Test
+    void reasonableNestingStillParses() {
+        int depth = 100;
+        String source = "x = " + "(".repeat(depth) + "1" + ")".repeat(depth);
+        Parser.parse("<deep>", source);
+    }
+
     private static List<String> load() throws IOException {
         String resource = "/dev/oqthara/core/curated-cases.txt";
         try (InputStream in = CuratedCorpusTest.class.getResourceAsStream(resource)) {
