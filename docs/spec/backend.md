@@ -38,8 +38,13 @@ anywhere.
 | `oq/main.oq` | the program source |
 | `oq/source-name.txt` | the original file name, so diagnostics match `oq run` |
 
-`Program.main` executes three JVM instructions: load the source string, call
-`EmbeddedMain.run`, return.
+`Program.main` loads the source string, loads its own `String[] args`, calls
+`EmbeddedMain.runWithArgs` and returns, so program arguments, `args()`, exit codes and
+diagnostics all behave exactly as under `oq run`.
+
+The constant pool uses **modified UTF-8** (JVMS 4.4.7), so emoji and other supplementary
+characters survive. Jar entry names are validated before being copied, rejecting absolute
+paths, drive letters and `..` segments.
 
 ## What "compiled" does **not** mean yet
 
@@ -98,7 +103,8 @@ stdout and exit code equal the interpreter's. Any divergence fails the build. `p
 is excluded because it prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they
 are interactive or need arguments.
 
-Current result: **28 of 28 deterministic examples match exactly**.
+Current result: **28 of 28 deterministic examples match exactly**, plus targeted tests for
+non-BMP text, program arguments, module embedding and jar-entry safety.
 
 ## Order of work
 

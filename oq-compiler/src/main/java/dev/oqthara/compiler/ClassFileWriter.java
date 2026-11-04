@@ -29,17 +29,17 @@ public final class ClassFileWriter {
      * {@code public static void main(String[] args) { EmbeddedMain.run(source); }}
      */
     public static byte[] programClass(String className, String source) {
-        if (source.length() > 65535) {
+        if (modifiedUtf8(source).length > 65535) {
             throw new IllegalArgumentException(
-                    "program source is too large for one constant pool entry (" + source.length() + " bytes)");
+                    "program source is too large for one constant pool entry");
         }
         ConstantPool pool = new ConstantPool();
         int objectUtf8 = pool.utf8("java/lang/Object");
         int objectClass = pool.classRef(objectUtf8);
         int runnerUtf8 = pool.utf8("dev/oqthara/cli/EmbeddedMain");
         int runnerClass = pool.classRef(runnerUtf8);
-        int runName = pool.utf8("run");
-        int runDescriptor = pool.utf8("(Ljava/lang/String;)V");
+        int runName = pool.utf8("runWithArgs");
+        int runDescriptor = pool.utf8("(Ljava/lang/String;[Ljava/lang/String;)V");
         int runNameAndType = pool.nameAndType(runName, runDescriptor);
         int runMethod = pool.methodRef(runnerClass, runNameAndType);
         int thisUtf8 = pool.utf8(className.replace('.', '/'));
@@ -53,6 +53,7 @@ public final class ClassFileWriter {
 
         ByteArrayOutputStream code = new ByteArrayOutputStream();
         code.writeBytes(new byte[]{0x13, hi(sourceIndex), lo(sourceIndex)});   // ldc_w source
+        code.writeBytes(new byte[]{0x2A});                                     // aload_0 (String[] args)
         code.writeBytes(new byte[]{(byte) 0xB8, hi(runMethod), lo(runMethod)}); // invokestatic
         code.writeBytes(new byte[]{(byte) 0xB1});                              // return
         byte[] codeBytes = code.toByteArray();
@@ -94,6 +95,31 @@ public final class ClassFileWriter {
         }
     }
 
+    /**
+     * JVMS 4.4.7 requires "modified UTF-8" in the constant pool: NUL is encoded as two bytes
+     * and supplementary characters are stored as two surrogate code units, each encoded
+     * separately. Plain UTF-8 produces an illegal constant pool for emoji and similar input.
+     */
+    static byte[] modifiedUtf8(String text) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(text.length() + 8);
+        for (int i = 0; i < text.length(); i++) {
+            int c = text.charAt(i);
+            if (c >= 0x0001 && c <= 0x007F) {
+                out.write(c);
+            } else if (c == 0x0000 || (c >= 0x0080 && c <= 0x07FF)) {
+                out.write(0xC0 | ((c >> 6) & 0x1F));
+                out.write(0x80 | (c & 0x3F));
+            } else {
+                // A supplementary character appears as two chars (surrogates) and is encoded
+                // twice by this branch, which is exactly what modified UTF-8 requires.
+                out.write(0xE0 | ((c >> 12) & 0x0F));
+                out.write(0x80 | ((c >> 6) & 0x3F));
+                out.write(0x80 | (c & 0x3F));
+            }
+        }
+        return out.toByteArray();
+    }
+
     private static byte hi(int value) {
         return (byte) ((value >>> 8) & 0xFF);
     }
@@ -115,7 +141,7 @@ public final class ClassFileWriter {
         private int nextIndex = 1;
 
         int utf8(String text) {
-            byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = modifiedUtf8(text);
             if (bytes.length > 65535) throw new IllegalArgumentException("constant too long");
             try {
                 data.writeByte(TAG_UTF8);

@@ -73,6 +73,10 @@ public final class JarBuilder {
 
             for (ClassSource classSource : classSources()) {
                 for (String entryName : classSource.entries()) {
+                    if (!isSafeEntryName(entryName)) {
+                        skipped++;
+                        continue;
+                    }
                     if (!wanted(entryName) || written.contains(entryName)) continue;
                     byte[] bytes = classSource.read(entryName);
                     if (bytes == null) {
@@ -96,6 +100,18 @@ public final class JarBuilder {
             jar.closeEntry();
         }
         return new Result(output, classes, skipped);
+    }
+
+    /** Rejects absolute paths, drive letters and any ".." segment in a jar entry name. */
+    public static boolean isSafeEntryName(String entry) {
+        if (entry == null || entry.isBlank()) return false;
+        if (entry.startsWith("/") || entry.startsWith("\\")) return false;
+        if (entry.length() > 1 && entry.charAt(1) == ':') return false;
+        String normalized = entry.replace('\\', '/');
+        for (String segment : normalized.split("/")) {
+            if (segment.equals("..")) return false;
+        }
+        return true;
     }
 
     private static boolean wanted(String entry) {

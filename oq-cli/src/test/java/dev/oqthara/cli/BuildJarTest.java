@@ -120,6 +120,38 @@ class BuildJarTest {
     }
 
     @Test
+    void nonBmpTextSurvivesTheConstantPool(@TempDir Path dir) throws Exception {
+        // Reviewer finding A: the constant pool needs modified UTF-8, not plain UTF-8.
+        String source = "print \"party: \uD83C\uDF89\"\nprint \"dash: \u2014\"";
+        Path jar = dir.resolve("unicode.jar");
+        JarBuilder.build(jar, "oq.generated.Program", source, "unicode.oq");
+        ProcessResult result = runJar(jar);
+        assertEquals(0, result.exit(), result.stderr());
+        assertTrue(result.stdout().contains("\uD83C\uDF89"), result.stdout());
+        assertTrue(result.stdout().contains("\u2014"), result.stdout());
+    }
+
+    @Test
+    void programArgumentsReachTheProgram(@TempDir Path dir) throws Exception {
+        // Reviewer finding D: generated main dropped argv.
+        Path jar = dir.resolve("args.jar");
+        JarBuilder.build(jar, "oq.generated.Program", "print args()", "args.oq");
+        ProcessResult result = runJar(jar, dir, "one", "two");
+        assertEquals(0, result.exit(), result.stderr());
+        assertEquals("[\"one\", \"two\"]", result.stdout().strip());
+    }
+
+    @Test
+    void unsafeJarEntryNamesAreRejected() {
+        // Reviewer finding B: zip-slip protection.
+        assertTrue(JarBuilder.isSafeEntryName("dev/oqthara/core/Interpreter.class"));
+        for (String bad : List.of("../evil.class", "dev/../../evil.class",
+                "/abs/evil.class", "C:/evil.class", "..\\evil.class", "")) {
+            assertTrue(!JarBuilder.isSafeEntryName(bad), "should reject: " + bad);
+        }
+    }
+
+    @Test
     void relativeReadsResolveAgainstTheProgramDirectory(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("data.txt"), "payload");
         Files.writeString(dir.resolve("reader.oq"), "print read(\"data.txt\")");
@@ -175,10 +207,13 @@ class BuildJarTest {
         return runJar(jar, jar.getParent());
     }
 
-    private ProcessResult runJar(Path jar, Path workingDirectory) throws Exception {
-        ProcessBuilder builder = new ProcessBuilder(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-jar", jar.toAbsolutePath().toString());
+    private ProcessResult runJar(Path jar, Path workingDirectory, String... args) throws Exception {
+        List<String> command = new java.util.ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.add("-jar");
+        command.add(jar.toAbsolutePath().toString());
+        command.addAll(List.of(args));
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(workingDirectory.toFile());
         builder.environment().put("OQ_WORKDIR", workingDirectory.toAbsolutePath().toString());
         Process process = builder.start();
