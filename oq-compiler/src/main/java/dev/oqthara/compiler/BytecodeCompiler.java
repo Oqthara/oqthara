@@ -4,28 +4,63 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
- * Emits straight-line JVM bytecode for a deliberately small subset of Oqthara:
- * {@code print <arithmetic expression>} and {@code write <expression>}, where expressions are
- * integer/decimal/text constants, {@code + - * / %}, unary minus and parentheses.
+ * Emits real JVM bytecode for a subset of Oqthara: constants, variables, arithmetic,
+ * comparisons, {@code print}, {@code if}, {@code while}, {@code for} and the boolean
+ * operators.
  *
- * <p>Everything else is refused with a {@link NotSupportedException}, so the caller can fall
- * back to the interpreter-launcher jar. Refusing is a feature: a compiled jar that behaves
- * differently from {@code oq run} would be worse than no jar at all.
+ * <p>Everything compiled here runs without the interpreter. Anything else is refused with a
+ * {@link NotSupportedException} so {@code oq build} can fall back to the launcher and print
+ * why. Refusing is a feature: a jar that behaves differently from {@code oq run} would be
+ * worse than no jar at all.
  *
- * <p>There are no branches, so no {@code StackMapTable} is required and the JVM verifier
- * accepts the class without stack-map frames.
+ * <h2>Value representation</h2>
+ * Every Oqthara value on the operand stack and in a local variable is a reference:
+ * {@code Long}, {@code Double}, {@code Boolean}, {@code String} or {@code null}. One
+ * representation means every local is an {@code astore}/{@code aload} slot and every stack map
+ * frame is {@code java/lang/Object}, which keeps this emitter small enough to audit.
+ * Arithmetic, comparison and truthiness live in {@code dev.oqthara.runtime.Arithmetic}, which
+ * delegates to the same {@code Values} helpers the interpreter uses, so the two backends
+ * cannot drift.
+ *
+ * <h2>Scopes</h2>
+ * The interpreter creates a fresh environment for every if-branch, loop iteration and handler,
+ * so a name assigned inside a block disappears at the end of it and may shadow an outer name.
+ * The planner below reproduces that with a scope stack: each scope gets its own slots, and
+ * slots are never reused, so shadowing cannot alias.
+ *
+ * <h2>Stack maps</h2>
+ * Class files at version 50 and above are verified by type checking, so a method with any
+ * branch must carry a {@code StackMapTable}. A frame is emitted at every label, and the
+ * planner guarantees the operand stack is empty at each one, so every frame is a
+ * {@code full_frame} with the same locals and an empty stack.
  */
 public final class BytecodeCompiler {
     private static final int JAVA_21_MAJOR = 65;
     private static final int ACC_PUBLIC = 0x0001;
     private static final int ACC_STATIC = 0x0008;
+
+    private static final int ACONST_NULL = 0x01;
+    private static final int ICONST_0 = 0x03;
+    private static final int ICONST_1 = 0x04;
+    private static final int LDC_W = 0x13;
+    private static final int LDC2_W = 0x14;
+    private static final int ALOAD = 0x19;
+    private static final int ASTORE = 0x3A;
+    private static final int POP = 0x57;
+    private static final int IFEQ = 0x99;
+    private static final int GOTO = 0xA7;
+    private static final int INVOKESTATIC = 0xB8;
+    private static final int RETURN = 0xB1;
+
+    private static final String ARITHMETIC = "dev/oqthara/runtime/Arithmetic";
 
     /** Thrown when a program uses a construct outside the compiled subset. */
     public static final class NotSupportedException extends RuntimeException {
@@ -59,33 +94,30 @@ public final class BytecodeCompiler {
         }
     }
 
-    /**
-     * Compiles the program into a class with {@code public static void main(String[])} that
-     * prints exactly what the interpreter would print.
-     */
+    /** Compiles the program into a class with a {@code main} that matches the interpreter. */
     public static byte[] compile(Ir.Program program, String className) {
         if (!program.functions().isEmpty()) {
             throw new NotSupportedException("functions are not compiled yet");
         }
-        ConstantPool pool = new ConstantPool();
-        List<byte[]> body = new ArrayList<>();
-        // Local slots: 0 holds String[] args; user variables start at 1.
-        Map<String, Integer> slots = new LinkedHashMap<>();
-        CompileState state = new CompileState(pool, body, slots);
-        for (Ir.Instr instr : program.main().body()) {
-            emit(instr, state);
-        }
-        body.add(new byte[]{(byte) 0xB1}); // return
-        byte[] code = concat(body);
-        int maxLocals = 1 + slots.size(); // slot 0 is String[] args
+        Method method = new Method(program.main().body());
+        method.compileBody();
 
+        byte[] code = method.code();
+        int[] frameOffsets = method.frameOffsets();
+
+        ConstantPool pool = method.pool();
         int thisClass = pool.classRef(pool.utf8(className.replace('.', '/')));
         int objectClass = pool.classRef(pool.utf8("java/lang/Object"));
         int mainName = pool.utf8("main");
         int mainDescriptor = pool.utf8("([Ljava/lang/String;)V");
         int codeAttribute = pool.utf8("Code");
+        // Every constant must exist before the pool is serialized; adding one afterwards
+        // leaves the pool's declared entry count stale and produces a ClassFormatError.
+        int stackMapAttribute = pool.utf8("StackMapTable");
         int sourceFile = pool.utf8("SourceFile");
         int fileName = pool.utf8(className.substring(className.lastIndexOf('.') + 1) + ".java");
+
+        byte[] stackMap = stackMap(pool, objectClass, frameOffsets, method.localCount());
 
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -105,14 +137,22 @@ public final class BytecodeCompiler {
             out.writeShort(mainDescriptor);
             out.writeShort(1);
             out.writeShort(codeAttribute);
-            out.writeInt(12 + code.length);
-            out.writeShort(64);   // max_stack: generous, verified by the JVM
-            out.writeShort(Math.max(1, maxLocals));
+            int nested = stackMap == null ? 0 : 6 + stackMap.length;
+            out.writeInt(12 + code.length + nested);
+            out.writeShort(Math.max(2, method.maxStack()));
+            out.writeShort(Math.max(1, method.localCount()));
             out.writeInt(code.length);
             out.write(code);
-            out.writeShort(0);
-            out.writeShort(0);
-            out.writeShort(1);
+            out.writeShort(0); // exception table
+            if (stackMap == null) {
+                out.writeShort(0);
+            } else {
+                out.writeShort(1);
+                out.writeShort(stackMapAttribute);
+                out.writeInt(stackMap.length);
+                out.write(stackMap);
+            }
+            out.writeShort(1); // class attributes
             out.writeShort(sourceFile);
             out.writeInt(2);
             out.writeShort(fileName);
@@ -123,168 +163,464 @@ public final class BytecodeCompiler {
         }
     }
 
-    /** Mutable state shared by the emitters for one method. */
-    private record CompileState(ConstantPool pool, List<byte[]> body, Map<String, Integer> slots) {
+    /**
+     * Emits one {@code full_frame} per label: the same locals, an empty stack. The first
+     * frame's {@code offset_delta} is its byte offset; later ones are relative to the previous
+     * frame minus one, as JVMS 4.7.4 requires.
+     */
+    private static byte[] stackMap(ConstantPool pool, int objectType, int[] offsets, int locals) {
+        if (offsets.length == 0) return null;
+        int objectInfo = 7; // Object_variable_info tag
+        try {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(bytes);
+            out.writeShort(offsets.length);
+            int previous = -1;
+            for (int offset : offsets) {
+                out.writeByte(255); // full_frame
+                int delta = previous < 0 ? offset : offset - previous - 1;
+                out.writeShort(delta);
+                out.writeShort(locals);
+                for (int i = 0; i < locals; i++) {
+                    out.writeByte(objectInfo);
+                    out.writeShort(objectType);
+                }
+                out.writeShort(0); // empty operand stack
+                previous = offset;
+            }
+            out.flush();
+            return bytes.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
-    private static void emit(Ir.Instr instr, CompileState state) {
-        ConstantPool pool = state.pool();
-        List<byte[]> body = state.body();
-        switch (instr) {
-            case Ir.Const constant -> emitConstant(constant.value(), pool, body);
-            case Ir.Binary binary -> emitBinary(binary.op(), pool, body);
-            case Ir.Unary unary -> emitUnary(unary.op(), pool, body);
-            case Ir.Pop ignored -> body.add(new byte[]{(byte) 0x57}); // pop
-            case Ir.Halt ignored -> {
-                // reached only at the very end; the trailing return covers it
-            }
-            case Ir.Call call -> emitCall(call, pool, body);
-            case Ir.Store store -> {
-                // Store consumes the value; keep it on the stack as the expression result
-                // (the IR lowering expects a value for assignments), then write the slot.
-                // Slot 0 is String[] args, so the first user variable gets slot 1.
-                Integer existing = state.slots().get(store.name());
-                int slot;
-                if (existing != null) {
-                    slot = existing;
-                } else {
-                    slot = 1 + state.slots().size();
-                    state.slots().put(store.name(), slot);
+    /** A variable binding the planner resolved to a slot. */
+    private record Binding(int slot, boolean fixed) {
+    }
+
+    /**
+     * Compiles one method body: plans slots, then emits instructions and patches jump offsets.
+     * Instruction sizes never depend on jump distances because every branch is emitted as a
+     * three-byte 16-bit form, so one emission pass is enough.
+     */
+    private static final class Method {
+        private final List<Ir.Instr> body;
+        private final ConstantPool pool = new ConstantPool();
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        private final Deque<Map<String, Binding>> scopes = new ArrayDeque<>();
+        private final Map<String, Integer> labels = new LinkedHashMap<>();
+        private final TreeSet<Integer> frames = new TreeSet<>();
+        private int[] slots;
+        private int localCount = 1;
+        private int depth = 0;
+        private int peak = 0;
+        private boolean reachable = true;
+
+        Method(List<Ir.Instr> body) {
+            this.body = body;
+            this.slots = plan();
+        }
+
+        ConstantPool pool() {
+            return pool;
+        }
+
+        int localCount() {
+            return localCount;
+        }
+
+        int maxStack() {
+            return peak + 2;
+        }
+
+        byte[] code() {
+            return bytes.toByteArray();
+        }
+
+        int[] frameOffsets() {
+            return frames.stream().mapToInt(Integer::intValue).filter(o -> o > 0).toArray();
+        }
+
+        /**
+         * Resolves every load and store to a slot before anything is emitted, so the method's
+         * local count is known up front and errors are reported before a class exists.
+         */
+        private int[] plan() {
+            int[] resolved = new int[body.size()];
+            scopes.push(new LinkedHashMap<>());
+            int next = 1;
+            for (int i = 0; i < body.size(); i++) {
+                resolved[i] = -1;
+                switch (body.get(i)) {
+                    case Ir.ScopeEnter ignored -> scopes.push(new LinkedHashMap<>());
+                    case Ir.ScopeExit ignored -> {
+                        if (scopes.size() <= 1) {
+                            throw new NotSupportedException("unbalanced scope markers");
+                        }
+                        scopes.pop();
+                    }
+                    case Ir.Declare declare ->
+                            resolved[i] = declare(declare.name(), declare.fixed(), next++);
+                    case Ir.Store store -> resolved[i] = assign(store.name(), next++);
+                    case Ir.Load load -> resolved[i] = lookup(load.name()).slot();
+                    default -> {
+                    }
                 }
-                // istore_0..3 are 0x3B..0x3E, lstore 0x3F..0x42, fstore 0x43..0x46,
-                // dstore 0x47..0x4A, astore 0x4B..0x4E. Object locals need astore.
-                if (slot <= 3) {
-                    body.add(new byte[]{(byte) (0x4B + slot)});
-                } else {
-                    body.add(new byte[]{0x3A, (byte) slot});
-                }
             }
-            case Ir.Load load -> {
-                Integer slot = state.slots().get(load.name());
-                if (slot == null) {
+            localCount = next;
+            return resolved;
+        }
+
+        /** VarDecl: always a new binding in the current scope, even if one is visible. */
+        private int declare(String name, boolean fixed, int nextSlot) {
+            if (nextSlot > 255) {
+                throw new NotSupportedException("too many variables for one method");
+            }
+            scopes.peek().put(name, new Binding(nextSlot, fixed));
+            return nextSlot;
+        }
+
+        /**
+         * Assignment: update the nearest visible binding, or define one in the current scope.
+         * That is exactly what the interpreter's {@code assignOrDefine} does, so a loop
+         * counter introduced by the lowering behaves identically on both backends.
+         */
+        private int assign(String name, int nextSlot) {
+            Binding visible = lookupOrNull(name);
+            if (visible != null) {
+                if (visible.fixed()) {
                     throw new NotSupportedException(
-                            "variable '" + load.name() + "' is used before assignment");
+                            "'" + name + "' is a fixed value and the interpreter would reject"
+                                    + " changing it, so this is not compiled");
                 }
-                // aload_0..3 are 0x2A..0x2D, so the base is 0x2A, not 0x2B.
+                return visible.slot();
+            }
+            return declare(name, false, nextSlot);
+        }
+
+        private Binding lookup(String name) {
+            Binding binding = lookupOrNull(name);
+            if (binding == null) {
+                throw new NotSupportedException(
+                        "variable '" + name + "' is used before assignment");
+            }
+            return binding;
+        }
+
+        private Binding lookupOrNull(String name) {
+            for (Map<String, Binding> scope : scopes) {
+                Binding binding = scope.get(name);
+                if (binding != null) return binding;
+            }
+            return null;
+        }
+
+        void compileBody() {
+            // Every local is set to null before any branch target. A stack map frame must
+            // describe the exact state at a label, and an unassigned slot is `top`, which no
+            // frame may claim is a reference. Starting every slot as a real null reference
+            // makes one frame shape valid everywhere, instead of requiring a different frame
+            // per control-flow path.
+            for (int slot = 1; slot < localCount; slot++) {
+                bytes.write(ACONST_NULL);
                 if (slot <= 3) {
-                    body.add(new byte[]{(byte) (0x2A + slot)});
+                    bytes.write(0x4B + slot); // astore_0..3
                 } else {
-                    body.add(new byte[]{0x19, (byte) (int) slot});
+                    bytes.write(ASTORE);
+                    bytes.write(slot);
                 }
             }
-            default -> throw new NotSupportedException(
-                    "instruction " + instr.getClass().getSimpleName() + " is not compiled yet");
+            for (int index = 0; index < body.size(); index++) {
+                emit(body.get(index), slots[index]);
+            }
+            if (reachable) {
+                bytes.write(RETURN);
+            }
+            patch();
         }
-    }
 
-    private static void emitConstant(Object value, ConstantPool pool, List<byte[]> body) {
-        if (value == null) {
-            body.add(new byte[]{(byte) 0x01}); // aconst_null
-            return;
+        private void emit(Ir.Instr instr, int slot) {
+            if (!reachable && !(instr instanceof Ir.Label)) {
+                // Code between an unconditional jump and the next label cannot be reached.
+                // Emitting it would also place an instruction after a jump with no stack map
+                // frame, which the verifier rejects.
+                return;
+            }
+            switch (instr) {
+                case Ir.Label label -> {
+                    labels.put(label.name(), bytes.size());
+                    if (reachable) {
+                        requireEmptyStack("label " + label.name());
+                    }
+                    frames.add(bytes.size());
+                    reachable = true;
+                }
+                case Ir.JumpLabel jump -> branch(GOTO, jump.label());
+                case Ir.JumpIfFalseLabel jump -> {
+                    call(ARITHMETIC, "truthy", "(Ljava/lang/Object;)Z");
+                    branch(IFEQ, jump.label());
+                }
+                case Ir.Break brk -> branch(GOTO, brk.loopId() + "_end");
+                case Ir.Continue cont -> branch(GOTO, cont.loopId() + "_step");
+                case Ir.Const constant -> {
+                    if (reachable) emitConstant(constant.value());
+                }
+                case Ir.Load ignored -> {
+                    if (reachable) load(slot);
+                }
+                case Ir.Store ignored -> {
+                    if (reachable) store(slot);
+                }
+                case Ir.Declare ignored -> {
+                    if (reachable) store(slot);
+                }
+                case Ir.Binary binary -> {
+                    if (reachable) emitBinary(binary.op());
+                }
+                case Ir.Unary unary -> {
+                    if (reachable) emitUnary(unary.op());
+                }
+                case Ir.ToBool ignored -> {
+                    if (reachable) {
+                        call(ARITHMETIC, "toBoolean", "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.Call callValue -> {
+                    if (reachable) emitCall(callValue);
+                }
+                case Ir.Pop ignored -> {
+                    if (reachable) {
+                        bytes.write(POP);
+                        pop();
+                    }
+                }
+                case Ir.Return ignored -> {
+                    if (reachable) {
+                        bytes.write(POP); // the lowering leaves the return value on the stack
+                        pop();
+                        bytes.write(RETURN);
+                        reachable = false;
+                    }
+                }
+                case Ir.Halt ignored -> {
+                    if (reachable) {
+                        bytes.write(RETURN);
+                        reachable = false;
+                    }
+                }
+                case Ir.ScopeEnter ignored -> {
+                }
+                case Ir.ScopeExit ignored -> {
+                }
+                default -> throw new NotSupportedException(
+                        "instruction " + instr.getClass().getSimpleName() + " is not compiled yet");
+            }
         }
-        if (value instanceof Long number) {
-            int index = pool.longRef(number);
-            body.add(new byte[]{0x14, hi(index), lo(index)}); // ldc2_w
-            int ref = pool.methodRef("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;");
-            body.add(new byte[]{(byte) 0xB8, hi(ref), lo(ref)});
-            return;
-        }
-        if (value instanceof Double number) {
-            int index = pool.doubleRef(number);
-            body.add(new byte[]{0x14, hi(index), lo(index)}); // ldc2_w
-            body.add(new byte[]{(byte) 0xB8,
-                    hi(pool.methodRef("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;")),
-                    lo(pool.methodRef("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;"))});
-            return;
-        }
-        if (value instanceof Boolean bool) {
-            int ref = pool.methodRef("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;");
-            body.add(new byte[]{(byte) (bool ? 0x04 : 0x03)}); // iconst_1 / iconst_0
-            body.add(new byte[]{(byte) 0xB8, hi(ref), lo(ref)});
-            return;
-        }
-        if (value instanceof String text) {
-            int index = pool.string(text);
-            body.add(new byte[]{0x13, hi(index), lo(index)}); // ldc_w
-            return;
-        }
-        throw new NotSupportedException("constant of type " + value.getClass().getSimpleName()
-                + " is not compiled yet");
-    }
 
-    private static void emitBinary(String op, ConstantPool pool, List<byte[]> body) {
-        String name = switch (op) {
-            case "+" -> "add";
-            case "-" -> "subtract";
-            case "*" -> "multiply";
-            case "/" -> "divide";
-            case "%" -> "modulo";
-            default -> throw new NotSupportedException(
-                    "operator '" + op + "' is not compiled yet (only + - * / % are)");
-        };
-        int ref = pool.methodRef("dev/oqthara/runtime/Arithmetic", name,
-                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-        body.add(new byte[]{(byte) 0xB8, hi(ref), lo(ref)});
-    }
-
-    private static void emitUnary(String op, ConstantPool pool, List<byte[]> body) {
-        if (!op.equals("-")) {
-            throw new NotSupportedException("unary '" + op + "' is not compiled yet");
+        private void requireEmptyStack(String where) {
+            if (depth != 0) {
+                throw new NotSupportedException(
+                        "operand stack is not empty at " + where + " (depth " + depth
+                                + "); refusing to emit bytecode that could not be verified");
+            }
         }
-        int ref = pool.methodRef("dev/oqthara/runtime/Arithmetic", "negate",
-                "(Ljava/lang/Object;)Ljava/lang/Object;");
-        body.add(new byte[]{(byte) 0xB8, hi(ref), lo(ref)});
-    }
 
-    private static void emitCall(Ir.Call call, ConstantPool pool, List<byte[]> body) {
-        if (!call.name().equals("print") || call.argc() != 1) {
-            throw new NotSupportedException(
-                    "call to '" + call.name() + "' with " + call.argc()
-                            + " argument(s) is not compiled yet (only print/1 is)");
+        private void branch(int opcode, String label) {
+            int at = bytes.size();
+            bytes.write(opcode);
+            bytes.write(0);
+            bytes.write(0);
+            jumpLabels.put(at, label);
+            if (opcode == IFEQ) pop();
+            if (opcode == GOTO) reachable = false;
         }
-        int ref = pool.methodRef("dev/oqthara/runtime/Arithmetic", "print",
-                "(Ljava/lang/Object;)V");
-        body.add(new byte[]{(byte) 0xB8, hi(ref), lo(ref)});
-    }
 
-    private static byte[] concat(List<byte[]> parts) {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        for (byte[] part : parts) out.writeBytes(part);
-        return out.toByteArray();
-    }
+        private final Map<Integer, String> jumpLabels = new LinkedHashMap<>();
 
-    private static byte hi(int value) {
-        return (byte) ((value >>> 8) & 0xFF);
-    }
+        private void emitConstant(Object value) {
+            if (value == null) {
+                bytes.write(ACONST_NULL);
+                push();
+                return;
+            }
+            if (value instanceof Long number) {
+                ldc2(pool.longRef(number));
+                call("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;");
+                return;
+            }
+            if (value instanceof Double number) {
+                ldc2(pool.doubleRef(number));
+                call("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;");
+                return;
+            }
+            if (value instanceof Boolean bool) {
+                bytes.write(bool ? ICONST_1 : ICONST_0);
+                push();
+                call("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;");
+                return;
+            }
+            if (value instanceof String text) {
+                int index = pool.string(text);
+                bytes.write(LDC_W);
+                bytes.write(hi(index));
+                bytes.write(lo(index));
+                push();
+                return;
+            }
+            throw new NotSupportedException("constant of type "
+                    + value.getClass().getSimpleName() + " is not compiled yet");
+        }
 
-    private static byte lo(int value) {
-        return (byte) (value & 0xFF);
+        private void ldc2(int index) {
+            bytes.write(LDC2_W);
+            bytes.write(hi(index));
+            bytes.write(lo(index));
+            push();
+        }
+
+        private void load(int slot) {
+            if (slot <= 3) {
+                bytes.write(0x2A + slot); // aload_0..3
+            } else {
+                bytes.write(ALOAD);
+                bytes.write(slot);
+            }
+            push();
+        }
+
+        private void store(int slot) {
+            if (slot <= 3) {
+                bytes.write(0x4B + slot); // astore_0..3
+            } else {
+                bytes.write(ASTORE);
+                bytes.write(slot);
+            }
+            pop();
+        }
+
+        private void emitBinary(String op) {
+            String name = switch (op) {
+                case "+" -> "add";
+                case "-" -> "subtract";
+                case "*" -> "multiply";
+                case "/" -> "divide";
+                case "%" -> "modulo";
+                case "**" -> "power";
+                case "==" -> "equal";
+                case "!=" -> "notEqual";
+                case "<" -> "less";
+                case "<=" -> "lessOrEqual";
+                case ">" -> "greater";
+                case ">=" -> "greaterOrEqual";
+                default -> throw new NotSupportedException(
+                        "operator '" + op + "' is not compiled yet");
+            };
+            call(ARITHMETIC, name, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+        }
+
+        private void emitUnary(String op) {
+            switch (op) {
+                case "-" -> call(ARITHMETIC, "negate",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;");
+                case "+" -> {
+                    // Unary plus is a no-op on numbers, which is the only thing it accepts.
+                }
+                case "not" -> {
+                    call(ARITHMETIC, "not", "(Ljava/lang/Object;)Ljava/lang/Object;");
+                }
+                default -> throw new NotSupportedException(
+                        "unary '" + op + "' is not compiled yet");
+            }
+        }
+
+        private void emitCall(Ir.Call call) {
+            if (call.argc() != 1) {
+                throw new NotSupportedException(
+                        "call to '" + call.name() + "' with " + call.argc()
+                                + " argument(s) is not compiled yet");
+            }
+            switch (call.name()) {
+                case "print" -> call(ARITHMETIC, "print", "(Ljava/lang/Object;)V");
+                case "write" -> call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
+                default -> throw new NotSupportedException(
+                        "call to '" + call.name() + "' is not compiled yet");
+            }
+        }
+
+        private void call(String owner, String name, String descriptor) {
+            for (int i = 0; i < parameterCount(descriptor); i++) pop();
+            if (!descriptor.endsWith("V")) push();
+            int index = pool.methodRef(owner, name, descriptor);
+            bytes.write(INVOKESTATIC);
+            bytes.write(hi(index));
+            bytes.write(lo(index));
+        }
+
+        private void push() {
+            depth++;
+            peak = Math.max(peak, depth);
+        }
+
+        private void pop() {
+            depth--;
+            if (depth < 0) {
+                throw new NotSupportedException("generated code would underflow the stack");
+            }
+        }
+
+        /** Patches every recorded jump now that label offsets are known. */
+        void patch() {
+            byte[] code = bytes.toByteArray();
+            for (Map.Entry<Integer, String> entry : jumpLabels.entrySet()) {
+                int at = entry.getKey();
+                Integer target = labels.get(entry.getValue());
+                if (target == null) {
+                    throw new NotSupportedException("unresolved label " + entry.getValue());
+                }
+                int offset = target - at;
+                if (offset < Short.MIN_VALUE || offset > Short.MAX_VALUE) {
+                    throw new NotSupportedException(
+                            "method is too large for 16-bit jump offsets");
+                }
+                code[at + 1] = hi(offset);
+                code[at + 2] = lo(offset);
+            }
+            bytes.reset();
+            bytes.writeBytes(code);
+        }
     }
 
     /** Constant pool with the entry kinds this compiler needs. */
     private static final class ConstantPool {
         private static final int TAG_UTF8 = 1;
-        private static final int TAG_INTEGER = 3;
         private static final int TAG_LONG = 5;
         private static final int TAG_DOUBLE = 6;
         private static final int TAG_CLASS = 7;
         private static final int TAG_STRING = 8;
-        private static final int TAG_FIELDREF = 9;
         private static final int TAG_METHODREF = 10;
         private static final int TAG_NAME_AND_TYPE = 12;
 
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         private final DataOutputStream data = new DataOutputStream(bytes);
+        private final Map<String, Integer> utf8Cache = new LinkedHashMap<>();
+        private final Map<String, Integer> classCache = new LinkedHashMap<>();
+        private final Map<String, Integer> methodCache = new LinkedHashMap<>();
+        private final Map<String, Integer> stringCache = new LinkedHashMap<>();
         private int next = 1;
 
         int utf8(String text) {
+            Integer cached = utf8Cache.get(text);
+            if (cached != null) return cached;
             byte[] encoded = ClassFileWriter.modifiedUtf8(text);
             if (encoded.length > 65535) throw new IllegalArgumentException("constant too long");
             write(TAG_UTF8, () -> {
                 data.writeShort(encoded.length);
                 data.write(encoded);
             });
-            return next - 1;
+            int index = next - 1;
+            utf8Cache.put(text, index);
+            return index;
         }
 
         int classRef(int nameIndex) {
@@ -292,10 +628,22 @@ public final class BytecodeCompiler {
             return next - 1;
         }
 
+        int classRef(String internalName) {
+            Integer cached = classCache.get(internalName);
+            if (cached != null) return cached;
+            int index = classRef(utf8(internalName));
+            classCache.put(internalName, index);
+            return index;
+        }
+
         int string(String text) {
+            Integer cached = stringCache.get(text);
+            if (cached != null) return cached;
             int utf8 = utf8(text);
             write(TAG_STRING, () -> data.writeShort(utf8));
-            return next - 1;
+            int index = next - 1;
+            stringCache.put(text, index);
+            return index;
         }
 
         int longRef(long value) {
@@ -311,7 +659,10 @@ public final class BytecodeCompiler {
         }
 
         int methodRef(String owner, String name, String descriptor) {
-            int ownerIndex = classRef(utf8(owner));
+            String key = owner + "." + name + descriptor;
+            Integer cached = methodCache.get(key);
+            if (cached != null) return cached;
+            int ownerIndex = classRef(owner);
             int nameIndex = utf8(name);
             int descriptorIndex = utf8(descriptor);
             int nameAndType = writeAndGet(TAG_NAME_AND_TYPE, () -> {
@@ -322,7 +673,9 @@ public final class BytecodeCompiler {
                 data.writeShort(ownerIndex);
                 data.writeShort(nameAndType);
             });
-            return next - 1;
+            int index = next - 1;
+            methodCache.put(key, index);
+            return index;
         }
 
         private interface Writer {
@@ -349,5 +702,36 @@ public final class BytecodeCompiler {
             out.writeShort(next);
             bytes.writeTo(out);
         }
+    }
+
+    /**
+     * Counts parameters in a method descriptor. Every parameter this compiler uses is a
+     * reference, so each occupies exactly one stack slot.
+     */
+    static int parameterCount(String descriptor) {
+        int count = 0;
+        int index = 1; // skip '('
+        while (index < descriptor.length() && descriptor.charAt(index) != ')') {
+            char c = descriptor.charAt(index);
+            if (c == '[') {
+                while (descriptor.charAt(index) == '[') index++;
+                if (descriptor.charAt(index) == 'L') {
+                    while (descriptor.charAt(index) != ';') index++;
+                }
+            } else if (c == 'L') {
+                while (descriptor.charAt(index) != ';') index++;
+            }
+            count++;
+            index++;
+        }
+        return count;
+    }
+
+    private static byte hi(int value) {
+        return (byte) ((value >>> 8) & 0xFF);
+    }
+
+    private static byte lo(int value) {
+        return (byte) (value & 0xFF);
     }
 }

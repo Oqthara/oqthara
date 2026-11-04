@@ -12,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import java.util.jar.JarFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -126,9 +127,6 @@ class BytecodeCompilerTest {
 
     @Test
     void unsupportedConstructsAreRefusedWithAReason() {
-        assertFalse(BytecodeCompiler.canCompile(ir("if true\n  print 1\nend")));
-        assertTrue(BytecodeCompiler.whyNot(ir("if true\n  print 1\nend")).contains("Jump"));
-
         assertFalse(BytecodeCompiler.canCompile(ir("print [1, 2]")));
         assertTrue(BytecodeCompiler.whyNot(ir("print [1, 2]")).contains("MakeList"));
 
@@ -136,7 +134,146 @@ class BytecodeCompilerTest {
         assertTrue(BytecodeCompiler.whyNot(ir("fun f()\n  return 1\nend\nprint f()"))
                 .contains("function"));
 
-        assertFalse(BytecodeCompiler.canCompile(ir("print 1 == 1")));
+        // String methods are not compiled, and the refusal must name the construct.
+        assertFalse(BytecodeCompiler.canCompile(
+                ir("print \"a\".upper()")));
+        assertTrue(BytecodeCompiler.whyNot(ir("print \"a\".upper()")).contains("length")
+                || BytecodeCompiler.whyNot(ir("print \"a\".upper()")).contains("upper"));
+    }
+
+    @Test
+    void compilesComparisons(@TempDir Path dir) throws Exception {
+        assertEquals("true\nfalse\ntrue\ntrue\nfalse\ntrue\n",
+                compileAndRun("print 1 < 2\nprint 1 > 2\nprint 2 <= 2\nprint 2 >= 2\n"
+                        + "print 1 == 2\nprint 1 != 2", dir));
+    }
+
+    @Test
+    void compilesIfElse(@TempDir Path dir) throws Exception {
+        assertEquals("big\nsmall\n",
+                compileAndRun("x = 5\nif x > 3\n  print \"big\"\nelse\n  print \"small\"\nend\n"
+                        + "x = 1\nif x > 3\n  print \"big\"\nelse\n  print \"small\"\nend", dir));
+    }
+
+    @Test
+    void compilesWhileLoop(@TempDir Path dir) throws Exception {
+        assertEquals("0\n1\n2\n",
+                compileAndRun("i = 0\nwhile i < 3\n  print i\n  i = i + 1\nend", dir));
+    }
+
+    @Test
+    void compilesForToLoop(@TempDir Path dir) throws Exception {
+        assertEquals("1\n2\n3\n",
+                compileAndRun("for n in 1 to 3\n  print n\nend", dir));
+    }
+
+    @Test
+    void compilesForUntilLoop(@TempDir Path dir) throws Exception {
+        assertEquals("1\n2\n",
+                compileAndRun("for n in 1 until 3\n  print n\nend", dir));
+    }
+
+    @Test
+    void compilesDescendingForLoop(@TempDir Path dir) throws Exception {
+        // The interpreter walks a descending range downwards; a naive i <= to loop prints
+        // nothing here, so this pins the direction logic.
+        assertEquals("5\n4\n3\n2\n1\n",
+                compileAndRun("for n in 5 to 1\n  print n\nend", dir));
+    }
+
+    @Test
+    void compilesDescendingExclusiveForLoop(@TempDir Path dir) throws Exception {
+        assertEquals("5\n4\n3\n2\n",
+                compileAndRun("for n in 5 until 1\n  print n\nend", dir));
+    }
+
+    @Test
+    void compilesBreakAndContinue(@TempDir Path dir) throws Exception {
+        assertEquals("1\n3\n",
+                compileAndRun("""
+                        for n in 1 to 5
+                          if n == 2
+                            continue
+                          end
+                          if n == 4
+                            break
+                          end
+                          print n
+                        end""", dir));
+    }
+
+    @Test
+    void compilesNestedLoops(@TempDir Path dir) throws Exception {
+        assertEquals("0-0\n0-1\n1-0\n1-1\n", compileAndRun("""
+                for i in 0 to 1
+                  for j in 0 to 1
+                    print i + "-" + j
+                  end
+                end""", dir));
+    }
+
+    @Test
+    void compilesAndOrNot(@TempDir Path dir) throws Exception {
+        // `and` and `or` yield booleans and short-circuit, matching the interpreter.
+        assertEquals("true\nfalse\ntrue\nfalse\nfalse\ntrue\n", compileAndRun(
+                "print true and true\nprint true and false\nprint false or true\n"
+                        + "print false or false\nprint not true\nprint not false", dir));
+    }
+
+    @Test
+    void logicalOperatorsCoerceToBooleans(@TempDir Path dir) throws Exception {
+        // `1 and 2` is true, not 2: the interpreter coerces both sides through truthiness.
+        assertEquals("true\ntrue\nfalse\n", compileAndRun(
+                "print 1 and 2\nprint \"x\" or 0\nprint 0 and 1", dir));
+    }
+
+    @Test
+    void logicalOperatorsShortCircuit(@TempDir Path dir) throws Exception {
+        // 1 / 0 would fail if the right side were evaluated.
+        assertEquals("false\ntrue\n", compileAndRun(
+                "print false and (1 / 0 == 0)\nprint true or (1 / 0 == 0)", dir));
+    }
+
+    @Test
+    void compilesFizzBuzzEndToEnd(@TempDir Path dir) throws Exception {
+        String source = """
+                for n in 1 to 15
+                  if n % 15 == 0
+                    print "FizzBuzz"
+                  else
+                    if n % 3 == 0
+                      print "Fizz"
+                    else
+                      if n % 5 == 0
+                        print "Buzz"
+                      else
+                        print n
+                      end
+                    end
+                  end
+                end""";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals(expected, compileAndRun(source, dir));
+        assertTrue(expected.startsWith("1\n2\nFizz\n"), expected);
+    }
+
+    @Test
+    void controlFlowMatchesTheInterpreterExactly(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "i = 0\nwhile i < 3\n  print i\n  i = i + 1\nend",
+                "for n in 1 to 4\n  print n * n\nend",
+                "for n in 4 to 1\n  print n\nend",
+                "for n in 0 until 3\n  print n\nend",
+                "x = 7\nif x > 5\n  print \"high\"\nelse\n  print \"low\"\nend",
+                "n = 0\nwhile true\n  n = n + 1\n  if n == 3\n    break\n  end\nend\nprint n",
+                "total = 0\nfor n in 1 to 10\n  if n == 5\n    continue\n  end\n  total = total + n\nend\nprint total",
+                "print (1 < 2) and (3 > 4)",
+                "for n in 1 to 3\n  for m in 1 to 2\n    print n * m\n  end\nend",
+                "x = 1\nif true\n  x = 2\nend\nprint x");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+        }
     }
 
     @Test
@@ -162,6 +299,49 @@ class BytecodeCompilerTest {
             assertEquals(expected, compileAndRun(source, dir),
                     "mismatch for: " + source);
         }
+    }
+
+    @Test
+    void everyCompilableConformanceProgramMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        // This is the contract of the backend: a program is only compiled when the compiler
+        // can prove it, and once compiled it must behave exactly like `oq run`. Comparing
+        // whole outputs across the corpus catches drift in either direction.
+        Path root = Path.of(System.getProperty("oq.root", ".")).resolve("conformance");
+        int compiled = 0;
+        try (Stream<Path> stream = Files.list(root)) {
+            for (Path program : stream.filter(p -> p.toString().endsWith(".oq")).sorted().toList()) {
+                Path base = Path.of(program.toString().substring(0, program.toString().length() - 3));
+                if (Files.exists(Path.of(base + ".err"))) continue;
+                String source = Files.readString(program);
+                dev.oqthara.compiler.Ir.Program lowered;
+                try {
+                    lowered = Lowering.lower(Parser.parse(program.toString(), source));
+                } catch (RuntimeException parseFailure) {
+                    continue; // parse-error cases carry a .err file; anything else is not ours
+                }
+                if (BytecodeCompiler.whyNot(lowered) != null) continue;
+                String expected = OqRunner.run(program.toString(), source, List.of(), "", dir).stdout();
+                assertEquals(expected, compileAndRun(source, dir),
+                        "compiled output differs from the interpreter for " + program.getFileName());
+                compiled++;
+            }
+        }
+        assertTrue(compiled >= 35,
+                "expected at least 35 conformance programs to compile, got " + compiled);
+    }
+
+    @Test
+    void loopVariableCannotBeReassignedInCompiledCode() {
+        // The interpreter rejects assigning to a loop variable; compiled code must refuse to
+        // build rather than silently allow it.
+        dev.oqthara.compiler.Ir.Program program = ir("""
+                for n in 1 to 3
+                  n = 9
+                end
+                """);
+        String reason = BytecodeCompiler.whyNot(program);
+        assertNotNull(reason, "assigning to a loop variable must not compile");
+        assertTrue(reason.contains("fixed"), reason);
     }
 
     private record ProcessResult(int exit, String stdout, String stderr) {
