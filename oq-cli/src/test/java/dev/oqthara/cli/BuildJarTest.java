@@ -99,12 +99,22 @@ class BuildJarTest {
     }
 
     @Test
-    void jarResolvesModulesFromTheWorkingDirectory(@TempDir Path dir) throws Exception {
-        Files.writeString(dir.resolve("helper.oq"), "fun twice(x)\n  return x * 2\nend\n");
-        String source = "use \"oq:helper\"\nprint twice(21)";
-        Path jar = dir.resolve("mod.jar");
-        JarBuilder.build(jar, "oq.generated.Program", source, "mod.oq");
-        ProcessResult result = runJar(jar, dir);
+    void jarEmbedsModulesSoItWorksFromAnyDirectory(@TempDir Path dir) throws Exception {
+        // Regression for the QA finding: the jar used to look up modules relative to the
+        // process CWD, so it only worked when started next to the module file.
+        Path app = dir.resolve("app");
+        Path elsewhere = dir.resolve("elsewhere");
+        Files.createDirectories(app);
+        Files.createDirectories(elsewhere);
+        Files.writeString(app.resolve("helper.oq"), "fun twice(x)\n  return x * 2\nend\n");
+        Path entry = app.resolve("mod.oq");
+        Files.writeString(entry, "use \"oq:helper\"\nprint twice(21)");
+
+        String flattened = Modules.flatten(entry, Files.readString(entry));
+        Path jar = app.resolve("mod.jar");
+        JarBuilder.build(jar, "oq.generated.Program", flattened, "mod.oq");
+
+        ProcessResult result = runJar(jar, elsewhere);
         assertEquals(0, result.exit(), result.stderr());
         assertEquals("42", result.stdout().strip());
     }

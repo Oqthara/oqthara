@@ -240,7 +240,8 @@ public final class Main {
             Path jar = Path.of(path.substring(0, path.length() - 3) + ".jar");
             String className = "oq.generated.Program";
             try {
-                JarBuilder.Result built = JarBuilder.build(jar, className, source,
+                String selfContained = Modules.flatten(Path.of(path), source);
+                JarBuilder.Result built = JarBuilder.build(jar, className, selfContained,
                         Path.of(path).getFileName().toString());
                 out.println("wrote " + jar + " (" + built.classes() + " classes, "
                         + built.skipped() + " skipped)");
