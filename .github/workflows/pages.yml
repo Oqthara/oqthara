@@ -3,6 +3,14 @@ name: Pages
 on:
   push:
     branches: [main]
+  # Building on pull requests proves the React build, the prerenderer and the validators
+  # before merge. Deployment still only happens from main; see the deploy job's condition.
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/stdlib/reference.md"
+      - "scripts/build-versioned-docs.py"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -36,13 +44,34 @@ jobs:
           git diff --exit-code docs/stdlib/reference.md
       - name: Check repository documentation links
         run: python3 scripts/check-links.py
-      - name: Build the site
-        run: node site/build.mjs
-      - name: Verify the built site
-        run: node site/verify.mjs
-      - name: Validate HTML with a real parser
+      - name: Check documentation matches the implementation
+        run: python3 scripts/check-docs-sync.py
+      - name: Read the project version
+        id: version
         run: |
-          npx --yes html-validate@9 --formatter stylish site/_site/*.html
+          version=$(grep -oE 'VERSION = "[^"]+"' oq-cli/src/main/java/dev/oqthara/cli/Main.java | head -1 | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "building site for Oqthara $version"
+      - name: Install the website dependencies
+        working-directory: site
+        run: npm ci
+      - name: Build the React site
+        working-directory: site
+        env:
+          OQ_VERSION: ${{ steps.version.outputs.version }}
+        run: npm run build
+      - name: Build versioned documentation from release tags
+        run: python3 scripts/build-versioned-docs.py
+      - name: Component and integration tests
+        working-directory: site
+        run: npm test
+      - name: Verify the prerendered site
+        working-directory: site
+        run: node verify.mjs
+      - name: Validate HTML with a real parser
+        working-directory: site
+        run: |
+          npx --yes html-validate@9 --formatter stylish _site/*.html
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
@@ -50,6 +79,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request' 
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -62,11 +92,32 @@ jobs:
           set -euo pipefail
           base="${{ steps.deployment.outputs.page_url }}"
           echo "published at $base"
-          for path in "" tour.html docs.html examples.html status.html stdlib.html stdlib.md assets/site.css playground.js; do
+          for path in "" tour.html docs.html examples.html status.html stdlib.html stdlib.md; do
             code=$(curl -sS -o /dev/null -w "%{http_code}" "$base$path")
             echo "$code  $path"
             test "$code" = "200"
           done
-          curl -sS "$base" | grep -q "reads like"
+          # The stylesheet and script are content-hashed, so read their names from the page
+          # instead of hard-coding them and asserting on a path that will drift.
+          page=$(curl -sS "$base")
+          css=$(printf '%s' "$page" | grep -oE '/oqthara/assets/style-[A-Za-z0-9_-]+\.css' | head -1)
+          js=$(printf '%s' "$page" | grep -oE '/oqthara/assets/index-[A-Za-z0-9_-]+\.js' | head -1)
+          test -n "$css" && test -n "$js"
+          host="${base%/oqthara/}"
+          printf '%s' "$page" | grep -q "reads like"
           curl -sS "$base/status.html" | grep -qi "what does not work yet"
-          curl -sS "$base/assets/site.css" | grep -q -- "--accent"
+          curl -sS "$base/tour.html" | grep -q "Learn Oqthara in one sitting"
+          curl -sS "$base/stdlib.html" | grep -q "Global functions"
+          curl -sS "$host$css" | grep -q -- "--accent"
+          curl -sS -o /dev/null -w "css %{http_code}\n" "$host$css"
+          curl -sS -o /dev/null -w "js  %{http_code}\n" "$host$js"
+          # Versioned documentation must be reachable for every published release.
+          manifest=$(curl -sS "$base/versions/index.json")
+          printf '%s' "$manifest" | grep -q '"versions"'
+          latest=$(printf '%s' "$manifest" | python3 -c 'import json,sys; print(json.load(sys.stdin)["latest"] or "")')
+          if [ -n "$latest" ]; then
+            path=${latest#v}
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "$base/versions/$path/index.html")
+            echo "$code  versions/$path/"
+            test "$code" = "200"
+          fi

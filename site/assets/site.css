@@ -9,6 +9,7 @@
   --accent-dim: #2ea043;
   --link: #79c0ff;
   --code-bg: #060a0f;
+  --code-fg: #d7e2ee;
   --warn: #f0b849;
   --radius: 12px;
   --radius-sm: 8px;
@@ -30,6 +31,7 @@
     --accent-dim: #1a7f37;
     --link: #0969da;
     --code-bg: #0d1117;
+    --code-fg: #d7e2ee;
     --shadow: 0 1px 2px rgba(16, 24, 32, .06), 0 8px 24px rgba(16, 24, 32, .08);
   }
 }
@@ -128,6 +130,9 @@ p { margin: 0 0 16px; }
 
 pre {
   background: var(--code-bg);
+  /* Code blocks are dark in both themes, so their foreground must be light in both. Without
+     this the install command was near-black on near-black in light mode. */
+  color: var(--code-fg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px;
@@ -158,7 +163,7 @@ code { font-family: var(--mono); }
   flex-wrap: wrap;
   margin: 0 0 40px;
 }
-.install pre { flex: 1 1 320px; margin: 0; }
+.install pre { flex: 1 1 320px; margin: 0; min-width: 0; }
 .copy-btn {
   background: var(--card);
   color: var(--fg);
@@ -278,6 +283,12 @@ footer.site .wrap { display: flex; justify-content: space-between; gap: 16px; fl
   main { padding: 40px 0 64px; }
   h2 { margin-top: 44px; }
   pre { padding: 14px; font-size: .84rem; }
+  /* A long command must wrap or scroll inside its own box; without min-width:0 the flex
+     item refuses to shrink and the whole page scrolls sideways. */
+  .install { flex-wrap: nowrap; align-items: flex-start; }
+  .install pre { flex: 1 1 auto; min-width: 0; }
+  .install .copy-btn { padding: 0 14px; min-height: 44px; flex: 0 0 auto; }
+  .site header .wrap { gap: 8px; }
 }
 
 /* Utility classes used instead of inline styles. */
@@ -303,3 +314,18 @@ footer.site .wrap { display: flex; justify-content: space-between; gap: 16px; fl
 .card-link { text-decoration: none; color: inherit; }
 .card-link:hover { border-color: var(--accent-dim); text-decoration: none; }
 .spaced { margin-top: 40px; }
+
+/* Version selector: generation comes from the release manifest, so it stays inert until a
+   tag with published documentation exists. */
+.version-select { margin: 24px 0 8px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.version-select select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+}
+.version-hint { color: var(--muted); font-size: 0.95rem; margin: 0; }
+.site-root { min-height: 100vh; display: flex; flex-direction: column; }
+.site-root main { flex: 1; }

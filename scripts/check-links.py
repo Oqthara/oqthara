@@ -7,6 +7,10 @@ ROOTS = [pathlib.Path("site"), pathlib.Path("docs"), pathlib.Path("README.md"),
          pathlib.Path("SECURITY.md"), pathlib.Path("examples")]
 LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
+# Generated and vendored directories hold third-party markdown whose links are relative to
+# packages we do not ship. Checking them reports failures we can neither fix nor publish.
+SKIP_DIRS = {"node_modules", "_site", "dist", ".ssr", "build", ".gradle", ".git"}
+
 def local_target(source, target):
     target = target.split("#")[0].strip()
     if not target or target.startswith(("http://", "https://", "mailto:", "#")):
@@ -17,7 +21,11 @@ def main():
     broken = []
     checked = 0
     for root in ROOTS:
-        files = [root] if root.is_file() else list(root.rglob("*"))
+        if root.is_file():
+            files = [root]
+        else:
+            files = [path for path in root.rglob("*")
+                     if not SKIP_DIRS.intersection(path.relative_to(root).parts)]
         for path in files:
             if path.suffix not in {".md", ".html"}:
                 continue

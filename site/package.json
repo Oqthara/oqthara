@@ -1,0 +1,24 @@
+{
+  "name": "oqthara-site",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The Oqthara website: a React application prerendered to static HTML.",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run build:app && npm run build:versions",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js",
+    "verify": "node verify.mjs",
+    "build:app": "vite build && vite build --ssr src/prerender-entry.jsx --outDir .ssr && node prerender.mjs",
+    "build:versions": "python3 ../scripts/build-versioned-docs.py"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^8.3.5"
+  }
+}

@@ -39,6 +39,11 @@ jobs:
         run: |
           java -jar oq-cli/build/libs/oq.jar doc .
           git diff --exit-code docs/stdlib/reference.md
+      - name: Check documentation matches the implementation
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        run: |
+          python3 scripts/check-links.py
+          python3 scripts/check-docs-sync.py
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
