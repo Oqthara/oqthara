@@ -34,6 +34,11 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
       - name: Build and test
         run: ./gradlew build --no-daemon --console=plain
+      - name: Regenerate documentation and check it is current
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        run: |
+          java -jar oq-cli/build/libs/oq.jar doc .
+          git diff --exit-code docs/stdlib/reference.md
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7

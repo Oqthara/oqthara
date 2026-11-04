@@ -29,6 +29,7 @@ jobs:
         run: |
           mkdir -p _site
           cp -R site/* _site/
+          cp docs/stdlib/reference.md _site/stdlib.md
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site

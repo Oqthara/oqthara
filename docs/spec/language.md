@@ -321,6 +321,16 @@ oq build hello.oq --emit-ir  # print the IR
 command prints an explicit diagnostic and exits with code 3 instead of crashing; `oq run`
 always works, because the interpreter needs nothing extra.
 
+## Documentation
+
+```bash
+oq doc            # regenerate docs/stdlib/reference.md from the implementation
+```
+
+The generated page lists every global function and every method, read directly from the
+standard library sources, plus the real keyword list with its count. CI regenerates it and
+fails if the checked-in copy is stale, so the reference cannot drift.
+
 ## Formatting
 
 ```bash

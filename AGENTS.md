@@ -23,7 +23,7 @@ CLI: `oq`. Extension: `.oq`. Maven group: `dev.oqthara`. License: MIT. Java base
 ## Simplicity test
 
 Before a feature: can a beginner explain it in one sentence? Does it add a keyword
-(budget: 30, currently 18)? Does an existing feature already solve it? Is there exactly
+(budget: 30, currently 20)? Does an existing feature already solve it? Is there exactly
 one obvious way? Does it look like Rust (then redesign)? Does hello world stay one line?
 
 ## Never do Rust

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq doc` generates `docs/stdlib/reference.md` from the implementation; CI fails when the
+  checked-in copy is stale.
+- Keyword count corrected from 18 to 20 in every document (the lexer is authoritative).
 - `oq fmt` rewritten: canonical indentation and spacing, idempotent, output always parses,
   verified against every example.
 - VS Code extension in `editors/vscode`: TextMate grammar with interpolation support,

@@ -61,7 +61,7 @@ Tracked in `STATUS.md` on every cycle:
 
 | Metric | Target | Current |
 |---|---|---|
-| Keywords | ≤ 30 | 18 |
+| Keywords | ≤ 30 | 20 |
 | Hello world | 1 line | 1 line |
 | Tutorial concepts before first useful program | ≤ 3 | 2 (`print`, text) |
 | Ways to declare a variable | 1 | 1 |

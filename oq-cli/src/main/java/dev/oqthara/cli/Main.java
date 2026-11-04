@@ -64,6 +64,7 @@ public final class Main {
                 }
                 case "fmt", "format" -> Formatter.formatFiles(out, err, rest(args));
                 case "new" -> Scaffold.create(out, err, rest(args));
+                case "doc" -> DocGenerator.run(out, err, rest(args));
                 case "test" -> TestRunner.run(out, err, rest(args));
                 case "build" -> build(rest(args));
                 default -> {
@@ -96,6 +97,7 @@ public final class Main {
                       oq test [dir]              run test_*.oq files
                       oq build <file.oq>         lower a program to IR (bytecode needs JDK 24+)
                       oq new <name>              create a new project
+                      oq doc [root]              generate the stdlib reference
                       oq version                 show the version
                       oq help                    show this help
 
