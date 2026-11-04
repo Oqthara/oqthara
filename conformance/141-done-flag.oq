@@ -1,0 +1,5 @@
+task = spawn(fun()
+  return 1
+end)
+await(task)
+print done(task)

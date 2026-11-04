@@ -32,6 +32,7 @@ java -jar oq.jar examples/hello.oq
 | `logfilter.oq` | structured log filtering and counting |
 | `inventory.oq` | grouping and aggregation over records |
 | `guess.oq` | interactive input with `try`/`catch` |
+| `parallel.oq` | `spawn`/`await`/`par_map` on virtual threads |
 | `tests/` | the language-level test suite for `oq test` |
 
 `guess.oq` is interactive; the rest are deterministic and safe to run in CI.

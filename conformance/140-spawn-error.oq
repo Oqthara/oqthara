@@ -1,0 +1,9 @@
+task = spawn(fun()
+  error("inside task")
+end)
+
+try
+  await(task)
+catch e
+  print "caught: {e.message}"
+end

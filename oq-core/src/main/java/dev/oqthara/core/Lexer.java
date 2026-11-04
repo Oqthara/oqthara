@@ -98,12 +98,10 @@ public final class Lexer {
         int startLine = line;
         int startCol = column;
         advance();
-        if (bracketDepth == 0) {
-            if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).is(Token.Kind.NEWLINE)) {
-                return;
-            }
-            tokens.add(new Token(Token.Kind.NEWLINE, "\n", null, Span.at(sourceName, startLine, startCol)));
+        if (!tokens.isEmpty() && tokens.get(tokens.size() - 1).is(Token.Kind.NEWLINE)) {
+            return;
         }
+        tokens.add(new Token(Token.Kind.NEWLINE, "\n", null, Span.at(sourceName, startLine, startCol)));
     }
 
     private void skipComment() {

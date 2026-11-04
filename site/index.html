@@ -224,6 +224,11 @@ counts = {}
   <span class="fn">print</span> <span class="str">"line {err.line}: {err.message}"</span>
 <span class="kw">end</span>
 
+task = <span class="fn">spawn</span>(<span class="kw">fun</span>()
+  <span class="kw">return</span> expensive()
+<span class="kw">end</span>)
+<span class="fn">print</span> <span class="fn">await</span>(task)
+
 <span class="kw">use</span> java.time.LocalDate
 
 start = LocalDate(<span class="num">2026</span>, <span class="num">1</span>, <span class="num">1</span>)

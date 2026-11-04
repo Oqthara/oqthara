@@ -45,6 +45,7 @@ public final class Stdlib {
         installJson(interpreter);
         installTime(interpreter);
         installHttp(interpreter);
+        installConcurrency(interpreter);
         installProcess(interpreter);
     }
 
@@ -449,6 +450,56 @@ public final class Stdlib {
             throw new OqError("HTTP request failed: " + e.getMessage(), span,
                     "Check the URL and your network connection.");
         }
+    }
+
+    private static void installConcurrency(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.of("spawn", 1, (host, args, span) -> {
+            Object callback = args.get(0);
+            java.util.concurrent.CompletableFuture<Object> future =
+                    java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> host.call(callback, List.of(), span),
+                            java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+            return new dev.oqthara.runtime.OqTask(future);
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("await", 1, (host, args, span) -> {
+            if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
+                throw new OqError("await() needs a task from spawn(), got "
+                        + Values.typeName(args.get(0)), span);
+            }
+            return task.await(span);
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("done", 1, (host, args, span) -> {
+            if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
+                throw new OqError("done() needs a task from spawn(), got "
+                        + Values.typeName(args.get(0)), span);
+            }
+            return task.isDone();
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("par_map", 2, (host, args, span) -> {
+            List<?> items = (List<?>) Values.iterable(args.get(0), span);
+            Object callback = args.get(1);
+            List<java.util.concurrent.CompletableFuture<Object>> futures = new ArrayList<>();
+            try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {
+                for (Object item : items) {
+                    futures.add(java.util.concurrent.CompletableFuture.supplyAsync(
+                            () -> host.call(callback, List.of(item), span), executor));
+                }
+            }
+            List<Object> results = new ArrayList<>();
+            for (var future : futures) {
+                try {
+                    results.add(future.get());
+                } catch (java.util.concurrent.ExecutionException e) {
+                    Throwable cause = e.getCause();
+                    if (cause instanceof OqError oq) throw oq;
+                    throw new OqError("parallel task failed: " + cause, span);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new OqError("interrupted while mapping in parallel", span);
+                }
+            }
+            return results;
+        }));
     }
 
     private static void installProcess(Interpreter interpreter) {

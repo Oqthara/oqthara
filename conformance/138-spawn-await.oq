@@ -1,0 +1,4 @@
+task = spawn(fun()
+  return 21 * 2
+end)
+print await(task)

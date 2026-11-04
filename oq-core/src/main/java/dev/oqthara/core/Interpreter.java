@@ -30,7 +30,7 @@ public final class Interpreter implements OqHost {
     private final MethodResolver methods;
     private final Map<String, Class<?>> javaTypes = new LinkedHashMap<>();
     private final Map<String, OqCallable> builtins = new LinkedHashMap<>();
-    private final List<String> callStack = new ArrayList<>();
+    private final ThreadLocal<List<String>> callStack = ThreadLocal.withInitial(ArrayList::new);
     private int steps = 0;
     private int maxSteps = 50_000_000;
     private int depth = 0;
@@ -56,7 +56,7 @@ public final class Interpreter implements OqHost {
     }
 
     public List<String> callStack() {
-        return callStack;
+        return callStack.get();
     }
 
     public void setMaxSteps(int maxSteps) {
@@ -395,15 +395,16 @@ public final class Interpreter implements OqHost {
 
     private Object invoke(Object callee, List<Object> args, Span span, String name) {
         if (callee instanceof OqCallable callable) {
-            callStack.add(callable.name());
-            if (callStack.size() > 400) {
-                callStack.remove(callStack.size() - 1);
+            List<String> stack = callStack.get();
+            stack.add(callable.name());
+            if (stack.size() > 400) {
+                stack.remove(stack.size() - 1);
                 throw new OqError("call stack is too deep", span, "Check for infinite recursion.");
             }
             try {
                 return callable.call(this, args, span);
             } finally {
-                callStack.remove(callStack.size() - 1);
+                stack.remove(stack.size() - 1);
             }
         }
         if (callee instanceof Class<?> type) {

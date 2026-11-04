@@ -61,9 +61,11 @@ class LexerTest {
     }
 
     @Test
-    void ignoresNewlinesInsideBrackets() {
+    void keepsNewlinesInsideBrackets() {
+        // The parser decides where newlines are insignificant, because block lambdas
+        // inside call parentheses need them.
         List<Token> tokens = Lexer.lex("test", "[1,\n2]");
         long newlines = tokens.stream().filter(t -> t.is(Token.Kind.NEWLINE)).count();
-        assertEquals(1, newlines);
+        assertEquals(2, newlines);
     }
 }

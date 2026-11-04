@@ -270,6 +270,32 @@ Processes: `run_command(line)` returns `.code` and `.output`. `env(name)`,
 
 Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
 
+## Concurrency
+
+Oqthara runs concurrent work on **virtual threads**, so blocking is cheap and there is no
+pool to configure.
+
+```
+task = spawn(fun()
+  return expensive()
+end)
+
+print await(task)        # blocks until done, returns the value
+print done(task)         # true when finished
+```
+
+Map in parallel when order matters but speed does too:
+
+```
+squares = par_map([1, 2, 3, 4], x -> x * x)
+print squares            # [1, 4, 9, 16]
+```
+
+Errors inside a task are re-raised by `await`, so `try`/`catch` works across the
+boundary. There is no shared-memory model to learn: values are ordinary Oqthara values and
+the JVM's memory model applies. For shared mutation, use a synchronized Java structure from
+the standard library.
+
 ## Building
 
 ```bash
