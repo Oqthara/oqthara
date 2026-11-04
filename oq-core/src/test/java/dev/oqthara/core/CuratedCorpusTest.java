@@ -47,6 +47,39 @@ class CuratedCorpusTest {
     }
 
     @Test
+    void deeplyNestedBlocksAreRejectedWithADiagnostic() {
+        // Same class of defect as the expression case, but for statements: 2000 nested
+        // blocks crashed the parser with a raw StackOverflowError.
+        for (int depth : new int[]{200, 2000}) {
+            String source = "if true\n".repeat(depth) + "print 1\n" + "end\n".repeat(depth);
+            OqError error = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                    () -> Parser.parse("<deep>", source),
+                    "block depth " + depth + " must produce an OqError, not crash");
+            assertTrue(error.getMessage().contains("nested too deeply"),
+                    "unexpected message: " + error.getMessage());
+        }
+    }
+
+    @Test
+    void deeplyNestedFunctionsAreRejectedWithADiagnostic() {
+        int depth = 400;
+        StringBuilder source = new StringBuilder();
+        for (int i = 0; i < depth; i++) source.append("fun f").append(i).append("()\n");
+        source.append("print 1\n");
+        for (int i = 0; i < depth; i++) source.append("end\n");
+        OqError error = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                () -> Parser.parse("<deep>", source.toString()));
+        assertTrue(error.getMessage().contains("nested too deeply"), error.getMessage());
+    }
+
+    @Test
+    void reasonableBlockNestingStillParses() {
+        int depth = 100;
+        String source = "if true\n".repeat(depth) + "print 1\n" + "end\n".repeat(depth);
+        Parser.parse("<deep>", source);
+    }
+
+    @Test
     void reasonableNestingStillParses() {
         int depth = 100;
         String source = "x = " + "(".repeat(depth) + "1" + ")".repeat(depth);

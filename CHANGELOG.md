@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nesting depth and the full compile pipeline, each in its own Gradle task and a dedicated
   `jazzer-fuzz` CircleCI job. A bounded run executes ~1.7 million cases.
 - A curated regression corpus replayed by `CuratedCorpusTest` on every build.
-- Fixed: 390+ levels of nested parentheses crashed the checker with a raw
+- Fixed: 390+ levels of nested parentheses, and 2000 nested blocks, crashed the checker with a raw
   `StackOverflowError` and exit 70. Found by fuzzing; now a normal diagnostic. The parser
-  enforces a 128-level nesting limit.
+  enforces a 128-level limit for both expressions and statement blocks.
 - `oq build` compiles straight-line arithmetic, text concatenation and `print` to real JVM
   bytecode when the whole program is in that subset, embedding no source; anything else falls
   back to the launcher jar with a printed reason. Verified instruction-for-instruction with

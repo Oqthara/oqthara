@@ -39,6 +39,25 @@ class ParserFuzzTest {
         }
     }
 
+    @FuzzTest(maxDuration = "20s")
+    void deeplyNestedBlocksDoNotOverflow(FuzzedDataProvider data) {
+        int depth = data.consumeInt(0, 600);
+        String opener = data.pickValue(new String[]{"if true\n", "while true\n",
+                "for i in 1 to 2\n", "fun g()\n", "try\n"});
+        String closer = opener.startsWith("try") ? "catch e\nend\n" : "end\n";
+        StringBuilder source = new StringBuilder();
+        for (int i = 0; i < depth; i++) source.append(opener);
+        source.append("print 1\n");
+        for (int i = 0; i < depth; i++) source.append(closer);
+        try {
+            Parser.parse("<fuzz>", source.toString());
+        } catch (OqError expected) {
+            // Fine: a clear error beats a crash.
+        } catch (StackOverflowError e) {
+            throw new AssertionError("parser overflowed on block depth " + depth, e);
+        }
+    }
+
     private static String repr(String text) {
         return text.length() > 200 ? text.substring(0, 200) + "..." : text;
     }
