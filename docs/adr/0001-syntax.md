@@ -83,20 +83,31 @@ and maps need no continuation markers.
 
 ## The twenty programs
 
-The comparison corpus is checked in under `docs/adr/0001-programs/`. Each program is
-shown in the accepted `end` form and the two rejected forms. The count of tokens,
+The twenty programs were written in all three styles during design. The accepted form is
+reproduced below for the two that matter most for style; the rest live in the conformance
+suite as real, executed programs. The count of tokens,
 characters and lines was compared to keep the accepted style from being secretly
 more verbose.
 
-Programs covered: hello, FizzBuzz, word count, file read, JSON, HTTP, records,
-collections, closures, sorting, error handling, recursion, ranges, string
-interpolation, maps, sets, null handling, classes-with-methods, concurrency and a
-small CLI.
+Programs covered: hello, FizzBuzz, word count, file read, JSON, HTTP client, records,
+collections, closures, sorting, error handling, recursion, ranges, string interpolation,
+maps, sets, null handling, methods-on-data, iteration and a small CLI. All twenty exist as
+executable code: ten in `examples/` and the rest as cases 001-130 in `conformance/`.
 
-Result: across the twenty programs, the `end` form was the same length as the brace
-form within 4% of characters, and 11% shorter than the indentation form once
-continuation lines were taken into account. It had no parsing ambiguities and no
-layout-sensitive failures after copy-paste.
+Honest note on measurement: no automated character-count harness was built for the design
+comparison, so this ADR does **not** claim precise percentages. What was observed by hand
+on the twenty programs:
+
+- the `end` form and the brace form are visually similar in length;
+- the indentation form needs continuation markers whenever a call or literal wraps, which
+  makes it the longest of the three in practice;
+- the `end` form was the only one with no layout-sensitive failure after copy-paste;
+- all three were parseable, but indentation required INDENT/DEDENT bookkeeping that the
+  other two did not.
+
+If a future change needs hard numbers, the way to get them is to add a
+`docs/adr/0001-programs/` corpus and a counting script, which is tracked as backlog item
+T-0034 rather than being invented here.
 
 ## Consequences
 

@@ -1,0 +1,80 @@
+version: 2.1
+
+# macOS coverage lives here; Linux, Windows, packaging, CodeQL, Pages and releases
+# stay on GitHub Actions (.github/workflows).
+#
+# One-time setup (requires a human with CircleCI access):
+#   1. https://app.circleci.com/settings/project/github/Oqthara/oqthara/setup
+#   2. "Set Up Project" using the existing .circleci/config.yml, branch main.
+#   3. (Optional) add a CIRCLECI_TOKEN secret so the GitHub workflow can poll status.
+
+orbs:
+  macos: circleci/macos@2.5.1
+
+executors:
+  macos-arm:
+    macos:
+      xcode: 16.4.0
+    resource_class: m4pro.medium
+
+jobs:
+  test-macos:
+    parameters:
+      java-version:
+        type: string
+    executor: macos-arm
+    steps:
+      - checkout
+      - run:
+          name: Select JDK << parameters.java-version >>
+          command: |
+            set -euo pipefail
+            JDK_HOME="/Library/Java/JavaVirtualMachines/temurin-<< parameters.java-version >>.jdk/Contents/Home"
+            if [ ! -d "$JDK_HOME" ]; then
+              brew install --cask temurin@<< parameters.java-version >>
+              JDK_HOME="/Library/Java/JavaVirtualMachines/temurin-<< parameters.java-version >>.jdk/Contents/Home"
+            fi
+            echo "export JAVA_HOME=$JDK_HOME" >> "$BASH_ENV"
+            echo "export PATH=$JDK_HOME/bin:\$PATH" >> "$BASH_ENV"
+            java -version
+      - restore_cache:
+          keys:
+            - gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "build.gradle.kts" }}
+            - gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+      - run:
+          name: Build and test
+          command: ./gradlew build --no-daemon --console=plain
+      - run:
+          name: Smoke test the CLI
+          command: |
+            set -euo pipefail
+            ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
+            java -jar oq-cli/build/libs/oq.jar examples/hello.oq | grep -q "Hello, World!"
+            java -jar oq-cli/build/libs/oq.jar --version
+      - save_cache:
+          key: gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "build.gradle.kts" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
+      - store_test_results:
+          path: oq-core/build/test-results/test
+      - store_test_results:
+          path: oq-cli/build/test-results/test
+      - store_test_results:
+          path: oq-runtime/build/test-results/test
+      - store_artifacts:
+          path: build/reports/jacoco/jacocoAggregate
+          destination: coverage
+      - store_artifacts:
+          path: oq-cli/build/libs/oq.jar
+          destination: oq.jar
+
+workflows:
+  macos:
+    jobs:
+      - test-macos:
+          name: macOS / JDK 21
+          java-version: "21"
+      - test-macos:
+          name: macOS / JDK 25
+          java-version: "25"

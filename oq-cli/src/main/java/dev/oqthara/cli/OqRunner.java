@@ -36,12 +36,11 @@ public final class OqRunner {
             interpreter.run(program);
             out.flush();
             err.flush();
-            return new Result(0, outBytes.toString(StandardCharsets.UTF_8), errBytes.toString(StandardCharsets.UTF_8));
+            return new Result(0, normalize(outBytes), normalize(errBytes));
         } catch (Stdlib.ExitSignal exit) {
             out.flush();
             err.flush();
-            return new Result(exit.code(), outBytes.toString(StandardCharsets.UTF_8),
-                    errBytes.toString(StandardCharsets.UTF_8));
+            return new Result(exit.code(), normalize(outBytes), normalize(errBytes));
         } catch (OqError error) {
             out.flush();
             StringBuilder message = new StringBuilder(error.getMessage());
@@ -53,7 +52,7 @@ public final class OqRunner {
             if (error.hint() != null) message.append('\n').append(error.hint());
             err.print(message);
             err.flush();
-            return new Result(1, outBytes.toString(StandardCharsets.UTF_8), errBytes.toString(StandardCharsets.UTF_8));
+            return new Result(1, normalize(outBytes), normalize(errBytes));
         } finally {
             out.flush();
             err.flush();
@@ -62,6 +61,10 @@ public final class OqRunner {
 
     public static Result run(String source) {
         return run("<test>", source, List.of(), "", Path.of("."));
+    }
+
+    private static String normalize(ByteArrayOutputStream bytes) {
+        return bytes.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 
     public static List<String> lines(String text) {
