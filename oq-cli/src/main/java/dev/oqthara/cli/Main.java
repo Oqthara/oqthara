@@ -219,7 +219,8 @@ public final class Main {
                 Details.render(err, error, source, color);
                 return 1;
             }
-            Ir.Program ir = Lowering.lower(program);
+            Lowering.Result lowered = Lowering.lowerWithReport(program);
+            Ir.Program ir = lowered.program();
             boolean emitIr = false;
             for (int i = 1; i < args.length; i++) {
                 if (args[i].equals("--emit-ir")) emitIr = true;
@@ -230,6 +231,9 @@ public final class Main {
             Backends.Kind kind = Backends.select();
             out.println("compiled " + path + " (" + ir.functions().size() + " functions, "
                     + ir.main().body().size() + " main instructions)");
+            for (String divergence : lowered.divergences()) {
+                err.println("warning: " + divergence + " — the interpreter is authoritative");
+            }
             out.println(Backends.describe());
             if (kind == Backends.Kind.DIAGNOSTIC) {
                 err.println(Backends.diagnostic(kind, Backends.featureVersion()));

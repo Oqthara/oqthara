@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `modules/`, then in `lib/`; loaded once, cycle-safe, with errors that name the module.
 - `spawn`, `await`, `done` and `par_map` running on virtual threads, with task errors
   re-raised at the `await` site.
+- Deterministic parser and lexer fuzzing: 7,000 random inputs must either parse or raise an
+  `OqError`, never crash.
+- `oq build` reports every known IR divergence (`break`, `continue`) as a warning instead
+  of silently producing different behaviour from the interpreter.
 - `oq build` with AST-to-IR lowering, an IR disassembler (`--emit-ir`), and runtime
   backend detection: on JDK 24+ it selects the classfile backend, and on JDK 21-23 it
   explains the requirement and exits with code 3.

@@ -108,6 +108,24 @@ class LoweringTest {
     }
 
     @Test
+    void reportsDivergencesInsteadOfPretending() {
+        Ast.Program program = Parser.parse("<t>", """
+                for i in 1 to 3
+                  break
+                end
+                """);
+        Lowering.Result result = Lowering.lowerWithReport(program);
+        assertFalse(result.divergences().isEmpty());
+        assertTrue(result.divergences().get(0).contains("break"));
+    }
+
+    @Test
+    void cleanProgramHasNoDivergences() {
+        Ast.Program program = Parser.parse("<t>", "print 1 + 2");
+        assertTrue(Lowering.lowerWithReport(program).divergences().isEmpty());
+    }
+
+    @Test
     void disassemblesWithoutThrowing() {
         String text = Ir.disassemble(lower("print \"hi\""));
         assertTrue(text.contains("function main"));

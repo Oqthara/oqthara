@@ -14,10 +14,18 @@ import java.util.List;
  */
 public final class Lowering {
     private final List<Ir.Function> functions = new ArrayList<>();
+    private final List<String> divergences = new ArrayList<>();
     private List<Ir.Instr> code;
     private int tempCounter = 0;
 
     public static Ir.Program lower(Ast.Program program) {
+        return lowerWithReport(program).program();
+    }
+
+    public record Result(Ir.Program program, List<String> divergences) {
+    }
+
+    public static Result lowerWithReport(Ast.Program program) {
         Lowering lowering = new Lowering();
         lowering.code = Ir.list();
         for (Ast.Stmt stmt : program.statements()) {
@@ -25,7 +33,8 @@ public final class Lowering {
         }
         lowering.code.add(new Ir.Halt());
         Ir.Function main = new Ir.Function("main", List.of(), List.copyOf(lowering.code));
-        return new Ir.Program(main, List.copyOf(lowering.functions));
+        return new Result(new Ir.Program(main, List.copyOf(lowering.functions)),
+                List.copyOf(lowering.divergences));
     }
 
     private void statement(Ast.Stmt stmt) {
@@ -64,9 +73,13 @@ public final class Lowering {
                 }
                 code.add(new Ir.Return());
             }
-            case Ast.Break ignored -> code.add(new Ir.Halt());
+            case Ast.Break ignored -> {
+                // Prototype limitation: the IR has no loop-exit address yet.
+                code.add(new Ir.Halt());
+                divergences.add("break lowered to halt (line " + ignored.span().line() + ")");
+            }
             case Ast.Continue ignored -> {
-                // Unsupported in the prototype lowering; recorded as a divergence.
+                divergences.add("continue is not lowered (line " + ignored.span().line() + ")");
             }
             case Ast.DataDecl ignored -> {
                 // Types are runtime constructs; nothing to emit yet.

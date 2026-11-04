@@ -20,6 +20,8 @@ tasks.test {
     systemProperty("oq.root", rootProject.projectDir.absolutePath)
 }
 
+tasks.named("assemble") { dependsOn("standaloneJar") }
+
 tasks.register<Jar>("standaloneJar") {
     group = "distribution"
     description = "Builds a self-contained oq.jar (interpreter + stdlib)."
