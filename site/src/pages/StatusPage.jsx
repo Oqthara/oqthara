@@ -9,13 +9,13 @@ const WORKS = [
   ["Concurrency", "spawn, await, par_map on virtual threads"],
   ["Java interop", "Constructors, instance and static methods"],
   ["CLI", "run, check, repl, fmt, test, new, doc, build"],
-  ["Compiled jars", "Real class files; real bytecode for arithmetic, variables and control flow"],
+  ["Compiled jars", "Real class files; real bytecode for functions, arithmetic, variables and control flow"],
   ["Fuzzing", "Seven Jazzer targets, about four million cases per run"],
   ["CI", "Linux, Windows and macOS × JDK 21 and 25, plus fuzzing"],
 ];
 
 const GAPS = [
-  ["Bytecode for functions", "Calls, closures and user functions fall back to the launcher jar"],
+  ["Bytecode for closures", "Functions that read an enclosing variable, lambdas and callbacks fall back to the launcher jar"],
   ["Bytecode for collections", "Lists, maps, sets and data types fall back to the launcher jar"],
   ["Pattern matching", "Not implemented"],
   ["Type annotations", "Not implemented; inference only"],

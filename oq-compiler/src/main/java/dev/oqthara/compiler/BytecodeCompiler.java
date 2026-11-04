@@ -5,16 +5,19 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Emits real JVM bytecode for a subset of Oqthara: constants, variables, arithmetic,
- * comparisons, {@code print}, {@code if}, {@code while}, {@code for} and the boolean
- * operators.
+ * Emits real JVM bytecode for a subset of Oqthara: constants, variables, top-level functions
+ * with parameters, calls, return values and recursion, arithmetic, comparisons, {@code print},
+ * {@code if}, {@code while}, {@code for} and the boolean operators.
  *
  * <p>Everything compiled here runs without the interpreter. Anything else is refused with a
  * {@link NotSupportedException} so {@code oq build} can fall back to the launcher and print
@@ -58,6 +61,8 @@ public final class BytecodeCompiler {
     private static final int IFEQ = 0x99;
     private static final int GOTO = 0xA7;
     private static final int INVOKESTATIC = 0xB8;
+    /** JVMS: {@code areturn} is 0xB0 ({@code 0xAC} is {@code ireturn}). */
+    private static final int ARETURN = 0xB0;
     private static final int RETURN = 0xB1;
 
     private static final String ARITHMETIC = "dev/oqthara/runtime/Arithmetic";
@@ -96,20 +101,41 @@ public final class BytecodeCompiler {
 
     /** Compiles the program into a class with a {@code main} that matches the interpreter. */
     public static byte[] compile(Ir.Program program, String className) {
-        if (!program.functions().isEmpty()) {
-            throw new NotSupportedException("functions are not compiled yet");
+        String internalName = className.replace('.', '/');
+        // One pool for the whole class: every method's constants, every function's method
+        // reference and the class's own entries share one index space.
+        ConstantPool pool = new ConstantPool();
+
+        Map<String, Integer> functionArities = new LinkedHashMap<>();
+        for (Ir.Function function : program.functions()) {
+            if (function.name().equals("print") || function.name().equals("write")) {
+                throw new NotSupportedException("function '" + function.name()
+                        + "' collides with the built-in command '" + function.name() + "'");
+            }
+            functionArities.put(function.name(), function.params().size());
         }
-        Method method = new Method(program.main().body());
-        method.compileBody();
 
-        byte[] code = method.code();
-        int[] frameOffsets = method.frameOffsets();
+        // Main is planned first so its top-level variable names are known. A function that
+        // mentions one of them is refused instead of compiled, which keeps closure and
+        // global-mutation semantics on the interpreter where they cannot diverge.
+        Method main = new Method(program.main().body(), 1, pool, internalName, functionArities);
+        main.compileBody();
+        Set<String> outerNames = main.topLevelNames();
 
-        ConstantPool pool = method.pool();
-        int thisClass = pool.classRef(pool.utf8(className.replace('.', '/')));
+        List<Method> methods = new ArrayList<>();
+        methods.add(main);
+        for (Ir.Function function : program.functions()) {
+            Method method = new Method(function.body(), function.params().size(), pool,
+                    internalName, functionArities);
+            method.paramNames = function.params();
+            method.outerNames = outerNames;
+            method.isFunction = true;
+            method.compileBody();
+            methods.add(method);
+        }
+
+        int thisClass = pool.classRef(pool.utf8(internalName));
         int objectClass = pool.classRef(pool.utf8("java/lang/Object"));
-        int mainName = pool.utf8("main");
-        int mainDescriptor = pool.utf8("([Ljava/lang/String;)V");
         int codeAttribute = pool.utf8("Code");
         // Every constant must exist before the pool is serialized; adding one afterwards
         // leaves the pool's declared entry count stale and produces a ClassFormatError.
@@ -117,7 +143,20 @@ public final class BytecodeCompiler {
         int sourceFile = pool.utf8("SourceFile");
         int fileName = pool.utf8(className.substring(className.lastIndexOf('.') + 1) + ".java");
 
-        byte[] stackMap = stackMap(pool, objectClass, frameOffsets, method.localCount());
+        int[] nameIndices = new int[methods.size()];
+        int[] descriptorIndices = new int[methods.size()];
+        byte[][] stackMaps = new byte[methods.size()][];
+        nameIndices[0] = pool.utf8("main");
+        descriptorIndices[0] = pool.utf8("([Ljava/lang/String;)V");
+        stackMaps[0] = stackMap(pool, objectClass, main.frameOffsets(), main.localCount());
+        for (int i = 1; i < methods.size(); i++) {
+            Ir.Function function = program.functions().get(i - 1);
+            nameIndices[i] = pool.utf8(function.name());
+            descriptorIndices[i] = pool.utf8(functionDescriptor(function.params().size()));
+            Method method = methods.get(i);
+            stackMaps[i] = stackMap(pool, objectClass, method.frameOffsets(),
+                    method.localCount());
+        }
 
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
@@ -131,26 +170,10 @@ public final class BytecodeCompiler {
             out.writeShort(objectClass);
             out.writeShort(0);
             out.writeShort(0);
-            out.writeShort(1);
-            out.writeShort(ACC_PUBLIC | ACC_STATIC);
-            out.writeShort(mainName);
-            out.writeShort(mainDescriptor);
-            out.writeShort(1);
-            out.writeShort(codeAttribute);
-            int nested = stackMap == null ? 0 : 6 + stackMap.length;
-            out.writeInt(12 + code.length + nested);
-            out.writeShort(Math.max(2, method.maxStack()));
-            out.writeShort(Math.max(1, method.localCount()));
-            out.writeInt(code.length);
-            out.write(code);
-            out.writeShort(0); // exception table
-            if (stackMap == null) {
-                out.writeShort(0);
-            } else {
-                out.writeShort(1);
-                out.writeShort(stackMapAttribute);
-                out.writeInt(stackMap.length);
-                out.write(stackMap);
+            out.writeShort(methods.size());
+            for (int i = 0; i < methods.size(); i++) {
+                writeMethod(out, nameIndices[i], descriptorIndices[i], codeAttribute,
+                        stackMapAttribute, methods.get(i), stackMaps[i]);
             }
             out.writeShort(1); // class attributes
             out.writeShort(sourceFile);
@@ -161,6 +184,45 @@ public final class BytecodeCompiler {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * Writes one method with its own {@code Code} attribute. The attribute length counts only
+     * this method's bytecode and its own stack map, never another method's.
+     */
+    private static void writeMethod(DataOutputStream out, int nameIndex, int descriptorIndex,
+            int codeAttribute, int stackMapAttribute, Method method, byte[] stackMap)
+            throws IOException {
+        byte[] code = method.code();
+        int nested = stackMap == null ? 0 : 6 + stackMap.length;
+        out.writeShort(ACC_PUBLIC | ACC_STATIC);
+        out.writeShort(nameIndex);
+        out.writeShort(descriptorIndex);
+        out.writeShort(1);
+        out.writeShort(codeAttribute);
+        out.writeInt(12 + code.length + nested);
+        out.writeShort(Math.max(2, method.maxStack()));
+        out.writeShort(Math.max(1, method.localCount()));
+        out.writeInt(code.length);
+        out.write(code);
+        out.writeShort(0); // exception table
+        if (stackMap == null) {
+            out.writeShort(0);
+        } else {
+            out.writeShort(1);
+            out.writeShort(stackMapAttribute);
+            out.writeInt(stackMap.length);
+            out.write(stackMap);
+        }
+    }
+
+    /** Every parameter is one boxed {@code Object}; the result is always an {@code Object}. */
+    private static String functionDescriptor(int paramCount) {
+        StringBuilder descriptor = new StringBuilder("(");
+        for (int i = 0; i < paramCount; i++) {
+            descriptor.append("Ljava/lang/Object;");
+        }
+        return descriptor.append(")Ljava/lang/Object;").toString();
     }
 
     /**
@@ -206,20 +268,36 @@ public final class BytecodeCompiler {
      */
     private static final class Method {
         private final List<Ir.Instr> body;
-        private final ConstantPool pool = new ConstantPool();
+        private final int paramCount;
+        private final ConstantPool pool;
+        private final String ownerInternalName;
+        private final Map<String, Integer> functionArities;
+        private final int startSlot;
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         private final Deque<Map<String, Binding>> scopes = new ArrayDeque<>();
         private final Map<String, Integer> labels = new LinkedHashMap<>();
         private final TreeSet<Integer> frames = new TreeSet<>();
         private int[] slots;
-        private int localCount = 1;
+        private int localCount;
         private int depth = 0;
         private int peak = 0;
         private boolean reachable = true;
+        private boolean isFunction = false;
+        private List<String> paramNames = List.of();
+        private Set<String> outerNames = Set.of();
+        private Set<String> topLevelNames = Set.of();
 
-        Method(List<Ir.Instr> body) {
+        Method(List<Ir.Instr> body, int paramCount, ConstantPool pool, String ownerInternalName,
+                Map<String, Integer> functionArities) {
             this.body = body;
-            this.slots = plan();
+            this.paramCount = paramCount;
+            this.pool = pool;
+            this.ownerInternalName = ownerInternalName;
+            this.functionArities = functionArities;
+            // Main's slot 0 holds the unused args array; function parameters occupy
+            // 0..paramCount-1, so planned locals start after them.
+            this.startSlot = paramCount;
+            this.localCount = paramCount;
         }
 
         ConstantPool pool() {
@@ -242,14 +320,22 @@ public final class BytecodeCompiler {
             return frames.stream().mapToInt(Integer::intValue).filter(o -> o > 0).toArray();
         }
 
+        Set<String> topLevelNames() {
+            return topLevelNames;
+        }
+
         /**
          * Resolves every load and store to a slot before anything is emitted, so the method's
          * local count is known up front and errors are reported before a class exists.
          */
         private int[] plan() {
             int[] resolved = new int[body.size()];
-            scopes.push(new LinkedHashMap<>());
-            int next = 1;
+            Map<String, Binding> root = new LinkedHashMap<>();
+            for (int i = 0; i < paramNames.size(); i++) {
+                root.put(paramNames.get(i), new Binding(i, false));
+            }
+            scopes.push(root);
+            int next = startSlot;
             for (int i = 0; i < body.size(); i++) {
                 resolved[i] = -1;
                 switch (body.get(i)) {
@@ -269,6 +355,11 @@ public final class BytecodeCompiler {
                 }
             }
             localCount = next;
+            if (!isFunction) {
+                // The root scope holds exactly the names declared at the top level of main;
+                // nested blocks and loop bodies have their own scopes.
+                topLevelNames = new LinkedHashSet<>(root.keySet());
+            }
             return resolved;
         }
 
@@ -296,16 +387,31 @@ public final class BytecodeCompiler {
                 }
                 return visible.slot();
             }
+            refuseEnclosing(name);
             return declare(name, false, nextSlot);
         }
 
         private Binding lookup(String name) {
             Binding binding = lookupOrNull(name);
             if (binding == null) {
+                refuseEnclosing(name);
                 throw new NotSupportedException(
                         "variable '" + name + "' is used before assignment");
             }
             return binding;
+        }
+
+        /**
+         * A function may only touch its own parameters and locals. Reading or writing a
+         * top-level variable of main would be a closure or a global mutation, which the
+         * interpreter handles differently, so it is refused instead of compiled.
+         */
+        private void refuseEnclosing(String name) {
+            if (isFunction && outerNames.contains(name)) {
+                throw new NotSupportedException("'" + name + "' is read from an enclosing scope;"
+                        + " only functions that use their own parameters and locals are"
+                        + " compiled");
+            }
         }
 
         private Binding lookupOrNull(String name) {
@@ -317,12 +423,13 @@ public final class BytecodeCompiler {
         }
 
         void compileBody() {
-            // Every local is set to null before any branch target. A stack map frame must
-            // describe the exact state at a label, and an unassigned slot is `top`, which no
-            // frame may claim is a reference. Starting every slot as a real null reference
+            slots = plan();
+            // Every planned local is set to null before any branch target. A stack map frame
+            // must describe the exact state at a label, and an unassigned slot is `top`, which
+            // no frame may claim is a reference. Starting every slot as a real null reference
             // makes one frame shape valid everywhere, instead of requiring a different frame
-            // per control-flow path.
-            for (int slot = 1; slot < localCount; slot++) {
+            // per control-flow path. Parameters (and main's args slot) already hold values.
+            for (int slot = startSlot; slot < localCount; slot++) {
                 bytes.write(ACONST_NULL);
                 if (slot <= 3) {
                     bytes.write(0x4B + slot); // astore_0..3
@@ -335,12 +442,25 @@ public final class BytecodeCompiler {
                 emit(body.get(index), slots[index]);
             }
             if (reachable) {
-                bytes.write(RETURN);
+                if (isFunction) {
+                    // A function must push an Object; the lowering appends an explicit
+                    // `const nothing; return` so this is only a safety net.
+                    bytes.write(ACONST_NULL);
+                    push();
+                    bytes.write(ARETURN);
+                } else {
+                    bytes.write(RETURN);
+                }
             }
             patch();
         }
 
         private void emit(Ir.Instr instr, int slot) {
+            if (instr instanceof Ir.Return && !isFunction) {
+                // `oq run` rejects this; falling back lets the interpreter report it with a
+                // real span instead of failing inside a generated class.
+                throw new NotSupportedException("'return' outside a function");
+            }
             if (!reachable && !(instr instanceof Ir.Label)) {
                 // Code between an unconditional jump and the next label cannot be reached.
                 // Emitting it would also place an instruction after a jump with no stack map
@@ -397,9 +517,10 @@ public final class BytecodeCompiler {
                 }
                 case Ir.Return ignored -> {
                     if (reachable) {
-                        bytes.write(POP); // the lowering leaves the return value on the stack
+                        // The lowering leaves the return value on the stack; main cannot
+                        // reach here because a Return there is refused before emission.
+                        bytes.write(ARETURN);
                         pop();
-                        bytes.write(RETURN);
                         reachable = false;
                     }
                 }
@@ -535,16 +656,39 @@ public final class BytecodeCompiler {
         }
 
         private void emitCall(Ir.Call call) {
-            if (call.argc() != 1) {
+            switch (call.name()) {
+                case "print" -> {
+                    requireArgc(call, 1);
+                    call(ARITHMETIC, "print", "(Ljava/lang/Object;)V");
+                }
+                case "write" -> {
+                    requireArgc(call, 1);
+                    call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
+                }
+                default -> {
+                    Integer arity = functionArities.get(call.name());
+                    if (arity != null) {
+                        if (call.argc() != arity) {
+                            throw new NotSupportedException("call to '" + call.name() + "' with "
+                                    + call.argc() + " argument(s), but the function declares "
+                                    + arity + " parameter(s)");
+                        }
+                        call(ownerInternalName, call.name(),
+                                functionDescriptor(arity));
+                        return;
+                    }
+                    throw new NotSupportedException(
+                            "call to '" + call.name() + "' with " + call.argc()
+                                    + " argument(s) is not compiled yet");
+                }
+            }
+        }
+
+        private void requireArgc(Ir.Call call, int expected) {
+            if (call.argc() != expected) {
                 throw new NotSupportedException(
                         "call to '" + call.name() + "' with " + call.argc()
                                 + " argument(s) is not compiled yet");
-            }
-            switch (call.name()) {
-                case "print" -> call(ARITHMETIC, "print", "(Ljava/lang/Object;)V");
-                case "write" -> call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
-                default -> throw new NotSupportedException(
-                        "call to '" + call.name() + "' is not compiled yet");
             }
         }
 

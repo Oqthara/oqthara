@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq build` compiles top-level `fun` declarations to real static JVM methods: parameters,
+  return values, recursion and mutual recursion. Every parameter is one boxed `Object`, the
+  descriptor is `(Ljava/lang/Object;...)Ljava/lang/Object;`, calls are `invokestatic` and
+  `return` is `areturn`. Conformance programs compiling to bytecode rose from 41 to 52 of
+  197, with zero divergences from `oq run`. A function that reads or writes a top-level
+  variable, and a function named `print` or `write`, is refused by name and falls back to
+  the launcher jar.
 - Coverage-guided fuzzing with Jazzer 0.30.0: four targets covering the lexer, parser,
   nesting depth and the full compile pipeline, each in its own Gradle task and a dedicated
   `jazzer-fuzz` CircleCI job. A bounded run executes ~1.7 million cases.
