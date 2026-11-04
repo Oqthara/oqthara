@@ -16,6 +16,23 @@ executors:
     macos:
       xcode: 16.4.0
     resource_class: m4pro.medium
+  linux-jdk21:
+    docker:
+      - image: cimg/openjdk:21.0
+    resource_class: medium
+
+commands:
+  gradle_cache:
+    steps:
+      - restore_cache:
+          keys:
+            - gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "build.gradle.kts" }}
+            - gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}
+      - save_cache:
+          key: gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "build.gradle.kts" }}
+          paths:
+            - ~/.gradle/caches
+            - ~/.gradle/wrapper
 
 jobs:
   test-macos:
@@ -121,7 +138,49 @@ jobs:
           path: oq-cli/build/libs/oq.jar
           destination: oq.jar
 
+  jazzer-fuzz:
+    executor: linux-jdk21
+    steps:
+      - checkout
+      - gradle_cache
+      - run:
+          name: Jazzer Coverage-Guided Fuzzing
+          command: |
+            mkdir -p build/fuzz-artifacts
+            java -version
+            set -o pipefail
+            JAZZER_FUZZ=1 ./gradlew --no-daemon fuzzTest 2>&1 | tee build/fuzz-artifacts/jazzer.log
+      - run:
+          name: Record fuzzing metadata
+          when: always
+          command: |
+            mkdir -p build/fuzz-artifacts
+            {
+              echo "commit: $CIRCLE_SHA1"
+              echo "branch: $CIRCLE_BRANCH"
+              echo "java: $(java -version 2>&1 | head -1)"
+              echo "jazzer: 0.30.0"
+              echo "targets: LexerText ParserText ParserNesting Pipeline"
+              echo "profile: $([ "$CIRCLE_BRANCH" = "main" ] && echo extended || echo pull-request)"
+            } > build/fuzz-artifacts/metadata.txt
+            cat build/fuzz-artifacts/metadata.txt
+      - run:
+          name: Preserve regressions and corpus
+          when: always
+          command: |
+            mkdir -p build/fuzz-artifacts/regressions
+            # Jazzer writes crashing inputs here; keep them as artifacts even on failure.
+            find . -path '*/src/fuzz/resources/*' -type f 2>/dev/null | head -50 > build/fuzz-artifacts/regressions/list.txt || true
+            cp -R oq-core/src/fuzz/resources/* build/fuzz-artifacts/regressions/ 2>/dev/null || true
+            cp -R oq-compiler/src/fuzz/resources/* build/fuzz-artifacts/regressions/ 2>/dev/null || true
+      - store_artifacts:
+          path: build/fuzz-artifacts
+          destination: jazzer
+
 workflows:
+  fuzzing:
+    jobs:
+      - jazzer-fuzz
   macos:
     jobs:
       - test-macos:

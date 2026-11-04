@@ -353,6 +353,12 @@ the interpreter.
 The current state, including exactly which constructs still diverge, is in
 [backend.md](backend.md). Read it before relying on `oq build` for anything.
 
+## Security and fuzzing
+
+The lexer, parser and compiler pipeline are fuzzed with Jazzer on every change. The contract
+is that any input produces either a result or a diagnostic, never an internal crash. See
+[fuzzing.md](fuzzing.md) for the targets, how to run them, and the regression corpus.
+
 ## Documentation
 
 ```bash
