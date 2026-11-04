@@ -2,6 +2,7 @@
 description: Maintains state.json, STATUS.md, LOG.md, BACKLOG.md, RESUME.md and checkpoints.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-scribe
 

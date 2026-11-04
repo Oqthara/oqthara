@@ -2,6 +2,7 @@
 description: Lexer, parser, AST, lowering, interpreter and diagnostics in oq-core and oq-compiler.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-compiler
 

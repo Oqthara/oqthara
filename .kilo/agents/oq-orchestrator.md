@@ -15,6 +15,7 @@ permission:
     oq-reviewer: allow
     oq-dogfood: allow
     oq-scribe: allow
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 
 # oq-orchestrator

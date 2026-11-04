@@ -2,6 +2,7 @@
 description: Tests, conformance cases, fuzzing, coverage and benchmarks.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-qa
 

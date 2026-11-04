@@ -2,6 +2,7 @@
 description: Reviews a change for correctness, safety, simplicity and Rust-ness. Writes comments only.
 mode: all
 steps: 40
+model: robin/deepseek-ai/deepseek-v4.1-flash-1017
 ---
 # oq-reviewer
 
