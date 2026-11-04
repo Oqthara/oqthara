@@ -1,0 +1,5 @@
+xs = [3, 1, 2]
+assert xs.sort() == [1, 2, 3], "sort"
+assert xs.sum() == 6, "sum"
+assert xs.map(x -> x * 2) == [6, 2, 4], "map"
+print "collections ok"

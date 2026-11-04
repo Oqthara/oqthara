@@ -61,6 +61,7 @@ public final class Main {
                 }
                 case "fmt", "format" -> Formatter.formatFiles(out, err, rest(args));
                 case "new" -> Scaffold.create(out, err, rest(args));
+                case "test" -> TestRunner.run(out, err, rest(args));
                 default -> {
                     if (command.startsWith("-")) {
                         err.println("Unknown option: " + command);
@@ -88,6 +89,7 @@ public final class Main {
                       oq check <file.oq>         check a program without running it
                       oq repl                    start an interactive session
                       oq fmt <file.oq>           format a program
+                      oq test [dir]              run test_*.oq files
                       oq new <name>              create a new project
                       oq version                 show the version
                       oq help                    show this help

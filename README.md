@@ -101,6 +101,7 @@ removes the ceremony:
 ./gradlew build      # compile, unit tests, conformance suite
 ./gradlew test       # tests only
 ./gradlew :oq-cli:run --args="examples/hello.oq"
+oq test examples     # run the language-level test suite
 ```
 
 The `conformance/` directory is the contract between the interpreter and the future

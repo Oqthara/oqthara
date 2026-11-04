@@ -1,0 +1,5 @@
+assert "Hello".upper() == "HELLO", "upper"
+assert "a,b".split(",").length() == 2, "split"
+assert "abcdef".starts_with("abc"), "starts_with"
+assert "abcdef".ends_with("def"), "ends_with"
+print "strings ok"

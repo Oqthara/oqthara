@@ -1,0 +1,4 @@
+assert 1 + 1 == 2, "addition"
+assert 10 / 4 == 2.5, "division"
+assert 2 ** 8 == 256, "power"
+print "arithmetic ok"

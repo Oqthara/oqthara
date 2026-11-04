@@ -249,6 +249,27 @@ Processes: `run_command(line)` returns `.code` and `.output`. `env(name)`,
 
 Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
 
+## Testing
+
+Any file named `test_*.oq`, `*_test.oq`, or any `.oq` file inside a `tests/` directory is
+a test. A test passes when it runs to completion without an error. Use `assert` for
+checks:
+
+```
+# tests/test_math.oq
+assert 1 + 1 == 2, "addition"
+assert 9.sqrt() == 3, "square root"
+print "math ok"
+```
+
+```bash
+oq test              # scan the current directory
+oq test examples     # scan a specific directory
+```
+
+Output is one `PASS`/`FAIL` line per file, a summary, and the full diagnostic for each
+failure. The command exits with `1` if anything failed, so it works in CI unchanged.
+
 ## Interoperability with Java
 
 ```
