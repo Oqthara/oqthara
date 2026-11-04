@@ -15,23 +15,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build the CLI
+        run: ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
+      - name: Regenerate the stdlib reference
+        run: |
+          java -jar oq-cli/build/libs/oq.jar doc .
+          git diff --exit-code docs/stdlib/reference.md
+      - name: Check repository documentation links
+        run: python3 scripts/check-links.py
+      - name: Build the site
+        run: node site/build.mjs
+      - name: Verify the built site
+        run: node site/verify.mjs
+      - name: Validate HTML with a real parser
+        run: |
+          npx --yes html-validate@9 --formatter stylish site/_site/*.html
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/_site
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/configure-pages@v6
-      - name: Check documentation links
-        run: python3 scripts/check-links.py
-      - name: Assemble site
-        run: |
-          mkdir -p _site
-          cp -R site/* _site/
-          cp docs/stdlib/reference.md _site/stdlib.md
-      - uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site
       - id: deployment
         uses: actions/deploy-pages@v5
+      - name: Smoke test the published site
+        run: |
+          set -euo pipefail
+          base="${{ steps.deployment.outputs.page_url }}"
+          echo "published at $base"
+          for path in "" tour.html docs.html examples.html status.html stdlib.html stdlib.md assets/site.css playground.js; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "$base$path")
+            echo "$code  $path"
+            test "$code" = "200"
+          done
+          curl -sS "$base" | grep -q "reads like"
+          curl -sS "$base/status.html" | grep -qi "what does not work yet"
+          curl -sS "$base/assets/site.css" | grep -q -- "--accent"
