@@ -15,6 +15,11 @@ import java.util.List;
 public final class Lowering {
     private final List<Ir.Function> functions = new ArrayList<>();
     private final List<String> divergences = new ArrayList<>();
+    private final List<LoopContext> loops = new ArrayList<>();
+    private int loopCounter = 0;
+
+    private record LoopContext(String id, String breakLabel, String continueLabel) {
+    }
     private List<Ir.Instr> code;
     private int tempCounter = 0;
 
@@ -73,13 +78,17 @@ public final class Lowering {
                 }
                 code.add(new Ir.Return());
             }
-            case Ast.Break ignored -> {
-                // Prototype limitation: the IR has no loop-exit address yet.
-                code.add(new Ir.Halt());
-                divergences.add("break lowered to halt (line " + ignored.span().line() + ")");
+            case Ast.Break brk -> {
+                if (loops.isEmpty()) {
+                    throw new OqError("'break' outside a loop", brk.span());
+                }
+                code.add(new Ir.Break(loops.get(loops.size() - 1).id()));
             }
-            case Ast.Continue ignored -> {
-                divergences.add("continue is not lowered (line " + ignored.span().line() + ")");
+            case Ast.Continue cont -> {
+                if (loops.isEmpty()) {
+                    throw new OqError("'continue' outside a loop", cont.span());
+                }
+                code.add(new Ir.Continue(loops.get(loops.size() - 1).id()));
             }
             case Ast.DataDecl ignored -> {
                 // Types are runtime constructs; nothing to emit yet.
@@ -164,22 +173,34 @@ public final class Lowering {
     }
 
     private void whileStatement(Ast.While loop) {
-        int start = code.size();
+        String id = "loop" + loopCounter++;
+        String head = id + "_head";
+        String exitLabel = id + "_end";
+        LoopContext context = new LoopContext(id, exitLabel, head);
+        code.add(new Ir.Label(head));
+        loops.add(context);
         expression(loop.condition());
         int exit = code.size();
         code.add(new Ir.JumpIfFalse(-1));
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
-        code.add(new Ir.Jump(start));
+        code.add(new Ir.JumpLabel(head));
         code.set(exit, new Ir.JumpIfFalse(code.size()));
+        loops.remove(loops.size() - 1);
+        code.add(new Ir.Label(exitLabel));
     }
 
     private void forRange(Ast.ForRange loop) {
         String counter = temp("i");
+        String id = "loop" + loopCounter++;
+        String head = id + "_head";
+        String step = id + "_step";
+        String exitLabel = id + "_end";
         expression(loop.from());
         code.add(new Ir.Store(counter));
-        int start = code.size();
+        code.add(new Ir.Label(head));
+        loops.add(new LoopContext(id, exitLabel, step));
         code.add(new Ir.Load(counter));
         expression(loop.to());
         code.add(new Ir.Binary(loop.inclusive() ? "<=" : "<"));
@@ -190,22 +211,30 @@ public final class Lowering {
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
+        code.add(new Ir.Label(step));
         code.add(new Ir.Load(counter));
         code.add(new Ir.Const(1L));
         code.add(new Ir.Binary("+"));
         code.add(new Ir.Store(counter));
-        code.add(new Ir.Jump(start));
+        code.add(new Ir.JumpLabel(head));
         code.set(exit, new Ir.JumpIfFalse(code.size()));
+        loops.remove(loops.size() - 1);
+        code.add(new Ir.Label(exitLabel));
     }
 
     private void forEach(Ast.ForEach loop) {
         String iterator = temp("iter");
         String index = temp("n");
+        String id = "loop" + loopCounter++;
+        String head = id + "_head";
+        String step = id + "_step";
+        String exitLabel = id + "_end";
         expression(loop.iterable());
         code.add(new Ir.Store(iterator));
         code.add(new Ir.Const(0L));
         code.add(new Ir.Store(index));
-        int start = code.size();
+        code.add(new Ir.Label(head));
+        loops.add(new LoopContext(id, exitLabel, step));
         code.add(new Ir.Load(index));
         code.add(new Ir.Load(iterator));
         code.add(new Ir.Call("length", 1));
@@ -219,12 +248,15 @@ public final class Lowering {
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
+        code.add(new Ir.Label(step));
         code.add(new Ir.Load(index));
         code.add(new Ir.Const(1L));
         code.add(new Ir.Binary("+"));
         code.add(new Ir.Store(index));
-        code.add(new Ir.Jump(start));
+        code.add(new Ir.JumpLabel(head));
         code.set(exit, new Ir.JumpIfFalse(code.size()));
+        loops.remove(loops.size() - 1);
+        code.add(new Ir.Label(exitLabel));
     }
 
     private void expression(Ast.Expr expr) {

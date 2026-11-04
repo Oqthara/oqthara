@@ -108,15 +108,51 @@ class LoweringTest {
     }
 
     @Test
-    void reportsDivergencesInsteadOfPretending() {
+    void breakAndContinueUseLoopLabels() {
         Ast.Program program = Parser.parse("<t>", """
-                for i in 1 to 3
-                  break
+                for i in 1 to 5
+                  if i == 2
+                    continue
+                  end
+                  if i == 4
+                    break
+                  end
+                  print i
                 end
                 """);
         Lowering.Result result = Lowering.lowerWithReport(program);
-        assertFalse(result.divergences().isEmpty());
-        assertTrue(result.divergences().get(0).contains("break"));
+        assertTrue(result.divergences().isEmpty(),
+                "break and continue must not diverge: " + result.divergences());
+        List<Ir.Instr> body = result.program().main().body();
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Break b && b.loopId().equals("loop0")),
+                "expected a break targeting loop0");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Continue c && c.loopId().equals("loop0")),
+                "expected a continue targeting loop0");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Label l && l.name().equals("loop0_end")));
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Label l && l.name().equals("loop0_step")));
+    }
+
+    @Test
+    void nestedLoopsTargetTheInnermost() {
+        Ast.Program program = Parser.parse("<t>", """
+                for i in 1 to 3
+                  for j in 1 to 3
+                    break
+                  end
+                end
+                """);
+        Lowering.Result result = Lowering.lowerWithReport(program);
+        assertTrue(result.divergences().isEmpty());
+        assertTrue(result.program().main().body().stream()
+                .anyMatch(i -> i instanceof Ir.Break b && b.loopId().equals("loop1")));
+    }
+
+    @Test
+    void breakOutsideALoopIsRejectedByTheCompiler() {
+        Ast.Program program = Parser.parse("<t>", "break");
+        dev.oqthara.runtime.OqError error = org.junit.jupiter.api.Assertions.assertThrows(
+                dev.oqthara.runtime.OqError.class, () -> Lowering.lower(program));
+        assertTrue(error.getMessage().contains("break"));
     }
 
     @Test

@@ -9,7 +9,8 @@ public final class Ir {
 
     public sealed interface Instr permits Const, Load, Store, Call, CallValue, Print, Binary,
             Unary, Jump, JumpIfFalse, Return, Pop, MakeList, MakeMap, MakeSet, Index,
-            SetIndex, MakeData, GetField, SetField, Range, TryStart, TryEnd, Throw, Halt {
+            SetIndex, MakeData, GetField, SetField, Range, TryStart, TryEnd, Throw, Halt,
+            Label, JumpLabel, Break, Continue {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -93,6 +94,24 @@ public final class Ir {
     public record Halt() implements Instr {
     }
 
+    /**
+     * A named position in the instruction stream. The bytecode backend resolves it to a
+     * byte offset; the disassembler prints it so tests can assert structure.
+     */
+    public record Label(String name) implements Instr {
+    }
+
+    public record JumpLabel(String label) implements Instr {
+    }
+
+    /** Jumps to the loop's break label. */
+    public record Break(String loopId) implements Instr {
+    }
+
+    /** Jumps to the loop's continue label. */
+    public record Continue(String loopId) implements Instr {
+    }
+
     public static List<Instr> list() {
         return new ArrayList<>();
     }
@@ -145,6 +164,10 @@ public final class Ir {
             case TryEnd t -> "try_end";
             case Throw t -> "throw";
             case Halt h -> "halt";
+            case Label l -> l.name() + ":";
+            case JumpLabel j -> "jump " + j.label();
+            case Break b -> "break " + b.loopId();
+            case Continue c -> "continue " + c.loopId();
         };
     }
 

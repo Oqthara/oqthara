@@ -27,16 +27,18 @@ classfile emission is not implemented yet; IR lowering only
 - Runtime backend detection: JDK 24+ selects `classfile`, JDK 21–23 selects `diagnostic`.
 - On JDK 21–23, `oq build` exits with code **3** and explains the requirement. It never
   pretends to have produced a jar.
-- Known divergences are reported as warnings, naming the line:
-  `warning: break lowered to halt (line 3) — the interpreter is authoritative`.
+- Loop-aware IR: `for`/`while` bodies carry `loopN_head`, `loopN_step` and `loopN_end`
+  labels, and `break`/`continue` compile to jumps instead of diverging.
+- Known divergences are reported as warnings, naming the line, so a future gap cannot be
+  silent.
 
 ## What does not work
 
 1. **Class file emission.** `oq-compiler` does not write a `.class` file. `oq build`
    produces IR and a report, not an executable artifact.
-2. **`break` and `continue` in IR.** The IR has no loop-exit or loop-continue address, so
-   `break` lowers to `halt` and `continue` to nothing. Both are reported as divergences.
-   Tracked as T-0037.
+2. ~~**`break` and `continue` in IR.**~~ **Fixed.** The IR now has named labels and
+   explicit `break`/`continue` instructions targeting a loop id, so nested loops redirect
+   correctly and the disassembler shows `break loop0` / `jump loop0_head`.
 3. **Lambdas.** `Lowering` emits a placeholder constant instead of a closure. Any program
    that passes a lambda to a collection method will not behave identically under a future
    bytecode backend. Tracked with the closure work in T-0038.
@@ -74,7 +76,7 @@ open, and `STATUS.md` says so.
 
 ## Order of work
 
-1. **T-0037** — give the IR explicit loop addresses so `break`/`continue` stop diverging.
+1. ~~**T-0037** — loop addresses for `break`/`continue`.~~ Done.
 2. **T-0038** — emit a real class file for programs without lambdas, Java interop or
    modules; add a `--run-compiled` path that replays the conformance suite.
 3. **T-0039** — closures as generated classes with a captured-environment field.

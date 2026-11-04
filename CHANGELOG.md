@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq build` now lowers `break` and `continue` to real labeled jumps; nested loops target
+  the innermost loop and the divergence warning is gone.
 - `docs/spec/backend.md` records exactly what `oq build` does not do yet (no class files,
-  divergent `break`/`continue`, placeholder lambdas, no interop or modules).
+  placeholder lambdas, no interop or modules).
 - `oq doc` generates `docs/stdlib/reference.md` from the implementation; CI fails when the
   checked-in copy is stale.
 - Keyword count corrected from 18 to 20 in every document (the lexer is authoritative).
