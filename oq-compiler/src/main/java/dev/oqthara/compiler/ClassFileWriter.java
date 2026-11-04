@@ -11,9 +11,9 @@ import java.nio.charset.StandardCharsets;
  * including 21, where {@code java.lang.classfile} does not exist yet.
  *
  * <p>The generated program is a real class with a real {@code main} method whose bytecode
- * is emitted here: it loads the Oqthara source as a string constant and calls the embedded
- * runner. That is deliberately not ahead-of-time compilation of the program itself; see
- * {@code docs/spec/backend.md} for the exact boundary.
+ * is emitted here: it loads the Oqthara source as a string constant together with its own
+ * {@code String[] args} and calls {@code EmbeddedMain.runWithArgs}. That is deliberately not
+ * ahead-of-time compilation of the program itself; see {@code docs/spec/backend.md}.
  */
 public final class ClassFileWriter {
     private static final int MAGIC = 0xCAFEBABE;
@@ -26,7 +26,7 @@ public final class ClassFileWriter {
 
     /**
      * Builds a class named {@code className} with:
-     * {@code public static void main(String[] args) { EmbeddedMain.run(source); }}
+     * {@code public static void main(String[] args) { EmbeddedMain.runWithArgs(source, args); }}
      */
     public static byte[] programClass(String className, String source) {
         if (modifiedUtf8(source).length > 65535) {
