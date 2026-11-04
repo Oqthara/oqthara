@@ -80,6 +80,8 @@ subprojects {
             "parserNeverThrowsUnexpectedExceptions"),
         FuzzTarget("ParserNesting", "dev.oqthara.core.ParserFuzzTest",
             "deeplyNestedInputDoesNotOverflow"),
+        FuzzTarget("ParserBlockNesting", "dev.oqthara.core.ParserFuzzTest",
+            "deeplyNestedBlocksDoNotOverflow"),
         FuzzTarget("Pipeline", "dev.oqthara.compiler.PipelineFuzzTest",
             "fullPipelineNeverThrowsUnexpectedExceptions"),
     )

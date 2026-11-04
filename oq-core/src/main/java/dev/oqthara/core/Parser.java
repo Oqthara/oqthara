@@ -17,11 +17,14 @@ public final class Parser {
      * normal Oqthara error instead of a StackOverflowError.
      */
     private static final int MAX_NESTING = 128;
+    /** Same idea for statements: deeply nested blocks must not crash the parser. */
+    private static final int MAX_BLOCK_NESTING = 128;
 
     private final List<Token> tokens;
     private final String sourceName;
     private int current = 0;
     private int nesting = 0;
+    private int blockNesting = 0;
 
     public Parser(String sourceName, List<Token> tokens) {
         this.sourceName = sourceName;
@@ -272,6 +275,20 @@ public final class Parser {
     }
 
     private List<Ast.Stmt> block() {
+        if (++blockNesting > MAX_BLOCK_NESTING) {
+            blockNesting--;
+            throw error(peek(), "blocks are nested too deeply",
+                    "The limit is " + MAX_BLOCK_NESTING + " levels. Split the code into "
+                            + "functions or move inner blocks to a separate file.");
+        }
+        try {
+            return blockInner();
+        } finally {
+            blockNesting--;
+        }
+    }
+
+    private List<Ast.Stmt> blockInner() {
         List<Ast.Stmt> statements = new ArrayList<>();
         skipSeparators();
         while (!check(Token.Kind.EOF) && !(check(Token.Kind.KEYWORD)
