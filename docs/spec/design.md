@@ -62,7 +62,7 @@ Tracked in `STATUS.md` on every cycle:
 | Metric | Target | Current |
 |---|---|---|
 | Keywords | ≤ 30 | 20 |
-| Hello world | 1 line | 1 line |
+| Hello world | 1 line | 1 line (`print "Hello, World!"`) |
 | Tutorial concepts before first useful program | ≤ 3 | 2 (`print`, text) |
 | Ways to declare a variable | 1 | 1 |
 | Ways to write a function | 2 (`fun` declaration, `->` lambda) | 2 |

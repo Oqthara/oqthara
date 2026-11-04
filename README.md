@@ -3,8 +3,7 @@
 **A small language for the JVM that reads like pseudocode.**
 
 ```
-name = "World"
-print "Hello, {name}!"
+print "Hello, World!"
 ```
 
 No classes. No `main`. No `new`. No semicolons. No getters. No checked exceptions.

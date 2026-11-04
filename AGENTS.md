@@ -51,8 +51,7 @@ mandatory semicolons, or the words crate/borrow/move. Memory belongs to the JVM 
 ## Language, in one screen
 
 ```
-name = "World"
-print "Hello, {name}!"
+print "Hello, World!"
 
 data Point(x, y)
 

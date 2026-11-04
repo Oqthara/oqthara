@@ -16,6 +16,16 @@ class DogfoodRegressionTest {
     }
 
     @Test
+    void helloWorldIsOneLine() throws Exception {
+        java.nio.file.Path hello = java.nio.file.Path.of(System.getProperty("oq.root", "."))
+                .resolve("examples/hello.oq");
+        String source = java.nio.file.Files.readString(hello);
+        assertEquals(1, source.strip().split("\n").length,
+                "hello world must stay one line");
+        assertEquals("Hello, World!\n", ok(source));
+    }
+
+    @Test
     void mutableDataDefaultsAreNotShared() {
         // Found by examples/queue.oq: dequeue(Queue()) returned the previous queue's item.
         assertEquals("[1]\n[]\n", ok("""
