@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `try`/`catch` with an error value exposing `message`, `hint`, `file`, `line`, `column`.
 - `round(value, places)` for rounding to decimal places.
 - Lexicographic list comparison, so a sort key may be a list.
-- 29 runnable examples, including a calculator, a BFS maze solver, a Sudoku validator,
+- 30 runnable examples, including a calculator, a BFS maze solver, a Sudoku validator,
   a Tower of Hanoi solver and a memoisation helper.
 - Modules: `use "oq:name"` loads another `.oq` file, searched next to the program, then in
   `modules/`, then in `lib/`; loaded once, cycle-safe, with errors that name the module.
