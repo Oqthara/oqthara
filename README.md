@@ -19,13 +19,13 @@ oq hello.oq
 Requires Java 21 or newer.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/JoaoValentimTheo/oqthara/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Oqthara/oqthara/main/scripts/install.sh | bash
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/JoaoValentimTheo/oqthara
+git clone https://github.com/Oqthara/oqthara
 cd oqthara
 ./gradlew :oq-cli:standaloneJar
 java -jar oq-cli/build/libs/oq.jar examples/hello.oq

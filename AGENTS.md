@@ -4,7 +4,7 @@ Oqthara is a small programming language for the JVM that reads like pseudocode. 
 implemented in Java, compiles to nothing but runs everything, and gives full access to
 Java libraries through `use`.
 
-Repository: https://github.com/JoaoValentimTheo/oqthara
+Repository: https://github.com/Oqthara/oqthara
 CLI: `oq`. Extension: `.oq`. Maven group: `dev.oqthara`. License: MIT. Java baseline: 21.
 
 ## Golden rules

@@ -17,7 +17,7 @@ must make it smaller or clearer, not just bigger.
 ## Getting started
 
 ```bash
-git clone https://github.com/JoaoValentimTheo/oqthara
+git clone https://github.com/Oqthara/oqthara
 cd oqthara
 ./gradlew build
 ./gradlew :oq-cli:run --args="examples/hello.oq"

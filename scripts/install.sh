@@ -2,7 +2,7 @@
 # Installs the oq CLI. Requires Java 21+.
 set -euo pipefail
 
-REPO="JoaoValentimTheo/oqthara"
+REPO="Oqthara/oqthara"
 INSTALL_DIR="${OQ_INSTALL_DIR:-$HOME/.local/bin}"
 VERSION="${OQ_VERSION:-latest}"
 
