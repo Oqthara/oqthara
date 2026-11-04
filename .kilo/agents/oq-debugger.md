@@ -1,6 +1,6 @@
 ---
 description: Reproduce a bug, write the failing test, make the minimal fix, keep the regression test.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-debugger

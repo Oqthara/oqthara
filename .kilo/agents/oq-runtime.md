@@ -1,6 +1,6 @@
 ---
 description: Runtime values, Java interop, concurrency and the standard library.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-runtime

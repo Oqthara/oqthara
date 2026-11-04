@@ -6,6 +6,7 @@ import dev.oqthara.core.Interpreter;
 import dev.oqthara.core.Parser;
 import dev.oqthara.compiler.Backends;
 import dev.oqthara.compiler.Ir;
+import dev.oqthara.compiler.JarBuilder;
 import dev.oqthara.compiler.Lowering;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.stdlib.MethodResolverImpl;
@@ -230,19 +231,25 @@ public final class Main {
             if (emitIr) {
                 out.print(Ir.disassemble(ir));
             }
-            Backends.Kind kind = Backends.select();
             out.println("compiled " + path + " (" + ir.functions().size() + " functions, "
                     + ir.main().body().size() + " main instructions)");
             for (String divergence : lowered.divergences()) {
                 err.println("warning: " + divergence + " — the interpreter is authoritative");
             }
-            out.println(Backends.describe());
-            if (kind == Backends.Kind.DIAGNOSTIC) {
-                err.println(Backends.diagnostic(kind, Backends.featureVersion()));
-                return 3;
+            out.println("backend=classfile (self-contained writer, JDK " + Backends.featureVersion() + ")");
+            Path jar = Path.of(path.substring(0, path.length() - 3) + ".jar");
+            String className = "oq.generated.Program";
+            try {
+                JarBuilder.Result built = JarBuilder.build(jar, className, source,
+                        Path.of(path).getFileName().toString());
+                out.println("wrote " + jar + " (" + built.classes() + " classes, "
+                        + built.skipped() + " skipped)");
+                out.println("run it with: java -jar " + jar);
+                return 0;
+            } catch (IOException e) {
+                err.println("cannot write " + jar + ": " + e.getMessage());
+                return 1;
             }
-            out.println("classfile emission is not implemented yet; IR lowering only");
-            return 0;
         }
 
         int repl() {

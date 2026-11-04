@@ -1,0 +1,202 @@
+package dev.oqthara.compiler;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+
+/**
+ * Builds an executable jar from a generated program class plus the Oqthara runtime classes
+ * that are already on the current classpath. No network, no external dependency, and it
+ * works from a plain {@code build/classes} directory as well as from a jar.
+ */
+public final class JarBuilder {
+    private static final String[] PREFIXES = {
+            "dev/oqthara/core/",
+            "dev/oqthara/runtime/",
+            "dev/oqthara/stdlib/",
+            "dev/oqthara/cli/EmbeddedMain",
+            "dev/oqthara/cli/Modules",
+            "dev/oqthara/cli/OqRunner",
+            "dev/oqthara/cli/Details",
+    };
+
+    private JarBuilder() {
+    }
+
+    public record Result(Path jar, int classes, int skipped) {
+    }
+
+    public static Result build(Path output, String mainClass, String source, String sourceName) throws IOException {
+        Path parent = output.toAbsolutePath().getParent();
+        if (parent != null) Files.createDirectories(parent);
+
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.MAIN_CLASS, mainClass);
+        manifest.getMainAttributes().putValue("Created-By", "Oqthara oq build");
+        manifest.getMainAttributes().putValue("Oqthara-Backend", "classfile");
+
+        List<byte[]> programClass = List.of(
+                ClassFileWriter.programClass(mainClass, source));
+
+        Set<String> written = new LinkedHashSet<>();
+        int classes = 0;
+        int skipped = 0;
+        try (OutputStream file = Files.newOutputStream(output);
+             JarOutputStream jar = new JarOutputStream(file)) {
+            jar.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
+            manifest.write(jar);
+            jar.closeEntry();
+
+            jar.putNextEntry(new JarEntry(mainClass.replace('.', '/') + ".class"));
+            jar.write(programClass.get(0));
+            jar.closeEntry();
+            written.add(mainClass.replace('.', '/') + ".class");
+            classes++;
+
+            for (ClassSource classSource : classSources()) {
+                for (String entryName : classSource.entries()) {
+                    if (!wanted(entryName) || written.contains(entryName)) continue;
+                    byte[] bytes = classSource.read(entryName);
+                    if (bytes == null) {
+                        skipped++;
+                        continue;
+                    }
+                    jar.putNextEntry(new JarEntry(entryName));
+                    jar.write(bytes);
+                    jar.closeEntry();
+                    written.add(entryName);
+                    classes++;
+                }
+            }
+
+            jar.putNextEntry(new JarEntry("oq/main.oq"));
+            jar.write(source.getBytes(StandardCharsets.UTF_8));
+            jar.closeEntry();
+
+            jar.putNextEntry(new JarEntry("oq/source-name.txt"));
+            jar.write(sourceName.getBytes(StandardCharsets.UTF_8));
+            jar.closeEntry();
+        }
+        return new Result(output, classes, skipped);
+    }
+
+    private static boolean wanted(String entry) {
+        for (String prefix : PREFIXES) {
+            if (entry.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    private interface ClassSource {
+        List<String> entries() throws IOException;
+
+        byte[] read(String entry) throws IOException;
+    }
+
+    private static List<ClassSource> classSources() {
+        List<ClassSource> sources = new ArrayList<>();
+        String classPath = System.getProperty("java.class.path", "");
+        for (String element : classPath.split(java.io.File.pathSeparator)) {
+            if (element.isBlank()) continue;
+            Path path = Path.of(element);
+            if (Files.isDirectory(path)) {
+                sources.add(directorySource(path));
+            } else if (element.endsWith(".jar") && Files.isRegularFile(path)) {
+                sources.add(jarSource(path));
+            }
+        }
+        Path ownLocation = locateOwnClasses();
+        if (ownLocation != null) {
+            if (Files.isDirectory(ownLocation)) {
+                sources.add(directorySource(ownLocation));
+            } else {
+                sources.add(jarSource(ownLocation));
+            }
+        }
+        return sources;
+    }
+
+    private static Path locateOwnClasses() {
+        try {
+            var url = JarBuilder.class.getProtectionDomain().getCodeSource();
+            if (url == null) return null;
+            return Path.of(url.getLocation().toURI());
+        } catch (URISyntaxException | SecurityException e) {
+            return null;
+        }
+    }
+
+    private static ClassSource directorySource(Path root) {
+        return new ClassSource() {
+            @Override
+            public List<String> entries() throws IOException {
+                try (Stream<Path> stream = Files.walk(root)) {
+                    return stream.filter(Files::isRegularFile)
+                            .map(p -> root.relativize(p).toString().replace('\\', '/'))
+                            .toList();
+                }
+            }
+
+            @Override
+            public byte[] read(String entry) throws IOException {
+                Path file = root.resolve(entry);
+                return Files.isRegularFile(file) ? Files.readAllBytes(file) : null;
+            }
+        };
+    }
+
+    private static ClassSource jarSource(Path jarPath) {
+        return new ClassSource() {
+            @Override
+            public List<String> entries() throws IOException {
+                List<String> names = new ArrayList<>();
+                try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
+                    ZipEntry entry;
+                    while ((entry = zip.getNextEntry()) != null) {
+                        if (!entry.isDirectory()) names.add(entry.getName());
+                    }
+                }
+                return names;
+            }
+
+            @Override
+            public byte[] read(String entry) throws IOException {
+                try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
+                    ZipEntry current;
+                    while ((current = zip.getNextEntry()) != null) {
+                        if (current.getName().equals(entry)) {
+                            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                            zip.transferTo(buffer);
+                            return buffer.toByteArray();
+                        }
+                    }
+                }
+                return null;
+            }
+        };
+    }
+
+    static byte[] readAll(InputStream in) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        in.transferTo(out);
+        return out.toByteArray();
+    }
+}

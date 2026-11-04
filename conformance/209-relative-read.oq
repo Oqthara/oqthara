@@ -1,0 +1,2 @@
+text = read("readme-fixture.txt")
+print text.strip()

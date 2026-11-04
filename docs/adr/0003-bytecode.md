@@ -1,6 +1,6 @@
 # ADR-0003 — Bytecode backend strategy
 
-- **Status:** accepted
+- **Status:** superseded in part by ADR-0006 (the class file is now written directly)
 - **Date:** 2026-11-04
 - **Deciders:** oq-compiler, oq-architect
 - **Related:** prototype in `oq-compiler`

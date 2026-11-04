@@ -1,6 +1,6 @@
 ---
 description: Lexer, parser, AST, lowering, interpreter and diagnostics in oq-core and oq-compiler.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-compiler

@@ -24,6 +24,14 @@ final class Modules {
     private Modules() {
     }
 
+    /** Resolves module imports relative to a directory, used by embedded jars. */
+    static Ast.Program resolveAgainst(Ast.Program program, Path base) {
+        Set<Path> loaded = new LinkedHashSet<>();
+        List<Ast.Stmt> statements = new ArrayList<>();
+        collect(program, base, loaded, statements, 0);
+        return new Ast.Program(statements, program.sourceName());
+    }
+
     static Ast.Program resolve(Path entry, Ast.Program program) {
         Set<Path> loaded = new LinkedHashSet<>();
         loaded.add(entry.toAbsolutePath().normalize());

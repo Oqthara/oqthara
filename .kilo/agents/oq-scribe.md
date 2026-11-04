@@ -1,6 +1,6 @@
 ---
 description: Maintains state.json, STATUS.md, LOG.md, BACKLOG.md, RESUME.md and checkpoints.
-mode: subagent
+mode: all
 steps: 40
 ---
 # oq-scribe

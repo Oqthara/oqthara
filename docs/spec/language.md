@@ -327,10 +327,28 @@ oq build hello.oq            # lower to the intermediate representation
 oq build hello.oq --emit-ir  # print the IR
 ```
 
-`oq build` lowers the program to a small stack IR shared by every backend. Emitting a
-`.jar` requires `java.lang.classfile`, which exists only on **JDK 24+**. On JDK 21-23 the
-command prints an explicit diagnostic and exits with code 3 instead of crashing; `oq run`
-always works, because the interpreter needs nothing extra.
+`oq build` writes an executable jar next to the program:
+
+```
+$ oq build hello.oq
+compiled hello.oq (0 functions, 3 main instructions)
+backend=classfile (self-contained writer, JDK 21)
+wrote hello.jar (89 classes, 0 skipped)
+run it with: java -jar hello.jar
+
+$ java -jar hello.jar
+Hello, World!
+```
+
+The jar contains a real class file with a real `main`, the Oqthara runtime, the program
+source and its original file name. The class file is written by Oqthara itself, so it works
+on **every** supported JDK, including 21; no `java.lang.classfile` and no external library
+are involved.
+
+Relative paths in `read`, `save`, `read_lines` and friends resolve against the program's
+directory, so `oq run` and `java -jar` behave identically from any working directory. See
+[backend.md](backend.md) for the exact boundary: the embedded program is still executed by
+the interpreter.
 
 The current state, including exactly which constructs still diverge, is in
 [backend.md](backend.md). Read it before relying on `oq build` for anything.
