@@ -3,6 +3,14 @@ name: Pages
 on:
   push:
     branches: [main]
+  # Building on pull requests proves the React build, the prerenderer and the validators
+  # before merge. Deployment still only happens from main; see the deploy job's condition.
+  pull_request:
+    paths:
+      - "site/**"
+      - "docs/stdlib/reference.md"
+      - "scripts/build-versioned-docs.py"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -71,6 +79,7 @@ jobs:
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request' 
     runs-on: ubuntu-latest
     environment:
       name: github-pages
