@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- VS Code extension in `editors/vscode`: TextMate grammar with interpolation support,
+  14 snippets, indentation rules, and tests that keep it in sync with the lexer.
 - Distribution: `scripts/install.ps1`, a multi-stage `Dockerfile`, and
   `./gradlew :oq-cli:packageApp` producing a native launcher with an embedded JRE.
 - `oq test` discovers `test_*.oq`, `*_test.oq` and anything under `tests/`, prints a

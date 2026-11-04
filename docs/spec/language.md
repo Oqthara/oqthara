@@ -321,6 +321,20 @@ oq build hello.oq --emit-ir  # print the IR
 command prints an explicit diagnostic and exits with code 3 instead of crashing; `oq run`
 always works, because the interpreter needs nothing extra.
 
+## Editor support
+
+The `editors/vscode` directory contains a VS Code extension with syntax highlighting,
+snippets and indentation rules:
+
+```bash
+cd editors/vscode
+npx --yes @vscode/vsce package
+code --install-extension oqthara-0.1.0.vsix
+```
+
+`EditorSupportTest` checks that the grammar covers every keyword and that every snippet
+parses, so the extension cannot drift from the language.
+
 ## Installation
 
 ```bash

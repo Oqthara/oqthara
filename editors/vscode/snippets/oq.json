@@ -1,0 +1,128 @@
+{
+  "Hello world": {
+    "prefix": "hello",
+    "body": [
+      "print \"Hello, ${1:World}!\""
+    ],
+    "description": "Print a greeting"
+  },
+  "Function": {
+    "prefix": "fun",
+    "body": [
+      "fun ${1:name}(${2:arg})",
+      "  ${3:return ${2:arg}}",
+      "end"
+    ],
+    "description": "Declare a function"
+  },
+  "Data type": {
+    "prefix": "data",
+    "body": [
+      "data ${1:Name}(${2:field})"
+    ],
+    "description": "Declare a data type"
+  },
+  "For range": {
+    "prefix": "forr",
+    "body": [
+      "for ${1:n} in ${2:1} to ${3:10}",
+      "  ${4:print ${1:n}}",
+      "end"
+    ],
+    "description": "Loop over a range"
+  },
+  "For each": {
+    "prefix": "for",
+    "body": [
+      "for ${1:item} in ${2:items}",
+      "  ${3:print ${1:item}}",
+      "end"
+    ],
+    "description": "Loop over a collection"
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition}",
+      "  ${2:}",
+      "end"
+    ],
+    "description": "While loop"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition}",
+      "  ${2:}",
+      "end"
+    ],
+    "description": "Conditional"
+  },
+  "If else": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition}",
+      "  ${2:}",
+      "else",
+      "  ${3:}",
+      "end"
+    ],
+    "description": "Conditional with else"
+  },
+  "Try catch": {
+    "prefix": "try",
+    "body": [
+      "try",
+      "  ${1:}",
+      "catch ${2:err}",
+      "  print ${2:err}.message",
+      "end"
+    ],
+    "description": "Catch a runtime error"
+  },
+  "Spawn task": {
+    "prefix": "spawn",
+    "body": [
+      "${1:task} = spawn(fun()",
+      "  ${2:return 1}",
+      "end)",
+      "print await(${1:task})"
+    ],
+    "description": "Run work on a virtual thread"
+  },
+  "Use module": {
+    "prefix": "use",
+    "body": [
+      "use \"oq:${1:module}\""
+    ],
+    "description": "Import an Oqthara module"
+  },
+  "Use Java class": {
+    "prefix": "usejava",
+    "body": [
+      "use ${1:java.time.LocalDate}"
+    ],
+    "description": "Import a Java class"
+  },
+  "Map literal": {
+    "prefix": "map",
+    "body": [
+      "{${1:\"key\"}: ${2:value}}"
+    ],
+    "description": "Map literal"
+  },
+  "List literal": {
+    "prefix": "list",
+    "body": [
+      "[${1:1, 2, 3}]"
+    ],
+    "description": "List literal"
+  },
+  "Lambda": {
+    "prefix": "lam",
+    "body": [
+      "${1:x} -> ${2:x * 2}"
+    ],
+    "description": "Short lambda"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "name": "oqthara",
+  "displayName": "Oqthara",
+  "description": "Syntax highlighting and snippets for the Oqthara language",
+  "version": "0.1.0",
+  "publisher": "oqthara",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "oq",
+        "aliases": [
+          "Oqthara",
+          "oq"
+        ],
+        "extensions": [
+          ".oq"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "oq",
+        "scopeName": "source.oq",
+        "path": "./syntaxes/oq.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "oq",
+        "path": "./snippets/oq.json"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Oqthara/oqthara.git"
+  }
+}

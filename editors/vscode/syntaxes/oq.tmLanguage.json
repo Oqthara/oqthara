@@ -1,0 +1,164 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Oqthara",
+  "scopeName": "source.oq",
+  "fileTypes": [
+    "oq"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#functions"
+    },
+    {
+      "include": "#data"
+    },
+    {
+      "include": "#interpolation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.oq",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.block.oq",
+          "begin": "\"\"\"",
+          "end": "\"\"\""
+        },
+        {
+          "name": "string.quoted.double.oq",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.oq",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation": {
+      "patterns": [
+        {
+          "name": "meta.interpolation.oq",
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.oq"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.oq"
+            }
+          },
+          "patterns": [
+            {
+              "include": "$self"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.oq",
+          "match": "\\b\\d[\\d_]*(\\.[\\d]+)?([eE][+-]?\\d+)?\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.oq",
+          "match": "\\b(if|else|while|for|in|end|fun|return|break|continue|use|try|catch|data)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.oq",
+          "match": "\\b(true|false|nothing)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.word.oq",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "keyword.operator.oq",
+          "match": "\\*\\*|==|!=|<=|>=|\\+=|-=|\\*=|/=|[+\\-*/%<>=]"
+        },
+        {
+          "name": "punctuation.oq",
+          "match": "[()\\[\\]{},.:;|]"
+        }
+      ]
+    },
+    "functions": {
+      "patterns": [
+        {
+          "name": "entity.name.function.oq",
+          "match": "(?<=\\bfun\\s)[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "entity.name.type.oq",
+          "match": "(?<=\\bdata\\s)[A-Za-z_][A-Za-z0-9_]*"
+        },
+        {
+          "name": "entity.name.function.call.oq",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*(?=\\s*\\()"
+        }
+      ]
+    },
+    "data": {
+      "patterns": [
+        {
+          "name": "variable.other.oq",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}
