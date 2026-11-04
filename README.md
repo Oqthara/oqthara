@@ -101,6 +101,9 @@ removes the ceremony:
 
 - [`docs/spec/language.md`](docs/spec/language.md) — complete language reference
 - [`docs/spec/design.md`](docs/spec/design.md) — goals, non-goals and metrics
+- [`docs/spec/backend.md`](docs/spec/backend.md) — what the bytecode backend does and does
+  not do yet
+- [`docs/stdlib/reference.md`](docs/stdlib/reference.md) — generated standard library reference
 - [`docs/adr/`](docs/adr/) — architecture decisions
 - [`examples/`](examples/) — 30 runnable programs, indexed by topic
 
