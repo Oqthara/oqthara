@@ -1,0 +1,25 @@
+# Curated regression corpus for the lexer and parser fuzz targets.
+# One input per line, with \n, \t and \\ escapes. These inputs exercise boundaries that
+# historically caused trouble. They run before fuzzing on every invocation.
+{"a": {"b": [1, 2]}}
+a {{literal}} brace
+}}}
+if true\n  print 1
+fun f(
+x = (((((((((((((((((((((1)))))))))))))))))))))
+for i in 1 to 3\n  if i == 2\n    break\n  end\nend
+try\n  print 1\ncatch e\n  print e.message\nend
+data P(x, y = 0)
+🎉 print
+print "éèê"
+\\
+#comment only
+print -0.0 % 1
+xs = [1, [2, [3, [4]]]]
+m = {"a": {"b": 1}}
+use "oq:missing"
+print 1 to 10
+print 9999999999999999999999999
+"\u0000\u0001\u0002"
+print "unterminated
+x = ((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))

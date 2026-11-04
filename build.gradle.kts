@@ -46,6 +46,79 @@ subprojects {
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }
 
+    // --- Coverage-guided fuzzing (Jazzer) -------------------------------------------
+    // Jazzer lives only in fuzz/test configurations, never in production runtime.
+    val javaExt = extensions.getByType<JavaPluginExtension>()
+    val mainSource = javaExt.sourceSets.getByName("main")
+    val fuzzSourceSet = javaExt.sourceSets.create("fuzz") {
+        compileClasspath += mainSource.output
+        runtimeClasspath += mainSource.output
+    }
+    val implementationConfig = configurations.getByName("implementation")
+    configurations.getByName("fuzzImplementation").extendsFrom(implementationConfig)
+    configurations.getByName("fuzzImplementation").extendsFrom(
+        configurations.getByName("testImplementation"))
+    configurations.getByName("fuzzRuntimeOnly").extendsFrom(
+        configurations.getByName("testRuntimeOnly"))
+
+    dependencies {
+        "fuzzImplementation"("com.code-intelligence:jazzer-junit:0.30.0")
+        "fuzzImplementation"(platform("org.junit:junit-bom:6.1.3"))
+        "fuzzImplementation"("org.junit.jupiter:junit-jupiter")
+        "fuzzRuntimeOnly"("org.junit.platform:junit-platform-launcher")
+    }
+
+    // Jazzer's JUnit integration runs exactly ONE @FuzzTest method per JVM invocation.
+    // Running a class with several targets silently skips the rest, so every target is
+    // registered as its own task and the aggregate task depends on all of them.
+    data class FuzzTarget(val id: String, val className: String, val method: String)
+
+    val allFuzzTargets = listOf(
+        FuzzTarget("LexerText", "dev.oqthara.core.LexerFuzzTest",
+            "lexerNeverThrowsUnexpectedExceptions"),
+        FuzzTarget("ParserText", "dev.oqthara.core.ParserFuzzTest",
+            "parserNeverThrowsUnexpectedExceptions"),
+        FuzzTarget("ParserNesting", "dev.oqthara.core.ParserFuzzTest",
+            "deeplyNestedInputDoesNotOverflow"),
+        FuzzTarget("Pipeline", "dev.oqthara.compiler.PipelineFuzzTest",
+            "fullPipelineNeverThrowsUnexpectedExceptions"),
+    )
+    // A target can only run in the module whose fuzz source set contains its class.
+    val packageOfTarget = mapOf(
+        "dev.oqthara.core." to "oq-core",
+        "dev.oqthara.compiler." to "oq-compiler",
+    )
+    val fuzzTargets = allFuzzTargets.filter { target ->
+        packageOfTarget.entries.any { (prefix, moduleName) ->
+            target.className.startsWith(prefix) && project.name == moduleName
+        }
+    }
+
+    val fuzzSource = javaExt.sourceSets.getByName("fuzz")
+    val hasFuzz = projectDir.resolve("src/fuzz").isDirectory
+    if (hasFuzz) {
+        val targetTasks = fuzzTargets.map { target ->
+            tasks.register<Test>("fuzz${target.id}") {
+                group = "verification"
+                description = "Jazzer target ${target.className}#${target.method}"
+                testClassesDirs = fuzzSource.output.classesDirs
+                classpath = fuzzSource.runtimeClasspath
+                useJUnitPlatform()
+                filter { includeTestsMatching("${target.className}.${target.method}") }
+                systemProperty("jazzer.coverage.disable", "false")
+                maxHeapSize = "2g"
+                jvmArgs("-Dfile.encoding=UTF-8")
+                outputs.upToDateWhen { false }
+                testLogging { events("passed", "failed"); showStandardStreams = true }
+            }
+        }
+        tasks.register("fuzzTest") {
+            group = "verification"
+            description = "Runs every Jazzer fuzz target (one JVM per target)."
+            dependsOn(targetTasks)
+        }
+    }
+
     tasks.named<JacocoReport>("jacocoTestReport") {
         dependsOn(tasks.named("test"))
         reports {

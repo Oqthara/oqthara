@@ -103,6 +103,7 @@ removes the ceremony:
 - [`docs/spec/backend.md`](docs/spec/backend.md) — what the bytecode backend does and does
   not do yet
 - [`docs/stdlib/reference.md`](docs/stdlib/reference.md) — generated standard library reference
+- [`docs/spec/fuzzing.md`](docs/spec/fuzzing.md) — Jazzer targets and how to run them
 - [`docs/adr/`](docs/adr/) — architecture decisions
 - [`examples/`](examples/) — 33 runnable programs, indexed by topic
 
