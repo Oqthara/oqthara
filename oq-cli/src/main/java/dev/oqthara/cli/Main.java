@@ -4,6 +4,9 @@ import dev.oqthara.core.Ast;
 import dev.oqthara.core.Diagnostics;
 import dev.oqthara.core.Interpreter;
 import dev.oqthara.core.Parser;
+import dev.oqthara.compiler.Backends;
+import dev.oqthara.compiler.Ir;
+import dev.oqthara.compiler.Lowering;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.stdlib.MethodResolverImpl;
 import dev.oqthara.stdlib.Stdlib;
@@ -62,6 +65,7 @@ public final class Main {
                 case "fmt", "format" -> Formatter.formatFiles(out, err, rest(args));
                 case "new" -> Scaffold.create(out, err, rest(args));
                 case "test" -> TestRunner.run(out, err, rest(args));
+                case "build" -> build(rest(args));
                 default -> {
                     if (command.startsWith("-")) {
                         err.println("Unknown option: " + command);
@@ -90,6 +94,7 @@ public final class Main {
                       oq repl                    start an interactive session
                       oq fmt <file.oq>           format a program
                       oq test [dir]              run test_*.oq files
+                      oq build <file.oq>         lower a program to IR (bytecode needs JDK 24+)
                       oq new <name>              create a new project
                       oq version                 show the version
                       oq help                    show this help
@@ -187,6 +192,46 @@ public final class Main {
             } catch (IOException e) {
                 return null;
             }
+        }
+
+        int build(String[] args) {
+            if (args.length == 0) {
+                err.println("Missing program file. Try: oq build hello.oq");
+                return 2;
+            }
+            String path = args[0].endsWith(".oq") ? args[0] : args[0] + ".oq";
+            String source;
+            try {
+                source = Files.readString(Path.of(path), StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                err.println("Cannot read '" + path + "': " + e.getMessage());
+                return 2;
+            }
+            Ast.Program program;
+            try {
+                program = Parser.parse(path, source);
+            } catch (OqError error) {
+                Details.render(err, error, source, color);
+                return 1;
+            }
+            Ir.Program ir = Lowering.lower(program);
+            boolean emitIr = false;
+            for (int i = 1; i < args.length; i++) {
+                if (args[i].equals("--emit-ir")) emitIr = true;
+            }
+            if (emitIr) {
+                out.print(Ir.disassemble(ir));
+            }
+            Backends.Kind kind = Backends.select();
+            out.println("compiled " + path + " (" + ir.functions().size() + " functions, "
+                    + ir.main().body().size() + " main instructions)");
+            out.println(Backends.describe());
+            if (kind == Backends.Kind.DIAGNOSTIC) {
+                err.println(Backends.diagnostic(kind, Backends.featureVersion()));
+                return 3;
+            }
+            out.println("classfile emission is not implemented yet; IR lowering only");
+            return 0;
         }
 
         int repl() {

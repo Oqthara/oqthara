@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `round(value, places)` for rounding to decimal places.
 - Lexicographic list comparison, so a sort key may be a list.
 - 24 runnable examples, including a calculator, a BFS maze solver and a Sudoku validator.
+- `oq build` with AST-to-IR lowering, an IR disassembler (`--emit-ir`), and runtime
+  backend detection: on JDK 24+ it selects the classfile backend, and on JDK 21-23 it
+  explains the requirement and exits with code 3.
 
 ## [0.1.0-alpha.1] - 2026-11-04
 

@@ -45,6 +45,25 @@ jobs:
             build/reports/jacoco/jacocoAggregate
           retention-days: 7
 
+  classfile:
+    name: Bytecode backend (JDK 25)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build
+        run: ./gradlew build --no-daemon --console=plain
+      - name: Confirm the classfile backend is selected
+        run: |
+          ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
+          output=$(java -jar oq-cli/build/libs/oq.jar build examples/hello.oq)
+          echo "$output"
+          echo "$output" | grep -q "backend=classfile"
+
   package:
     name: Standalone jar
     runs-on: ubuntu-latest

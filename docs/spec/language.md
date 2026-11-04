@@ -270,6 +270,18 @@ Processes: `run_command(line)` returns `.code` and `.output`. `env(name)`,
 
 Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
 
+## Building
+
+```bash
+oq build hello.oq            # lower to the intermediate representation
+oq build hello.oq --emit-ir  # print the IR
+```
+
+`oq build` lowers the program to a small stack IR shared by every backend. Emitting a
+`.jar` requires `java.lang.classfile`, which exists only on **JDK 24+**. On JDK 21-23 the
+command prints an explicit diagnostic and exits with code 3 instead of crashing; `oq run`
+always works, because the interpreter needs nothing extra.
+
 ## Testing
 
 Any file named `test_*.oq`, `*_test.oq`, or any `.oq` file inside a `tests/` directory is
