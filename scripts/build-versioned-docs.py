@@ -119,6 +119,13 @@ def build_one(tag, destination):
 def main():
     tags = release_tags()
     if not tags:
+        # An empty manifest is only correct when the repository genuinely has no releases.
+        # A shallow clone also has no tags, and publishing an empty index in that case hides
+        # the real versioned docs; CI checks this with --require-tags.
+        if "--require-tags" in sys.argv:
+            print("error: no release tags were found, but versioned documentation was requested")
+            print("hint: fetch tags (git fetch --tags) or check out with fetch-depth: 0")
+            return 1
         print("no release tags found; skipping versioned documentation")
         OUT.mkdir(parents=True, exist_ok=True)
         MANIFEST.write_text(json.dumps({"versions": []}, indent=2) + "\n", encoding="utf-8")
