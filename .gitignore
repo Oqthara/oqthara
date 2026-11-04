@@ -29,3 +29,7 @@ site/.ssr-dev/
 # stray output from older build steps
 _site/
 *.code.tmp
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc
