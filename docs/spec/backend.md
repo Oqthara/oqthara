@@ -8,7 +8,8 @@ being surprised at runtime, and so the gate for a stable release is unambiguous.
 | Backend | Where | Status |
 |---|---|---|
 | Interpreter | `oq-core` (`Interpreter`) | **Authoritative.** Runs every conformance case. |
-| Class file emitter | `oq-compiler` (`ClassFileWriter`, `JarBuilder`) | **Works.** Emits a real class file and jar; the program inside is still run by the interpreter. |
+| Class file emitter | `oq-compiler` (`ClassFileWriter`, `JarBuilder`) | **Works.** Emits a real class file and jar. |
+| Bytecode compiler | `oq-compiler` (`BytecodeCompiler`) | **Partial.** Real JVM instructions for a small straight-line subset; everything else falls back explicitly. |
 
 `oq build file.oq` produces `file.jar`:
 
@@ -46,25 +47,55 @@ The constant pool uses **modified UTF-8** (JVMS 4.4.7), so emoji and other suppl
 characters survive. Jar entry names are validated before being copied, rejecting absolute
 paths, drive letters and `..` segments.
 
+## Two jar modes, chosen automatically
+
+`oq build` reports which mode it used and why:
+
+```
+$ oq build arith.oq
+codepath: compiled bytecode
+wrote arith.jar (90 classes, 0 skipped)
+
+$ oq build fizzbuzz.oq
+codepath: interpreter launcher (instruction Store is not compiled yet)
+wrote fizzbuzz.jar (90 classes, 0 skipped)
+```
+
+**Compiled mode** (`Oqthara-Backend: classfile-compiled`) emits real JVM instructions for
+the whole program and embeds **no source**. `javap` on the generated class shows
+`Arithmetic.multiply`, `Long.valueOf` and `Arithmetic.print` calls:
+
+```
+3: invokestatic  Long.valueOf:(J)Ljava/lang/Long;
+18: invokestatic  Arithmetic.multiply:(Object;Object;)Object
+24: invokestatic  Arithmetic.print:(Object;)V
+```
+
+The compiled subset today:
+
+| Supported | Refused (falls back) |
+|---|---|
+| integer, decimal, text and boolean constants | variables (`Store`/`Load`) |
+| `+ - * / %` and unary `-` | comparisons and boolean operators |
+| `print`/`write` of one expression | calls, functions, closures |
+| multiple statements in sequence | `if`, loops, `data`, collections, interpolation, modules |
+
+Refusal is deliberate and visible: the compiler returns the name of the instruction it
+cannot lower, `oq build` prints it, and the launcher jar is used instead. A jar that behaved
+differently from `oq run` would be worse than no jar.
+
 ## What "compiled" does **not** mean yet
 
-This is the important part. **The program itself is not compiled to bytecode.** The jar is a
-self-contained launcher for the interpreter. That is a real, useful artifact — one file, no
-JDK on the target for the runtime beyond a JRE, identical behaviour — but it is not
-ahead-of-time compilation, and this page will not call it that.
+The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
 
-Remaining work for the P3 gate:
-
-1. **Real code generation from the IR.** Today `Lowering` produces a verified IR, but no
-   backend consumes it for code generation. The next task is to emit method bodies from that
-   IR instead of embedding the source.
-2. **Lambdas.** `Lowering` still emits a placeholder constant for a lambda. Any program
-   passing a lambda to a collection method would diverge in a true code generator.
-3. **Java interop.** `use` is not lowered; compiled code cannot yet call Java directly.
-4. **Modules as separate artifacts.** Module resolution happens before execution, so
-   modules are inlined into one jar rather than compiled separately.
-5. **Benchmarks.** Nobody has measured interpreter versus compiled yet, so the "no
-   regression above 10%" gate cannot be evaluated.
+1. **Variables and control flow.** `Store`/`Load`, branches and loops need local slots and
+   `StackMapTable` frames; today the compiler is straight-line only, which is why no stack
+   maps are required.
+2. **Lambdas.** `Lowering` still emits a placeholder constant for a lambda.
+3. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
+4. **Modules as separate artifacts.** Module sources are flattened into one program.
+5. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
+   above 10%" gate cannot be evaluated.
 
 Until items 1–5 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
 open.
@@ -109,11 +140,11 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
 ## Order of work
 
 1. ~~**T-0038** — emit a real class file and jar.~~ Done (launcher model).
-2. **T-0048** — generate method bodies from the IR for arithmetic, variables, calls and
-   control flow; keep the interpreter as the reference.
-3. **T-0037b** — closures/lambdas as generated classes with a captured environment.
-4. **T-0049** — Java interop from generated code.
-5. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
+2. ~~**T-0048** — straight-line arithmetic bytecode.~~ Done.
+3. **T-0050** — variables, branches and loops with `StackMapTable` generation.
+4. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+5. **T-0049** — Java interop from generated code.
+6. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
 Every step must keep the conformance suite green and delete the corresponding limitation
 from this page. If a step cannot, the page changes, not the claim.

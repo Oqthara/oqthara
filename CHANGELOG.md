@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq build` compiles straight-line arithmetic, text concatenation and `print` to real JVM
+  bytecode when the whole program is in that subset, embedding no source; anything else falls
+  back to the launcher jar with a printed reason. Verified instruction-for-instruction with
+  `javap` and by running the generated jars on JDK 21 and 25.
 - `oq build` now produces an executable jar: a real class file written by Oqthara's own
   emitter, the interpreter and stdlib bundled in, the program source and its original name
   embedded. `java -jar app.jar` matches `oq run app.oq` exactly across all 28 deterministic

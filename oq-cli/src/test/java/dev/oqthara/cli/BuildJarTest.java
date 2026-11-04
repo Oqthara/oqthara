@@ -52,7 +52,7 @@ class BuildJarTest {
             assertNotNull(file.getEntry("oq/source-name.txt"));
             assertEquals("oq.generated.Program",
                     file.getManifest().getMainAttributes().getValue("Main-Class"));
-            assertEquals("classfile",
+            assertEquals("classfile-launcher",
                     file.getManifest().getMainAttributes().getValue("Oqthara-Backend"));
             assertEquals("app.oq", new String(file.getInputStream(
                     file.getEntry("oq/source-name.txt")).readAllBytes(), StandardCharsets.UTF_8));

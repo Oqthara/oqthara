@@ -29,14 +29,66 @@ jobs:
           name: Select JDK << parameters.java-version >>
           command: |
             set -euo pipefail
-            JDK_HOME="/Library/Java/JavaVirtualMachines/temurin-<< parameters.java-version >>.jdk/Contents/Home"
-            if [ ! -d "$JDK_HOME" ]; then
-              brew install --cask temurin@<< parameters.java-version >>
-              JDK_HOME="/Library/Java/JavaVirtualMachines/temurin-<< parameters.java-version >>.jdk/Contents/Home"
+            echo "machine: $(uname -s) $(uname -m)"
+
+            # CircleCI's macOS images already ship several Temurin JDKs under
+            # /Library/Java/JavaVirtualMachines. Prefer those; only install when missing.
+            candidate=$(/usr/libexec/java_home -V 2>&1 | grep -oE "/Library/Java/JavaVirtualMachines/[^/]*<< parameters.java-version >>[^/]*\.jdk/Contents/Home" | head -1 || true)
+            if [ -z "$candidate" ]; then
+              candidate=$(/usr/libexec/java_home -V 2>&1 | grep -E "temurin-<< parameters.java-version >>|jdk-<< parameters.java-version >>" | grep -oE "/[^ ]*\.jdk/Contents/Home" | head -1 || true)
             fi
-            echo "export JAVA_HOME=$JDK_HOME" >> "$BASH_ENV"
-            echo "export PATH=$JDK_HOME/bin:\$PATH" >> "$BASH_ENV"
-            java -version
+            if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
+              echo "JDK << parameters.java-version >> not found; installing from Adoptium"
+              # Homebrew's "temurin" cask lags (it shipped 24 while Adoptium released 25),
+              # so pin the exact JDK from Adoptium's API instead of trusting the cask.
+              ARCH=$(uname -m)
+              case "$ARCH" in
+                arm64) AARCH=aarch64 ;;
+                *) AARCH=x64 ;;
+              esac
+              URL="https://api.adoptium.net/v3/binary/latest/<< parameters.java-version >>/ga/mac/${AARCH}/jdk/hotspot/normal/eclipse"
+              echo "downloading $URL"
+              curl -fsSL "$URL" -o /tmp/jdk.tar.gz
+              mkdir -p "$HOME/jdks"
+              rm -rf "$HOME/jdks"/*
+              tar -xzf /tmp/jdk.tar.gz -C "$HOME/jdks"
+              # Adoptium macOS tarballs unpack to jdk-<version>/Contents/Home/bin/java,
+              # so the search must be deep enough to reach Contents/Home.
+              candidate=$(find "$HOME/jdks" -maxdepth 6 -type f -path "*/Contents/Home/bin/java" 2>/dev/null | head -1 | sed 's|/bin/java$||')
+              if [ -z "$candidate" ]; then
+                candidate=$(find "$HOME/jdks" -maxdepth 6 -type f -path "*/bin/java" 2>/dev/null | head -1 | sed 's|/bin/java$||')
+              fi
+              if [ -z "$candidate" ]; then
+                echo "error: extracted the archive but found no JDK; contents:" >&2
+                find "$HOME/jdks" -maxdepth 4 2>/dev/null | head -20 >&2
+                exit 1
+              fi
+            fi
+            if [ -z "${candidate:-}" ] || [ ! -x "${candidate:-}/bin/java" ]; then
+              candidate=$(/usr/libexec/java_home -v << parameters.java-version >> 2>/dev/null || true)
+            fi
+            if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
+              echo "error: could not locate a JDK << parameters.java-version >> on this image" >&2
+              /usr/libexec/java_home -V 2>&1 >&2 || true
+              exit 1
+            fi
+            # Never accept a near-miss JDK: java_home -v 25 happily returns a 24 install.
+            actual=$("$candidate/bin/java" -XshowSettings:properties -version 2>&1 | awk -F'= ' '/java.specification.version/ {print $2}' | tr -d ' ')
+            if [ "$actual" != "<< parameters.java-version >>" ]; then
+              echo "error: required JDK << parameters.java-version >> but $candidate reports $actual" >&2
+              /usr/libexec/java_home -V 2>&1 >&2 || true
+              exit 1
+            fi
+            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
+            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            echo "using $candidate (java $actual)"
+            "$candidate/bin/java" -version
+      - run:
+          name: Assert this is really macOS
+          command: |
+            set -euo pipefail
+            test "$(uname -s)" = "Darwin" || { echo "not macOS: $(uname -s)" >&2; exit 1; }
+            echo "confirmed $(sw_vers -productName) $(sw_vers -productVersion) on $(uname -m)"
       - restore_cache:
           keys:
             - gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "build.gradle.kts" }}
