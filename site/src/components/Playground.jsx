@@ -114,7 +114,7 @@ export function Playground() {
     ),
     h("textarea", {
       id: "playground-code",
-      spellCheck: false,
+      spellcheck: "false",
       "aria-label": "Oqthara program",
       value: code,
       onChange: (event) => setCode(event.target.value),
