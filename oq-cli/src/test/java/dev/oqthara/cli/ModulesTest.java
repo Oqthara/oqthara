@@ -133,10 +133,13 @@ class ModulesTest {
         dev.oqthara.stdlib.Stdlib.install(interpreter);
         try {
             interpreter.run(program);
-            return new OqRunner.Result(0, out.toString(java.nio.charset.StandardCharsets.UTF_8), "");
+            return new OqRunner.Result(0, normalize(out), "");
         } catch (dev.oqthara.runtime.OqError error) {
-            return new OqRunner.Result(1, out.toString(java.nio.charset.StandardCharsets.UTF_8),
-                    error.getMessage());
+            return new OqRunner.Result(1, normalize(out), error.getMessage());
         }
+    }
+
+    private static String normalize(java.io.ByteArrayOutputStream bytes) {
+        return bytes.toString(java.nio.charset.StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 }
