@@ -1,6 +1,7 @@
 ---
-description: Language design, specification, ADRs, guardian of simplicity. Use for syntax or semantics decisions.
+description: Language design, specification, ADRs and the simplicity budget. Use for syntax or semantics decisions.
 mode: subagent
+steps: 40
 ---
 # oq-architect
 

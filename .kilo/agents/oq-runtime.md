@@ -1,6 +1,7 @@
 ---
-description: Runtime values, Java interop and the standard library. Use for stdlib and value semantics work.
+description: Runtime values, Java interop, concurrency and the standard library.
 mode: subagent
+steps: 40
 ---
 # oq-runtime
 
