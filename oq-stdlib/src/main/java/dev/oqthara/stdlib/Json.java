@@ -12,9 +12,17 @@ import java.util.Map;
 import java.util.Set;
 
 public final class Json {
+    /**
+     * Maximum container nesting. JSON from an untrusted source can be astronomically deep,
+     * and the reader is recursive, so a limit turns a stack overflow into a clear error.
+     * Real documents are far below this.
+     */
+    private static final int MAX_DEPTH = 256;
+
     private final String src;
     private final Span span;
     private int pos = 0;
+    private int depth = 0;
 
     private Json(String src, Span span) {
         this.src = src;
@@ -33,6 +41,19 @@ public final class Json {
     }
 
     private Object value() {
+        if (pos >= src.length()) throw fail("unexpected end of JSON");
+        if (++depth > MAX_DEPTH) {
+            depth--;
+            throw fail("JSON is nested too deeply (limit " + MAX_DEPTH + ")");
+        }
+        try {
+            return valueInner();
+        } finally {
+            depth--;
+        }
+    }
+
+    private Object valueInner() {
         if (pos >= src.length()) throw fail("unexpected end of JSON");
         char c = src.charAt(pos);
         return switch (c) {

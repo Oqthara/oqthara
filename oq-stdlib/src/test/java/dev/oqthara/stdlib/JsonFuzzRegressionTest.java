@@ -60,15 +60,18 @@ class JsonFuzzRegressionTest {
     }
 
     @Test
-    void deeplyNestedArraysParseOrFailCleanly() {
-        for (int depth : List.of(1, 100, 500, 1000)) {
+    void deeplyNestedArraysAreRejectedWithADiagnostic() {
+        // Found by Jazzer on CI (where the test JVM stack is smaller): 1884 levels
+        // overflowed the reader. The limit makes it deterministic on every JVM.
+        for (int depth : List.of(300, 1884, 5000)) {
             String text = "[".repeat(depth) + "]".repeat(depth);
-            try {
-                parse(text);
-            } catch (OqError expected) {
-                // Acceptable; what matters is that it is not a StackOverflowError.
-            }
+            OqError error = assertThrows(OqError.class, () -> parse(text),
+                    "depth " + depth + " must be rejected, not overflow");
+            assertTrue(error.getMessage().contains("nested too deeply"), error.getMessage());
         }
+        // Realistic documents still parse.
+        Object value = parse("[".repeat(100) + "]".repeat(100));
+        assertTrue(value instanceof List);
     }
 
     @Test
