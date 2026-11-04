@@ -159,7 +159,16 @@ public final class Values {
         if (a instanceof Boolean x && b instanceof Boolean y) {
             return Boolean.compare(x, y);
         }
-        throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span);
+        if (a instanceof List<?> x && b instanceof List<?> y) {
+            int limit = Math.min(x.size(), y.size());
+            for (int i = 0; i < limit; i++) {
+                int comparison = compare(x.get(i), y.get(i), span);
+                if (comparison != 0) return comparison;
+            }
+            return Integer.compare(x.size(), y.size());
+        }
+        throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
+                "Comparison works between two numbers, two texts, two booleans or two lists.");
     }
 
     public static Object negate(Object value, Span span) {

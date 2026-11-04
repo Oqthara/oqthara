@@ -1,0 +1,16 @@
+# Text statistics over a file or a built-in sample.
+file = "README.md"
+text = read(file)
+
+lines = text.lines()
+words = text.words()
+chars = text.chars().filter(c -> c != " ").length()
+sentences = text.split(".").filter(s -> s.strip().length() > 0).length()
+
+print "file: {file}"
+print "lines: {lines.length()}"
+print "words: {words.length()}"
+print "non-space characters: {chars}"
+print "sentences: {sentences}"
+print "average word length: {round(words.map(w -> w.length()).sum() / words.length(), 2)}"
+print "longest word: {words.sort(w -> -w.length()).first()}"

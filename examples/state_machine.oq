@@ -1,0 +1,12 @@
+# A tiny traffic light state machine driven by a map of transitions.
+transitions = {
+  "red": "green",
+  "green": "yellow",
+  "yellow": "red",
+}
+
+state = "red"
+for step in 1 to 6
+  print "{step}: {state}"
+  state = transitions[state]
+end

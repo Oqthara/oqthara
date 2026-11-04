@@ -1,0 +1,22 @@
+# A simple tokenizer, used by the calculator example.
+fun tokenize(expr)
+  tokens = []
+  current = ""
+  for ch in expr
+    if "+-*/()".contains(ch)
+      if current != ""
+        tokens.push(current)
+        current = ""
+      end
+      tokens.push(ch)
+    else if ch != " "
+      current = current + ch
+    end
+  end
+  if current != ""
+    tokens.push(current)
+  end
+  return tokens
+end
+
+print tokenize("12 + 3*(4-1)")

@@ -1,0 +1,24 @@
+# Inventory report: sets for categories, maps for totals.
+data Item(name, category, quantity, price)
+
+items = [
+  Item("notebook", "office", 12, 4.5),
+  Item("pen", "office", 40, 1.2),
+  Item("monitor", "tech", 3, 220.0),
+  Item("cable", "tech", 15, 8.0),
+  Item("lamp", "home", 7, 25.0),
+]
+
+categories = {}
+for item in items
+  categories[item.category] = categories.get(item.category, 0) + item.quantity * item.price
+end
+
+print "Value by category:"
+for category in categories.keys().sort()
+  print "  {category}: {round(categories[category], 2)}"
+end
+
+low = items.filter(i -> i.quantity < 10).map(i -> i.name)
+print "Low stock: {low.join(\", \")}"
+print "Total units: {items.map(i -> i.quantity).sum()}"

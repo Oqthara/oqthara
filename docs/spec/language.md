@@ -73,8 +73,15 @@ print 2 ** 10      # 1024
 Division produces a whole number when it is exact and a decimal otherwise. There is
 no separate integer division operator.
 
-Built-in functions: `abs`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `min`, `max`,
-`clamp`, `random`.
+Built-in functions: `abs`, `floor`, `ceil`, `round`, `round(value, places)`, `sqrt`,
+`pow`, `min`, `max`, `clamp`, `random`.
+
+Lists compare lexicographically, so a sort key can itself be a list:
+
+```
+# newest first, then alphabetical
+items.sort(item -> [-item.count, item.name])
+```
 
 ## Booleans and conditions
 

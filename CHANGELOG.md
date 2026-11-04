@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pass/fail line per file, and exits non-zero when a test fails.
 - `examples/tests/` contains the first language-level test suite.
 - `try`/`catch` with an error value exposing `message`, `hint`, `file`, `line`, `column`.
+- `round(value, places)` for rounding to decimal places.
+- Lexicographic list comparison, so a sort key may be a list.
+- 24 runnable examples, including a calculator, a BFS maze solver and a Sudoku validator.
 
 ## [0.1.0-alpha.1] - 2026-11-04
 

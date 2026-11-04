@@ -1,0 +1,28 @@
+# Number guessing game. Uses input() and try/catch for bad input.
+import_seed = timestamp() % 100
+secret = random(1, 101)
+attempts = 0
+
+while true
+  line = input("guess 1-100: ")
+  if line == nothing
+    print "bye"
+    break
+  end
+  attempts = attempts + 1
+  try
+    guess = number(line)
+  catch e
+    print "that is not a number"
+    continue
+  end
+  if guess == secret
+    print "correct in {attempts} attempts"
+    break
+  end
+  if guess < secret
+    print "higher"
+  else
+    print "lower"
+  end
+end

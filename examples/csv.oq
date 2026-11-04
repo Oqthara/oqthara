@@ -1,0 +1,18 @@
+# Parse a tiny CSV and report the ranking. Demonstrates text, maps and sorting.
+text = "name,score\nAda,90\nBob,75\nCy,88\nGrace,95\n"
+
+lines = text.lines().filter(l -> l.length() > 0)
+rows = []
+for line in lines.skip(1)
+  cells = line.split(",")
+  rows.push({"name": cells[0], "score": number(cells[1])})
+end
+
+ranking = rows.sort(r -> -r["score"])
+for index in 0 until ranking.length()
+  row = ranking[index]
+  print "{index + 1}. {row[\"name\"]} — {row[\"score\"]}"
+end
+
+total = rows.map(r -> r["score"]).sum()
+print "average: {round(total / rows.length(), 1)}"

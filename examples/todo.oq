@@ -1,0 +1,23 @@
+# A small task list, demonstrating data mutation and filtering.
+data Task(id, title, done = false)
+
+tasks = [
+  Task(1, "write the language reference"),
+  Task(2, "add try and catch"),
+  Task(3, "ship the first release"),
+]
+
+tasks[2].done = true
+
+pending = tasks.filter(t -> not t.done)
+done = tasks.filter(t -> t.done)
+
+print "Pending ({pending.length()}):"
+for t in pending
+  print "  {t.id}. {t.title}"
+end
+
+print "Done ({done.length()}):"
+for t in done
+  print "  {t.id}. {t.title}"
+end

@@ -1,0 +1,2 @@
+pairs = [["b", 2], ["a", 1], ["a", 2]]
+print pairs.sort(p -> p)

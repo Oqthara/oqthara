@@ -1,0 +1,93 @@
+# Recursive-descent calculator over the token stream.
+# Grammar: expr := term (("+" | "-") term)* ; term := factor (("*" | "/") factor)*
+#          factor := number | "(" expr ")"
+
+fun tokenize(expr)
+  tokens = []
+  current = ""
+  for ch in expr
+    if "+-*/()".contains(ch)
+      if current != ""
+        tokens.push(current)
+        current = ""
+      end
+      tokens.push(ch)
+    else if ch != " "
+      current = current + ch
+    end
+  end
+  if current != ""
+    tokens.push(current)
+  end
+  return tokens
+end
+
+data Parser(tokens, pos)
+
+fun evaluate(expr)
+  p = Parser(tokenize(expr), 0)
+  value = parse_expr(p)
+  return value
+end
+
+fun peek_token(p)
+  if p.pos >= p.tokens.length()
+    return nothing
+  end
+  return p.tokens[p.pos]
+end
+
+fun take_token(p)
+  token = peek_token(p)
+  p.pos = p.pos + 1
+  return token
+end
+
+fun parse_expr(p)
+  value = parse_term(p)
+  while true
+    token = peek_token(p)
+    if token == "+"
+      take_token(p)
+      value = value + parse_term(p)
+    else if token == "-"
+      take_token(p)
+      value = value - parse_term(p)
+    else
+      break
+    end
+  end
+  return value
+end
+
+fun parse_term(p)
+  value = parse_factor(p)
+  while true
+    token = peek_token(p)
+    if token == "*"
+      take_token(p)
+      value = value * parse_factor(p)
+    else if token == "/"
+      take_token(p)
+      value = value / parse_factor(p)
+    else
+      break
+    end
+  end
+  return value
+end
+
+fun parse_factor(p)
+  token = take_token(p)
+  if token == "("
+    value = parse_expr(p)
+    take_token(p)
+    return value
+  end
+  return number(token)
+end
+
+print evaluate("2 + 3 * 4")
+print evaluate("(2 + 3) * 4")
+print evaluate("10 / 4")
+print evaluate("2 * (3 + 4) - 5")

@@ -1,0 +1,49 @@
+# Validate a 9x9 Sudoku solution: rows, columns and 3x3 boxes.
+puzzle = [
+  "534678912",
+  "672195348",
+  "198342567",
+  "859761423",
+  "426853791",
+  "713924856",
+  "961537284",
+  "287419635",
+  "345286179",
+]
+
+fun valid_group(digits)
+  return set(digits.chars()).size() == 9
+end
+
+valid = true
+for row in puzzle
+  if not valid_group(row)
+    valid = false
+  end
+end
+
+for col in 0 until 9
+  digits = []
+  for row in 0 until 9
+    digits.push(puzzle[row][col])
+  end
+  if not valid_group(digits.join(""))
+    valid = false
+  end
+end
+
+for box_row in 0 until 3
+  for box_col in 0 until 3
+    digits = []
+    for r in 0 until 3
+      for c in 0 until 3
+        digits.push(puzzle[box_row * 3 + r][box_col * 3 + c])
+      end
+    end
+    if not valid_group(digits.join(""))
+      valid = false
+    end
+  end
+end
+
+print "valid: {valid}"

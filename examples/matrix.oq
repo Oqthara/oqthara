@@ -1,0 +1,35 @@
+# Matrix multiplication with nested lists.
+fun zeros(rows, cols)
+  result = []
+  for r in 0 until rows
+    row = []
+    for c in 0 until cols
+      row.push(0)
+    end
+    result.push(row)
+  end
+  return result
+end
+
+fun multiply(a, b)
+  rows = a.length()
+  shared = b.length()
+  cols = b[0].length()
+  result = zeros(rows, cols)
+  for i in 0 until rows
+    for j in 0 until cols
+      total = 0
+      for k in 0 until shared
+        total = total + a[i][k] * b[k][j]
+      end
+      result[i][j] = total
+    end
+  end
+  return result
+end
+
+a = [[1, 2, 3], [4, 5, 6]]
+b = [[7, 8], [9, 10], [11, 12]]
+for row in multiply(a, b)
+  print row.join(" ")
+end

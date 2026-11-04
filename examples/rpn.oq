@@ -1,0 +1,26 @@
+# Reverse Polish notation evaluator using a list as a stack.
+fun evaluate(expression)
+  stack = []
+  for token in expression.split(" ")
+    if "+-*/".contains(token)
+      b = stack.pop()
+      a = stack.pop()
+      if token == "+"
+        stack.push(a + b)
+      else if token == "-"
+        stack.push(a - b)
+      else if token == "*"
+        stack.push(a * b)
+      else
+        stack.push(a / b)
+      end
+    else
+      stack.push(number(token))
+    end
+  end
+  return stack.pop()
+end
+
+print evaluate("3 4 +")
+print evaluate("5 1 2 + 4 * + 3 -")
+print evaluate("2 3 4 * +")

@@ -1,0 +1,64 @@
+# Breadth-first search on a small grid. Demonstrates lists of lists and sets.
+grid = [
+  "S.#....",
+  ".##.##.",
+  ".....#.",
+  ".####..",
+  ".....#E",
+]
+
+data Cell(row, col)
+
+fun find_start()
+  for row in 0 until grid.length()
+    for col in 0 until grid[row].length()
+      if grid[row][col] == "S"
+        return Cell(row, col)
+      end
+    end
+  end
+  return nothing
+end
+
+fun neighbors(cell)
+  result = []
+  for delta in [[-1, 0], [1, 0], [0, -1], [0, 1]]
+    row = cell.row + delta[0]
+    col = cell.col + delta[1]
+    if row < 0 or row >= grid.length()
+      continue
+    end
+    if col < 0 or col >= grid[row].length()
+      continue
+    end
+    if grid[row][col] != "#"
+      result.push(Cell(row, col))
+    end
+  end
+  return result
+end
+
+start = find_start()
+queue = [[start, 0]]
+seen = {"{start.row},{start.col}"}
+steps = -1
+
+while queue.length() > 0
+  current = queue[0]
+  queue = queue.skip(1)
+  cell = current[0]
+  distance = current[1]
+  if grid[cell.row][cell.col] == "E"
+    steps = distance
+    break
+  end
+  for next in neighbors(cell)
+    key = "{next.row},{next.col}"
+    if not seen.has(key)
+      seen.add(key)
+      queue.push([next, distance + 1])
+    end
+  end
+end
+
+print "shortest path: {steps} steps"

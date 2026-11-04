@@ -1,0 +1,31 @@
+# Filter structured log lines and summarise levels.
+logs = [
+  "INFO  server started",
+  "WARN  low disk space",
+  "ERROR database timeout",
+  "INFO  request handled",
+  "ERROR failed to write",
+]
+
+data Entry(level, message)
+
+entries = []
+for line in logs
+  parts = line.split(" ")
+  level = parts[0]
+  message = line.slice(parts[0].length() + 1)
+  entries.push(Entry(level, message))
+end
+
+for entry in entries.filter(e -> e.level == "ERROR")
+  print "[{entry.level}] {entry.message}"
+end
+
+counts = {}
+for entry in entries
+  counts[entry.level] = counts.get(entry.level, 0) + 1
+end
+
+for level in counts.keys().sort()
+  print "{level}: {counts[level]}"
+end

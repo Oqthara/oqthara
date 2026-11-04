@@ -258,6 +258,17 @@ public final class Stdlib {
                 (long) Math.ceil(Values.asDouble(args.get(0)))));
         interpreter.defineBuiltin(NativeFunction.of("round", 1, (host, args, span) ->
                 Math.round(Values.asDouble(args.get(0)))));
+        interpreter.defineBuiltin(NativeFunction.of("round", 2, (host, args, span) -> {
+            double value = Values.asDouble(args.get(0));
+            long places = Values.asLong(args.get(1));
+            if (places < 0 || places > 15) {
+                throw new OqError("round() places must be between 0 and 15, got " + places, span);
+            }
+            double factor = Math.pow(10, places);
+            double rounded = Math.round(value * factor) / factor;
+            if (places == 0) return (long) rounded;
+            return rounded;
+        }));
         interpreter.defineBuiltin(NativeFunction.of("sqrt", 1, (host, args, span) ->
                 Math.sqrt(Values.asDouble(args.get(0)))));
         interpreter.defineBuiltin(NativeFunction.of("pow", 2, (host, args, span) ->
