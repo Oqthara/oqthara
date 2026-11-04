@@ -93,9 +93,41 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void compilesVariablesAndReassignment(@TempDir Path dir) throws Exception {
+        assertEquals("3\n11\n22\n", compileAndRun(
+                "x = 1\ny = x + 2\nprint y\nx = x + 10\nprint x\nprint x * 2", dir));
+    }
+
+    @Test
+    void compilesManyVariablesAcrossSlots(@TempDir Path dir) throws Exception {
+        // Exercises astore_0..3 and the wide astore form beyond slot 3.
+        StringBuilder source = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            source.append("v").append(i).append(" = ").append(i).append("\n");
+        }
+        source.append("print v0 + v7\n");
+        assertEquals("7\n", compileAndRun(source.toString(), dir));
+    }
+
+    @Test
+    void compiledVariablesMatchTheInterpreterExactly(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "x = 5\nprint x",
+                "x = 1\nx = 2\nprint x",
+                "a = 2\nb = 3\nprint a * b",
+                "price = 19.5\nqty = 2\nprint price * qty",
+                "name = \"oq\"\nprint name + \"thara\"",
+                "x = 1\ny = x\nz = y\nprint z");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+        }
+    }
+
+    @Test
     void unsupportedConstructsAreRefusedWithAReason() {
-        assertFalse(BytecodeCompiler.canCompile(ir("x = 1")));
-        assertTrue(BytecodeCompiler.whyNot(ir("x = 1")).contains("Store"));
+        assertFalse(BytecodeCompiler.canCompile(ir("if true\n  print 1\nend")));
+        assertTrue(BytecodeCompiler.whyNot(ir("if true\n  print 1\nend")).contains("Jump"));
 
         assertFalse(BytecodeCompiler.canCompile(ir("print [1, 2]")));
         assertTrue(BytecodeCompiler.whyNot(ir("print [1, 2]")).contains("MakeList"));
