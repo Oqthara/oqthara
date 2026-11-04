@@ -130,9 +130,9 @@ class BytecodeCompilerTest {
         assertFalse(BytecodeCompiler.canCompile(ir("print [1, 2]")));
         assertTrue(BytecodeCompiler.whyNot(ir("print [1, 2]")).contains("MakeList"));
 
-        assertFalse(BytecodeCompiler.canCompile(ir("fun f()\n  return 1\nend\nprint f()")));
-        assertTrue(BytecodeCompiler.whyNot(ir("fun f()\n  return 1\nend\nprint f()"))
-                .contains("function"));
+        assertFalse(BytecodeCompiler.canCompile(ir("x = 1\nfun f()\n  return x\nend\nprint f()")));
+        assertTrue(BytecodeCompiler.whyNot(ir("x = 1\nfun f()\n  return x\nend\nprint f()"))
+                .contains("enclosing"));
 
         // String methods are not compiled, and the refusal must name the construct.
         assertFalse(BytecodeCompiler.canCompile(
@@ -159,6 +159,76 @@ class BytecodeCompilerTest {
     void compilesWhileLoop(@TempDir Path dir) throws Exception {
         assertEquals("0\n1\n2\n",
                 compileAndRun("i = 0\nwhile i < 3\n  print i\n  i = i + 1\nend", dir));
+    }
+
+    @Test
+    void compilesFunctionsWithParametersAndReturn(@TempDir Path dir) throws Exception {
+        assertEquals("5\nhi oq\n", compileAndRun("""
+                fun add(a, b)
+                  return a + b
+                end
+                fun greet(name)
+                  return "hi " + name
+                end
+                print add(2, 3)
+                print greet("oq")
+                """, dir));
+    }
+
+    @Test
+    void compilesBareReturnAsNothing(@TempDir Path dir) throws Exception {
+        assertEquals("3\nnothing\n", compileAndRun("""
+                fun stop()
+                  return
+                end
+                print 3
+                print stop()
+                """, dir));
+    }
+
+    @Test
+    void compilesRecursionAndMutualRecursion(@TempDir Path dir) throws Exception {
+        String source = """
+                fun fact(n)
+                  if n <= 1
+                    return 1
+                  end
+                  return n * fact(n - 1)
+                end
+                fun is_even(n)
+                  if n == 0
+                    return true
+                  end
+                  return is_odd(n - 1)
+                end
+                fun is_odd(n)
+                  if n == 0
+                    return false
+                  end
+                  return is_even(n - 1)
+                end
+                print fact(5)
+                print is_even(10)
+                print is_odd(7)
+                """;
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(),
+                compileAndRun(source, dir));
+    }
+
+    @Test
+    void functionTouchingAGlobalIsRefusedByName(@TempDir Path dir) {
+        String source = "count = 1\nfun bump()\n  return count + 1\nend\nprint bump()";
+        String reason = BytecodeCompiler.whyNot(ir(source));
+        assertNotNull(reason, "a function reading a global must be refused");
+        assertTrue(reason.contains("count"), reason);
+        assertEquals("2\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+    }
+
+    @Test
+    void aFunctionNameCollidingWithACommandIsRefused() {
+        String reason = BytecodeCompiler.whyNot(ir("fun print()\n  return 1\nend\nprint print()"));
+        assertNotNull(reason);
+        assertTrue(reason.contains("print"), reason);
     }
 
     @Test
@@ -326,8 +396,8 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertTrue(compiled >= 35,
-                "expected at least 35 conformance programs to compile, got " + compiled);
+        assertTrue(compiled >= 50,
+                "expected at least 50 conformance programs to compile, got " + compiled);
     }
 
     @Test
