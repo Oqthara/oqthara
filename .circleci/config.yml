@@ -29,14 +29,36 @@ jobs:
           name: Select JDK << parameters.java-version >>
           command: |
             set -euo pipefail
-            JDK_HOME="/Library/Java/JavaVirtualMachines/temurin-<< parameters.java-version >>.jdk/Contents/Home"
-            if [ ! -d "$JDK_HOME" ]; then
-              brew install --cask temurin@<< parameters.java-version >>
-              JDK_HOME="/Library/Java/JavaVirtualMachines/temurin-<< parameters.java-version >>.jdk/Contents/Home"
+            echo "machine: $(uname -s) $(uname -m)"
+
+            # CircleCI's macOS images already ship several Temurin JDKs under
+            # /Library/Java/JavaVirtualMachines. Prefer those; only install when missing.
+            candidate=$(/usr/libexec/java_home -V 2>&1 | grep -oE "/Library/Java/JavaVirtualMachines/[^/]*<< parameters.java-version >>[^/]*\.jdk/Contents/Home" | head -1 || true)
+            if [ -z "$candidate" ]; then
+              candidate=$(/usr/libexec/java_home -V 2>&1 | grep -E "temurin-<< parameters.java-version >>|jdk-<< parameters.java-version >>" | grep -oE "/[^ ]*\.jdk/Contents/Home" | head -1 || true)
             fi
-            echo "export JAVA_HOME=$JDK_HOME" >> "$BASH_ENV"
-            echo "export PATH=$JDK_HOME/bin:\$PATH" >> "$BASH_ENV"
-            java -version
+            if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
+              echo "JDK << parameters.java-version >> not found; installing"
+              brew install --cask "temurin@<< parameters.java-version >>" || brew install "openjdk@<< parameters.java-version >>"
+            fi
+            if [ -z "${candidate:-}" ] || [ ! -x "${candidate:-}/bin/java" ]; then
+              candidate=$(/usr/libexec/java_home -v << parameters.java-version >> 2>/dev/null || true)
+            fi
+            if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
+              echo "error: could not locate a JDK << parameters.java-version >> on this image" >&2
+              /usr/libexec/java_home -V 2>&1 >&2 || true
+              exit 1
+            fi
+            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
+            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            echo "using $candidate"
+            "$candidate/bin/java" -version
+      - run:
+          name: Assert this is really macOS
+          command: |
+            set -euo pipefail
+            test "$(uname -s)" = "Darwin" || { echo "not macOS: $(uname -s)" >&2; exit 1; }
+            echo "confirmed $(sw_vers -productName) $(sw_vers -productVersion) on $(uname -m)"
       - restore_cache:
           keys:
             - gradle-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "build.gradle.kts" }}
