@@ -58,9 +58,16 @@ jobs:
               /usr/libexec/java_home -V 2>&1 >&2 || true
               exit 1
             fi
+            # Never accept a near-miss JDK: java_home -v 25 happily returns a 24 install.
+            actual=$("$candidate/bin/java" -XshowSettings:properties -version 2>&1 | awk -F'= ' '/java.specification.version/ {print $2}' | tr -d ' ')
+            if [ "$actual" != "<< parameters.java-version >>" ]; then
+              echo "error: required JDK << parameters.java-version >> but $candidate reports $actual" >&2
+              /usr/libexec/java_home -V 2>&1 >&2 || true
+              exit 1
+            fi
             echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
             echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
-            echo "using $candidate"
+            echo "using $candidate (java $actual)"
             "$candidate/bin/java" -version
       - run:
           name: Assert this is really macOS
