@@ -12,6 +12,8 @@ fuzzing. Fuzzing is part of the permanent engineering lifecycle, not a one-off a
 | `ParserFuzzTest#deeplyNestedInputDoesNotOverflow` | `fuzzParserNesting` | expression nesting up to 400 levels | `StackOverflowError` |
 | `ParserFuzzTest#deeplyNestedBlocksDoNotOverflow` | `fuzzParserBlockNesting` | block nesting up to 600 levels (`if`, `while`, `for`, `fun`, `try`) | `StackOverflowError` |
 | `PipelineFuzzTest#fullPipelineNeverThrowsUnexpectedExceptions` | `fuzzPipeline` | parse → lower → class-file emission | any exception other than `OqError`/`NotSupported`, or a malformed class file |
+| `JsonFuzzTest#jsonParseNeverThrowsUnexpectedExceptions` | `fuzzJsonParse` | JSON text, then round-trips through both writers | any exception other than `OqError` |
+| `JsonFuzzTest#deeplyNestedJsonDoesNotOverflow` | `fuzzJsonNesting` | arrays nested up to 2000 deep | `StackOverflowError` |
 
 **A lexical or syntax error is a valid outcome.** The contract is that user input produces a
 diagnostic, never an internal crash.
@@ -54,6 +56,8 @@ Jazzer's own generated corpus is cached between runs and uploaded as a CI artifa
 |---|---|---|---|
 | 17 | `fuzzParserNesting` | 390 levels of nested parentheses crashed `oq check` with a raw `StackOverflowError` and exit 70 | explicit `MAX_NESTING = 128` guard that raises a normal diagnostic, plus regression tests at depths 200/390/500/2000 |
 | 18 | manual follow-up | 2000 nested `if` blocks crashed the parser the same way | `MAX_BLOCK_NESTING = 128` guard for statements, fuzz target and tests at 200/2000 levels |
+| 19 | `fuzzJsonParse` | `json_parse(".")` escaped as a raw `NumberFormatException` | the reader now requires digits before a fraction or exponent and reports every malformed number as JSON syntax error; regression tests |
+| 19 | `fuzzJsonNesting` (CI only) | 1884-deep arrays overflowed the reader on CircleCI, while the same target passed locally: the stack size differs per JVM | explicit `MAX_DEPTH = 256` in the JSON reader, with tests at 300/1884/5000 and 100 levels still parsing |
 
 This is the whole point of fuzzing: the defect was invisible to unit tests and would have
 been reported as "internal error: StackOverflowError" to a user.
@@ -68,7 +72,7 @@ been reported as "internal error: StackOverflowError" to a user.
 
 ## What is not covered yet
 
-- JSON parsing and the rest of the stdlib (next iteration).
+- The rest of the stdlib: text operations, path resolution, CSV.
 - Semantic analysis, which has no separate pass yet.
 - Deeply nested *statements* are now guarded too. Expression and block limits are separate
   constants because the parser recurses through different call paths for each.

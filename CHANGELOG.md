@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nesting depth and the full compile pipeline, each in its own Gradle task and a dedicated
   `jazzer-fuzz` CircleCI job. A bounded run executes ~1.7 million cases.
 - A curated regression corpus replayed by `CuratedCorpusTest` on every build.
+- Fuzz targets for the JSON reader and writer, plus JSON nesting depth.
+- Fixed: `json_parse(".")` escaped as a raw `NumberFormatException`; malformed numbers now
+  produce a JSON syntax error. Found by fuzzing.
 - Fixed: 390+ levels of nested parentheses, and 2000 nested blocks, crashed the checker with a raw
   `StackOverflowError` and exit 70. Found by fuzzing; now a normal diagnostic. The parser
   enforces a 128-level limit for both expressions and statement blocks.

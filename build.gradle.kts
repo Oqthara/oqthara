@@ -84,11 +84,16 @@ subprojects {
             "deeplyNestedBlocksDoNotOverflow"),
         FuzzTarget("Pipeline", "dev.oqthara.compiler.PipelineFuzzTest",
             "fullPipelineNeverThrowsUnexpectedExceptions"),
+        FuzzTarget("JsonParse", "dev.oqthara.stdlib.JsonFuzzTest",
+            "jsonParseNeverThrowsUnexpectedExceptions"),
+        FuzzTarget("JsonNesting", "dev.oqthara.stdlib.JsonFuzzTest",
+            "deeplyNestedJsonDoesNotOverflow"),
     )
     // A target can only run in the module whose fuzz source set contains its class.
     val packageOfTarget = mapOf(
         "dev.oqthara.core." to "oq-core",
         "dev.oqthara.compiler." to "oq-compiler",
+        "dev.oqthara.stdlib." to "oq-stdlib",
     )
     val fuzzTargets = allFuzzTargets.filter { target ->
         packageOfTarget.entries.any { (prefix, moduleName) ->
