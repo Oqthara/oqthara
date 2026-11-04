@@ -1,0 +1,4 @@
+use "oq:textutil"
+
+print slugify("Hello Oqthara World")
+print titlecase("the quick brown fox")

@@ -1,0 +1,8 @@
+# Shared helpers used by the module example.
+fun slugify(text)
+  return text.lower().replace(" ", "-").trim()
+end
+
+fun titlecase(text)
+  return text.words().map(w -> w.capitalize()).join(" ")
+end

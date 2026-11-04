@@ -33,6 +33,7 @@ java -jar oq.jar examples/hello.oq
 | `inventory.oq` | grouping and aggregation over records |
 | `guess.oq` | interactive input with `try`/`catch` |
 | `parallel.oq` | `spawn`/`await`/`par_map` on virtual threads |
+| `modules.oq` | `use "oq:textutil"` with the module in `lib/` |
 | `tests/` | the language-level test suite for `oq test` |
 
 `guess.oq` is interactive; the rest are deterministic and safe to run in CI.

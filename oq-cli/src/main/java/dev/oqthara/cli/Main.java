@@ -125,15 +125,20 @@ public final class Main {
             }
             List<String> programArgs = new ArrayList<>();
             for (int i = 1; i < args.length; i++) programArgs.add(args[i]);
-            return execute(file.getFileName().toString(), source, file.toAbsolutePath().getParent(), programArgs);
+            return execute(file.getFileName().toString(), source, file.toAbsolutePath().getParent(),
+                    programArgs, file.toAbsolutePath());
         }
 
         int execute(String name, String source, Path directory, List<String> programArgs) {
+            return execute(name, source, directory, programArgs, null);
+        }
+
+        int execute(String name, String source, Path directory, List<String> programArgs, Path file) {
             Ast.Program program;
             try {
                 program = Parser.parse(name, source);
-                if (!program.statements().isEmpty()) {
-                    // parsed successfully
+                if (file != null) {
+                    program = Modules.resolve(file, program);
                 }
             } catch (OqError error) {
                 Details.render(err, error, source, color);

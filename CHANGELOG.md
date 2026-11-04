@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `round(value, places)` for rounding to decimal places.
 - Lexicographic list comparison, so a sort key may be a list.
 - 24 runnable examples, including a calculator, a BFS maze solver and a Sudoku validator.
+- Modules: `use "oq:name"` loads another `.oq` file, searched next to the program, then in
+  `modules/`, then in `lib/`; loaded once, cycle-safe, with errors that name the module.
 - `spawn`, `await`, `done` and `par_map` running on virtual threads, with task errors
   re-raised at the `await` site.
 - `oq build` with AST-to-IR lowering, an IR disassembler (`--emit-ir`), and runtime
