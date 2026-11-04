@@ -1,0 +1,5 @@
+to = 5
+print to * 2
+for i in 1 to 3
+  print i
+end

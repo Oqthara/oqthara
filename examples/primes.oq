@@ -1,0 +1,31 @@
+# Sieve of Eratosthenes, plus a prime check.
+fun sieve(limit)
+  flags = []
+  for n in 0 to limit
+    flags.push(true)
+  end
+  flags[0] = false
+  flags[1] = false
+  p = 2
+  while p * p <= limit
+    if flags[p]
+      multiple = p * p
+      while multiple <= limit
+        flags[multiple] = false
+        multiple = multiple + p
+      end
+    end
+    p = p + 1
+  end
+  primes = []
+  for n in 0 to limit
+    if flags[n]
+      primes.push(n)
+    end
+  end
+  return primes
+end
+
+primes = sieve(100)
+print "primes below 100: {primes.length()}"
+print primes.take(10)

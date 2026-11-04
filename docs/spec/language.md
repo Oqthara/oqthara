@@ -123,6 +123,19 @@ end
 `to` includes the end value. `until` excludes it. Loop variables are local to the
 loop body. `break` and `continue` work inside all loops.
 
+`to` and `until` are **contextual**: they only act as range operators between two
+expressions, so they are still valid variable and parameter names.
+
+```
+fun count(from, until)
+  total = 0
+  for n in from until until
+    total = total + 1
+  end
+  return total
+end
+```
+
 ## Functions
 
 ```

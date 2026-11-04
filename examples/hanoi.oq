@@ -1,0 +1,23 @@
+# Towers of Hanoi with move counting.
+moves = 0
+lines = []
+
+fun hanoi(n, from, to, via)
+  if n == 0
+    return
+  end
+  hanoi(n - 1, from, via, to)
+  record("{from} -> {to}")
+  hanoi(n - 1, via, to, from)
+end
+
+fun record(move)
+  moves = moves + 1
+  lines.push(move)
+end
+
+hanoi(4, "A", "C", "B")
+print "moves: {moves}"
+for line in lines.take(7)
+  print line
+end

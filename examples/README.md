@@ -34,6 +34,10 @@ java -jar oq.jar examples/hello.oq
 | `guess.oq` | interactive input with `try`/`catch` |
 | `parallel.oq` | `spawn`/`await`/`par_map` on virtual threads |
 | `modules.oq` | `use "oq:textutil"` with the module in `lib/` |
+| `primes.oq` | Sieve of Eratosthenes |
+| `hanoi.oq` | Towers of Hanoi, showing `to` as a parameter name |
+| `collatz.oq` | longest Collatz chain under 1000 |
+| `memoize.oq` | memoisation built from a closure over a map |
 | `tests/` | the language-level test suite for `oq test` |
 
 `guess.oq` is interactive; the rest are deterministic and safe to run in CI.

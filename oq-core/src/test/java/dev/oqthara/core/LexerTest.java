@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,6 +37,9 @@ class LexerTest {
         assertEquals(Token.Kind.KEYWORD, tokens.get(0).kind());
         assertEquals("if", tokens.get(0).lexeme());
         assertEquals("return", tokens.get(7).lexeme());
+        assertTrue(Lexer.KEYWORDS.contains("if"));
+        assertFalse(Lexer.KEYWORDS.contains("to"), "to must stay contextual");
+        assertFalse(Lexer.KEYWORDS.contains("until"), "until must stay contextual");
     }
 
     @Test

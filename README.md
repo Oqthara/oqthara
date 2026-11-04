@@ -93,7 +93,7 @@ removes the ceremony:
 - [`docs/spec/language.md`](docs/spec/language.md) — complete language reference
 - [`docs/spec/design.md`](docs/spec/design.md) — goals, non-goals and metrics
 - [`docs/adr/`](docs/adr/) — architecture decisions
-- [`examples/`](examples/) — 25 runnable programs, indexed by topic
+- [`examples/`](examples/) — 29 runnable programs, indexed by topic
 
 ## Development
 

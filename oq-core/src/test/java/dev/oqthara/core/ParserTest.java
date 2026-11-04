@@ -3,6 +3,8 @@ package dev.oqthara.core;
 import dev.oqthara.runtime.OqError;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -95,6 +97,35 @@ class ParserTest {
         OqError error = assertThrows(OqError.class, () -> Parser.parse("test", "if true\nprint 1"));
         assertTrue(error.getMessage().contains("end"));
         assertTrue(error.hint().contains("end of the file"));
+    }
+
+    @Test
+    void toIsUsableAsAVariableName() {
+        Ast.Program program = Parser.parse("test", "to = 5\nprint to");
+        Ast.Assign assign = assertInstanceOf(Ast.Assign.class, program.statements().get(0));
+        assertEquals("to", assign.name());
+    }
+
+    @Test
+    void toStillWorksAsARangeOperator() {
+        Ast.Program program = Parser.parse("test", """
+                for i in 1 to 3
+                  print i
+                end
+                """);
+        Ast.ForRange loop = assertInstanceOf(Ast.ForRange.class, program.statements().get(0));
+        assertTrue(loop.inclusive());
+    }
+
+    @Test
+    void untilIsUsableAsAParameterName() {
+        Ast.Program program = Parser.parse("test", """
+                fun f(from, until)
+                  return from
+                end
+                """);
+        Ast.FuncDecl function = assertInstanceOf(Ast.FuncDecl.class, program.statements().get(0));
+        assertEquals(List.of("from", "until"), function.params());
     }
 
     @Test

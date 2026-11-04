@@ -1,0 +1,27 @@
+# Collatz sequence with the longest chain under 1000.
+fun chain_length(n)
+  steps = 0
+  current = n
+  while current != 1
+    if current % 2 == 0
+      current = current / 2
+    else
+      current = current * 3 + 1
+    end
+    steps = steps + 1
+  end
+  return steps
+end
+
+best = 0
+best_steps = 0
+for n in 1 until 1000
+  steps = chain_length(n)
+  if steps > best_steps
+    best_steps = steps
+    best = n
+  end
+end
+
+print "longest chain under 1000: {best} with {best_steps} steps"
+print "chain for 27: {chain_length(27)}"

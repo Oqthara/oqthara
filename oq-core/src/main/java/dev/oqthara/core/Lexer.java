@@ -14,7 +14,7 @@ public final class Lexer {
             "if", "else", "while", "for", "in", "end",
             "fun", "return", "data", "true", "false", "nothing",
             "and", "or", "not", "break", "continue",
-            "to", "until", "use", "try", "catch"
+            "use", "try", "catch"
     );
 
     private static final Map<String, Token.Kind> TWO_CHAR = new LinkedHashMap<>();

@@ -1,0 +1,8 @@
+fun count(from, until)
+  total = 0
+  for n in from until until
+    total = total + 1
+  end
+  return total
+end
+print count(0, 5)

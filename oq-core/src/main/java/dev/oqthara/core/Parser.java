@@ -267,12 +267,28 @@ public final class Parser {
 
     private Ast.Expr expression() {
         Ast.Expr expr = or();
-        if (check(Token.Kind.KEYWORD) && (peek().lexeme().equals("to") || peek().lexeme().equals("until"))) {
+        if (checkRangeOperator()) {
             Token op = advance();
             Ast.Expr to = or();
             return new Ast.RangeExpr(expr, to, op.lexeme().equals("to"), op.span());
         }
         return expr;
+    }
+
+    /**
+     * {@code to} and {@code until} are contextual: they only act as range operators in
+     * expression position, so they remain usable as variable and parameter names.
+     */
+    private boolean checkRangeOperator() {
+        if (check(Token.Kind.IDENT)) {
+            String text = peek().lexeme();
+            return text.equals("to") || text.equals("until");
+        }
+        if (check(Token.Kind.KEYWORD)) {
+            String text = peek().lexeme();
+            return text.equals("to") || text.equals("until");
+        }
+        return false;
     }
 
     private Ast.Expr or() {
