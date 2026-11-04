@@ -50,10 +50,18 @@ jobs:
               echo "downloading $URL"
               curl -fsSL "$URL" -o /tmp/jdk.tar.gz
               mkdir -p "$HOME/jdks"
+              rm -rf "$HOME/jdks"/*
               tar -xzf /tmp/jdk.tar.gz -C "$HOME/jdks"
-              candidate=$(find "$HOME/jdks" -maxdepth 3 -type f -path "*/Contents/Home/bin/java" | head -1 | sed 's|/bin/java$||')
+              # Adoptium macOS tarballs unpack to jdk-<version>/Contents/Home/bin/java,
+              # so the search must be deep enough to reach Contents/Home.
+              candidate=$(find "$HOME/jdks" -maxdepth 6 -type f -path "*/Contents/Home/bin/java" 2>/dev/null | head -1 | sed 's|/bin/java$||')
               if [ -z "$candidate" ]; then
-                candidate=$(find "$HOME/jdks" -maxdepth 3 -type f -path "*/bin/java" | head -1 | sed 's|/bin/java$||')
+                candidate=$(find "$HOME/jdks" -maxdepth 6 -type f -path "*/bin/java" 2>/dev/null | head -1 | sed 's|/bin/java$||')
+              fi
+              if [ -z "$candidate" ]; then
+                echo "error: extracted the archive but found no JDK; contents:" >&2
+                find "$HOME/jdks" -maxdepth 4 2>/dev/null | head -20 >&2
+                exit 1
               fi
             fi
             if [ -z "${candidate:-}" ] || [ ! -x "${candidate:-}/bin/java" ]; then
