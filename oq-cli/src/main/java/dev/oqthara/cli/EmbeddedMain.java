@@ -48,11 +48,15 @@ public final class EmbeddedMain {
     }
 
     public static void run(String source, String sourceName, String[] args, Path workingDirectory) {
+        // Always emit UTF-8 so output is identical on every platform, including Windows
+        // where the default console charset would mangle non-ASCII characters.
+        java.io.PrintStream out = utf8(System.out);
+        java.io.PrintStream err = utf8(System.err);
         List<String> programArgs = new ArrayList<>(List.of(args));
         // The first argument is the program's own name when launched via `java -jar x.jar`;
         // there is none here, so everything passed belongs to the program.
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-        Interpreter interpreter = new Interpreter(System.out, System.err, in, programArgs,
+        Interpreter interpreter = new Interpreter(out, err, in, programArgs,
                 workingDirectory, new MethodResolverImpl());
         Stdlib.install(interpreter);
         try {
@@ -62,9 +66,13 @@ public final class EmbeddedMain {
         } catch (Stdlib.ExitSignal exit) {
             System.exit(exit.code());
         } catch (OqError error) {
-            Details.render(System.err, error, source, System.console() != null);
+            Details.render(err, error, source, System.console() != null);
             System.exit(1);
         }
+    }
+
+    private static java.io.PrintStream utf8(java.io.OutputStream stream) {
+        return new java.io.PrintStream(stream, true, StandardCharsets.UTF_8);
     }
 
     private static String readResource(String name) {
