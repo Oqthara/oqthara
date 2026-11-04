@@ -1,0 +1,5 @@
+a = {1, 2, 3}
+b = {3, 4}
+print a.union(b).size()
+print a.difference(b).items().sort()
+print b.difference(a).items().sort()

@@ -1,0 +1,1 @@
+print clamp(5, 5, 5)

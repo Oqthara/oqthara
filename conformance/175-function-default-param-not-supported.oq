@@ -1,0 +1,4 @@
+fun f(a, b)
+  return a
+end
+print f(1, 2)

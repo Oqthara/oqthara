@@ -1,0 +1,7 @@
+fun compose(f, g)
+  return x -> f(g(x))
+end
+double = x -> x * 2
+inc = x -> x + 1
+print compose(double, inc)(5)
+print compose(inc, double)(5)

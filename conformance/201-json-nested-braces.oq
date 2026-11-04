@@ -1,0 +1,3 @@
+value = json_parse("{\"a\": {\"b\": [1, 2]}}")
+print value["a"]["b"][1]
+print value["a"].keys()

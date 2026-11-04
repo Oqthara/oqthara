@@ -1,0 +1,16 @@
+fun is_even(n)
+  if n == 0
+    return true
+  end
+  return is_odd(n - 1)
+end
+
+fun is_odd(n)
+  if n == 0
+    return false
+  end
+  return is_even(n - 1)
+end
+
+print is_even(10)
+print is_odd(10)

@@ -1,0 +1,2 @@
+print not true or true
+print not (true or true)

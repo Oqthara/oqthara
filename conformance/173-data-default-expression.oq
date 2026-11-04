@@ -1,0 +1,3 @@
+data Config(name, retries = 3, verbose = false)
+print Config("app")
+print Config("app", 5)

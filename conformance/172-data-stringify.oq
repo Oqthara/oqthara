@@ -1,0 +1,2 @@
+data User(name, age)
+print User("Ada", 36)

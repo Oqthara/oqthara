@@ -1,0 +1,4 @@
+s = "abcdef"
+print s.slice(-3)
+print s.slice(-3, -1)
+print s.slice(0, -3)

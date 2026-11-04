@@ -136,42 +136,22 @@ public final class Lexer {
             if (c == '\n') {
                 break;
             }
-            if (c == '{') {
-                if (peekNext() == '{') {
-                    raw.append("{{");
-                    advance();
-                    advance();
-                    continue;
-                }
-                if (!hasClosingBrace()) {
+            if (c == '{' && peekNext() == '{') {
+                raw.append("{{");
+                advance();
+                advance();
+                continue;
+            }
+            if (c == '{' && couldStartExpression(pos + 1)) {
+                int scan = findClosingBrace(pos);
+                if (scan < 0) {
                     raw.append(c);
                     advance();
                     continue;
                 }
-                raw.append(c);
-                advance();
-                int depth = 1;
-                while (!atEnd() && depth > 0) {
-                    char inner = peek();
-                    if (inner == '\\' && pos + 1 < src.length()) {
-                        raw.append(inner);
-                        advance();
-                        raw.append(peek());
-                        advance();
-                    } else if (inner == '{') {
-                        depth++;
-                        raw.append(inner);
-                        advance();
-                    } else if (inner == '}') {
-                        depth--;
-                        raw.append(inner);
-                        advance();
-                    } else if (inner == '\n') {
-                        break;
-                    } else {
-                        raw.append(inner);
-                        advance();
-                    }
+                for (int i = pos; i <= scan; i++) {
+                    raw.append(src.charAt(i));
+                    advance();
                 }
                 continue;
             }
@@ -184,6 +164,47 @@ public final class Lexer {
         }
         Span span = new Span(sourceName, startLine, startCol, line, column);
         tokens.add(new Token(Token.Kind.STRING, raw.toString(), raw.toString(), span));
+    }
+
+    private int findClosingBrace(int openIndex) {
+        int depth = 1;
+        boolean inString = false;
+        char quote = 0;
+        for (int i = openIndex + 1; i < src.length(); i++) {
+            char c = src.charAt(i);
+            if (inString) {
+                if (c == '\\') {
+                    i++;
+                    continue;
+                }
+                if (c == quote) inString = false;
+                continue;
+            }
+            if (c == '"' || c == '\'') {
+                inString = true;
+                quote = c;
+                continue;
+            }
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (c == '\n') return -1;
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    private boolean couldStartExpression(int from) {
+        if (from >= src.length()) return false;
+        char next = src.charAt(from);
+        if (Character.isLetterOrDigit(next) || next == '_') return true;
+        return next == '(' || next == '[' || next == '!' || next == '-';
     }
 
     private boolean hasClosingBrace() {

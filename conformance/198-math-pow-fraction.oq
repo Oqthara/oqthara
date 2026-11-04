@@ -1,0 +1,2 @@
+print pow(9, 0.5)
+print pow(2, 10)

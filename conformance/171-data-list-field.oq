@@ -1,0 +1,4 @@
+data Bag(items)
+b = Bag([1, 2])
+b.items.push(3)
+print b.items

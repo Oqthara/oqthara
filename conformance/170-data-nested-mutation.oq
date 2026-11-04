@@ -1,0 +1,5 @@
+data Inner(value)
+data Outer(inner)
+o = Outer(Inner(1))
+o.inner.value = 99
+print o.inner.value

@@ -1,0 +1,5 @@
+fun boom()
+  error("should not run")
+end
+print false and boom()
+print true or boom()

@@ -1,0 +1,2 @@
+print [].any(x -> true)
+print [].all(x -> false)

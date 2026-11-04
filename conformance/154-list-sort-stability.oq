@@ -1,0 +1,3 @@
+data Item(name, score)
+items = [Item("a", 2), Item("b", 1), Item("c", 2)]
+print items.sort(i -> i.score).map(i -> i.name)

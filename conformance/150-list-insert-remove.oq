@@ -1,0 +1,7 @@
+xs = [1, 2, 3]
+xs.insert(0, 0)
+xs.insert(4, 4)
+print xs
+xs.remove(0)
+xs.remove_value(4)
+print xs

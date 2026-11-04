@@ -1,0 +1,1 @@
+print json_parse("\"line\\nbreak\"")

@@ -584,6 +584,7 @@ public final class Parser {
         }
         List<Ast.StringPart> parts = new ArrayList<>();
         StringBuilder text = new StringBuilder();
+        int escapedOpens = 0;
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
             if (c == '\\' && i + 1 < raw.length()) {
@@ -604,6 +605,13 @@ public final class Parser {
             }
             if (c == '{' && i + 1 < raw.length() && raw.charAt(i + 1) == '{') {
                 text.append('{');
+                escapedOpens++;
+                i++;
+                continue;
+            }
+            if (c == '}' && i + 1 < raw.length() && raw.charAt(i + 1) == '}' && escapedOpens > 0) {
+                text.append('}');
+                escapedOpens--;
                 i++;
                 continue;
             }
@@ -649,11 +657,6 @@ public final class Parser {
                 Ast.Expr expr = parseInterpolated(exprSource, token.span());
                 parts.add(new Ast.ExprPart(expr));
                 i = j;
-                continue;
-            }
-            if (c == '}' && i + 1 < raw.length() && raw.charAt(i + 1) == '}') {
-                text.append('}');
-                i++;
                 continue;
             }
             text.append(c);

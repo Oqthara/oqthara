@@ -1,0 +1,3 @@
+print "banana".find("na")
+print "banana".find("zz")
+print "banana".contains("nan")

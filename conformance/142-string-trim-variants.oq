@@ -1,0 +1,4 @@
+s = "  padded  "
+print "[" + s.trim() + "]"
+print "[" + s.trim_start() + "]"
+print "[" + s.trim_end() + "]"

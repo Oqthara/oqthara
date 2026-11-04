@@ -1,0 +1,2 @@
+Config(name: "app", retries: 3, verbose: false)
+Config(name: "app", retries: 5, verbose: false)
