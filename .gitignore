@@ -21,3 +21,7 @@ node_modules/
 .cifuzz-corpus/
 
 site/_site/
+
+# stray output from older build steps
+_site/
+*.code.tmp
