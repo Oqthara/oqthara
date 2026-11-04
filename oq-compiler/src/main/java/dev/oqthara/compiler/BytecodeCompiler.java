@@ -6,7 +6,9 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Emits straight-line JVM bytecode for a deliberately small subset of Oqthara:
@@ -67,11 +69,15 @@ public final class BytecodeCompiler {
         }
         ConstantPool pool = new ConstantPool();
         List<byte[]> body = new ArrayList<>();
+        // Local slots: 0 holds String[] args; user variables start at 1.
+        Map<String, Integer> slots = new LinkedHashMap<>();
+        CompileState state = new CompileState(pool, body, slots);
         for (Ir.Instr instr : program.main().body()) {
-            emit(instr, pool, body);
+            emit(instr, state);
         }
         body.add(new byte[]{(byte) 0xB1}); // return
         byte[] code = concat(body);
+        int maxLocals = 1 + slots.size(); // slot 0 is String[] args
 
         int thisClass = pool.classRef(pool.utf8(className.replace('.', '/')));
         int objectClass = pool.classRef(pool.utf8("java/lang/Object"));
@@ -101,7 +107,7 @@ public final class BytecodeCompiler {
             out.writeShort(codeAttribute);
             out.writeInt(12 + code.length);
             out.writeShort(64);   // max_stack: generous, verified by the JVM
-            out.writeShort(1);    // max_locals: the args array
+            out.writeShort(Math.max(1, maxLocals));
             out.writeInt(code.length);
             out.write(code);
             out.writeShort(0);
@@ -117,7 +123,13 @@ public final class BytecodeCompiler {
         }
     }
 
-    private static void emit(Ir.Instr instr, ConstantPool pool, List<byte[]> body) {
+    /** Mutable state shared by the emitters for one method. */
+    private record CompileState(ConstantPool pool, List<byte[]> body, Map<String, Integer> slots) {
+    }
+
+    private static void emit(Ir.Instr instr, CompileState state) {
+        ConstantPool pool = state.pool();
+        List<byte[]> body = state.body();
         switch (instr) {
             case Ir.Const constant -> emitConstant(constant.value(), pool, body);
             case Ir.Binary binary -> emitBinary(binary.op(), pool, body);
@@ -127,6 +139,39 @@ public final class BytecodeCompiler {
                 // reached only at the very end; the trailing return covers it
             }
             case Ir.Call call -> emitCall(call, pool, body);
+            case Ir.Store store -> {
+                // Store consumes the value; keep it on the stack as the expression result
+                // (the IR lowering expects a value for assignments), then write the slot.
+                // Slot 0 is String[] args, so the first user variable gets slot 1.
+                Integer existing = state.slots().get(store.name());
+                int slot;
+                if (existing != null) {
+                    slot = existing;
+                } else {
+                    slot = 1 + state.slots().size();
+                    state.slots().put(store.name(), slot);
+                }
+                // istore_0..3 are 0x3B..0x3E, lstore 0x3F..0x42, fstore 0x43..0x46,
+                // dstore 0x47..0x4A, astore 0x4B..0x4E. Object locals need astore.
+                if (slot <= 3) {
+                    body.add(new byte[]{(byte) (0x4B + slot)});
+                } else {
+                    body.add(new byte[]{0x3A, (byte) slot});
+                }
+            }
+            case Ir.Load load -> {
+                Integer slot = state.slots().get(load.name());
+                if (slot == null) {
+                    throw new NotSupportedException(
+                            "variable '" + load.name() + "' is used before assignment");
+                }
+                // aload_0..3 are 0x2A..0x2D, so the base is 0x2A, not 0x2B.
+                if (slot <= 3) {
+                    body.add(new byte[]{(byte) (0x2A + slot)});
+                } else {
+                    body.add(new byte[]{0x19, (byte) (int) slot});
+                }
+            }
             default -> throw new NotSupportedException(
                     "instruction " + instr.getClass().getSimpleName() + " is not compiled yet");
         }

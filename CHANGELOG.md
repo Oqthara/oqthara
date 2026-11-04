@@ -19,9 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed: 390+ levels of nested parentheses, and 2000 nested blocks, crashed the checker with a raw
   `StackOverflowError` and exit 70. Found by fuzzing; now a normal diagnostic. The parser
   enforces a 128-level limit for both expressions and statement blocks.
-- `oq build` compiles straight-line arithmetic, text concatenation and `print` to real JVM
-  bytecode when the whole program is in that subset, embedding no source; anything else falls
-  back to the launcher jar with a printed reason. Verified instruction-for-instruction with
+- `oq build` compiles straight-line arithmetic, local variables (assignment, reassignment
+  and reads), text concatenation and `print` to real JVM bytecode when the whole program is
+  in that subset, embedding no source; anything else falls back to the launcher jar with a
+  printed reason. Verified instruction-for-instruction with
   `javap` and by running the generated jars on JDK 21 and 25.
 - `oq build` now produces an executable jar: a real class file written by Oqthara's own
   emitter, the interpreter and stdlib bundled in, the program source and its original name

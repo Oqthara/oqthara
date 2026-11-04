@@ -75,9 +75,11 @@ The compiled subset today:
 
 | Supported | Refused (falls back) |
 |---|---|
-| integer, decimal, text and boolean constants | variables (`Store`/`Load`) |
+| integer, decimal, text and boolean constants | branches, loops (`Jump`, `Label`) |
+| local variables: assignment, reassignment, reading | functions and calls |
 | `+ - * / %` and unary `-` | comparisons and boolean operators |
-| `print`/`write` of one expression | calls, functions, closures |
+| `+ - * / %` and unary `-` | comparisons and boolean operators |
+| `print`/`write` of one expression | functions, closures |
 | multiple statements in sequence | `if`, loops, `data`, collections, interpolation, modules |
 
 Refusal is deliberate and visible: the compiler returns the name of the instruction it
@@ -88,9 +90,8 @@ differently from `oq run` would be worse than no jar.
 
 The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
 
-1. **Variables and control flow.** `Store`/`Load`, branches and loops need local slots and
-   `StackMapTable` frames; today the compiler is straight-line only, which is why no stack
-   maps are required.
+1. **Control flow.** Variables now compile, but branches and loops need `StackMapTable`
+   frames; the compiler is still straight-line, which is why no stack maps are required.
 2. **Lambdas.** `Lowering` still emits a placeholder constant for a lambda.
 3. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
 4. **Modules as separate artifacts.** Module sources are flattened into one program.
@@ -141,10 +142,11 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
 
 1. ~~**T-0038** — emit a real class file and jar.~~ Done (launcher model).
 2. ~~**T-0048** — straight-line arithmetic bytecode.~~ Done.
-3. **T-0050** — variables, branches and loops with `StackMapTable` generation.
-4. **T-0037b** — closures/lambdas as generated classes with a captured environment.
-5. **T-0049** — Java interop from generated code.
-6. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
+3. ~~**T-0050a** — local variables in compiled bytecode.~~ Done.
+4. **T-0050b** — branches and loops, which requires `StackMapTable` generation.
+5. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+6. **T-0049** — Java interop from generated code.
+7. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
 Every step must keep the conformance suite green and delete the corresponding limitation
 from this page. If a step cannot, the page changes, not the claim.
