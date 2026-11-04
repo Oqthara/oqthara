@@ -142,26 +142,41 @@ public final class Json {
     private Object number() {
         int start = pos;
         if (peek() == '-') pos++;
+        // JSON requires at least one integer digit before any fraction or exponent.
+        if (pos >= src.length() || !Character.isDigit(src.charAt(pos))) {
+            throw fail("invalid number");
+        }
         while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
         boolean decimal = false;
         if (pos < src.length() && src.charAt(pos) == '.') {
             decimal = true;
             pos++;
+            if (pos >= src.length() || !Character.isDigit(src.charAt(pos))) {
+                throw fail("invalid number: expected a digit after '.'");
+            }
             while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
         }
         if (pos < src.length() && (src.charAt(pos) == 'e' || src.charAt(pos) == 'E')) {
             decimal = true;
             pos++;
             if (pos < src.length() && (src.charAt(pos) == '+' || src.charAt(pos) == '-')) pos++;
+            if (pos >= src.length() || !Character.isDigit(src.charAt(pos))) {
+                throw fail("invalid number: expected a digit in the exponent");
+            }
             while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
         }
         String text = src.substring(start, pos);
-        if (text.isEmpty() || text.equals("-")) throw fail("invalid number");
         try {
             if (decimal) return Double.parseDouble(text);
             return Long.parseLong(text);
         } catch (NumberFormatException e) {
-            return Double.parseDouble(text);
+            // Out-of-range integers fall back to a double, which never throws for valid
+            // numeric syntax; guard anyway so a malformed value cannot escape as a crash.
+            try {
+                return Double.parseDouble(text);
+            } catch (NumberFormatException again) {
+                throw fail("invalid number '" + text + "'");
+            }
         }
     }
 
