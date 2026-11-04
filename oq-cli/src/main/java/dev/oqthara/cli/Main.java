@@ -241,8 +241,16 @@ public final class Main {
             String className = "oq.generated.Program";
             try {
                 String selfContained = Modules.flatten(Path.of(path), source);
+                byte[] compiled = null;
+                String reason = dev.oqthara.compiler.BytecodeCompiler.whyNot(ir);
+                if (reason == null) {
+                    compiled = dev.oqthara.compiler.BytecodeCompiler.compile(ir, className);
+                    out.println("codepath: compiled bytecode");
+                } else {
+                    out.println("codepath: interpreter launcher (" + reason + ")");
+                }
                 JarBuilder.Result built = JarBuilder.build(jar, className, selfContained,
-                        Path.of(path).getFileName().toString());
+                        Path.of(path).getFileName().toString(), compiled);
                 out.println("wrote " + jar + " (" + built.classes() + " classes, "
                         + built.skipped() + " skipped)");
                 out.println("run it with: java -jar " + jar);
