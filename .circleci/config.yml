@@ -38,16 +38,22 @@ jobs:
               candidate=$(/usr/libexec/java_home -V 2>&1 | grep -E "temurin-<< parameters.java-version >>|jdk-<< parameters.java-version >>" | grep -oE "/[^ ]*\.jdk/Contents/Home" | head -1 || true)
             fi
             if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
-              echo "JDK << parameters.java-version >> not found; installing"
-              # Homebrew publishes temurin@8/11/17/21 but not 25: the unversioned
-              # "temurin" cask tracks the latest LTS+. Fall back to the versioned
-              # formula where it exists.
-              if brew info --cask "temurin@<< parameters.java-version >>" >/dev/null 2>&1; then
-                brew install --cask "temurin@<< parameters.java-version >>"
-              elif brew info --formula "openjdk@<< parameters.java-version >>" >/dev/null 2>&1; then
-                brew install "openjdk@<< parameters.java-version >>"
-              else
-                brew install --cask temurin
+              echo "JDK << parameters.java-version >> not found; installing from Adoptium"
+              # Homebrew's "temurin" cask lags (it shipped 24 while Adoptium released 25),
+              # so pin the exact JDK from Adoptium's API instead of trusting the cask.
+              ARCH=$(uname -m)
+              case "$ARCH" in
+                arm64) AARCH=aarch64 ;;
+                *) AARCH=x64 ;;
+              esac
+              URL="https://api.adoptium.net/v3/binary/latest/<< parameters.java-version >>/ga/mac/${AARCH}/jdk/hotspot/normal/eclipse"
+              echo "downloading $URL"
+              curl -fsSL "$URL" -o /tmp/jdk.tar.gz
+              mkdir -p "$HOME/jdks"
+              tar -xzf /tmp/jdk.tar.gz -C "$HOME/jdks"
+              candidate=$(find "$HOME/jdks" -maxdepth 3 -type f -path "*/Contents/Home/bin/java" | head -1 | sed 's|/bin/java$||')
+              if [ -z "$candidate" ]; then
+                candidate=$(find "$HOME/jdks" -maxdepth 3 -type f -path "*/bin/java" | head -1 | sed 's|/bin/java$||')
               fi
             fi
             if [ -z "${candidate:-}" ] || [ ! -x "${candidate:-}/bin/java" ]; then
