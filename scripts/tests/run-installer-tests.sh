@@ -18,6 +18,13 @@ WWW="$ROOT/www"
 STUBS="$ROOT/stubs"
 SERVER_PID=""
 TRUNC_PID=""
+
+# The fixture servers are the only test dependency. Fail with the reason instead of
+# letting every case fail later with "could not start fixture server".
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "error: python3 is required to run the installer tests (fixture HTTP server)" >&2
+  exit 2
+fi
 mkdir -p "$WWW" "$STUBS"
 printf 'a different file used to force a checksum mismatch\n' > "$WWW/other"
 
@@ -146,7 +153,16 @@ chmod +x "$STUBS/java21"
 
 JAVA_STUB="$STUBS/java"
 
-hex_of() { shasum -a 256 "$1" | sed 's/[[:space:]].*//'; }
+hex_of() {
+  # Same rule the installer uses: macOS ships shasum, most Linux images ship
+  # sha256sum. A GNU-only assumption here would fail the macOS CI job while the
+  # installer it is testing worked correctly.
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | sed 's/[[:space:]].*//'
+  else
+    sha256sum "$1" | sed 's/[[:space:]].*//'
+  fi
+}
 
 make_release() { # tag content sha-mode(good|star|bad|none)
   local tag=$1 content=$2 mode=${3:-good}
