@@ -161,17 +161,86 @@ class LoweringTest {
     }
 
     @Test
-    void tryIsRefusedBecauseNoExceptionTableIsEmitted() {
+    void tryLowersToAProtectedRegionAndAHandler() {
         Ir.Program program = lower("""
+                try
+                  print 1
+                catch e
+                  print e.message
+                end
+                """);
+        List<Ir.Instr> body = program.main().body();
+        assertEquals(1, body.stream().filter(i -> i instanceof Ir.TryStart).count());
+        assertEquals(1, body.stream().filter(i -> i instanceof Ir.TryEnd).count());
+        assertEquals(1, body.stream().filter(i -> i instanceof Ir.HandlerLabel).count());
+        assertEquals(1, body.stream().filter(i -> i instanceof Ir.CatchValue).count());
+        // The handler is the only place the caught value becomes an Error record, and the
+        // binding is fixed: the interpreter defines it with defineConst.
+        assertTrue(body.contains(new Ir.Declare("e", true)));
+        String start = Ir.disassemble(program);
+        assertTrue(start.contains("try_start catch_"), start);
+        assertFalse(start.contains("refuse"), start);
+    }
+
+    @Test
+    void tryEndsBeforeTheHandlerAndSkipsItOnNormalCompletion() {
+        String disassembly = Ir.disassemble(lower("""
                 try
                   print 1
                 catch e
                   print 2
                 end
+                """));
+        // try_end must precede the handler label, and a jump over the handler must exist.
+        assertTrue(disassembly.indexOf("try_end") < disassembly.indexOf("(catch)"), disassembly);
+        assertTrue(disassembly.contains("jump catch_end_"), disassembly);
+    }
+
+    @Test
+    void nestedTryProducesTwoRegionsInEmissionOrder() {
+        Ir.Program program = lower("""
+                try
+                  try
+                    print 1
+                  catch inner
+                    print 2
+                  end
+                catch outer
+                  print 3
+                end
                 """);
-        String disassembly = Ir.disassemble(program);
-        assertTrue(disassembly.contains("refuse 'try' / 'catch' is not compiled yet"),
-                disassembly);
+        List<Ir.Instr> body = program.main().body();
+        assertEquals(2, body.stream().filter(i -> i instanceof Ir.TryStart).count());
+        assertEquals(2, body.stream().filter(i -> i instanceof Ir.TryEnd).count());
+        assertEquals(2, body.stream().filter(i -> i instanceof Ir.HandlerLabel).count());
+        // The inner region closes first, which is the order the class-file table needs.
+        int firstEnd = indexOfType(body, Ir.TryEnd.class, 0);
+        int secondEnd = indexOfType(body, Ir.TryEnd.class, firstEnd + 1);
+        int firstHandler = indexOfType(body, Ir.HandlerLabel.class, 0);
+        assertTrue(firstEnd < secondEnd, "inner try must close first");
+        assertTrue(firstEnd < firstHandler, "the body region ends before its handler");
+    }
+
+    @Test
+    void errorCallsLowerToTheRuntimeBuiltin() {
+        String disassembly = Ir.disassemble(lower("""
+                try
+                  error("boom")
+                catch e
+                  print e.message
+                end
+                """));
+        assertTrue(disassembly.contains("call error/1"), disassembly);
+        // The span of the failing operation travels with the IR so a caught error reports
+        // the same line and column as the interpreter.
+        assertTrue(disassembly.contains("at "), disassembly);
+    }
+
+    private static int indexOfType(List<Ir.Instr> body, Class<?> type, int from) {
+        for (int i = from; i < body.size(); i++) {
+            if (type.isInstance(body.get(i))) return i;
+        }
+        return -1;
     }
 
     @Test

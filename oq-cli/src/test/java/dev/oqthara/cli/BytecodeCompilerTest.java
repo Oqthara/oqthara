@@ -31,7 +31,16 @@ class BytecodeCompilerTest {
     }
 
     private String compileAndRun(String source, Path dir) throws Exception {
-        dev.oqthara.compiler.Ir.Program program = ir(source);
+        return compileAndRun(source, "<t>", dir);
+    }
+
+    /**
+     * Compiles and runs a program that was parsed under {@code sourceName}. A caught error
+     * reports the name the parser saw, so a test that compares against a run of the same
+     * file must give both sides the same name.
+     */
+    private String compileAndRun(String source, String sourceName, Path dir) throws Exception {
+        dev.oqthara.compiler.Ir.Program program = Lowering.lower(Parser.parse(sourceName, source));
         String reason = BytecodeCompiler.whyNot(program);
         assertNull(reason, "expected the program to be compilable, refused because: " + reason);
         byte[] compiled = BytecodeCompiler.compile(program, "oq.generated.Program");
@@ -74,6 +83,150 @@ class BytecodeCompilerTest {
         ProcessResult result = runJarProcess(jar, dir);
         assertTrue(result.exit() != 0, "expected a non-zero exit");
         assertTrue(result.stderr().contains("division by zero"), result.stderr());
+    }
+
+
+    @Test
+    void compilesTryCatchWithARealExceptionTable(@TempDir Path dir) throws Exception {
+        String source = """
+                try
+                  print [1, 2][5]
+                catch err
+                  print "caught: {err.message}"
+                end
+                print "after"
+                """;
+        assertEquals("caught: index 5 is out of range for a list of length 2\nafter\n",
+                compileAndRun(source, dir));
+        // The proof that this is a real exception table and not a rewritten `if`: the
+        // class must carry an entry that names OqError as the caught type.
+        Path jar = dir.resolve("prog.jar");
+        try (JarFile file = new JarFile(jar.toFile())) {
+            byte[] bytes = file.getInputStream(file.getEntry("oq/generated/Program.class"))
+                    .readAllBytes();
+            assertEquals(1, exceptionTableRows(bytes),
+                    "the generated class must carry exactly one exception-table row");
+            assertTrue(indexOf(bytes, "dev/oqthara/runtime/OqError"
+                    .getBytes(StandardCharsets.UTF_8)) > 0,
+                    "the exception table must name OqError");
+        }
+    }
+
+    @Test
+    void catchBindsTheSameErrorValueAsTheInterpreter(@TempDir Path dir) throws Exception {
+        String source = """
+                try
+                  print 1 / 0
+                catch err
+                  print err.message
+                  print err.line
+                  print err.file
+                  print err.hint
+                end
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesNestedTryCatchAndRethrow(@TempDir Path dir) throws Exception {
+        String source = """
+                try
+                  try
+                    error("inner")
+                  catch e
+                    print "first: {e.message}"
+                    error("outer")
+                  end
+                catch e2
+                  print "second: {e2.message}"
+                end
+                """;
+        assertEquals("first: inner\nsecond: outer\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesCatchAfterAPartiallyBuiltExpression(@TempDir Path dir) throws Exception {
+        // The left operand and the function arguments are already on the stack when the
+        // right operand throws. The handler must see a clean stack, and the accumulated
+        // values must simply be discarded.
+        String source = """
+                fun add3(a, b, c)
+                  return a + b + c
+                end
+                try
+                  print add3(1, 1 / 0, 3)
+                catch e
+                  print "arg: {e.message}"
+                end
+                try
+                  print "prefix " + [9, 9][7]
+                catch e
+                  print "index: {e.message}"
+                end
+                print "end"
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void tryBodyThatReturnsStillProducesAValidExceptionTable(@TempDir Path dir) throws Exception {
+        String source = """
+                fun f(x)
+                  try
+                    if x > 0
+                      return "pos"
+                    end
+                    return "nonpos"
+                  catch e
+                    return "caught"
+                  end
+                end
+                print f(1)
+                print f(-1)
+                """;
+        assertEquals("pos\nnonpos\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void anEmptyTryBodyIsRefusedByNameInsteadOfCompiled(@TempDir Path dir) throws Exception {
+        // A zero-length protected range cannot be written, and the interpreter accepts this
+        // program, so the honest answer is to fall back rather than emit a broken class.
+        String reason = BytecodeCompiler.whyNot(ir("""
+                try
+                catch e
+                  print e.message
+                end
+                """));
+        assertNotNull(reason);
+        assertTrue(reason.contains("empty 'try' body"), reason);
+    }
+
+    @Test
+    void onlyOqErrorsAreCaughtByCompiledHandlers(@TempDir Path dir) throws Exception {
+        // The interpreter's `try` catches OqError and nothing else, so the generated
+        // exception table names that class alone instead of RuntimeException.
+        String source = """
+                try
+                  print "ok"
+                catch e
+                  print "must not run"
+                end
+                """;
+        compileAndRun(source, dir);
+        Path jar = dir.resolve("prog.jar");
+        byte[] bytes;
+        try (JarFile file = new JarFile(jar.toFile())) {
+            bytes = file.getInputStream(file.getEntry("oq/generated/Program.class"))
+                    .readAllBytes();
+        }
+        assertEquals(1, exceptionTableRows(bytes));
+        assertTrue(indexOf(bytes, "dev/oqthara/runtime/OqError"
+                .getBytes(StandardCharsets.UTF_8)) > 0, "OqError must be the catch type");
+        assertTrue(indexOf(bytes, "java/lang/RuntimeException"
+                .getBytes(StandardCharsets.UTF_8)) < 0,
+                "RuntimeException must not appear as a catch type");
     }
 
     @Test
@@ -571,13 +724,16 @@ class BytecodeCompilerTest {
                     continue; // parse-error cases carry a .err file; anything else is not ours
                 }
                 if (BytecodeCompiler.whyNot(lowered) != null) continue;
-                String expected = OqRunner.run(program.toString(), source, List.of(), "", dir).stdout();
-                assertEquals(expected, compileAndRun(source, dir),
-                        "compiled output differs from the interpreter for " + program.getFileName());
+                // `oq run` parses with the file name, and a built jar reports the same name,
+                // so both sides use the base name rather than the full path.
+                String name = program.getFileName().toString();
+                String expected = OqRunner.run(name, source, List.of(), "", dir).stdout();
+                assertEquals(expected, compileAndRun(source, name, dir),
+                        "compiled output differs from the interpreter for " + name);
                 compiled++;
             }
         }
-        assertEquals(139, compiled,
+        assertEquals(145, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
     }
 
@@ -596,6 +752,93 @@ class BytecodeCompilerTest {
     }
 
     private record ProcessResult(int exit, String stdout, String stderr) {
+    }
+
+
+    /** Number of exception-table rows across every Code attribute in one class file. */
+    private static int exceptionTableRows(byte[] classFile) {
+        int[] at = {8}; // magic and version
+        int poolCount = u2(classFile, at);
+        java.util.Map<Integer, String> utf8 = new java.util.HashMap<>();
+        for (int i = 1; i < poolCount; i++) {
+            int tag = classFile[at[0]] & 0xFF;
+            at[0]++;
+            if (tag == 1) {
+                int length = u2(classFile, at);
+                utf8.put(i, new String(classFile, at[0], length, StandardCharsets.UTF_8));
+                at[0] += length;
+            } else {
+                at[0] += switch (tag) {
+                    case 3, 4, 9, 10, 11, 12, 17, 18 -> 4; // Integer Float Fieldref Methodref ...
+                    case 5, 6 -> 8;                          // Long Double (two slots)
+                    case 7, 8, 16, 19, 20 -> 2;              // Class String MethodType Module Package
+                    case 15 -> 3;                            // MethodHandle
+                    default -> throw new AssertionError("unknown constant tag " + tag);
+                };
+            }
+            if (tag == 5 || tag == 6) i++; // longs and doubles take two slots
+        }
+        at[0] += 6; // access flags, this class, super class
+        int interfaces = u2(classFile, at);
+        at[0] += interfaces * 2;
+        int fields = u2(classFile, at);
+        for (int i = 0; i < fields; i++) at[0] += 6 + skipAttributes(classFile, at);
+        int methods = u2(classFile, at);
+        int rows = 0;
+        for (int i = 0; i < methods; i++) {
+            at[0] += 6; // access, name, descriptor
+            int attributes = u2(classFile, at);
+            for (int a = 0; a < attributes; a++) {
+                int nameIndex = u2(classFile, at);
+                int length = (int) u4(classFile, at);
+                int end = at[0] + length;
+                if ("Code".equals(utf8.get(nameIndex))) {
+                    at[0] += 4; // max_stack, max_locals
+                    int codeLength = (int) u4(classFile, at);
+                    at[0] += codeLength;
+                    rows += u2(classFile, at);
+                }
+                at[0] = end;
+            }
+        }
+        return rows;
+    }
+
+    private static int indexOf(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    private static int skipAttributes(byte[] bytes, int[] at) {
+        int start = at[0];
+        int count = u2(bytes, at);
+        for (int i = 0; i < count; i++) {
+            at[0] += 2; // name index
+            int length = (int) u4(bytes, at);
+            at[0] += length;
+        }
+        return at[0] - start;
+    }
+
+    private static int u2(byte[] bytes, int[] at) {
+        int value = ((bytes[at[0]] & 0xFF) << 8) | (bytes[at[0] + 1] & 0xFF);
+        at[0] += 2;
+        return value;
+    }
+
+    private static long u4(byte[] bytes, int[] at) {
+        long value = ((long) (bytes[at[0]] & 0xFF) << 24)
+                | ((long) (bytes[at[0] + 1] & 0xFF) << 16)
+                | ((long) (bytes[at[0] + 2] & 0xFF) << 8)
+                | (bytes[at[0] + 3] & 0xFF);
+        at[0] += 4;
+        return value;
     }
 
     private String runJar(Path jar, Path dir) throws Exception {

@@ -45,7 +45,7 @@ public final class Methods {
     }
 
     private static Object invoke(Object receiver, String name, Object... args) {
-        Span span = Span.synthetic();
+        Span span = Errors.current();
         if (receiver == null) {
             throw new OqError("cannot call method '" + name + "' on nothing", span,
                     "Check that the value is not nothing before calling a method on it.");
