@@ -107,6 +107,16 @@ Run-Case "sha256 file formats are accepted" {
     Assert-True ($null -eq (Get-ExpectedSha "not-a-hash  oq.jar")) "invalid format"
 }
 
+# GitHub serves oq.jar.sha256 as application/octet-stream, so Invoke-WebRequest hands
+# back a byte[] rather than a string. Casting that with [string] yields "System.Byte[]"
+# and the checksum was rejected on Windows only; the Linux suite passed. This pins the
+# decoding path that made the Windows CI job fail.
+Run-Case "checksum text is decoded from a byte-array response" {
+    $good = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    Assert-True ((Get-ExpectedSha ([System.Text.Encoding]::UTF8.GetString(
+        [System.Text.Encoding]::UTF8.GetBytes("$good  oq.jar`n")))) -eq $good) "byte[] checksum"
+}
+
 Run-Case "PATH dedupe is case-insensitive and path aware" {
     $path = "C:\Windows;C:\Tools\Oq\;"
     Assert-True (Test-PathContainsEntry $path "c:\tools\oq") "case-insensitive match failed"

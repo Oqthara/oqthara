@@ -23,10 +23,34 @@ function Fail([string]$Message) {
     throw [System.Exception]::new($Message)
 }
 
+function Get-RemoteText([string]$Uri) {
+    $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
+    $content = $response.Content
+    if ($content -is [byte[]]) {
+        return [System.Text.Encoding]::UTF8.GetString($content)
+    }
+    if ($content -is [string]) {
+        return $content
+    }
+    $stream = $response.RawContentStream
+    if ($null -eq $stream) { return [string]$content }
+    $stream.Position = 0
+    $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+    try {
+        return $reader.ReadToEnd()
+    } finally {
+        $reader.Dispose()
+    }
+}
+
+function Save-RemoteFile([string]$Uri, [string]$OutFile) {
+    Invoke-WebRequest -Uri $Uri -UseBasicParsing -OutFile $OutFile -TimeoutSec 300
+}
+
 function Get-LatestTag {
     try {
-        $response = Invoke-WebRequest -Uri $script:ReleaseApi -UseBasicParsing -TimeoutSec 30
-        $releases = @($response.Content | ConvertFrom-Json)
+        $body = Get-RemoteText $script:ReleaseApi
+        $releases = @($body | ConvertFrom-Json)
         foreach ($release in $releases) {
             if ($release.draft) { continue }
             $tag = [string]$release.tag_name
@@ -36,7 +60,7 @@ function Get-LatestTag {
         # fall through to the atom feed
     }
     try {
-        $atom = (Invoke-WebRequest -Uri $script:AtomUrl -UseBasicParsing -TimeoutSec 30).Content
+        $atom = Get-RemoteText $script:AtomUrl
         $match = [regex]::Match([string]$atom, 'releases/tag/([^"<]+)')
         if ($match.Success) { return $match.Groups[1].Value }
     } catch {
@@ -91,10 +115,12 @@ function Get-ExpectedSha([string]$ShaText) {
     return $match.Groups[1].Value.ToLowerInvariant()
 }
 
-function Save-RemoteFile([string]$Uri, [string]$OutFile) {
-    Invoke-WebRequest -Uri $Uri -UseBasicParsing -OutFile $OutFile -TimeoutSec 300
-}
-
+# Downloads a small text asset and returns its body as text.
+#
+# `Invoke-WebRequest ... .Content` is only a string when PowerShell guesses a text
+# content type. GitHub serves `oq.jar.sha256` as application/octet-stream, and then
+# `.Content` is a byte[], which `[string]` renders as "System.Byte[]" and the checksum
+# regex rejects. Reading the body off the response stream is content-type independent.
 function Normalize-PathEntry([string]$Entry) {
     if ([string]::IsNullOrWhiteSpace($Entry)) { return "" }
     return $Entry.Trim().TrimEnd('\', '/')
@@ -154,7 +180,7 @@ function Install-Oq {
         }
 
         try {
-            $shaText = (Invoke-WebRequest -Uri $shaUrl -UseBasicParsing -TimeoutSec 60).Content
+            $shaText = Get-RemoteText $shaUrl
         } catch {
             Fail "Missing checksum asset: $shaUrl"
         }
