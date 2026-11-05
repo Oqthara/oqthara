@@ -18,6 +18,13 @@ WWW="$ROOT/www"
 STUBS="$ROOT/stubs"
 SERVER_PID=""
 TRUNC_PID=""
+
+# The fixture servers are the only test dependency. Fail with the reason instead of
+# letting every case fail later with "could not start fixture server".
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "error: python3 is required to run the installer tests (fixture HTTP server)" >&2
+  exit 2
+fi
 mkdir -p "$WWW" "$STUBS"
 printf 'a different file used to force a checksum mismatch\n' > "$WWW/other"
 
@@ -146,7 +153,16 @@ chmod +x "$STUBS/java21"
 
 JAVA_STUB="$STUBS/java"
 
-hex_of() { shasum -a 256 "$1" | sed 's/[[:space:]].*//'; }
+hex_of() {
+  # Same rule the installer uses: macOS ships shasum, most Linux images ship
+  # sha256sum. A GNU-only assumption here would fail the macOS CI job while the
+  # installer it is testing worked correctly.
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | sed 's/[[:space:]].*//'
+  else
+    sha256sum "$1" | sed 's/[[:space:]].*//'
+  fi
+}
 
 make_release() { # tag content sha-mode(good|star|bad|none)
   local tag=$1 content=$2 mode=${3:-good}
@@ -298,7 +314,9 @@ case_path_with_spaces() {
   out=$(OQ_VERSION=0.8.0 install_to "$dir" "$BASE" 2>&1) || { echo "$out"; return 1; }
   [ "$(cat "$dir/oq.jar")" = "SPACED JAR" ] || { echo "jar missing in spaced dir"; return 1; }
   [ -x "$dir/oq" ] || { echo "launcher not executable"; return 1; }
-  out=$(PATH="$STUBS:$PATH" "$dir/oq")
+  # Run the generated launcher against the stub JVM, exactly as the installer's own
+  # smoke test does, so the result does not depend on which java is first on PATH.
+  out=$(OQ_JAVA="$STUBS/java" "$dir/oq")
   grep -q '^oq ' <<<"$out"
 }
 
@@ -356,7 +374,7 @@ case_launcher_self_dir() {
     echo "launcher uses readlink -f"
     return 1
   fi
-  out=$(PATH="$STUBS:$PATH" "$dir/oq")
+  out=$(OQ_JAVA="$STUBS/java" "$dir/oq")
   grep -q '^oq ' <<<"$out" || { echo "launcher output: $out"; return 1; }
   [ "$(cat "$dir/oq.jar")" = "LAUNCHER JAR" ]
 }

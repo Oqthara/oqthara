@@ -97,8 +97,8 @@ jobs:
               /usr/libexec/java_home -V 2>&1 >&2 || true
               exit 1
             fi
-            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
-            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            echo "export JAVA_HOME=$candidate" >> "${BASH_ENV:?BASH_ENV must be set to persist JAVA_HOME}"
+            echo "export PATH=$candidate/bin:\$PATH" >> "${BASH_ENV:?BASH_ENV must be set to persist PATH}"
             echo "using $candidate (java $actual)"
             "$candidate/bin/java" -version
       - run:
@@ -188,10 +188,34 @@ jobs:
           name: Select JDK 21
           command: |
             set -euo pipefail
-            # CircleCI macOS images already ship Temurin JDKs; only install when absent.
-            candidate=$(/usr/libexec/java_home -v 21 2>/dev/null || true)
-            if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
-              echo "JDK 21 not found; installing from Adoptium"
+            # `/usr/libexec/java_home -v 21` is not reliable on these images: it returned a
+            # JDK 24 and the job failed the version assertion. Enumerate every installed JDK
+            # and keep the first one that actually reports 21.
+            # Look at the JDK installation roots directly instead of parsing
+            # `/usr/libexec/java_home -V`, which reported a JDK 24 for `-v 21` here.
+            select_jdk21() {
+              local home version
+              for home in \
+                /Library/Java/JavaVirtualMachines/*/Contents/Home \
+                /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+                /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+                "$HOME"/jdks/*/Contents/Home \
+                "$HOME"/jdks/*/*/Contents/Home \
+                "${JAVA_HOME:-}"; do
+                [ -n "$home" ] || continue
+                [ -x "$home/bin/java" ] || continue
+                version=$("$home/bin/java" -XshowSettings:properties -version 2>&1 \
+                  | awk -F'= ' '/java.specification.version/ {print $2; exit}' | tr -d ' ')
+                if [ "$version" = "21" ]; then
+                  printf '%s\n' "$home"
+                  return 0
+                fi
+              done
+              return 1
+            }
+
+            if ! candidate=$(select_jdk21); then
+              echo "No JDK 21 on this image; installing Temurin 21 from Adoptium"
               ARCH=$(uname -m)
               case "$ARCH" in
                 arm64) AARCH=aarch64 ;;
@@ -200,22 +224,17 @@ jobs:
               URL="https://api.adoptium.net/v3/binary/latest/21/ga/mac/${AARCH}/jdk/hotspot/normal/eclipse"
               curl -fsSL "$URL" -o /tmp/jdk21.tar.gz
               mkdir -p "$HOME/jdks"
-              rm -rf "$HOME/jdks"/*
               tar -xzf /tmp/jdk21.tar.gz -C "$HOME/jdks"
-              candidate=$(find "$HOME/jdks" -maxdepth 6 -type f -path "*/Contents/Home/bin/java" 2>/dev/null | head -1 | sed 's|/bin/java$||')
+              candidate=$(select_jdk21 || true)
             fi
-            if [ -z "${candidate:-}" ] || [ ! -x "${candidate:-}/bin/java" ]; then
+
+            if [ -z "${candidate:-}" ]; then
               echo "error: could not locate a JDK 21 on this image" >&2
               /usr/libexec/java_home -V 2>&1 >&2 || true
               exit 1
             fi
-            actual=$("$candidate/bin/java" -XshowSettings:properties -version 2>&1 | awk -F'= ' '/java.specification.version/ {print $2}' | tr -d ' ')
-            if [ "$actual" != "21" ]; then
-              echo "error: required JDK 21 but $candidate reports $actual" >&2
-              exit 1
-            fi
-            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
-            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            echo "export JAVA_HOME=$candidate" >> "${BASH_ENV:?BASH_ENV must be set to persist JAVA_HOME}"
+            echo "export PATH=$candidate/bin:\$PATH" >> "${BASH_ENV:?BASH_ENV must be set to persist PATH}"
             "$candidate/bin/java" -version
       - run:
           name: Run installer tests

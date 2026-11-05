@@ -4,6 +4,10 @@
 # Idempotent: creates the "main-protection" ruleset once, then updates it in
 # place. Requires a token with admin rights on the repository.
 #
+# Only checks that run on every push are required. The Docker job is filtered by
+# `paths:` in docker.yml, so requiring it would leave a documentation-only pull
+# request permanently "Expected — Waiting for status to be reported".
+#
 # Usage: scripts/apply-branch-protection.sh [--dry-run] [--repo OWNER/NAME]
 set -euo pipefail
 
@@ -51,9 +55,10 @@ payload=$(cat <<JSON
           {"context": "ubuntu-latest / JDK 25"},
           {"context": "windows-latest / JDK 21"},
           {"context": "windows-latest / JDK 25"},
+          {"context": "ubuntu-latest / installer tests"},
+          {"context": "windows-latest / installer tests"},
           {"context": "Bytecode backend (JDK 25)"},
           {"context": "Standalone jar"},
-          {"context": "Build and run the image"},
           {"context": "analyze"},
           {"context": "ci/circleci: macOS / JDK 21"},
           {"context": "ci/circleci: macOS / JDK 25"},

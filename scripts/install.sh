@@ -185,7 +185,8 @@ cat > "$launcher_tmp" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-exec java -jar "$here/oq.jar" "$@"
+# OQ_JAVA lets a user pin a specific JVM without changing PATH.
+exec "${OQ_JAVA:-java}" -jar "$here/oq.jar" "$@"
 SCRIPT
 chmod +x "$launcher_tmp"
 if ! mv -f -- "$launcher_tmp" "$launcher"; then
