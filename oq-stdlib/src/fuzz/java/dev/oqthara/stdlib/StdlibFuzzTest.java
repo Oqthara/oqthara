@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Fuzzes the pure stdlib builtins: text, math and conversion helpers plus the JSON writers.
@@ -134,6 +135,10 @@ class StdlibFuzzTest {
             case "split" -> result instanceof List<?>;
             case "contains" -> result instanceof Boolean;
             case "number" -> Values.isNumber(result);
+            // min/max/clamp compare and return one of their own arguments, so the result is
+            // one of the inputs verbatim: max("", "") is text, max(true, false) is a boolean.
+            case "min", "max" -> matchesOneArgument(result, args);
+            case "clamp" -> matchesOneArgument(result, args);
             default -> Values.isNumber(result);
         };
         if (!ok) {
@@ -150,6 +155,14 @@ class StdlibFuzzTest {
                         + describe(name, args) + ": " + repr(text), e);
             }
         }
+    }
+
+    /** min/max/clamp select an argument rather than building a new value. */
+    private static boolean matchesOneArgument(Object result, List<Object> args) {
+        for (Object arg : args) {
+            if (Objects.equals(arg, result)) return true;
+        }
+        return false;
     }
 
     private static Interpreter createInterpreter() {
