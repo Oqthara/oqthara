@@ -88,6 +88,53 @@ else {
 
 if (!existsSync(join(site, "stdlib.md"))) problems.push("missing stdlib.md");
 
+// Search is a static index generated during prerendering, so check that it exists, stays
+// small, and only names pages and anchors that were actually written.
+const indexPath = join(site, "search-index.json");
+if (!existsSync(indexPath)) {
+  problems.push("missing search-index.json");
+} else {
+  const raw = readFileSync(indexPath, "utf8");
+  if (Buffer.byteLength(raw) > 64 * 1024) {
+    problems.push(`search-index.json is too large (${Buffer.byteLength(raw)} bytes)`);
+  }
+  let entries = null;
+  try {
+    entries = JSON.parse(raw);
+  } catch {
+    problems.push("search-index.json is not valid JSON");
+  }
+  if (entries !== null) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      problems.push("search-index.json has no entries");
+    } else {
+      for (const entry of entries) {
+        const url = typeof entry?.url === "string" ? entry.url : "";
+        if (!url.startsWith("/oqthara/")) {
+          problems.push(`search-index.json: ${url || "(missing url)"} must use the base path`);
+          continue;
+        }
+        const [path, anchor] = url.split("#");
+        const relative = path.slice("/oqthara/".length) || "index.html";
+        const file = relative.endsWith("/") ? `${relative}index.html` : relative;
+        if (!existsSync(join(site, file))) {
+          problems.push(`search-index.json: ${url} does not resolve to a page`);
+          continue;
+        }
+        if (anchor) {
+          const target = readFileSync(join(site, file), "utf8");
+          if (!target.includes(`id="${anchor}"`)) problems.push(`search-index.json: ${url} has no anchor`);
+        }
+      }
+    }
+  }
+}
+
+const home = readFileSync(join(site, "index.html"), "utf8");
+for (const needle of ['role="search"', 'role="combobox"', 'aria-controls="site-search-results"']) {
+  if (!home.includes(needle)) problems.push(`index.html: missing search markup ${needle}`);
+}
+
 if (problems.length) {
   console.error("Site verification failed:");
   for (const problem of problems) console.error("  -", problem);
