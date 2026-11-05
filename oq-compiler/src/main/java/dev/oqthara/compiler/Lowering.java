@@ -6,11 +6,20 @@ import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.Span;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Lowers the AST into a flat stack IR. The IR is backend-agnostic: the classfile
  * backend and the disassembler both consume it unchanged.
+ *
+ * <p>A construct whose interpreter semantics this lowering cannot reproduce is emitted as
+ * {@link Ir.Refuse} instead of a placeholder. The backend then refuses the whole program by
+ * name, so `oq build` falls back to the interpreter rather than producing a jar that behaves
+ * differently.
  */
 public final class Lowering {
     private final List<Ir.Function> functions = new ArrayList<>();
@@ -18,8 +27,14 @@ public final class Lowering {
     private final List<LoopContext> loops = new ArrayList<>();
     private int loopCounter = 0;
 
+    /** A `data` type visible in the current block, matching the interpreter's hoisting. */
+    private record DataType(String name, List<Ast.FieldDef> fields) {
+    }
+
     private record LoopContext(String id, String breakLabel, String continueLabel) {
     }
+
+    private final java.util.Deque<Map<String, DataType>> typeScopes = new java.util.ArrayDeque<>();
     private List<Ir.Instr> code;
     private int tempCounter = 0;
     private int labelCounter = 0;
@@ -34,13 +49,99 @@ public final class Lowering {
     public static Result lowerWithReport(Ast.Program program) {
         Lowering lowering = new Lowering();
         lowering.code = Ir.list();
+        String collision = lowering.nameCollision(program.statements());
+        if (collision != null) {
+            lowering.code.add(new Ir.Refuse(collision));
+        }
+        lowering.pushTypes(program.statements());
         for (Ast.Stmt stmt : program.statements()) {
             lowering.statement(stmt);
         }
+        lowering.popTypes();
         lowering.code.add(new Ir.Halt());
         Ir.Function main = new Ir.Function("main", List.of(), List.copyOf(lowering.code));
         return new Result(new Ir.Program(main, List.copyOf(lowering.functions)),
                 List.copyOf(lowering.divergences));
+    }
+
+    /**
+     * A data type name is also an ordinary identifier in the grammar, so it can be shadowed
+     * by a variable or a function. The interpreter resolves that through its environment
+     * chain; reproducing it here is out of scope, so the program is refused by name instead
+     * of silently picking a different meaning.
+     */
+    private String nameCollision(List<Ast.Stmt> statements) {
+        Set<String> types = new LinkedHashSet<>();
+        Set<String> others = new LinkedHashSet<>();
+        collectNames(statements, types, others);
+        for (String type : types) {
+            if (others.contains(type)) {
+                return "data type '" + type + "' is also used as a variable or function;"
+                        + " the compiler cannot resolve that shadowing";
+            }
+        }
+        return null;
+    }
+
+    private void collectNames(List<Ast.Stmt> statements, Set<String> types, Set<String> others) {
+        for (Ast.Stmt stmt : statements) {
+            switch (stmt) {
+                case Ast.DataDecl data -> types.add(data.name());
+                case Ast.FuncDecl function -> {
+                    others.add(function.name());
+                    for (String param : function.params()) others.add(param);
+                    collectNames(function.body(), types, others);
+                }
+                case Ast.VarDecl decl -> others.add(decl.name());
+                case Ast.Assign assign -> others.add(assign.name());
+                case Ast.CompoundAssign assign -> others.add(assign.name());
+                case Ast.ForRange loop -> {
+                    others.add(loop.name());
+                    collectNames(loop.body(), types, others);
+                }
+                case Ast.ForEach loop -> {
+                    others.add(loop.name());
+                    collectNames(loop.body(), types, others);
+                }
+                case Ast.If conditional -> {
+                    for (Ast.Branch branch : conditional.branches()) {
+                        collectNames(branch.body(), types, others);
+                    }
+                    collectNames(conditional.elseBranch(), types, others);
+                }
+                case Ast.While loop -> collectNames(loop.body(), types, others);
+                case Ast.TryStmt attempt -> {
+                    others.add(attempt.errorName());
+                    collectNames(attempt.body(), types, others);
+                    collectNames(attempt.handler(), types, others);
+                }
+                default -> {
+                }
+            }
+        }
+    }
+
+    /** Registers the `data` declarations the interpreter hoists into this block. */
+    private void pushTypes(List<Ast.Stmt> statements) {
+        Map<String, DataType> types = new LinkedHashMap<>();
+        for (Ast.Stmt stmt : statements) {
+            if (stmt instanceof Ast.DataDecl data) {
+                types.put(data.name(), new DataType(data.name(), data.fields()));
+            }
+        }
+        typeScopes.push(types);
+    }
+
+    private void popTypes() {
+        typeScopes.pop();
+    }
+
+    private DataType lookupType(String name) {
+        for (Map<String, DataType> scope : typeScopes) {
+            DataType type = scope.get(name);
+            if (type != null) return type;
+        }
+        return null;
     }
 
     private void statement(Ast.Stmt stmt) {
@@ -96,7 +197,8 @@ public final class Lowering {
                 code.add(new Ir.Continue(loops.get(loops.size() - 1).id()));
             }
             case Ast.DataDecl ignored -> {
-                // Types are runtime constructs; nothing to emit yet.
+                // Types are hoisted into the type scopes for this block; construction is
+                // lowered where a call names the type.
             }
             case Ast.ExprStmt expr -> {
                 expression(expr.expr());
@@ -112,32 +214,21 @@ public final class Lowering {
             case Ast.FieldAssign assign -> {
                 expression(assign.target());
                 expression(assign.value());
+                // SetField is void in the bytecode backend, so nothing is left to pop.
                 code.add(new Ir.SetField(assign.field()));
-                code.add(new Ir.Pop());
             }
-            case Ast.TryStmt attempt -> {
-                int handlerJump = code.size();
-                code.add(new Ir.TryStart(-1));
-                for (Ast.Stmt body : attempt.body()) {
-                    statement(body);
-                }
-                code.add(new Ir.TryEnd());
-                int skipHandler = code.size();
-                code.add(new Ir.Jump(-1));
-                int handler = code.size();
-                code.set(handlerJump, new Ir.TryStart(handler));
-                for (Ast.Stmt handlerBody : attempt.handler()) {
-                    statement(handlerBody);
-                }
-                code.set(skipHandler, new Ir.Jump(code.size()));
-                code.add(new Ir.Store(attempt.errorName()));
-                code.add(new Ir.Pop());
+            case Ast.TryStmt ignored -> {
+                // The backend never emitted an exception table, so lowering a handler would
+                // promise catch semantics that the generated class cannot deliver.
+                code.add(new Ir.Refuse("'try' / 'catch' is not compiled yet"));
             }
             case Ast.UseStmt ignored -> {
-                // Import resolution happens in the interpreter; the compiler resolves later.
+                // Resolving a Java class is interpreter-only; compiling it would need the
+                // Java interop bridge, which the backend does not emit yet.
+                code.add(new Ir.Refuse("'use' imports a Java class, which is not compiled yet"));
             }
             case Ast.ImportStmt ignored -> {
-                // Same as use.
+                code.add(new Ir.Refuse("module imports are not compiled yet"));
             }
         }
     }
@@ -145,14 +236,25 @@ public final class Lowering {
     private Ir.Function function(String name, List<String> params, List<Ast.Stmt> body) {
         List<Ir.Instr> saved = code;
         code = Ir.list();
+        pushTypes(body);
         for (Ast.Stmt stmt : body) {
             statement(stmt);
         }
+        popTypes();
         code.add(new Ir.Const(null));
         code.add(new Ir.Return());
         Ir.Function function = new Ir.Function(name, params, List.copyOf(code));
         code = saved;
         return function;
+    }
+
+    /** Lowers a nested block, with the `data` types the interpreter would hoist into it. */
+    private void block(List<Ast.Stmt> statements) {
+        pushTypes(statements);
+        for (Ast.Stmt stmt : statements) {
+            statement(stmt);
+        }
+        popTypes();
     }
 
     private void ifStatement(Ast.If conditional) {
@@ -162,18 +264,14 @@ public final class Lowering {
             expression(branch.condition());
             code.add(new Ir.JumpIfFalseLabel(next));
             code.add(new Ir.ScopeEnter());
-            for (Ast.Stmt stmt : branch.body()) {
-                statement(stmt);
-            }
+            block(branch.body());
             code.add(new Ir.ScopeExit());
             code.add(new Ir.JumpLabel(end));
             code.add(new Ir.Label(next));
         }
         if (!conditional.elseBranch().isEmpty()) {
             code.add(new Ir.ScopeEnter());
-            for (Ast.Stmt stmt : conditional.elseBranch()) {
-                statement(stmt);
-            }
+            block(conditional.elseBranch());
             code.add(new Ir.ScopeExit());
         }
         code.add(new Ir.Label(end));
@@ -192,9 +290,7 @@ public final class Lowering {
         expression(loop.condition());
         code.add(new Ir.JumpIfFalseLabel(exitLabel));
         code.add(new Ir.ScopeEnter());
-        for (Ast.Stmt stmt : loop.body()) {
-            statement(stmt);
-        }
+        block(loop.body());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.JumpLabel(head));
         loops.remove(loops.size() - 1);
@@ -267,9 +363,7 @@ public final class Lowering {
         code.add(new Ir.ScopeEnter());
         code.add(new Ir.Load(counter));
         code.add(new Ir.Declare(loop.name(), true));
-        for (Ast.Stmt stmt : loop.body()) {
-            statement(stmt);
-        }
+        block(loop.body());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(stepLabel));
         code.add(new Ir.Load(counter));
@@ -304,9 +398,7 @@ public final class Lowering {
         code.add(new Ir.Load(iterator));
         code.add(new Ir.IterNext());
         code.add(new Ir.Declare(loop.name(), true));
-        for (Ast.Stmt stmt : loop.body()) {
-            statement(stmt);
-        }
+        block(loop.body());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(step));
         code.add(new Ir.JumpLabel(head));
@@ -385,8 +477,13 @@ public final class Lowering {
             }
             case Ast.Call call -> {
                 if (call.callee() instanceof Ast.Var var) {
-                    emitCallArguments(call.args());
-                    code.add(new Ir.Call(var.name(), call.args().size()));
+                    DataType type = lookupType(var.name());
+                    if (type != null) {
+                        constructor(call, type);
+                    } else {
+                        emitCallArguments(call.args());
+                        code.add(new Ir.Call(var.name(), call.args().size()));
+                    }
                 } else {
                     expression(call.callee());
                     emitCallArguments(call.args());
@@ -407,7 +504,8 @@ public final class Lowering {
                 expression(field.target());
                 code.add(new Ir.GetField(field.name()));
             }
-            case Ast.Lambda lambda -> code.add(new Ir.Const("<lambda>"));
+            case Ast.Lambda lambda -> code.add(new Ir.Refuse(
+                    "lambdas are not compiled yet; a compiled jar cannot create a function value"));
             case Ast.Grouping group -> expression(group.expr());
             case Ast.InExpr in -> {
                 expression(in.item());
@@ -455,6 +553,73 @@ public final class Lowering {
         for (Ast.Expr arg : args) {
             expression(arg);
         }
+    }
+
+    /**
+     * Lowers a constructor call the way the interpreter's {@code DataCtor} builds a record:
+     * given fields take the caller's values, omitted fields evaluate their default, and an
+     * omitted field without a default is an error. Refusing at build time is safe because the
+     * interpreter would fail at that same line, only later.
+     */
+    private void constructor(Ast.Call call, DataType type) {
+        List<Ast.FieldDef> fields = type.fields();
+        if (call.args().size() > fields.size()) {
+            code.add(new Ir.Refuse("construction of '" + type.name() + "' with "
+                    + call.args().size() + " argument(s); it declares " + fields.size()
+                    + " field(s), so the interpreter would reject this call"));
+            return;
+        }
+        for (int i = 0; i < fields.size(); i++) {
+            Ast.FieldDef field = fields.get(i);
+            if (i < call.args().size()) {
+                expression(call.args().get(i));
+            } else if (field.defaultValue() != null) {
+                if (!isScopeFree(field.defaultValue())) {
+                    // The interpreter evaluates a default in the scope where the type was
+                    // declared; this backend evaluates it where the record is constructed.
+                    // Those differ as soon as the default reads a name, so only literals
+                    // are compiled and everything else is refused by name.
+                    code.add(new Ir.Refuse("default for field '" + field.name() + "' of '"
+                            + type.name() + "' reads a name or calls a function;"
+                            + " compiled code cannot evaluate it in the declaration's scope"));
+                    return;
+                }
+                expression(field.defaultValue());
+            } else {
+                code.add(new Ir.Refuse("construction of '" + type.name()
+                        + "' omits field '" + field.name() + "', which has no default;"
+                        + " the interpreter would reject this call"));
+                return;
+            }
+        }
+        List<String> names = new ArrayList<>();
+        for (Ast.FieldDef field : fields) {
+            names.add(field.name());
+        }
+        code.add(new Ir.MakeData(type.name(), List.copyOf(names)));
+    }
+
+    /**
+     * True when an expression means the same thing wherever it is evaluated: literals only,
+     * with no names to look up and no calls to run. Defaults that pass this test can be
+     * lowered at the construction site without changing behaviour.
+     */
+    private boolean isScopeFree(Ast.Expr expr) {
+        return switch (expr) {
+            case Ast.NumberLit ignored -> true;
+            case Ast.BoolLit ignored -> true;
+            case Ast.NothingLit ignored -> true;
+            case Ast.StringLit text -> text.parts().stream()
+                    .allMatch(part -> part instanceof Ast.TextPart);
+            case Ast.ListLit list -> list.items().stream().allMatch(this::isScopeFree);
+            case Ast.SetLit set -> set.items().stream().allMatch(this::isScopeFree);
+            case Ast.MapLit map -> map.entries().stream()
+                    .allMatch(entry -> isScopeFree(entry.key()) && isScopeFree(entry.value()));
+            case Ast.Grouping group -> isScopeFree(group.expr());
+            case Ast.Unary unary -> isScopeFree(unary.operand());
+            case Ast.Binary binary -> isScopeFree(binary.left()) && isScopeFree(binary.right());
+            default -> false;
+        };
     }
 
     private String temp(String prefix) {

@@ -161,7 +161,7 @@ class LoweringTest {
     }
 
     @Test
-    void lowersTry() {
+    void tryIsRefusedBecauseNoExceptionTableIsEmitted() {
         Ir.Program program = lower("""
                 try
                   print 1
@@ -169,7 +169,9 @@ class LoweringTest {
                   print 2
                 end
                 """);
-        assertTrue(program.main().body().stream().anyMatch(i -> i instanceof Ir.TryStart));
+        String disassembly = Ir.disassemble(program);
+        assertTrue(disassembly.contains("refuse 'try' / 'catch' is not compiled yet"),
+                disassembly);
     }
 
     @Test
@@ -259,6 +261,48 @@ class LoweringTest {
             lowered++;
         }
         assertTrue(lowered >= 100, "expected at least 100 lowering cases, got " + lowered);
+    }
+
+    @Test
+    void lowersDataConstructionAndFieldAccess() {
+        Ir.Program program = lower("data Point(x, y)\np = Point(1, 2)\nprint p.x\np.y = 3");
+        List<Ir.Instr> body = program.main().body();
+        assertTrue(body.contains(new Ir.MakeData("Point", List.of("x", "y"))),
+                Ir.disassemble(program));
+        assertTrue(body.contains(new Ir.GetField("x")), Ir.disassemble(program));
+        assertTrue(body.contains(new Ir.SetField("y")), Ir.disassemble(program));
+    }
+
+    @Test
+    void dataDefaultsAreFilledInAtTheCallSite() {
+        Ir.Program program = lower("data Person(name, age = 7)\nprint Person(\"Ada\")");
+        List<Ir.Instr> body = program.main().body();
+        int make = body.indexOf(new Ir.MakeData("Person", List.of("name", "age")));
+        assertTrue(make > 0, Ir.disassemble(program));
+        assertTrue(body.subList(0, make).contains(new Ir.Const(7L)),
+                "the default must be evaluated as part of the construction");
+    }
+
+    @Test
+    void invalidConstructionBecomesARefusal() {
+        Ir.Program program = lower("data P(x, y)\nprint P(1)");
+        String disassembly = Ir.disassemble(program);
+        assertTrue(disassembly.contains("refuse"), disassembly);
+        assertTrue(disassembly.contains("y"), disassembly);
+    }
+
+    @Test
+    void methodCallsLowerToRuntimeDispatch() {
+        Ir.Program program = lower("xs = [1]\nxs.push(2)\nprint \"a\".upper()");
+        String disassembly = Ir.disassemble(program);
+        assertTrue(disassembly.contains("method_call push/2"), disassembly);
+        assertTrue(disassembly.contains("method_call upper/1"), disassembly);
+    }
+
+    @Test
+    void lambdasAndJavaInteropAreRefusedByName() {
+        assertTrue(Ir.disassemble(lower("f = x -> x")).contains("lambdas are not compiled yet"));
+        assertTrue(Ir.disassemble(lower("use java.time.LocalDate")).contains("'use'"));
     }
 
     @Test
