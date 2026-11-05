@@ -28,7 +28,55 @@ class FormatterTest {
     void normalisesCommaSpacing() {
         assertEquals("f(a, b)\n", Formatter.format("f(a,b)\n"));
         assertEquals("[1, 2, 3]\n", Formatter.format("[1,2,3]\n"));
-        assertEquals("{\"a\": 1}\n", Formatter.format("{\"a\": 1}\n"));
+        assertEquals("{ \"a\": 1 }\n", Formatter.format("{\"a\": 1}\n"));
+    }
+
+    @Test
+    void normalisesMapLiteralSpacing() {
+        assertEquals("m = { \"a\": 1 }\n", Formatter.format("m={\"a\":1}\n"));
+        assertEquals("n = { \"b\": 2 }\n", Formatter.format("n = { \"b\" : 2 }\n"));
+        assertEquals("m = { \"a\": 1, \"b\": 2 }\n", Formatter.format("m={\"a\" :1,\"b\":2}\n"));
+        assertEquals("print json({ \"a\": 1 })\n", Formatter.format("print json({\"a\":1})\n"));
+        assertEquals("m = { \"outer\": { \"inner\": 42 } }\n",
+                Formatter.format("m={\"outer\":{\"inner\":42}}\n"));
+    }
+
+    @Test
+    void leavesSetsAndEmptyCollectionsAlone() {
+        assertEquals("s = {1, 2, 3}\n", Formatter.format("s = {1, 2, 3}\n"));
+        assertEquals("m = {}\n", Formatter.format("m = {}\n"));
+        assertEquals("xs = [1, 2]\n", Formatter.format("xs = [1, 2]\n"));
+    }
+
+    @Test
+    void mapLiteralsFormatIdempotently() {
+        String[] samples = {
+                "m={\"a\":1}\n",
+                "n = { \"b\" : 2 }\n",
+                "m={\"a\" :1,\"b\":2}\n",
+                "m={\"outer\":{\"inner\":42}}\n",
+                "s = {{1, 2}: \"x\"}\n",
+                "m = {\n  \"a\": 1,\n  \"b\": 2,\n}\n",
+        };
+        for (String sample : samples) {
+            String once = Formatter.format(sample);
+            String twice = Formatter.format(once);
+            assertEquals(once, twice, "map formatting is not idempotent for:\n" + sample);
+        }
+    }
+
+    @Test
+    void formattedMapLiteralsStillParse() {
+        String[] samples = {
+                "m={\"a\":1}\n",
+                "n = { \"b\" : 2 }\n",
+                "m={\"a\" :1,\"b\":2}\n",
+                "m={\"outer\":{\"inner\":42}}\n",
+                "s = {{1, 2}: \"x\"}\n",
+        };
+        for (String sample : samples) {
+            Parser.parse("<fmt>", Formatter.format(sample));
+        }
     }
 
     @Test
