@@ -314,7 +314,9 @@ case_path_with_spaces() {
   out=$(OQ_VERSION=0.8.0 install_to "$dir" "$BASE" 2>&1) || { echo "$out"; return 1; }
   [ "$(cat "$dir/oq.jar")" = "SPACED JAR" ] || { echo "jar missing in spaced dir"; return 1; }
   [ -x "$dir/oq" ] || { echo "launcher not executable"; return 1; }
-  out=$(PATH="$STUBS:$PATH" "$dir/oq")
+  # Run the generated launcher against the stub JVM, exactly as the installer's own
+  # smoke test does, so the result does not depend on which java is first on PATH.
+  out=$(OQ_JAVA="$STUBS/java" "$dir/oq")
   grep -q '^oq ' <<<"$out"
 }
 
@@ -372,7 +374,7 @@ case_launcher_self_dir() {
     echo "launcher uses readlink -f"
     return 1
   fi
-  out=$(PATH="$STUBS:$PATH" "$dir/oq")
+  out=$(OQ_JAVA="$STUBS/java" "$dir/oq")
   grep -q '^oq ' <<<"$out" || { echo "launcher output: $out"; return 1; }
   [ "$(cat "$dir/oq.jar")" = "LAUNCHER JAR" ]
 }
