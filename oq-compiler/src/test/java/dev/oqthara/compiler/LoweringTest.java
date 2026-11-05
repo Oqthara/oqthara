@@ -24,7 +24,12 @@ class LoweringTest {
     @Test
     void lowersHelloWorld() {
         Ir.Program program = lower("print \"hi\"");
-        List<Ir.Instr> body = program.main().body();
+        // Position marks are interleaved with real work, because code outside a `try` can
+        // still raise and must report the interpreter's line and column. The test therefore
+        // looks at the instructions that do work, not at fixed indices.
+        List<Ir.Instr> body = program.main().body().stream()
+                .filter(instr -> !(instr instanceof Ir.At))
+                .toList();
         assertEquals(new Ir.Const("hi"), body.get(0));
         assertEquals(new Ir.Call("print", 1), body.get(1));
         assertEquals(new Ir.Halt(), body.get(body.size() - 1));

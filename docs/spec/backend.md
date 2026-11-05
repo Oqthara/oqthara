@@ -122,12 +122,19 @@ reproduce. `args()` and `input()` are refused for the same reason. Variadic `pri
 `write a, b` build an argument list and call the interpreter's variadic builtin, so the
 separator rule does not get a second implementation.
 
-Two known gaps remain and are tracked as **T-0072** and **T-0073**. A builtin that throws
-inside a compiled jar escapes as an uncaught `OqError` stack trace instead of `oq run`'s
-rendered diagnostic (same message and exit code 1, different presentation); this predates
-the builtin work and affects arithmetic errors too. And `print(1, 2)` written as an
-expression is refused rather than compiled, because the statement lowering pops a value the
-void call never pushes. Both fall back to the launcher jar, so no program changes meaning.
+An uncaught `OqError` in a compiled jar renders the same diagnostic `oq run` prints, minus
+the caret block. `main` owns one exception-table row covering its whole body, so an error
+escaping the program reaches `EmbeddedMain.renderUncaught`, which calls the same
+`Details`/`Diagnostics` renderer the interpreter uses and exits 1. The message, the
+`file:line:column` location and the hint are byte-identical; the source line and caret are
+omitted because a compiled jar deliberately embeds no source (see "What the generated jar
+contains"). Each `try` in the program contributes its own row, and because rows sort by end
+offset ascending an inner region always wins for its own range, so a caught error is never
+mistaken for an uncaught one.
+
+One known gap remains and is tracked as **T-0073**: `print(1, 2)` written as an expression is
+refused rather than compiled, because the statement lowering pops a value the void call never
+pushes. That falls back to the launcher jar, so no program changes meaning.
 
 `data` types are a compile-time table in the lowering, because the interpreter hoists every
 declaration in a block before running it. A construction pushes the given values, evaluates
