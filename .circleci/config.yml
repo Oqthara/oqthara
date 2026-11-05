@@ -6,7 +6,8 @@ version: 2.1
 # One-time setup (requires a human with CircleCI access):
 #   1. https://app.circleci.com/settings/project/github/Oqthara/oqthara/setup
 #   2. "Set Up Project" using the existing .circleci/config.yml, branch main.
-#   3. (Optional) add a CIRCLECI_TOKEN secret so the GitHub workflow can poll status.
+#   3. CircleCI reports one commit status per job; release.yml gates on those
+#      statuses through the GitHub API (docs/adr/0010-release-gate.md).
 
 orbs:
   macos: circleci/macos@2.5.1
@@ -155,12 +156,14 @@ jobs:
           when: always
           command: |
             mkdir -p build/fuzz-artifacts
+            # One authoritative list: build.gradle.kts printFuzzTargets.
+            targets=$(./gradlew -q printFuzzTargets | tr '\n' ' ')
             {
               echo "commit: $CIRCLE_SHA1"
               echo "branch: $CIRCLE_BRANCH"
               echo "java: $(java -version 2>&1 | head -1)"
               echo "jazzer: 0.30.0"
-              echo "targets: LexerText ParserText ParserNesting Pipeline"
+              echo "targets: $targets"
               echo "profile: $([ "$CIRCLE_BRANCH" = "main" ] && echo extended || echo pull-request)"
             } > build/fuzz-artifacts/metadata.txt
             cat build/fuzz-artifacts/metadata.txt
@@ -177,6 +180,63 @@ jobs:
           path: build/fuzz-artifacts
           destination: jazzer
 
+  installers-macos:
+    executor: macos-arm
+    steps:
+      - checkout
+      - run:
+          name: Select JDK 21
+          command: |
+            set -euo pipefail
+            # CircleCI macOS images already ship Temurin JDKs; only install when absent.
+            candidate=$(/usr/libexec/java_home -v 21 2>/dev/null || true)
+            if [ -z "$candidate" ] || [ ! -x "$candidate/bin/java" ]; then
+              echo "JDK 21 not found; installing from Adoptium"
+              ARCH=$(uname -m)
+              case "$ARCH" in
+                arm64) AARCH=aarch64 ;;
+                *) AARCH=x64 ;;
+              esac
+              URL="https://api.adoptium.net/v3/binary/latest/21/ga/mac/${AARCH}/jdk/hotspot/normal/eclipse"
+              curl -fsSL "$URL" -o /tmp/jdk21.tar.gz
+              mkdir -p "$HOME/jdks"
+              rm -rf "$HOME/jdks"/*
+              tar -xzf /tmp/jdk21.tar.gz -C "$HOME/jdks"
+              candidate=$(find "$HOME/jdks" -maxdepth 6 -type f -path "*/Contents/Home/bin/java" 2>/dev/null | head -1 | sed 's|/bin/java$||')
+            fi
+            if [ -z "${candidate:-}" ] || [ ! -x "${candidate:-}/bin/java" ]; then
+              echo "error: could not locate a JDK 21 on this image" >&2
+              /usr/libexec/java_home -V 2>&1 >&2 || true
+              exit 1
+            fi
+            actual=$("$candidate/bin/java" -XshowSettings:properties -version 2>&1 | awk -F'= ' '/java.specification.version/ {print $2}' | tr -d ' ')
+            if [ "$actual" != "21" ]; then
+              echo "error: required JDK 21 but $candidate reports $actual" >&2
+              exit 1
+            fi
+            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
+            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            "$candidate/bin/java" -version
+      - run:
+          name: Run installer tests
+          command: |
+            set -euo pipefail
+            if [ ! -f scripts/tests/run-installer-tests.sh ]; then
+              echo "error: scripts/tests/run-installer-tests.sh is missing on this branch" >&2
+              exit 1
+            fi
+            bash scripts/tests/run-installer-tests.sh
+      - run:
+          name: Run macOS installer smoke test
+          command: |
+            set -euo pipefail
+            if [ -f scripts/tests/installer-macos-smoke.sh ]; then
+              bash scripts/tests/installer-macos-smoke.sh
+            else
+              echo "scripts/tests/installer-macos-smoke.sh does not exist on this branch;"
+              echo "skipping the macOS-specific smoke test (owned by the installer workstream)."
+            fi
+
 workflows:
   fuzzing:
     jobs:
@@ -189,3 +249,6 @@ workflows:
       - test-macos:
           name: macOS / JDK 25
           java-version: "25"
+  installers:
+    jobs:
+      - installers-macos

@@ -49,6 +49,7 @@ jobs:
             echo "ref: $GITHUB_REF"
             echo "java: $(java -version 2>&1 | head -1)"
             echo "jazzer: 0.30.0"
+            echo "targets: $(./gradlew -q printFuzzTargets | tr '\n' ' ')"
             echo "duration: $JAZZER_MAX_DURATION per target"
           } | tee -a build/fuzz-artifacts/metadata.txt
       - name: Upload crash corpus and logs

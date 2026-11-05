@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -20,13 +22,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Build and test
         run: ./gradlew build :oq-cli:standaloneJar --no-daemon --console=plain
-      - name: Verify the release version matches the tag
-        run: |
-          set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
-          code=$(grep -oE 'VERSION = "[^"]+"' oq-cli/src/main/java/dev/oqthara/cli/Main.java | head -1 | cut -d'"' -f2)
-          echo "tag=$tag code=$code"
-          test "$tag" = "$code"
       - name: Verify documentation matches this release
         run: |
           set -euo pipefail
@@ -34,42 +29,65 @@ jobs:
           git diff --exit-code docs/stdlib/reference.md
           python3 scripts/check-links.py
           python3 scripts/check-docs-sync.py
-      - name: Verify the changelog describes this release
+      - name: Resolve the release version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Gate - tag matches build.gradle.kts and Main.java
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          grep -q "$version" CHANGELOG.md
-          echo "changelog mentions $version"
+          gradle_version=$(sed -n 's/^[[:space:]]*version = "\(.*\)"/\1/p' build.gradle.kts | head -n 1)
+          main_version=$(sed -n 's/.*VERSION = "\(.*\)".*/\1/p' oq-cli/src/main/java/dev/oqthara/cli/Main.java | head -n 1)
+          echo "tag=$VERSION gradle=$gradle_version main=$main_version"
+          test "$gradle_version" = "$VERSION"
+          test "$main_version" = "$VERSION"
+      - name: Gate - CHANGELOG has a section for the tag
+        run: |
+          set -euo pipefail
+          grep -q "^## \[$VERSION\]" CHANGELOG.md
+          echo "changelog has a section for $VERSION"
+      - name: Gate - jar manifest version matches the tag
+        run: |
+          set -euo pipefail
+          manifest_version=$(unzip -p oq-cli/build/libs/oq.jar META-INF/MANIFEST.MF | grep -i '^Implementation-Version:' | sed 's/.*: *//' | tr -d '\r')
+          echo "manifest=$manifest_version tag=$VERSION"
+          test "$manifest_version" = "$VERSION"
+      # macOS (JDK 21/25) and Jazzer fuzzing run on CircleCI, which reports one
+      # commit status per job to GitHub (.circleci/config.yml,
+      # docs/adr/0002-ci-split.md). The gate is fail-closed: it requires
+      # GITHUB_TOKEN and every required context, and has no skip path
+      # (docs/adr/0010-release-gate.md). CIRCLECI_TOKEN only enables an extra
+      # job-level cross-check and is never required.
+      - name: Gate - CircleCI evidence
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+        run: |
+          set -euo pipefail
+          args=(--sha "$GITHUB_SHA" --timeout-minutes 30)
+          if [ -n "${CIRCLECI_TOKEN:-}" ]; then
+            args+=(--circleci-token "$CIRCLECI_TOKEN")
+          fi
+          python3 scripts/check-circleci.py "${args[@]}"
       - name: Checksums
         run: |
+          set -euo pipefail
           cd oq-cli/build/libs
           sha256sum oq.jar > oq.jar.sha256
           cat oq.jar.sha256
+      - name: Gate - verify the checksum in a fresh directory
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/checksum && cd /tmp/checksum
+          cp "$GITHUB_WORKSPACE/oq-cli/build/libs/oq.jar" .
+          cp "$GITHUB_WORKSPACE/oq-cli/build/libs/oq.jar.sha256" .
+          sha256sum -c oq.jar.sha256
       - name: Verify artifact on a clean runner path
         run: |
+          set -euo pipefail
           mkdir -p /tmp/smoke && cd /tmp/smoke
           cp "$GITHUB_WORKSPACE/oq-cli/build/libs/oq.jar" .
           printf 'print "Hello from a released Oqthara!"\n' > hello.oq
           java -jar oq.jar hello.oq | grep -q "Hello from a released Oqthara!"
-      # macOS (JDK 21/25) and Jazzer fuzzing run on CircleCI, not GitHub
-      # (.circleci/config.yml, docs/adr/0002-ci-split.md). Block publishing
-      # unless those workflows are green for this commit.
-      #
-      # Optional secret: CIRCLECI_TOKEN (CircleCI personal API token). Without
-      # it this step prints a warning and skips the check, so forks and the
-      # period before CircleCI is enabled can still release. Add the secret to
-      # enforce the gate. The token is only sent to circleci.com and is
-      # never printed. The commit is matched on any branch, because a tag
-      # pipeline and the main-branch pipeline can both carry the same SHA.
-      - name: Verify CircleCI macOS and fuzzing checks
-        env:
-          CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
-        run: |
-          set -euo pipefail
-          python3 scripts/check-circleci.py \
-            --sha "$GITHUB_SHA" \
-            --timeout-minutes 20 \
-            --interval-seconds 30
+          java -jar oq.jar --version
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.2] - 2026-11-05
+
 ### Added
 
 - `oq build` compiles lambdas that capture nothing, and passes them to stdlib methods:
@@ -165,5 +167,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 130 conformance cases plus unit tests for the lexer, parser, values and interpreter.
 - GitHub Actions CI across Linux, macOS and Windows on JDK 21 and 25.
 
-[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.2...HEAD
+[0.1.0-alpha.2]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.1

@@ -92,3 +92,39 @@ jobs:
         with:
           name: oq-jar
           path: oq-cli/build/libs/oq.jar
+
+  installers:
+    name: ${{ matrix.os }} / installer tests
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Installer test scripts are owned by another workstream; they may not
+        # exist on every branch, and a missing script must fail, never skip.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Run installer tests (ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          if [ ! -f scripts/tests/run-installer-tests.sh ]; then
+            echo "error: scripts/tests/run-installer-tests.sh is missing on this branch" >&2
+            exit 1
+          fi
+          bash scripts/tests/run-installer-tests.sh
+      - name: Run installer tests (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $path = "scripts/tests/installer.tests.ps1"
+          if (-not (Test-Path $path)) {
+            Write-Error "error: $path is missing on this branch"
+            exit 1
+          }
+          pwsh -NoProfile -File $path

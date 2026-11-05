@@ -5,9 +5,41 @@ plugins {
 
 allprojects {
     group = "dev.oqthara"
-    version = "0.1.0-alpha.1"
+    version = "0.1.0-alpha.2"
     repositories {
         mavenCentral()
+    }
+}
+
+// --- Fuzz targets: the one authoritative list ---------------------------------------
+// Declared once for the whole build. The subprojects block plans the tasks from it and
+// `printFuzzTargets` publishes it to CI metadata, so the two can never disagree.
+data class FuzzTarget(val id: String, val className: String, val method: String)
+
+val allFuzzTargets = listOf(
+    FuzzTarget("LexerText", "dev.oqthara.core.LexerFuzzTest",
+        "lexerNeverThrowsUnexpectedExceptions"),
+    FuzzTarget("ParserText", "dev.oqthara.core.ParserFuzzTest",
+        "parserNeverThrowsUnexpectedExceptions"),
+    FuzzTarget("ParserNesting", "dev.oqthara.core.ParserFuzzTest",
+        "deeplyNestedInputDoesNotOverflow"),
+    FuzzTarget("ParserBlockNesting", "dev.oqthara.core.ParserFuzzTest",
+        "deeplyNestedBlocksDoNotOverflow"),
+    FuzzTarget("Pipeline", "dev.oqthara.compiler.PipelineFuzzTest",
+        "fullPipelineNeverThrowsUnexpectedExceptions"),
+    FuzzTarget("JsonParse", "dev.oqthara.stdlib.JsonFuzzTest",
+        "jsonParseNeverThrowsUnexpectedExceptions"),
+    FuzzTarget("JsonNesting", "dev.oqthara.stdlib.JsonFuzzTest",
+        "deeplyNestedJsonDoesNotOverflow"),
+    FuzzTarget("StdlibBuiltins", "dev.oqthara.stdlib.StdlibFuzzTest",
+        "pureBuiltinsNeverThrowUnexpectedExceptions"),
+)
+
+tasks.register("printFuzzTargets") {
+    group = "verification"
+    description = "Prints every Jazzer fuzz target id, one per line, in declaration order."
+    doLast {
+        allFuzzTargets.forEach { println(it.id) }
     }
 }
 
@@ -71,26 +103,8 @@ subprojects {
     // Jazzer's JUnit integration runs exactly ONE @FuzzTest method per JVM invocation.
     // Running a class with several targets silently skips the rest, so every target is
     // registered as its own task and the aggregate task depends on all of them.
-    data class FuzzTarget(val id: String, val className: String, val method: String)
-
-    val allFuzzTargets = listOf(
-        FuzzTarget("LexerText", "dev.oqthara.core.LexerFuzzTest",
-            "lexerNeverThrowsUnexpectedExceptions"),
-        FuzzTarget("ParserText", "dev.oqthara.core.ParserFuzzTest",
-            "parserNeverThrowsUnexpectedExceptions"),
-        FuzzTarget("ParserNesting", "dev.oqthara.core.ParserFuzzTest",
-            "deeplyNestedInputDoesNotOverflow"),
-        FuzzTarget("ParserBlockNesting", "dev.oqthara.core.ParserFuzzTest",
-            "deeplyNestedBlocksDoNotOverflow"),
-        FuzzTarget("Pipeline", "dev.oqthara.compiler.PipelineFuzzTest",
-            "fullPipelineNeverThrowsUnexpectedExceptions"),
-        FuzzTarget("JsonParse", "dev.oqthara.stdlib.JsonFuzzTest",
-            "jsonParseNeverThrowsUnexpectedExceptions"),
-        FuzzTarget("JsonNesting", "dev.oqthara.stdlib.JsonFuzzTest",
-            "deeplyNestedJsonDoesNotOverflow"),
-        FuzzTarget("StdlibBuiltins", "dev.oqthara.stdlib.StdlibFuzzTest",
-            "pureBuiltinsNeverThrowUnexpectedExceptions"),
-    )
+    // The target list itself is declared once at the top of this script.
+    //
     // A target can only run in the module whose fuzz source set contains its class.
     val packageOfTarget = mapOf(
         "dev.oqthara.core." to "oq-core",
