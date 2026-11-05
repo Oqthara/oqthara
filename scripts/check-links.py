@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
-"""Fails when a local link in the site or docs points at a missing file."""
-import pathlib, re, sys
+"""Fails when a local link in the docs or examples points at a missing file.
 
-ROOTS = [pathlib.Path("site"), pathlib.Path("docs"), pathlib.Path("README.md"),
-         pathlib.Path("CONTRIBUTING.md"), pathlib.Path("CHANGELOG.md"),
-         pathlib.Path("SECURITY.md"), pathlib.Path("examples")]
+Only repository Markdown is checked: the website fetches these files and renders them raw,
+so a link that resolves here resolves there too. Truly external links (http, https, mailto)
+and pure anchors are ignored.
+"""
+import pathlib
+import re
+import sys
+
+ROOTS = [
+    pathlib.Path("docs"),
+    pathlib.Path("README.md"),
+    pathlib.Path("CONTRIBUTING.md"),
+    pathlib.Path("CHANGELOG.md"),
+    pathlib.Path("SECURITY.md"),
+    pathlib.Path("examples"),
+]
 LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
-# Generated and vendored directories hold third-party markdown whose links are relative to
+# Generated and vendored directories hold third-party Markdown whose links are relative to
 # packages we do not ship. Checking them reports failures we can neither fix nor publish.
 SKIP_DIRS = {"node_modules", "_site", "dist", ".ssr", "build", ".gradle", ".git"}
+
 
 def local_target(source, target):
     target = target.split("#")[0].strip()
@@ -17,17 +30,25 @@ def local_target(source, target):
         return None
     return (source.parent / target).resolve()
 
+
 def main():
     broken = []
     checked = 0
     for root in ROOTS:
+        if not root.exists():
+            broken.append(f"{root}: root does not exist")
+            continue
         if root.is_file():
             files = [root]
         else:
-            files = [path for path in root.rglob("*")
-                     if not SKIP_DIRS.intersection(path.relative_to(root).parts)]
+            files = [
+                path
+                for path in root.rglob("*")
+                if path.is_file()
+                and not SKIP_DIRS.intersection(path.relative_to(root).parts)
+            ]
         for path in files:
-            if path.suffix not in {".md", ".html"}:
+            if path.suffix != ".md":
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             for match in LINK.finditer(text):
@@ -42,8 +63,14 @@ def main():
         for item in broken:
             print("  " + item)
         return 1
-    print(f"Checked {checked} local links, all resolve.")
+    print(f"Checked {checked} local links in docs/, README, CONTRIBUTING, CHANGELOG, "
+          f"SECURITY and examples/, all resolve.")
     return 0
 
+
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as error:
+        print(f"check-links: error: {error}", file=sys.stderr)
+        raise

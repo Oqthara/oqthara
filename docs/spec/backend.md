@@ -1,7 +1,7 @@
 # Backend status and limitations
 
 This page is the honest state of `oq-compiler`. It exists so nobody discovers these by
-being surprised at runtime, and so the gate for a stable release is unambiguous.
+being surprised at runtime, and so the boundary of the compiled backend is unambiguous.
 
 ## Two backends, one contract
 
@@ -9,18 +9,19 @@ being surprised at runtime, and so the gate for a stable release is unambiguous.
 |---|---|---|
 | Interpreter | `oq-core` (`Interpreter`) | **Authoritative.** Runs every conformance case. |
 | Class file emitter | `oq-compiler` (`ClassFileWriter`, `JarBuilder`) | **Works.** Emits a real class file and jar. |
-| Bytecode compiler | `oq-compiler` (`BytecodeCompiler`) | **Partial.** Real JVM instructions for most of the language; lambdas, closures, Java interop and host-dependent builtins still fall back explicitly. |
+| Bytecode compiler | `oq-compiler` (`BytecodeCompiler`) | **Partial by design.** Real JVM instructions for the compiled subset below; everything outside it is refused by name and falls back to the interpreter. |
 
-`oq build file.oq` produces `file.jar`:
+`oq build file.oq` produces `file.jar`. Measured on this tree:
 
 ```
-$ oq build hello.oq
-compiled hello.oq (0 functions, 3 main instructions)
+$ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/hello.oq
+compiled build/oqdoc/hello.oq (0 functions, 5 main instructions)
 backend=classfile (self-contained writer, JDK 21)
-wrote hello.jar (89 classes, 0 skipped)
-run it with: java -jar hello.jar
+codepath: compiled bytecode
+wrote build/oqdoc/hello.jar (99 classes, 0 skipped)
+run it with: java -jar build/oqdoc/hello.jar
 
-$ java -jar hello.jar
+$ java -jar build/oqdoc/hello.jar
 Hello, World!
 ```
 
@@ -33,15 +34,16 @@ anywhere.
 
 | Entry | Purpose |
 |---|---|
-| `META-INF/MANIFEST.MF` | `Main-Class: oq.generated.Program`, `Oqthara-Backend: classfile` |
+| `META-INF/MANIFEST.MF` | `Main-Class: oq.generated.Program`, `Oqthara-Backend: classfile-launcher` or `classfile-compiled` |
 | `oq/generated/Program.class` | real class file with a real `public static void main` |
 | `dev/oqthara/**` | the interpreter, stdlib and embedded runner |
-| `oq/main.oq` | the program source |
+| `oq/main.oq` | the program source (launcher mode only) |
 | `oq/source-name.txt` | the original file name, so diagnostics match `oq run` |
 
-`Program.main` loads the source string, loads its own `String[] args`, calls
+In launcher mode `Program.main` loads the source string, loads its own `String[] args`, calls
 `EmbeddedMain.runWithArgs` and returns, so program arguments, `args()`, exit codes and
-diagnostics all behave exactly as under `oq run`.
+diagnostics all behave exactly as under `oq run`. In compiled mode the class holds real
+bytecode and embeds no source.
 
 The constant pool uses **modified UTF-8** (JVMS 4.4.7), so emoji and other supplementary
 characters survive. Jar entry names are validated before being copied, rejecting absolute
@@ -52,41 +54,62 @@ paths, drive letters and `..` segments.
 `oq build` reports which mode it used and why:
 
 ```
-$ oq build arith.oq
+$ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/arith.oq
+compiled build/oqdoc/arith.oq (1 functions, 8 main instructions)
+backend=classfile (self-contained writer, JDK 21)
 codepath: compiled bytecode
-wrote arith.jar (90 classes, 0 skipped)
-
-$ oq build fizzbuzz.oq
-codepath: compiled bytecode
-wrote fizzbuzz.jar (90 classes, 0 skipped)
+wrote build/oqdoc/arith.jar (99 classes, 0 skipped)
+run it with: java -jar build/oqdoc/arith.jar
 ```
 
 **Compiled mode** (`Oqthara-Backend: classfile-compiled`) emits real JVM instructions for
-the whole program and embeds **no source**. `javap` on the generated class shows
-`Arithmetic.multiply`, `Long.valueOf` and `Arithmetic.print` calls:
+the whole program and embeds **no source**. `javap` on the generated class shows the user
+function and the interpreter's shared `Arithmetic.print`:
 
 ```
-3: invokestatic  Long.valueOf:(J)Ljava/lang/Long;
-18: invokestatic  Arithmetic.multiply:(Object;Object;)Object
-24: invokestatic  Arithmetic.print:(Object;)V
+$ javap -c -p -classpath build/oqdoc/arith.jar oq.generated.Program | grep invokestatic
+      5: invokestatic  #8   // Method java/lang/Long.valueOf:(J)Ljava/lang/Long;
+     32: invokestatic  #28  // Method oq/generated/Program.multiply:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+     53: invokestatic  #38  // Method dev/oqthara/runtime/Arithmetic.print:(Ljava/lang/Object;)V
 ```
 
-The compiled subset today:
+When a program is outside the subset, the same command prints the refusal and builds the
+launcher instead:
 
-| Supported | Refused (falls back) |
+```
+$ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/cap.oq
+...
+codepath: interpreter launcher ('factor' is read from an enclosing scope; only functions that use their own parameters and locals are compiled)
+...
+```
+
+**Interpreter launcher** (`Oqthara-Backend: classfile-launcher`) embeds the source and the
+interpreter. It is the fallback for everything the compiler refuses, and it is why refusing
+is safe: a program either compiles to equivalent bytecode or runs exactly as `oq run` does.
+
+## The compiled subset, measured
+
+As of T-0037b, **182 of the 197 executable conformance programs** compile to real bytecode
+and produce byte-identical output to the interpreter. That number is asserted by
+`BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`
+(`assertEquals(182, compiled, ...)`), so it cannot silently go down. 197 is the number of
+executable programs in `conformance/`: every `*.oq` without a sibling `*.err`. Every refusal
+is reported by name in the `oq build` output.
+
+| Supported | Refused by name (falls back to the interpreter) |
 |---|---|
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
 | variables: assignment, reassignment, scoping, shadowing | lambdas that capture an enclosing variable |
 | top-level `fun` with parameters, `return`, recursion, mutual recursion | `use`, modules |
-| `+ - * / % **` and unary `-`, unary `+` | `try` with an empty body |
-| `try` / `catch`, nested, with rethrow | |
-| comparisons `== != < <= > >=` | `spawn` |
+| `+ - * / % **` and unary `-`, unary `+` | Java constructors, Java instance methods and static methods reached through `use` |
+| `try` / `catch`, nested, with rethrow | `try` with an empty body |
+| comparisons `== != < <= > >=` | `spawn`, `await`, `done`, `par_map`, `sort_by`, `map`, `filter` and other callable-taking builtins |
 | `and`, `or`, `not` with short-circuiting | `args()`, `input()`, `exit()` |
 | `if` / `else`, including `else if` chains | the filesystem, clock, randomness, network and process builtins |
-| `while`, `for ... to`, `for ... until`, descending ranges | `spawn`, `await`, `done`, `par_map` and other callable-taking builtins |
-| `break`, `continue`, nested loops | a capturing lambda stored for later |
-| lambdas that capture nothing, called directly or through a stdlib method (`xs.map(x -> x * x)`) | |
-| list, set and map literals; `xs[i]`; `xs[i] = v` | Java interop |
+| `while`, `for ... to`, `for ... until`, descending ranges | |
+| `break`, `continue`, nested loops | |
+| **non-capturing lambdas**, called directly or through a stdlib method (`xs.map(x -> x * x)`) | |
+| list, set and map literals; `xs[i]`; `xs[i] = v` | |
 | `length(x)` over text, list, set, map and range | |
 | `1 to 5` as a value | |
 | `for x in list / set / map / range / text` | |
@@ -97,10 +120,28 @@ The compiled subset today:
 | method calls: `.push()`, `.add()`, `.pop()`, `.keys()`, `.values()`, `.upper()` ... | |
 | deterministic stdlib builtins: `abs`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `min`, `max`, `clamp`, `number`, `text`, `type_of`, `is_nothing`, `is_number`, `is_text`, `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `format`, `set`, `list`, `zip`, `keys`, `values`, `sum`, `sort`, `reverse`, `unique`, `push`, `pop`, `clone`, `range`, `assert`, `json_parse`, `json`, `json_write`, `json_pretty` | |
 
-As of T-0037b, **182 of the 197 executable conformance programs** compile to real bytecode
-and produce byte-identical output to the interpreter. That number is asserted by
-`BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
-silently go down. Every refusal is reported by name in the `oq build` output.
+Non-capturing lambdas compile: `xs.map(x -> x * x)` is measured to build a compiled jar and
+print `[1, 4, 9]`:
+
+```
+$ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/map.oq
+...
+codepath: compiled bytecode
+...
+$ java -jar build/oqdoc/map.jar
+[1, 4, 9]
+```
+
+A lambda becomes one extra static method on the generated class plus a
+`runtime.CompiledFunction` value holding the method name, so a call goes through the value.
+A lambda that reads an enclosing variable is **deliberately refused**, because capturing
+would copy that variable's value at creation time while the interpreter reads it at call
+time; binding the stale value silently would be a wrong answer. The refusal names the
+variable:
+
+```
+codepath: interpreter launcher ('factor' is read from an enclosing scope; only functions that use their own parameters and locals are compiled)
+```
 
 Collections reuse the interpreter's own semantics instead of reimplementing them: literals,
 `xs[i]`, `xs[i] = v`, `length`, `x in xs` and `for x in xs` all call the same
@@ -115,23 +156,34 @@ Ordinary stdlib builtins are not reimplemented either. A compiled call such as
 calls, so there is exactly one implementation of every builtin. The compiler asks
 `Builtins.supports(name, argc)` before emitting, which is why an unknown name, a wrong arity
 or a host-dependent builtin is still refused by name instead of failing inside a jar.
-Host-dependent means files (`read`, `save`, `exists`, ...), time (`now`, `today`, `sleep`),
-randomness, HTTP, process state (`env`, `run_command`, `cpu_count`) and the concurrency
-helpers (`spawn`, `await`, `par_map`); those stay on the interpreter, because a generated
-class would either block on a stream it does not own or produce output that `oq run` cannot
-reproduce. `args()` and `input()` are refused for the same reason. Variadic `print a, b` and
-`write a, b` build an argument list and call the interpreter's variadic builtin, so the
-separator rule does not get a second implementation.
+`Builtins.supports` returns false for every name in `HOST_DEPENDENT`: `args`, `input`,
+`exit`, the filesystem calls (`read`, `read_lines`, `save`, `append`, `exists`,
+`list_files`, `delete`, `make_dir`, `file_size`, `path_join`, `path_name`, `path_parent`,
+`cwd`), time (`now`, `today`, `datetime`, `timestamp`, `sleep`), randomness (`random`,
+`random_item`), HTTP (`http_get`, `http_post`), process state (`env`, `run_command`,
+`cpu_count`, `memory_mb`) and the concurrency helpers (`spawn`, `await`, `done`, `par_map`,
+`sort_by`, `map`, `filter`). Those stay on the interpreter, because a generated class would
+either block on a stream it does not own or produce output that `oq run` cannot reproduce.
+Measured refusal:
+
+```
+$ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/now.oq
+...
+codepath: interpreter launcher (call to 'now' with 0 argument(s) is not compiled yet)
+...
+```
+
+Variadic `print a, b` and `write a, b` build an argument list and call the interpreter's
+variadic builtin, so the separator rule does not get a second implementation.
 
 An uncaught `OqError` in a compiled jar renders the same diagnostic `oq run` prints, minus
 the caret block. `main` owns one exception-table row covering its whole body, so an error
 escaping the program reaches `EmbeddedMain.renderUncaught`, which calls the same
 `Details`/`Diagnostics` renderer the interpreter uses and exits 1. The message, the
 `file:line:column` location and the hint are byte-identical; the source line and caret are
-omitted because a compiled jar deliberately embeds no source (see "What the generated jar
-contains"). Each `try` in the program contributes its own row, and because rows sort by end
-offset ascending an inner region always wins for its own range, so a caught error is never
-mistaken for an uncaught one.
+omitted because a compiled jar deliberately embeds no source. Each `try` in the program
+contributes its own row, and because rows sort by end offset ascending an inner region
+always wins for its own range, so a caught error is never mistaken for an uncaught one.
 
 `print` and `write` also compile when used as expressions. The interpreter's builtin returns
 `nothing`, so the generated call performs the output and then leaves `nothing` on the stack;
@@ -211,28 +263,25 @@ Refusal is deliberate and visible: the compiler returns the name of the instruct
 cannot lower, `oq build` prints it, and the launcher jar is used instead. A jar that behaved
 differently from `oq run` would be worse than no jar.
 
-## What "compiled" does **not** mean yet
+## The current boundary
 
-The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
+The compiled backend is real bytecode, not a launcher in disguise, but it is intentionally
+smaller than the language. Today's boundary, in the order it would be widened:
 
-1. **Capturing closures.** A lambda that captures nothing now compiles: it becomes one extra
-   static method on the generated class plus a `runtime.CompiledFunction` value holding the
-   method name, so a call goes through the value and `xs.map(x -> x * x)` works. A lambda
-   that reads an enclosing variable is still refused, because capturing would copy that
-   variable's value at creation time while the interpreter reads it at call time; binding the
-   stale value silently would be a wrong answer. A function that touches a top-level variable
-   is refused for the same reason.
-2. **Java interop.** `use` is refused by name; compiled code cannot call Java classes directly.
-   Method calls on Java objects that arrive from a compiled call still work, because they go
-   through `Methods` -> `JavaBridge`, exactly as under the interpreter.
+1. **Capturing closures.** Non-capturing lambdas already compile. A lambda that reads an
+   enclosing variable, and a function that touches a top-level variable, are refused because
+   capture would copy at creation time while the interpreter reads at call time.
+2. **Java interop.** `use` is refused by name; compiled code cannot call Java classes
+   directly. Method calls on Java objects that arrive from a compiled call still work,
+   because they go through `Methods` -> `JavaBridge`, exactly as under the interpreter.
 3. **Modules as separate artifacts.** Module sources are flattened into one program.
-4. **The rest of the stdlib.** Builtins beyond `print`, `write` and `length` (`json`,
-   `json_parse`, `zip`, `type_of`, `read`, ...) are refused by name.
-5. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
-   above 10%" gate cannot be evaluated.
+4. **Host-dependent builtins.** Files, time, randomness, HTTP, process state, `args`,
+   `input`, `exit` and the concurrency helpers stay on the interpreter, for the reasons
+   above. They are refused by name, not silently miscompiled.
 
-Until items 1–5 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
-open.
+The interpreter remains authoritative for every program and is the fallback for everything
+refused. There is no roadmap item to remove the interpreter; the two backends are one
+contract with one fallback.
 
 ## How control flow is emitted
 
@@ -320,17 +369,26 @@ reflection. The tradeoff is that complex code generation is now our job; for the
 java -jar oq-cli/build/libs/oq.jar build examples/hello.oq
 java -jar examples/hello.jar
 
-# parity between interpreter and jar over the whole example corpus
+# the compiled subset is exactly what the interpreter produces
+./gradlew :oq-cli:test --tests 'dev.oqthara.cli.BytecodeCompilerTest'
+
+# every deterministic example matches the interpreter through a jar
 ./gradlew :oq-cli:test --tests 'dev.oqthara.cli.BuildJarTest'
 ```
 
-`BuildJarTest` builds a jar for every deterministic example, runs it, and asserts that
-stdout and exit code equal the interpreter's. Any divergence fails the build. `parallel.oq`
-is excluded because it prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they
-are interactive or need arguments.
+`BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` compiles every
+compilable conformance program, runs it, and asserts that stdout equals `oq run`'s, then
+asserts the compiled count is 182 of the 197 executable programs. `BuildJarTest` builds a
+jar for every deterministic example, runs it, and asserts that stdout and exit code equal
+the interpreter's; any divergence fails the build. `parallel.oq` is excluded because it
+prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they are interactive or need
+arguments.
 
-Current result: **28 of 28 deterministic examples match exactly**, plus targeted tests for
-non-BMP text, program arguments, module embedding and jar-entry safety.
+Benchmarks, when needed, are produced by `scripts/bench-backends.py`, which builds each
+program in `bench/programs`, keeps only those that report `codepath: compiled bytecode`,
+checks that both backends print the same bytes, then measures whole CLI invocations over a
+warm-up and several runs. It prints a table; the repository does not commit a performance
+claim that it cannot reproduce.
 
 ## Order of work
 
@@ -345,7 +403,8 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
    See "Why data fields are still boxed `Object`".
 8. ~~**T-0071** — stdlib builtins dispatched from generated code.~~ Done: deterministic
    builtins go through `stdlib.Builtins`, which calls the interpreter's own `NativeFunction`.
-9. ~~**T-0037b** — lambdas~~ Done for non-capturing lambdas; captured environments remain.
+9. ~~**T-0037b** — lambdas~~ Done for non-capturing lambdas; captured environments are
+   refused by name.
 10. **T-0049** — Java interop from generated code.
 11. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 

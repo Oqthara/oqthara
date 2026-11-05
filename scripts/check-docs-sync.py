@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Fails when documentation and implementation disagree.
 
-The website, the language reference and the standard-library reference are all derived from
-the implementation, so a feature can never be documented as present while missing, or removed
-while still advertised. Each check names the exact file it read, because a passing test that
-does not say what it verified is worth little.
+Documentation in this repository is language-owned: every claim about the CLI, the standard
+library, the backend and the version is checked against the code or a freshly generated
+artifact. Each check prints the exact thing it verified, because a passing test that does not
+say what it read is worth little.
+
+Dependency-free: Python 3 standard library only. Any unexpected exception is reported as a
+failure, never swallowed.
 """
+
+from __future__ import annotations
+
 import json
 import pathlib
 import re
@@ -13,20 +19,20 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-problems = []
-checked = []
+problems: list[str] = []
+checked: list[str] = []
 
 
-def read(path):
+def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def note(what):
+def note(what: str) -> None:
     checked.append(what)
 
 
 # 1. The stdlib reference must match a fresh generation from the implementation.
-def stdlib_reference_is_current():
+def stdlib_reference_is_current() -> None:
     reference = ROOT / "docs" / "stdlib" / "reference.md"
     if not reference.exists():
         problems.append("docs/stdlib/reference.md is missing")
@@ -35,23 +41,41 @@ def stdlib_reference_is_current():
     if not jar.exists():
         note("stdlib reference freshness skipped (no standalone jar built)")
         return
-    before = reference.read_text(encoding="utf-8")
     result = subprocess.run(
-        ["java", "-jar", str(jar), "doc", "."], cwd=ROOT, capture_output=True, text=True
+        ["java", "-jar", str(jar), "doc", "."],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         problems.append(f"`oq doc .` failed: {result.stderr.strip()[:200]}")
         return
-    after = reference.read_text(encoding="utf-8")
-    if before != after:
-        problems.append("docs/stdlib/reference.md is stale; run `oq doc .`")
-    note("stdlib reference matches the implementation")
+    # `oq doc` writes docs/stdlib/reference.md itself; read it back and compare with
+    # what was committed at HEAD so a hand edit is caught even after regeneration.
+    committed = subprocess.run(
+        ["git", "show", "HEAD:docs/stdlib/reference.md"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if committed.returncode != 0:
+        note("stdlib reference matches `oq doc` (no git baseline to compare)")
+        return
+    generated = reference.read_text(encoding="utf-8")
+    if committed.stdout != generated:
+        problems.append(
+            "docs/stdlib/reference.md changed under `oq doc`; the committed page was stale"
+        )
+        return
+    note("docs/stdlib/reference.md matches a fresh `oq doc .`")
 
 
-# 2. The keyword count in the reference must match the lexer.
-def keyword_budget_is_honest():
+# 2. The keyword count in the reference must match the lexer's list and the budget.
+def keyword_budget_is_honest() -> None:
     reference = read("docs/stdlib/reference.md")
-    match = re.search(r"## Keywords\n\n([^\n]+)\n\n(\d+) keywords \(budget: (\d+)\)", reference)
+    match = re.search(
+        r"## Keywords\n\n([^\n]+)\n\n(\d+) keywords \(budget: (\d+)\)", reference
+    )
     if not match:
         problems.append("reference does not state the keyword count")
         return
@@ -62,97 +86,171 @@ def keyword_budget_is_honest():
         problems.append(f"reference lists {len(listed)} keywords but claims {count}")
     if count > budget:
         problems.append(f"{count} keywords exceeds the budget of {budget}")
-    note(f"{count} keywords within a budget of {budget}")
+
+    lexer = read("oq-core/src/main/java/dev/oqthara/core/Lexer.java")
+    keywords = set(re.findall(r'"(and|break|catch|continue|data|else|end|false|for|fun|if|'
+                              r'in|not|nothing|or|return|true|try|use|while)"', lexer))
+    missing = sorted(set(listed) - keywords)
+    extra = sorted(keywords - set(listed))
+    if missing or extra:
+        problems.append(
+            "keyword list disagrees with the lexer: "
+            f"missing from lexer {missing}, missing from reference {extra}"
+        )
+    note(f"{count} keywords within a budget of {budget}, matching the lexer")
 
 
-# 3. Every CLI command in the help text must be documented on the docs page.
-def documented_commands_exist():
+# 3. Every CLI command in the help text must be documented in docs/reference/cli.md.
+def documented_commands_exist() -> None:
     main = read("oq-cli/src/main/java/dev/oqthara/cli/Main.java")
     help_block = re.search(r'return """\n(.*?)""";', main, re.S)
     if not help_block:
         problems.append("could not read the help text from Main.java")
         return
-    commands = set(re.findall(r"oq (run|check|repl|fmt|test|new|doc|build|version|help)\b",
-                              help_block.group(1)))
-    page = read("site/src/pages/DocsPage.jsx")
-    for command in sorted(commands):
-        if f"oq {command}" not in page:
-            problems.append(f"docs page does not document `oq {command}`")
-    note(f"{len(commands)} CLI commands appear in both the help and the docs page")
-
-
-# 4. Features the site claims must be real, and features that do not exist must not be claimed.
-def website_claims_match_reality():
-    status = read("site/src/pages/StatusPage.jsx")
-    # The status page must be honest about the backend's boundaries.
-    if "compiled" not in status.lower():
-        problems.append("status page says nothing about the compiled backend")
-    # Anything listed as a gap must actually be a gap. The compiler either refuses every
-    # function or it emits real function methods; the status page must agree with whichever
-    # is true, in both directions.
-    compiler = read("oq-compiler/src/main/java/dev/oqthara/compiler/BytecodeCompiler.java")
-    if "functions are not compiled yet" in compiler:
-        if "Bytecode for functions" not in status:
-            problems.append("the compiler refuses functions but the status page hides that gap")
-    else:
-        if "functionDescriptor" not in compiler:
-            problems.append("the compiler does not refuse functions but has no function descriptor")
-        if "Calls, closures and user functions fall back" in status:
-            problems.append("the status page still says user functions fall back, but they compile")
-        if "real bytecode for functions" not in status:
-            problems.append("the status page does not say functions compile to real bytecode")
-    note("status page claims match the implemented backend")
-
-
-# 5. Every example shown on the website must exist in the repository's examples directory.
-# Titles are prose ("Binary search tree"), so each program declares the file it came from.
-def website_examples_are_real():
-    page = read("site/src/pages/ExamplesPage.jsx")
-    files = re.findall(r'file: "([^"]+\.oq)"', page)
-    if not files:
-        problems.append("the examples page does not name any source files")
+    commands = set(
+        re.findall(
+            r"^\s*oq (run|check|repl|fmt|test|new|doc|build|version|help|serve)\b",
+            help_block.group(1),
+            re.M,
+        )
+    )
+    if not commands:
+        problems.append("the help text lists no commands")
         return
-    for name in files:
-        if not (ROOT / "examples" / name).exists():
-            problems.append(f"example shown on the site has no file: examples/{name}")
-    programs = page.split("const PROGRAMS = [", 1)[-1].split("\n];", 1)[0]
-    titles = re.findall(r'title: "([^"]+)"', programs)
-    if len(titles) != len(files):
+    page = read("docs/reference/cli.md")
+    for command in sorted(commands):
+        if not re.search(rf"^## `oq {re.escape(command)}`", page, re.M):
+            problems.append(f"docs/reference/cli.md has no section for `oq {command}`")
+    note(f"{len(commands)} CLI commands in the help text all documented in cli.md: "
+         + ", ".join(sorted(commands)))
+
+
+# 4. docs/catalog.json must be exactly what the generator produces.
+def catalog_is_current() -> None:
+    generator = ROOT / "scripts" / "gen-docs-catalog.py"
+    result = subprocess.run(
+        [sys.executable, str(generator), "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
         problems.append(
-            f"examples page has {len(titles)} titles but {len(files)} source files")
-    note(f"{len(files)} website examples map to files in examples/")
+            "docs/catalog.json is stale: " + (result.stderr.strip() or result.stdout.strip())
+        )
+        return
+    catalog = json.loads(read("docs/catalog.json"))
+    note(result.stdout.strip() or f"docs/catalog.json lists {len(catalog['docs'])} documents")
 
 
-# 6. Documentation must not describe a version other than the code's.
-def version_is_consistent():
+# 5. The compiled-capability claim must match the test and the conformance corpus.
+def backend_counts_are_measured() -> None:
+    backend = read("docs/spec/backend.md")
+    claim = re.search(r"(\d+) of the (\d+) executable conformance programs", backend)
+    if not claim:
+        problems.append("docs/spec/backend.md does not state the compiled conformance count")
+        return
+    claimed_compiled, claimed_total = int(claim.group(1)), int(claim.group(2))
+
+    test = read("oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java")
+    asserted = re.search(
+        r"assertEquals\((\d+), compiled,\s*\n\s*\"compiled conformance programs", test
+    )
+    if not asserted:
+        problems.append("BytecodeCompilerTest does not assert a compiled count")
+        return
+    asserted_compiled = int(asserted.group(1))
+
+    conformance = ROOT / "conformance"
+    programs = sorted(conformance.glob("*.oq"))
+    executable = [p for p in programs if not p.with_suffix(".err").exists()]
+    measured_total = len(executable)
+
+    if claimed_compiled != asserted_compiled:
+        problems.append(
+            f"backend.md claims {claimed_compiled} compiled programs but the test asserts "
+            f"{asserted_compiled}"
+        )
+    if claimed_total != measured_total:
+        problems.append(
+            f"backend.md claims {claimed_total} executable conformance programs but "
+            f"conformance/ has {measured_total} .oq files without a sibling .err"
+        )
+    note(
+        f"backend.md claim {claimed_compiled}/{claimed_total} matches "
+        f"BytecodeCompilerTest ({asserted_compiled}) and conformance/ ({measured_total} "
+        f"executable of {len(programs)} .oq files)"
+    )
+
+
+# 6. The version must agree across the CLI, the build and the changelog.
+def version_is_consistent() -> None:
     main = read("oq-cli/src/main/java/dev/oqthara/cli/Main.java")
     version = re.search(r'VERSION = "([^"]+)"', main)
     if not version:
         problems.append("Main.VERSION is missing")
         return
-    changelog = read("CHANGELOG.md")
-    heading = re.search(r"## \[?([0-9][^\]]*)\]?", changelog)
-    if heading and heading.group(1).strip() != version.group(1):
+    code_version = version.group(1)
+
+    build = read("build.gradle.kts")
+    gradle_version = re.search(r'^\s*version = "([^"]+)"', build, re.M)
+    if not gradle_version:
+        problems.append("build.gradle.kts has no `version =` line")
+    elif gradle_version.group(1) != code_version:
         problems.append(
-            f"CHANGELOG newest version {heading.group(1)} does not match code version {version.group(1)}"
+            f"build.gradle.kts version {gradle_version.group(1)} does not match "
+            f"Main.VERSION {code_version}"
         )
-    note(f"code and changelog agree on version {version.group(1)}")
+
+    changelog = read("CHANGELOG.md")
+    # The newest *release* heading, skipping `## [Unreleased]`.
+    releases = [
+        match.group(1)
+        for match in re.finditer(r"^## \[?([0-9][^\]]*)\]?", changelog, re.M)
+    ]
+    if not releases:
+        problems.append("CHANGELOG.md has no release heading")
+    elif releases[0].strip() != code_version:
+        problems.append(
+            f"CHANGELOG newest version {releases[0].strip()} does not match code version "
+            f"{code_version}"
+        )
+
+    note(f"Main.VERSION, build.gradle.kts and CHANGELOG agree on {code_version}")
 
 
-for check in (stdlib_reference_is_current, keyword_budget_is_honest,
-              documented_commands_exist, website_claims_match_reality,
-              website_examples_are_real, version_is_consistent):
+CHECKS = (
+    stdlib_reference_is_current,
+    keyword_budget_is_honest,
+    documented_commands_exist,
+    catalog_is_current,
+    backend_counts_are_measured,
+    version_is_consistent,
+)
+
+
+def main() -> int:
+    for check in CHECKS:
+        try:
+            check()
+        except Exception as error:  # a broken check must fail loudly, never pass silently
+            problems.append(f"{check.__name__} raised {type(error).__name__}: {error}")
+
+    if problems:
+        print("Documentation drift detected:")
+        for problem in problems:
+            print("  -", problem)
+        return 1
+
+    print("Documentation is synchronized with the implementation:")
+    for item in checked:
+        print("  -", item)
+    return 0
+
+
+if __name__ == "__main__":
     try:
-        check()
-    except Exception as error:  # a broken check must fail loudly, not silently pass
-        problems.append(f"{check.__name__} raised {type(error).__name__}: {error}")
-
-if problems:
-    print("Documentation drift detected:")
-    for problem in problems:
-        print("  -", problem)
-    sys.exit(1)
-
-print("Documentation is synchronized with the implementation:")
-for item in checked:
-    print("  -", item)
+        sys.exit(main())
+    except Exception as error:
+        print(f"check-docs-sync: error: {error}", file=sys.stderr)
+        raise
