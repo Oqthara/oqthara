@@ -6,4 +6,5 @@ include(
     "oq-stdlib",
     "oq-compiler",
     "oq-cli",
+    "oq-lsp",
 )
