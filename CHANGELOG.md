@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `f(f(f(...)))` nested thousands deep crashed with a raw `StackOverflowError` instead of a
+  diagnostic: the parser released its nesting counter before parsing a call's arguments, so
+  this shape never accumulated depth. The counter is now held across the argument list.
 - `print` and `write` now compile when used as expressions, yielding `nothing`, so
   `x = print(1)` and `print(1) + 1` behave exactly as under `oq run` instead of falling back
   to the interpreter launcher.
