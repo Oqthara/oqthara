@@ -409,6 +409,23 @@ code --install-extension oqthara-0.1.0.vsix
 `EditorSupportTest` checks that the grammar covers every keyword and that every snippet
 parses, so the extension cannot drift from the language.
 
+### Language server
+
+`oq-lsp` is a minimal stdio Language Server (JSON-RPC 2.0 with `Content-Length` framing).
+It publishes parse diagnostics on open and change, and returns whole-document formatting
+edits in the same canonical style as `oq fmt`. It supports `initialize`,
+`textDocument/didOpen`, `textDocument/didChange`, `textDocument/didClose`,
+`textDocument/formatting`, `shutdown` and `exit`; unknown requests get a JSON-RPC
+"method not found" error and unknown notifications are ignored.
+
+```bash
+./gradlew :oq-lsp:standaloneJar
+java -jar oq-lsp/build/libs/oq-lsp.jar   # speak LSP on stdin/stdout
+```
+
+Editors only need a command that starts that process; capabilities are `textDocumentSync`
+(full) and `documentFormattingProvider`.
+
 ## Installation
 
 ```bash
