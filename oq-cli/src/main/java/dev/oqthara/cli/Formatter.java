@@ -140,6 +140,7 @@ final class Formatter {
     /** Normalises operator and comma spacing outside text literals and comments. */
     static String normalise(String line) {
         StringBuilder out = new StringBuilder();
+        List<Boolean> maps = new ArrayList<>();
         int i = 0;
         while (i < line.length()) {
             char c = line.charAt(i);
@@ -200,6 +201,35 @@ final class Formatter {
                 if (i < line.length() && !isCloseDelimiter(line.charAt(i))) out.append(' ');
                 continue;
             }
+            if (c == ':') {
+                trimTrailingSpaces(out);
+                out.append(':');
+                i++;
+                while (i < line.length() && line.charAt(i) == ' ') i++;
+                if (i < line.length() && !isCloseDelimiter(line.charAt(i))) out.append(' ');
+                continue;
+            }
+            if (c == '{') {
+                boolean map = hasMapColon(line, i);
+                maps.add(map);
+                out.append('{');
+                i++;
+                if (map) {
+                    while (i < line.length() && line.charAt(i) == ' ') i++;
+                    if (i < line.length() && line.charAt(i) != '}') out.append(' ');
+                }
+                continue;
+            }
+            if (c == '}') {
+                boolean map = !maps.isEmpty() && maps.remove(maps.size() - 1);
+                if (map) {
+                    trimTrailingSpaces(out);
+                    if (!out.isEmpty() && out.charAt(out.length() - 1) != '{') out.append(' ');
+                }
+                out.append('}');
+                i++;
+                continue;
+            }
             if (c == ' ') {
                 if (!out.isEmpty() && out.charAt(out.length() - 1) != ' ') out.append(' ');
                 i++;
@@ -222,6 +252,46 @@ final class Formatter {
         char last = out.charAt(out.length() - 1);
         return last == '(' || last == '[' || last == '{' || last == ',' || last == ':'
                 || last == '=';
+    }
+
+    /**
+     * True when the brace at {@code open} starts a map literal: a colon appears among its
+     * top-level entries on this line. Nested braces, brackets, parentheses and text literals
+     * are skipped, so a set of maps stays a set.
+     */
+    private static boolean hasMapColon(String line, int open) {
+        int depth = 0;
+        int i = open + 1;
+        while (i < line.length()) {
+            char c = line.charAt(i);
+            if (c == '"' || c == '\'') {
+                i++;
+                while (i < line.length()) {
+                    char inner = line.charAt(i);
+                    if (inner == '\\') {
+                        i += 2;
+                        continue;
+                    }
+                    if (inner == c) {
+                        i++;
+                        break;
+                    }
+                    i++;
+                }
+                continue;
+            }
+            if (c == '#') return false;
+            if (c == '(' || c == '[' || c == '{') {
+                depth++;
+            } else if (c == ')' || c == ']' || c == '}') {
+                if (depth == 0) return false;
+                depth--;
+            } else if (c == ':' && depth == 0) {
+                return true;
+            }
+            i++;
+        }
+        return false;
     }
 
     private static boolean isOperatorChar(char c) {
