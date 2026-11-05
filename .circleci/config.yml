@@ -97,8 +97,8 @@ jobs:
               /usr/libexec/java_home -V 2>&1 >&2 || true
               exit 1
             fi
-            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
-            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            echo "export JAVA_HOME=$candidate" >> "${BASH_ENV:?BASH_ENV must be set to persist JAVA_HOME}"
+            echo "export PATH=$candidate/bin:\$PATH" >> "${BASH_ENV:?BASH_ENV must be set to persist PATH}"
             echo "using $candidate (java $actual)"
             "$candidate/bin/java" -version
       - run:
@@ -191,9 +191,17 @@ jobs:
             # `/usr/libexec/java_home -v 21` is not reliable on these images: it returned a
             # JDK 24 and the job failed the version assertion. Enumerate every installed JDK
             # and keep the first one that actually reports 21.
+            # Look at the JDK installation roots directly instead of parsing
+            # `/usr/libexec/java_home -V`, which reported a JDK 24 for `-v 21` here.
             select_jdk21() {
               local home version
-              while IFS= read -r home; do
+              for home in \
+                /Library/Java/JavaVirtualMachines/*/Contents/Home \
+                /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+                /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+                "$HOME"/jdks/*/Contents/Home \
+                "$HOME"/jdks/*/*/Contents/Home \
+                "${JAVA_HOME:-}"; do
                 [ -n "$home" ] || continue
                 [ -x "$home/bin/java" ] || continue
                 version=$("$home/bin/java" -XshowSettings:properties -version 2>&1 \
@@ -202,10 +210,7 @@ jobs:
                   printf '%s\n' "$home"
                   return 0
                 fi
-              done <<EOF
-            $(/usr/libexec/java_home -V 2>&1 | grep -oE '/[^ ]*\.jdk/Contents/Home' | sort -u)
-            $(find "$HOME/jdks" -maxdepth 6 -type d -path '*/Contents/Home' 2>/dev/null | sort -u)
-            EOF
+              done
               return 1
             }
 
@@ -228,8 +233,8 @@ jobs:
               /usr/libexec/java_home -V 2>&1 >&2 || true
               exit 1
             fi
-            echo "export JAVA_HOME=$candidate" >> "$BASH_ENV"
-            echo "export PATH=$candidate/bin:\$PATH" >> "$BASH_ENV"
+            echo "export JAVA_HOME=$candidate" >> "${BASH_ENV:?BASH_ENV must be set to persist JAVA_HOME}"
+            echo "export PATH=$candidate/bin:\$PATH" >> "${BASH_ENV:?BASH_ENV must be set to persist PATH}"
             "$candidate/bin/java" -version
       - run:
           name: Run installer tests
