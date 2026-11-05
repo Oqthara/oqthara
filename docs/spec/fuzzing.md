@@ -26,7 +26,17 @@ several targets would silently skip the rest. Each target therefore has its own 
 depends on all of them.
 
 `fuzzTest` is **not** part of `check`, so ordinary builds stay fast. It runs in the dedicated
-`jazzer-fuzz` CircleCI job on every push and pull request, with a longer nightly profile.
+`jazzer-fuzz` CircleCI job on every push and pull request, and in the **Nightly Fuzzing**
+GitHub Actions workflow (`.github/workflows/nightly.yml`) every day at 03:00 UTC. The nightly
+caps every target at 60 seconds through `JAZZER_MAX_DURATION`, so the whole pass stays bounded;
+on a finding it fails and uploads the generated corpus and crash inputs as an artifact.
+
+To run the nightly profile by hand, dispatch the workflow from the Actions tab or run it
+locally with the same cap:
+
+```bash
+JAZZER_FUZZ=1 JAZZER_MAX_DURATION=60s ./gradlew --no-daemon fuzzTest
+```
 
 ## Running it
 

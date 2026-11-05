@@ -1,0 +1,66 @@
+name: Nightly Fuzzing
+
+on:
+  schedule:
+    # Daily at 03:00 UTC.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-fuzzing-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAZZER_FUZZ: "1"
+  JAZZER_MAX_DURATION: "60s"
+
+jobs:
+  fuzz:
+    name: Jazzer short nightly pass
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+      - name: Set up JDK 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Run every fuzz target for 60 seconds
+        timeout-minutes: 20
+        run: |
+          set -o pipefail
+          mkdir -p build/fuzz-artifacts
+          java -version
+          ./gradlew --no-daemon --console=plain fuzzTest 2>&1 | tee build/fuzz-artifacts/jazzer.log
+      - name: Record fuzzing metadata
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p build/fuzz-artifacts
+          {
+            echo "commit: $GITHUB_SHA"
+            echo "ref: $GITHUB_REF"
+            echo "java: $(java -version 2>&1 | head -1)"
+            echo "jazzer: 0.30.0"
+            echo "duration: $JAZZER_MAX_DURATION per target"
+          } | tee -a build/fuzz-artifacts/metadata.txt
+      - name: Upload crash corpus and logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: jazzer-nightly-${{ github.run_id }}
+          path: |
+            build/fuzz-artifacts
+            **/.cifuzz-corpus/**
+            **/crash-*
+            **/timeout-*
+            **/build/test-results/fuzz*
+          if-no-files-found: warn
+          retention-days: 14
