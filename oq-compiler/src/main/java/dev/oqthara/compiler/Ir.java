@@ -11,7 +11,7 @@ public final class Ir {
             Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeMap, MakeSet, Index,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
             GetField, SetField, Range, TryStart, TryEnd, Throw, Halt, Label, JumpLabel, Break,
-            Continue, ScopeEnter, ScopeExit, ToBool {
+            Continue, ScopeEnter, ScopeExit, ToBool, Refuse {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -114,7 +114,15 @@ public final class Ir {
     public record MethodCall(String name, int argc) implements Instr {
     }
 
-    public record MakeData(String type, int count) implements Instr {
+    /**
+     * Builds an {@code OqData} record: the stack holds one value per field, in declaration
+     * order. The field names travel with the instruction so the generated code preserves
+     * the interpreter's field order and rendering.
+     */
+    public record MakeData(String type, List<String> fields) implements Instr {
+        public int count() {
+            return fields.size();
+        }
     }
 
     public record GetField(String name) implements Instr {
@@ -158,6 +166,14 @@ public final class Ir {
 
     /** Converts any value to an Oqthara boolean, exactly like the interpreter's truthiness. */
     public record ToBool() implements Instr {
+    }
+
+    /**
+     * A construct the backend must not compile. The lowering emits this instead of a
+     * placeholder whenever it can see that the interpreter's semantics cannot be reproduced,
+     * so the refusal happens by name instead of producing a jar with different behaviour.
+     */
+    public record Refuse(String reason) implements Instr {
     }
 
     /** Opens a lexical scope. Has no runtime effect; the backend resets block-local slots here. */
@@ -235,6 +251,7 @@ public final class Ir {
             case ToBool ignored -> "to_bool";
             case ScopeEnter ignored -> "scope_enter";
             case ScopeExit ignored -> "scope_exit";
+            case Refuse r -> "refuse " + r.reason();
         };
     }
 

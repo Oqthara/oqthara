@@ -61,6 +61,8 @@ public final class BytecodeCompiler {
     private static final int POP = 0x57;
     private static final int IFEQ = 0x99;
     private static final int GOTO = 0xA7;
+    private static final int NEW = 0xBB;
+    private static final int INVOKESPECIAL = 0xB7;
     private static final int INVOKESTATIC = 0xB8;
     /** JVMS: {@code areturn} is 0xB0 ({@code 0xAC} is {@code ireturn}). */
     private static final int ARETURN = 0xB0;
@@ -68,6 +70,13 @@ public final class BytecodeCompiler {
 
     private static final String ARITHMETIC = "dev/oqthara/runtime/Arithmetic";
     private static final String COLLECTIONS = "dev/oqthara/runtime/Collections";
+    private static final String DATA_VALUES = "dev/oqthara/runtime/DataValues";
+    private static final String METHODS = "dev/oqthara/runtime/Methods";
+    private static final String LINKED_MAP = "java/util/LinkedHashMap";
+    /** One {@code Object} parameter; repeated to build call descriptors. */
+    private static final String OBJECT_DESCRIPTOR = "Ljava/lang/Object;";
+    /** Method calls accept at most this many arguments in compiled code. */
+    private static final int MAX_METHOD_ARGS = 4;
 
     /** Thrown when a program uses a construct outside the compiled subset. */
     public static final class NotSupportedException extends RuntimeException {
@@ -369,6 +378,13 @@ public final class BytecodeCompiler {
                         next += make.count() * 2;
                         checkSlotLimit(next);
                     }
+                    // Constructors park every field value in a scratch slot while the
+                    // backing map is built; one slot per field is enough.
+                    case Ir.MakeData make -> {
+                        resolved[i] = next;
+                        next += make.count();
+                        checkSlotLimit(next);
+                    }
                     default -> {
                     }
                 }
@@ -420,6 +436,12 @@ public final class BytecodeCompiler {
             Binding binding = lookupOrNull(name);
             if (binding == null) {
                 refuseEnclosing(name);
+                if (functionArities.containsKey(name)) {
+                    // A bare function name is a function value in the interpreter, which a
+                    // compiled class cannot create without a callable wrapper.
+                    throw new NotSupportedException("function '" + name
+                            + "' is used as a value, which is not compiled yet");
+                }
                 throw new NotSupportedException(
                         "variable '" + name + "' is used before assignment");
             }
@@ -485,6 +507,11 @@ public final class BytecodeCompiler {
                 // `oq run` rejects this; falling back lets the interpreter report it with a
                 // real span instead of failing inside a generated class.
                 throw new NotSupportedException("'return' outside a function");
+            }
+            if (instr instanceof Ir.Refuse refuse) {
+                // Refusals are semantic, not control-flow: they must be seen even when the
+                // lowering put them after an unconditional jump.
+                throw new NotSupportedException(refuse.reason());
             }
             if (!reachable && !(instr instanceof Ir.Label)) {
                 // Code between an unconditional jump and the next label cannot be reached.
@@ -568,6 +595,28 @@ public final class BytecodeCompiler {
                 case Ir.MakeMap make -> {
                     if (reachable) emitMakeMap(make.count(), slot);
                 }
+                case Ir.MakeData make -> {
+                    if (reachable) emitMakeData(make, slot);
+                }
+                case Ir.GetField get -> {
+                    if (reachable) {
+                        emitConstant(get.name());
+                        call(DATA_VALUES, "get",
+                                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.SetField set -> {
+                    if (reachable) {
+                        // The planner leaves the target and the value on the stack, which is
+                        // exactly the helper's first two parameters; the name goes last.
+                        emitConstant(set.name());
+                        call(DATA_VALUES, "set",
+                                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)V");
+                    }
+                }
+                case Ir.MethodCall methodCall -> {
+                    if (reachable) emitMethodCall(methodCall);
+                }
                 case Ir.Index ignored -> {
                     if (reachable) {
                         call(COLLECTIONS, "index",
@@ -616,8 +665,8 @@ public final class BytecodeCompiler {
                                 "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
                     }
                 }
-                case Ir.MethodCall methodCall -> throw new NotSupportedException(
-                        "method call '." + methodCall.name() + "()' is not compiled yet");
+                case Ir.CallValue ignored -> throw new NotSupportedException(
+                        "calling a function value is not compiled yet");
                 default -> throw new NotSupportedException(
                         "instruction " + instr.getClass().getSimpleName() + " is not compiled yet");
             }
@@ -805,6 +854,77 @@ public final class BytecodeCompiler {
                 call(COLLECTIONS, "putInMap",
                         "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
             }
+        }
+
+        /**
+         * Builds an {@code OqData}: the field values are parked in scratch slots, a
+         * {@link java.util.LinkedHashMap} is filled in declaration order, and
+         * {@code DataValues.make} wraps it. Parking first keeps the stack empty at every
+         * label and mirrors {@link #emitMakeMap}.
+         */
+        private void emitMakeData(Ir.MakeData make, int firstSlot) {
+            if (!reachable) return;
+            int count = make.count();
+            for (int i = count - 1; i >= 0; i--) {
+                store(firstSlot + i);
+            }
+            bytes.write(NEW);
+            int mapClass = pool.classRef(LINKED_MAP);
+            bytes.write(hi(mapClass));
+            bytes.write(lo(mapClass));
+            push();
+            bytes.write(DUP);
+            push();
+            invokeSpecial(LINKED_MAP, "<init>", "()V");
+            for (int i = 0; i < count; i++) {
+                bytes.write(DUP);
+                push();
+                emitConstant(make.fields().get(i));
+                load(firstSlot + i);
+                call(DATA_VALUES, "put",
+                        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
+            }
+            emitConstant(make.type());
+            call(DATA_VALUES, "make",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;");
+        }
+
+        /**
+         * Resolves and invokes a method through {@code Methods}, which delegates to the same
+         * {@code MethodResolver} the interpreter uses, so collection, text, number and data
+         * methods cannot drift between the two backends.
+         */
+        private void emitMethodCall(Ir.MethodCall call) {
+            int args = call.argc() - 1;
+            if (args < 0 || args > MAX_METHOD_ARGS) {
+                throw new NotSupportedException("method call '." + call.name() + "()' with "
+                        + Math.max(args, 0) + " argument(s) is not compiled yet");
+            }
+            StringBuilder descriptor = new StringBuilder("(");
+            for (int i = 0; i < call.argc(); i++) {
+                descriptor.append(OBJECT_DESCRIPTOR);
+            }
+            descriptor.append("Ljava/lang/String;)Ljava/lang/Object;");
+            emitConstant(call.name());
+            call(METHODS, "invoke" + args, descriptor.toString());
+        }
+
+        private void invokeSpecial(String owner, String name, String descriptor) {
+            invoke(INVOKESPECIAL, owner, name, descriptor);
+        }
+
+        /**
+         * Emits a non-static invocation with the same stack bookkeeping as {@link #call}.
+         * Unlike a static call, the receiver is one more value on the stack and the
+         * invocation consumes it too.
+         */
+        private void invoke(int opcode, String owner, String name, String descriptor) {
+            for (int i = 0; i <= parameterCount(descriptor); i++) pop();
+            if (!descriptor.endsWith("V")) push();
+            int index = pool.methodRef(owner, name, descriptor);
+            bytes.write(opcode);
+            bytes.write(hi(index));
+            bytes.write(lo(index));
         }
 
         private void requireArgc(Ir.Call call, int expected) {

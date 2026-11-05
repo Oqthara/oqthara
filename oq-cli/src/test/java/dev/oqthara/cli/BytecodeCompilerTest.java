@@ -127,20 +127,15 @@ class BytecodeCompilerTest {
 
     @Test
     void unsupportedConstructsAreRefusedWithAReason() {
+        // Lambdas cannot become a value in a compiled class, so they are refused by name
+        // instead of letting a method call receive a placeholder receiver.
         assertFalse(BytecodeCompiler.canCompile(ir("xs = [1, 2]\nprint xs.map(x -> x)")));
-        String listReason = BytecodeCompiler.whyNot(ir("xs = [1, 2]\nprint xs.map(x -> x)"));
-        assertTrue(listReason.contains("map") || listReason.contains("containing"),
-                listReason);
+        String lambdaReason = BytecodeCompiler.whyNot(ir("xs = [1, 2]\nprint xs.map(x -> x)"));
+        assertTrue(lambdaReason.contains("lambda"), lambdaReason);
 
         assertFalse(BytecodeCompiler.canCompile(ir("x = 1\nfun f()\n  return x\nend\nprint f()")));
         assertTrue(BytecodeCompiler.whyNot(ir("x = 1\nfun f()\n  return x\nend\nprint f()"))
                 .contains("enclosing"));
-
-        // String methods are not compiled, and the refusal must name the construct.
-        assertFalse(BytecodeCompiler.canCompile(
-                ir("print \"a\".upper()")));
-        assertTrue(BytecodeCompiler.whyNot(ir("print \"a\".upper()")).contains("length")
-                || BytecodeCompiler.whyNot(ir("print \"a\".upper()")).contains("upper"));
     }
 
     @Test
@@ -329,10 +324,92 @@ class BytecodeCompilerTest {
     }
 
     @Test
-    void methodCallsAreRefusedByTheMethodName() {
-        String reason = BytecodeCompiler.whyNot(ir("xs = [1]\nprint xs.clone()"));
-        assertNotNull(reason, "method calls are not compiled yet");
-        assertTrue(reason.contains("clone"), reason);
+    void methodCallsCoverEveryResolverFamily(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "xs = [1, 2]\nxs.push(3)\nprint xs",
+                "xs = [1, 2]\nprint xs.pop()\nprint xs",
+                "xs = [1, 2]\nprint xs.add(3)",
+                "m = {\"a\": 1, \"b\": 2}\nprint m.keys()\nprint m.values()",
+                "s = {1, 2}\ns.add(3)\nprint s.size()",
+                "print \"hello\".upper()\nprint \"HELLO\".lower()",
+                "print \"hello\".length()");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+        }
+    }
+
+    @Test
+    void dataConstructionAndFieldAccessMatchTheInterpreter(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "data Point(x, y)\np = Point(1, 2)\nprint p.x\nprint p.y",
+                "data Point(x, y)\np = Point(1, 2)\np.x = 10\nprint p",
+                "data Point(x, y)\nprint Point(1, 2) == Point(1, 2)",
+                "data Address(city)\ndata Person(name, address)\n"
+                        + "p = Person(\"Ada\", Address(\"London\"))\nprint p.address.city",
+                "data Team(name, members)\n"
+                        + "t = Team(\"Core\", [\"Ada\", \"Bob\"])\nprint t.members.length()");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+        }
+    }
+
+    @Test
+    void dataDefaultsAndFieldMutationMatchTheInterpreter(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "data Person(name, age = 0)\nprint Person(\"Ada\")\nprint Person(\"Bob\", 30)",
+                "data Bag(items = [])\na = Bag()\nb = Bag()\na.items.push(1)\n"
+                        + "print a.items\nprint b.items",
+                "data Bag(items)\nb = Bag([1, 2])\nb.items.push(3)\nprint b.items");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+        }
+    }
+
+    @Test
+    void defaultThatReadsANameIsRefusedByName(@TempDir Path dir) throws Exception {
+        // The interpreter evaluates a default where the type is declared; the backend can
+        // only evaluate it where the record is constructed, so this must not compile.
+        String source = "n = 1\ndata P(x = n)\nn = 99\nprint P()";
+        String reason = BytecodeCompiler.whyNot(ir(source));
+        assertNotNull(reason, "a name-reading default must not compile");
+        assertTrue(reason.contains("scope"), reason);
+        assertEquals("P(x: 99)\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+    }
+
+    @Test
+    void invalidConstructionIsRefusedByName() {
+        String missing = BytecodeCompiler.whyNot(ir("data P(x, y)\nprint P(1)"));
+        assertNotNull(missing, "a missing field without a default must not compile");
+        assertTrue(missing.contains("P") && missing.contains("y"), missing);
+
+        String extra = BytecodeCompiler.whyNot(ir("data P(x)\nprint P(1, 2)"));
+        assertNotNull(extra, "too many arguments must not compile");
+        assertTrue(extra.contains("P"), extra);
+    }
+
+    @Test
+    void unknownMethodsFailWithTheInterpreterMessage(@TempDir Path dir) throws Exception {
+        // Unknown names go through the interpreter's own Java interop, so the compiled jar
+        // reports the same message instead of inventing a different one.
+        String source = "print \"a\".uppercase_text()";
+        String interpreter = OqRunner.run("<t>", source, List.of(), "", dir).stderr();
+        Path jar = dir.resolve("unknown.jar");
+        JarBuilder.build(jar, "oq.generated.Program", source, "u.oq",
+                BytecodeCompiler.compile(ir(source), "oq.generated.Program"));
+        ProcessResult result = runJarProcess(jar, dir);
+        assertTrue(result.exit() != 0, "expected a non-zero exit");
+        String expected = interpreter.lines().findFirst().orElse("");
+        assertTrue(result.stderr().contains(expected), result.stderr());
+    }
+
+    @Test
+    void javaInteropIsRefusedByName() {
+        String use = BytecodeCompiler.whyNot(ir("use java.time.LocalDate\nprint 1"));
+        assertNotNull(use);
+        assertTrue(use.contains("use"), use);
     }
 
     @Test
@@ -500,8 +577,8 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertTrue(compiled >= 72,
-                "expected at least 72 conformance programs to compile, got " + compiled);
+        assertEquals(139, compiled,
+                "compiled conformance programs (raise this only with newly measured evidence)");
     }
 
     @Test
