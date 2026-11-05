@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { App, ROUTES } from "./App.jsx";
 import { PAGE_META } from "./data/meta.js";
 import { docsRoutes } from "./docs.js";
+import { CHANGELOG_ROUTE } from "./changelog.js";
 
 const escapeHtml = (text) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -25,7 +26,7 @@ function pageTitle(text) {
 const embedJson = (value) =>
   JSON.stringify(value ?? null).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028");
 
-export function renderAll(reference, assets, manifest = { versions: [], latest: null }, docs = []) {
+export function renderAll(reference, assets, manifest = { versions: [], latest: null }, docs = [], changes = null) {
   const script = assets.script;
   const stylesheet = assets.stylesheet;
   // Escaping `<` keeps the embedded JSON safe even if the reference ever contains a
@@ -35,7 +36,8 @@ export function renderAll(reference, assets, manifest = { versions: [], latest: 
 
   // Only the documentation a page hydrates is embedded. The index needs titles and
   // summaries; a document page needs its own HTML. Shipping every rendered document to
-  // every page would multiply the published bytes for no benefit.
+  // every page would multiply the published bytes for no benefit. The changelog is
+  // embedded only on its own page, exactly like a documentation page.
   const metadata = (doc) => ({
     source: doc.source,
     route: doc.route,
@@ -52,7 +54,14 @@ export function renderAll(reference, assets, manifest = { versions: [], latest: 
       : route.path === "/docs.html"
         ? docs.map(metadata)
         : [];
+    const routeChanges = route.path === CHANGELOG_ROUTE ? changes : null;
     const embeddedDocs = embedJson(routeDocs);
+    // Like a documentation page, the changelog page embeds what it rendered so the client
+    // hydrates identical markup. No other page carries the changelog.
+    const embeddedChangelog = embedJson(routeChanges);
+    const changelogScript = routeChanges
+      ? `  <script id="oq-changelog" type="application/json">${embeddedChangelog}</script>\n`
+      : "";
     const meta = route.doc
       ? {
           title: pageTitle(route.doc.title),
@@ -66,6 +75,7 @@ export function renderAll(reference, assets, manifest = { versions: [], latest: 
         versions: manifest.versions ?? [],
         latest: manifest.latest ?? null,
         docs,
+        changes: routeChanges,
       }),
     );
     return {
@@ -84,7 +94,7 @@ export function renderAll(reference, assets, manifest = { versions: [], latest: 
   <script id="oq-reference" type="application/json">${embedded}</script>
   <script id="oq-versions" type="application/json">${embeddedVersions}</script>
   <script id="oq-docs" type="application/json">${embeddedDocs}</script>
-  <script type="module" src="${script}"></script>
+${changelogScript}  <script type="module" src="${script}"></script>
 </body>
 </html>
 `,

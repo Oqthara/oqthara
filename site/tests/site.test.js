@@ -26,6 +26,7 @@ test("every route is prerendered with real content", { skip: !hasBuild && "run `
     ["docs.html", "Documentation"],
     ["examples.html", "Complete programs"],
     ["stdlib.html", "Standard library"],
+    ["changelog.html", "All notable changes"],
     ["status.html", "What does not work yet"],
   ];
   for (const [file, marker] of routes) {
@@ -37,7 +38,7 @@ test("every route is prerendered with real content", { skip: !hasBuild && "run `
 });
 
 test("internal links use the GitHub Pages base path", { skip: !hasBuild && "run `npm run build` first" }, () => {
-  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "status.html"]) {
+  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "changelog.html", "status.html"]) {
     const html = page(file);
     for (const match of html.matchAll(/href="(\/[^"]*)"/g)) {
       assert.ok(match[1].startsWith("/oqthara/"), `${file}: ${match[1]} must be under /oqthara/`);
@@ -46,7 +47,7 @@ test("internal links use the GitHub Pages base path", { skip: !hasBuild && "run 
 });
 
 test("every internal link resolves to a real file", { skip: !hasBuild && "run `npm run build` first" }, () => {
-  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "status.html"]) {
+  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "changelog.html", "status.html"]) {
     const html = page(file);
     for (const match of html.matchAll(/href="(\/oqthara\/[^"]*)"/g)) {
       const relative = match[1].slice("/oqthara/".length);
@@ -68,7 +69,7 @@ test("the stdlib page is generated from the real reference", { skip: !hasBuild &
 });
 
 test("accessibility structure is present on every page", { skip: !hasBuild && "run `npm run build` first" }, () => {
-  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "status.html"]) {
+  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "changelog.html", "status.html"]) {
     const html = page(file);
     assert.ok(html.includes('class="skip-link"'), `${file}: skip link`);
     assert.ok(html.includes('href="#main"'), `${file}: skip link target`);
@@ -87,7 +88,7 @@ test("the current page is marked in the navigation", { skip: !hasBuild && "run `
 });
 
 test("no placeholder or template leakage ships", { skip: !hasBuild && "run `npm run build` first" }, () => {
-  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "status.html"]) {
+  for (const file of ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "changelog.html", "status.html"]) {
     const html = page(file);
     assert.ok(!html.includes("${"), `${file}: template literal leaked`);
     assert.ok(!html.includes("__REFERENCE__"), `${file}: reference placeholder leaked`);

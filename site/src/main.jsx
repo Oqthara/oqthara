@@ -43,6 +43,17 @@ function readDocs() {
   }
 }
 
+/** Reads the rendered changelog the prerenderer embedded, if there is one. */
+function readChanges() {
+  const node = document.getElementById("oq-changelog");
+  if (!node) return null;
+  try {
+    return JSON.parse(node.textContent || "null");
+  } catch {
+    return null;
+  }
+}
+
 /** Maps the current location onto a route, tolerating both `/tour` and `/tour.html`. */
 function currentPath() {
   let path = window.location.pathname;
@@ -62,7 +73,7 @@ const { versions, latest } = readVersions();
 const tree = h(
   StrictMode,
   null,
-  h(App, { path: route, reference: readReference(), versions, latest, docs }),
+  h(App, { path: route, reference: readReference(), versions, latest, docs, changes: readChanges() }),
 );
 
 if (container.hasChildNodes()) {

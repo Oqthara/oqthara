@@ -155,6 +155,7 @@ test("the generated index only points at real prerendered routes", { skip: !hasB
     }
   }
   assert.deepEqual([...routes].sort(), [
+    "changelog.html",
     "docs.html",
     "examples.html",
     "index.html",
