@@ -40,7 +40,7 @@ tasks.register<Jar>("standaloneJar") {
     })
 }
 
-val packageApp by tasks.registering(Exec::class) {
+val packageApp = tasks.register<Exec>("packageApp") {
     group = "distribution"
     description = "Builds a native launcher with jpackage (JDK 17+). Run per OS."
     dependsOn("standaloneJar")

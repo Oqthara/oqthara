@@ -135,7 +135,7 @@ subprojects {
     }
 }
 
-val jacocoAggregate by tasks.registering(JacocoReport::class) {
+val jacocoAggregate = tasks.register<JacocoReport>("jacocoAggregate") {
     group = "verification"
     description = "Aggregated coverage across all modules (conformance runs count)."
     val projects = subprojects
@@ -161,7 +161,7 @@ val jacocoAggregate by tasks.registering(JacocoReport::class) {
     }
 }
 
-val coverageGate by tasks.registering {
+val coverageGate = tasks.register("coverageGate") {
     group = "verification"
     description = "Fails when oq-core line coverage drops below 80%."
     dependsOn(jacocoAggregate)
