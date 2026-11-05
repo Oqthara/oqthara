@@ -2,6 +2,8 @@
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { plainInline } from "./src/markdown.js";
+import { CHANGELOG_FILE, CHANGELOG_ROUTE, CHANGELOG_SOURCE } from "./src/changelog.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
@@ -27,7 +29,7 @@ function collectHtml(directory) {
 }
 collectHtml(site);
 
-const EXPECTED = ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "status.html"];
+const EXPECTED = ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", CHANGELOG_FILE, "status.html"];
 for (const page of EXPECTED) {
   if (!pageFiles.includes(page)) problems.push(`missing page ${page}`);
 }
@@ -96,6 +98,41 @@ for (const page of pageFiles) {
     problems.push(`${page}: placeholder leaked into output`);
   }
   if (statSync(join(site, page)).size < 1200) problems.push(`${page}: suspiciously small page`);
+}
+
+// The changelog page must be the repository changelog, rendered as real structure, and the
+// navigation on every page must link it.
+const changelogPage = readFileSync(join(site, CHANGELOG_FILE), "utf8");
+for (const [needle, label] of [
+  ['<h1 id="changelog">Changelog</h1>', "h1 rendered from CHANGELOG.md"],
+  ['<h2 id="unreleased">', "unreleased section"],
+  ["<h3 id=", "release subsections"],
+  ["<ul>", "change lists"],
+  ["<li>", "change entries"],
+  ['href="https://github.com/Oqthara/oqthara/compare/', "reference-style link"],
+]) {
+  if (!changelogPage.includes(needle)) problems.push(`changelog.html: missing ${label}`);
+}
+if (!changelogPage.includes('<article class="doc">')) problems.push("changelog.html: missing article");
+if (changelogPage.includes("<p>[Unreleased]:")) problems.push("changelog.html: link definitions leaked as prose");
+
+// The changelog source must not be copied into the site tree: the page is generated from
+// the repository file, and a second copy is exactly the duplication this page avoids.
+const changelogSource = readFileSync(join(root, CHANGELOG_SOURCE), "utf8");
+const changelogText = changelogPage
+  .replace(/<script[\s\S]*?<\/script>/g, "")
+  .replace(/<[^>]+>/g, " ")
+  .replace(/\s+/g, " ");
+const firstEntry = plainInline(changelogSource.match(/^- (.+)$/m)?.[1] ?? "");
+if (firstEntry && !changelogText.includes(firstEntry.slice(0, 60))) {
+  problems.push("changelog.html: does not contain the first changelog entry");
+}
+
+for (const page of pageFiles) {
+  const html = readFileSync(join(site, page), "utf8");
+  if (!html.includes(`href="/oqthara${CHANGELOG_ROUTE}"`)) {
+    problems.push(`${page}: navigation does not link the changelog`);
+  }
 }
 
 // The docs index must link every rendered document, not a hand-picked subset.

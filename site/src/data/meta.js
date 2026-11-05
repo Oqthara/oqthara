@@ -14,6 +14,7 @@ export const NAV = [
   { href: "/docs.html", label: "Docs" },
   { href: "/examples.html", label: "Examples" },
   { href: "/stdlib.html", label: "Stdlib" },
+  { href: "/changelog.html", label: "Changelog" },
   { href: "/status.html", label: "Status" },
 ];
 
@@ -40,6 +41,10 @@ export const PAGE_META = {
   "/stdlib.html": {
     title: "Standard library — Oqthara",
     description: "Generated standard library reference.",
+  },
+  "/changelog.html": {
+    title: "Changelog — Oqthara",
+    description: "Every notable change to Oqthara, generated from the repository changelog.",
   },
   "/status.html": {
     title: "Status — Oqthara",

@@ -25,9 +25,19 @@ export function slugify(text) {
     .replace(/[\s-]+/g, "-");
 }
 
-/** The visible text of an inline Markdown fragment, with formatting markers removed. */
-export function plainInline(text) {
-  return String(text)
+/** Link reference labels are case-insensitive and collapse internal whitespace. */
+function normalizeLabel(label) {
+  return String(label).trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/**
+ * The visible text of an inline Markdown fragment, with formatting markers removed.
+ *
+ * Passing the definitions from `extractReferences` also turns `[label]` shortcut links into
+ * their label text, so headings and summaries never show the brackets.
+ */
+export function plainInline(text, references) {
+  const value = String(text)
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/`+([^`]*)`+/g, "$1")
@@ -38,10 +48,16 @@ export function plainInline(text) {
     .replace(/\\([\\`*_[\]()#+.!>~-])/g, "$1")
     .replace(/\s+/g, " ")
     .trim();
+  if (!references) return value;
+  return value.replace(/\[([^\]]+)\]/g, (match, label) =>
+    references.has(normalizeLabel(label)) ? label : match,
+  );
 }
 
 const isBlank = (line) => line.trim() === "";
 const isHeading = (line) => /^(#{1,6})\s+(.+)$/.test(line);
+const definitionFor = (line) => /^ {0,3}\[([^\]]+)\]:\s*(\S+)(?:\s+.*)?$/.exec(line);
+const isDefinition = (line) => Boolean(definitionFor(line));
 const isRule = (line) => /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line);
 const isQuote = (line) => /^\s*>\s?(.*)$/.test(line);
 const openFence = (line) => /^\s*```(.*)$/.exec(line);
@@ -100,6 +116,7 @@ const startsBlock = (lines, index) => {
   return Boolean(
     openFence(line) ||
       isHeading(line) ||
+      isDefinition(line) ||
       isRule(line) ||
       isQuote(line) ||
       listMarker(line) ||
@@ -146,6 +163,12 @@ function parseMarkdownLines(lines) {
   while (index < lines.length) {
     const line = lines[index];
     if (isBlank(line)) {
+      index++;
+      continue;
+    }
+
+    // Link definitions only give `[label]` links their target; they are not content.
+    if (isDefinition(line)) {
       index++;
       continue;
     }
@@ -250,10 +273,10 @@ function findClosingParen(text, from) {
   return -1;
 }
 
-function parseLink(text, start) {
+/** Finds the `]` that closes the `[` at `start`, returning the label and the end offset. */
+function parseBracket(text, start) {
   let depth = 0;
-  let index = start;
-  for (; index < text.length; index++) {
+  for (let index = start; index < text.length; index++) {
     if (text[index] === "\\") {
       index++;
       continue;
@@ -261,14 +284,39 @@ function parseLink(text, start) {
     if (text[index] === "[") depth++;
     if (text[index] === "]") {
       depth--;
-      if (depth === 0) break;
+      if (depth === 0) return { label: text.slice(start + 1, index), end: index + 1 };
     }
   }
-  if (index >= text.length || text[index + 1] !== "(") return null;
-  const close = findClosingParen(text, index + 2);
+  return null;
+}
+
+function parseLink(text, start) {
+  const bracket = parseBracket(text, start);
+  if (!bracket || text[bracket.end] !== "(") return null;
+  const close = findClosingParen(text, bracket.end + 1);
   if (close === -1) return null;
-  const href = text.slice(index + 2, close).trim().replace(/^<|>$/g, "");
-  return { label: text.slice(start + 1, index), href, end: close + 1 };
+  const href = text.slice(bracket.end + 1, close).trim().replace(/^<|>$/g, "");
+  return { label: bracket.label, href, end: close + 1 };
+}
+
+/** Resolves `[text][label]`, `[label][]` and `[label]` through the definitions map. */
+function parseReference(text, start, references) {
+  if (!references) return null;
+  const bracket = parseBracket(text, start);
+  if (!bracket) return null;
+
+  let label = bracket.label;
+  let end = bracket.end;
+  if (text[end] === "[") {
+    const target = parseBracket(text, end);
+    if (!target) return null;
+    label = target.label || bracket.label;
+    end = target.end;
+  }
+
+  const href = references.get(normalizeLabel(label));
+  if (href === undefined) return null;
+  return { label: bracket.label, href, end };
 }
 
 function renderInline(text, context) {
@@ -308,7 +356,7 @@ function renderInline(text, context) {
     }
 
     if (char === "[") {
-      const link = parseLink(text, index);
+      const link = parseLink(text, index) ?? parseReference(text, index, context.references);
       if (link) {
         output += `<a href="${escapeAttribute(context.resolveHref(link.href))}">${renderInline(link.label, context)}</a>`;
         index = link.end;
@@ -352,8 +400,11 @@ function renderBlocksWithContext(blocks, context) {
 function renderBlock(block, context) {
   switch (block.type) {
     case "heading": {
-      const text = plainInline(block.text);
-      const base = slugify(text) || "section";
+      const text = plainInline(block.text, context.references);
+      const slug = slugify(text);
+      // HTML ids must begin with a letter (html-validate's valid-id rule), so a heading
+      // such as "0.1.0-alpha.1" gets a stable prefix instead of a leading digit.
+      const base = !slug ? "section" : /^[a-z]/.test(slug) ? slug : `section-${slug}`;
       const seen = context.ids.get(base) ?? 0;
       context.ids.set(base, seen + 1);
       const id = seen === 0 ? base : `${base}-${seen}`;
@@ -396,11 +447,28 @@ function renderBlock(block, context) {
   }
 }
 
+/** Collects link reference definitions (`[label]: url`) from Markdown source. */
+export function extractReferences(source) {
+  const references = new Map();
+  let fence = false;
+  for (const line of String(source).replace(/\r\n?/g, "\n").split("\n")) {
+    if (openFence(line)) {
+      fence = !fence;
+      continue;
+    }
+    if (fence) continue;
+    const match = definitionFor(line);
+    if (match) references.set(normalizeLabel(match[1]), match[2].replace(/^<|>$/g, ""));
+  }
+  return references;
+}
+
 /** Renders a parsed block tree, returning both the HTML and the headings it produced. */
 export function renderBlocks(blocks, options = {}) {
   const context = {
     ids: new Map(),
     headings: [],
+    references: options.references,
     resolveHref: options.resolveHref ?? ((href) => href),
   };
   return {
@@ -411,6 +479,9 @@ export function renderBlocks(blocks, options = {}) {
 
 /** Renders Markdown source to semantic HTML plus its heading list. */
 export function renderMarkdown(source, options = {}) {
-  return renderBlocks(parseMarkdown(source), options);
+  return renderBlocks(parseMarkdown(source), {
+    ...options,
+    references: options.references ?? extractReferences(source),
+  });
 }
 
