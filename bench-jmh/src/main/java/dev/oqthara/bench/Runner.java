@@ -45,7 +45,10 @@ public final class Runner {
         interpreter.run(program);
         out.flush();
         err.flush();
-        return sink.toString(StandardCharsets.UTF_8);
+        // `print` goes through PrintStream.println, which uses the platform line separator.
+        // A workload declares its expected output once, so normalize CRLF here instead of
+        // giving every workload a platform-specific expectation.
+        return sink.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 
     /**
