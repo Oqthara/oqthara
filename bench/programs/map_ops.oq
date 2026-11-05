@@ -1,0 +1,10 @@
+# Map operations: 500,000 writes followed by 500,000 reads.
+m = {}
+for i in 1 to 500000
+  m[i] = i * 2
+end
+total = 0
+for i in 1 to 500000
+  total = total + m[i]
+end
+print total
