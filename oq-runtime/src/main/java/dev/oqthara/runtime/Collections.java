@@ -44,15 +44,15 @@ public final class Collections {
     }
 
     public static Object index(Object target, Object key) {
-        return Values.index(target, key, Span.synthetic());
+        return Values.index(target, key, Errors.current());
     }
 
     public static void setIndex(Object target, Object key, Object value) {
-        Values.setIndex(target, key, value, Span.synthetic());
+        Values.setIndex(target, key, value, Errors.current());
     }
 
     public static Object length(Object value) {
-        return (long) Values.size(value, Span.synthetic());
+        return (long) Values.size(value, Errors.current());
     }
 
     /**
@@ -60,7 +60,7 @@ public final class Collections {
      * container. The interpreter calls {@code Values.contains(container, item)}.
      */
     public static Object contains(Object item, Object container) {
-        return Values.contains(container, item, Span.synthetic());
+        return Values.contains(container, item, Errors.current());
     }
 
     public static Object rangeInclusive(Object from, Object to) {
@@ -72,7 +72,7 @@ public final class Collections {
     }
 
     public static Object iterator(Object value) {
-        return Values.iterable(value, Span.synthetic()).iterator();
+        return Values.iterable(value, Errors.current()).iterator();
     }
 
     public static Object hasNext(Object iterator) {

@@ -1,5 +1,7 @@
 package dev.oqthara.compiler;
 
+import dev.oqthara.runtime.Span;
+
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
@@ -72,6 +74,13 @@ public final class BytecodeCompiler {
     private static final String COLLECTIONS = "dev/oqthara/runtime/Collections";
     private static final String DATA_VALUES = "dev/oqthara/runtime/DataValues";
     private static final String METHODS = "dev/oqthara/runtime/Methods";
+    private static final String ERRORS = "dev/oqthara/runtime/Errors";
+    /**
+     * The interpreter's {@code try} catches {@code OqError} and nothing else, so the
+     * exception table names exactly this class. A {@code NullPointerException} or an
+     * {@code IllegalArgumentException} escapes the handler on both backends.
+     */
+    private static final String OQ_ERROR = "dev/oqthara/runtime/OqError";
     private static final String LINKED_MAP = "java/util/LinkedHashMap";
     /** One {@code Object} parameter; repeated to build call descriptors. */
     private static final String OBJECT_DESCRIPTOR = "Ljava/lang/Object;";
@@ -147,6 +156,7 @@ public final class BytecodeCompiler {
 
         int thisClass = pool.classRef(pool.utf8(internalName));
         int objectClass = pool.classRef(pool.utf8("java/lang/Object"));
+        int oqErrorClass = pool.classRef(OQ_ERROR);
         int codeAttribute = pool.utf8("Code");
         // Every constant must exist before the pool is serialized; adding one afterwards
         // leaves the pool's declared entry count stale and produces a ClassFormatError.
@@ -159,14 +169,15 @@ public final class BytecodeCompiler {
         byte[][] stackMaps = new byte[methods.size()][];
         nameIndices[0] = pool.utf8("main");
         descriptorIndices[0] = pool.utf8("([Ljava/lang/String;)V");
-        stackMaps[0] = stackMap(pool, objectClass, main.frameOffsets(), main.localCount());
+        stackMaps[0] = stackMap(pool, objectClass, main.frameOffsets(), main.handlerOffsets(),
+                main.localCount(), oqErrorClass);
         for (int i = 1; i < methods.size(); i++) {
             Ir.Function function = program.functions().get(i - 1);
             nameIndices[i] = pool.utf8(function.name());
             descriptorIndices[i] = pool.utf8(functionDescriptor(function.params().size()));
             Method method = methods.get(i);
             stackMaps[i] = stackMap(pool, objectClass, method.frameOffsets(),
-                    method.localCount());
+                    method.handlerOffsets(), method.localCount(), oqErrorClass);
         }
 
         try {
@@ -184,7 +195,7 @@ public final class BytecodeCompiler {
             out.writeShort(methods.size());
             for (int i = 0; i < methods.size(); i++) {
                 writeMethod(out, nameIndices[i], descriptorIndices[i], codeAttribute,
-                        stackMapAttribute, methods.get(i), stackMaps[i]);
+                        stackMapAttribute, methods.get(i), stackMaps[i], oqErrorClass);
             }
             out.writeShort(1); // class attributes
             out.writeShort(sourceFile);
@@ -202,10 +213,13 @@ public final class BytecodeCompiler {
      * this method's bytecode and its own stack map, never another method's.
      */
     private static void writeMethod(DataOutputStream out, int nameIndex, int descriptorIndex,
-            int codeAttribute, int stackMapAttribute, Method method, byte[] stackMap)
-            throws IOException {
+            int codeAttribute, int stackMapAttribute, Method method, byte[] stackMap,
+            int catchType) throws IOException {
         byte[] code = method.code();
-        int nested = stackMap == null ? 0 : 6 + stackMap.length;
+        List<ResolvedRow> rows = method.exceptionRows();
+        // 12 already counts max_stack, max_locals, code_length, the exception-table count
+        // and the attributes count, so only the rows and the stack map remain.
+        int nested = rows.size() * 8 + (stackMap == null ? 0 : 6 + stackMap.length);
         out.writeShort(ACC_PUBLIC | ACC_STATIC);
         out.writeShort(nameIndex);
         out.writeShort(descriptorIndex);
@@ -216,7 +230,14 @@ public final class BytecodeCompiler {
         out.writeShort(Math.max(1, method.localCount()));
         out.writeInt(code.length);
         out.write(code);
-        out.writeShort(0); // exception table
+        out.writeShort(rows.size());
+        for (ResolvedRow row : rows) {
+            out.writeShort(row.start());
+            out.writeShort(row.end());
+            out.writeShort(row.handler());
+            // Exactly OqError: the interpreter's catch does not see any other RuntimeException.
+            out.writeShort(catchType);
+        }
         if (stackMap == null) {
             out.writeShort(0);
         } else {
@@ -241,15 +262,21 @@ public final class BytecodeCompiler {
      * frame's {@code offset_delta} is its byte offset; later ones are relative to the previous
      * frame minus one, as JVMS 4.7.4 requires.
      */
-    private static byte[] stackMap(ConstantPool pool, int objectType, int[] offsets, int locals) {
-        if (offsets.length == 0) return null;
+    private static byte[] stackMap(ConstantPool pool, int objectType, int[] offsets,
+            int[] handlerOffsets, int locals, int catchType) {
+        if (offsets.length == 0 && handlerOffsets.length == 0) return null;
         int objectInfo = 7; // Object_variable_info tag
+        TreeSet<Integer> all = new TreeSet<>();
+        for (int offset : offsets) all.add(offset);
+        for (int offset : handlerOffsets) all.add(offset);
+        Set<Integer> handlers = new TreeSet<>();
+        for (int offset : handlerOffsets) handlers.add(offset);
         try {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             DataOutputStream out = new DataOutputStream(bytes);
-            out.writeShort(offsets.length);
+            out.writeShort(all.size());
             int previous = -1;
-            for (int offset : offsets) {
+            for (int offset : all) {
                 out.writeByte(255); // full_frame
                 int delta = previous < 0 ? offset : offset - previous - 1;
                 out.writeShort(delta);
@@ -258,7 +285,14 @@ public final class BytecodeCompiler {
                     out.writeByte(objectInfo);
                     out.writeShort(objectType);
                 }
-                out.writeShort(0); // empty operand stack
+                if (handlers.contains(offset)) {
+                    // A handler is entered with the caught OqError on the stack.
+                    out.writeShort(1);
+                    out.writeByte(objectInfo);
+                    out.writeShort(catchType);
+                } else {
+                    out.writeShort(0); // empty operand stack
+                }
                 previous = offset;
             }
             out.flush();
@@ -270,6 +304,22 @@ public final class BytecodeCompiler {
 
     /** A variable binding the planner resolved to a slot. */
     private record Binding(int slot, boolean fixed) {
+    }
+
+    /**
+     * One exception-table row as emitted: the protected range {@code [start, end)} and the
+     * handler label. The handler's offset is only known once every instruction is placed, so
+     * the row keeps the label until then.
+     */
+    private record ExceptionRow(int start, int end, String handler) {
+    }
+
+    /**
+     * One resolved exception-table row: all three values are bytecode offsets. The caught
+     * type is always {@code OqError}, because that is the only throwable the interpreter's
+     * {@code try} catches.
+     */
+    private record ResolvedRow(int start, int end, int handler) {
     }
 
     /**
@@ -288,6 +338,18 @@ public final class BytecodeCompiler {
         private final Deque<Map<String, Binding>> scopes = new ArrayDeque<>();
         private final Map<String, Integer> labels = new LinkedHashMap<>();
         private final TreeSet<Integer> frames = new TreeSet<>();
+        /**
+         * Handler label byte offsets. A handler is entered with the caught exception on the
+         * operand stack, so its stack map frame is {@code same_locals_1_stack_item} rather
+         * than the empty-stack frame every ordinary label gets.
+         */
+        private final TreeSet<Integer> handlerOffsets = new TreeSet<>();
+        /** One row per protected region, in the order the class file requires. */
+        private final List<ExceptionRow> exceptionTable = new ArrayList<>();
+        /** Inner regions are emitted first, which is the order the verifier expects. */
+        private final Deque<Integer> tryStarts = new ArrayDeque<>();
+        /** Handler label for each open region, innermost last. */
+        private final List<String> pendingHandlers = new ArrayList<>();
         private int[] slots;
         private int localCount;
         private int depth = 0;
@@ -329,6 +391,35 @@ public final class BytecodeCompiler {
 
         int[] frameOffsets() {
             return frames.stream().mapToInt(Integer::intValue).filter(o -> o > 0).toArray();
+        }
+
+        /** Byte offsets of the handler labels, which need a one-item stack frame. */
+        int[] handlerOffsets() {
+            return handlerOffsets.stream().mapToInt(Integer::intValue).filter(o -> o > 0).toArray();
+        }
+
+        /**
+         * Resolves the exception table to byte offsets. Nested regions are emitted before the
+         * regions that enclose them, which is the order JVMS 4.7.3 requires: the first row
+         * whose range contains the throw decides the handler.
+         */
+        List<ResolvedRow> exceptionRows() {
+            List<ResolvedRow> resolved = new ArrayList<>(exceptionTable.size());
+            for (ExceptionRow row : exceptionTable) {
+                Integer handler = labels.get(row.handler());
+                if (handler == null) {
+                    throw new NotSupportedException("unresolved handler " + row.handler());
+                }
+                resolved.add(new ResolvedRow(row.start(), row.end(), handler));
+            }
+            resolved.sort((a, b) -> {
+                // JVMS 4.7.3: the first row whose range covers the throw wins, so a nested
+                // region must precede the region that encloses it. Sorting by end ascending
+                // (and start descending for equal ends) puts every inner region first.
+                if (a.end() != b.end()) return Integer.compare(a.end(), b.end());
+                return Integer.compare(b.start(), a.start());
+            });
+            return resolved;
         }
 
         Set<String> topLevelNames() {
@@ -513,7 +604,14 @@ public final class BytecodeCompiler {
                 // lowering put them after an unconditional jump.
                 throw new NotSupportedException(refuse.reason());
             }
-            if (!reachable && !(instr instanceof Ir.Label)) {
+            if (instr instanceof Ir.TryEnd end) {
+                // A `return` inside the body makes the marker unreachable, but the region
+                // still has to be closed at the current offset or every later row is wrong.
+                closeTryRegion(end);
+                return;
+            }
+            if (!reachable && !(instr instanceof Ir.Label)
+                    && !(instr instanceof Ir.HandlerLabel)) {
                 // Code between an unconditional jump and the next label cannot be reached.
                 // Emitting it would also place an instruction after a jump with no stack map
                 // frame, which the verifier rejects.
@@ -527,6 +625,33 @@ public final class BytecodeCompiler {
                     }
                     frames.add(bytes.size());
                     reachable = true;
+                }
+                case Ir.HandlerLabel handlerLabel -> {
+                    labels.put(handlerLabel.name(), bytes.size());
+                    handlerOffsets.add(bytes.size());
+                    // Reached only through the exception table, which places the caught
+                    // OqError on the operand stack: depth restarts at one, not zero.
+                    reachable = true;
+                    depth = 1;
+                    peak = Math.max(peak, 1);
+                }
+                case Ir.TryStart tryStart -> {
+                    if (!reachable) {
+                        throw new NotSupportedException(
+                                "'try' after an unconditional jump is not compiled yet");
+                    }
+                    requireEmptyStack("try_start");
+                    tryStarts.push(bytes.size());
+                    pendingHandlers.add(tryStart.handler());
+                }
+                case Ir.CatchValue ignored -> {
+                    if (reachable) {
+                        call(ERRORS, "catchValue",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.At at -> {
+                    if (reachable) emitMark(at.span());
                 }
                 case Ir.JumpLabel jump -> branch(GOTO, jump.label());
                 case Ir.JumpIfFalseLabel jump -> {
@@ -672,6 +797,27 @@ public final class BytecodeCompiler {
             }
         }
 
+        /**
+         * Closes the innermost protected region at the current offset. The region must contain
+         * at least one byte: a zero-length exception-table row is refused by the verifier, and
+         * an empty {@code try} body would produce exactly that.
+         */
+        private void closeTryRegion(Ir.TryEnd end) {
+            if (tryStarts.isEmpty()) {
+                throw new NotSupportedException("unbalanced try markers");
+            }
+            int start = tryStarts.pop();
+            String handler = pendingHandlers.remove(pendingHandlers.size() - 1);
+            if (!handler.equals(end.handler())) {
+                throw new NotSupportedException("mismatched try markers");
+            }
+            int stop = bytes.size();
+            if (stop <= start) {
+                throw new NotSupportedException("an empty 'try' body is not compiled yet");
+            }
+            exceptionTable.add(new ExceptionRow(start, stop, handler));
+        }
+
         private void requireEmptyStack(String where) {
             if (depth != 0) {
                 throw new NotSupportedException(
@@ -691,6 +837,18 @@ public final class BytecodeCompiler {
         }
 
         private final Map<Integer, String> jumpLabels = new LinkedHashMap<>();
+
+        /**
+         * Emits {@code Errors.mark(file, line, column)} for the operation that follows. The
+         * helpers this backend calls read that position when they raise an {@code OqError},
+         * which is what makes a caught error carry the interpreter's line, column and file.
+         */
+        private void emitMark(Span span) {
+            emitConstant(span.source());
+            emitConstant((long) span.line());
+            emitConstant((long) span.column());
+            call(ERRORS, "mark", "(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V");
+        }
 
         private void emitConstant(Object value) {
             if (value == null) {
@@ -813,6 +971,10 @@ public final class BytecodeCompiler {
                 case "length" -> {
                     requireArgc(call, 1);
                     call(COLLECTIONS, "length", "(Ljava/lang/Object;)Ljava/lang/Object;");
+                }
+                case "error" -> {
+                    requireArgc(call, 1);
+                    call(ERRORS, "raise", "(Ljava/lang/Object;)Ljava/lang/Object;");
                 }
                 default -> throw new NotSupportedException(
                         "call to '" + call.name() + "' with " + call.argc()

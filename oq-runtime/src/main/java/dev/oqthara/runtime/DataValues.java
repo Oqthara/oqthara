@@ -31,7 +31,7 @@ public final class DataValues {
         if (target instanceof OqData data) {
             if (!data.has(name)) {
                 throw new OqError("type " + data.typeName() + " has no field named '" + name + "'",
-                        Span.synthetic(),
+                        Errors.current(),
                         "Available fields: " + String.join(", ", data.fields().keySet()));
             }
             return data.get(name);
@@ -42,7 +42,7 @@ public final class DataValues {
         JavaField field = readJavaField(target, name);
         if (field.found()) return field.value();
         throw new OqError("cannot read field '" + name + "' on " + Values.typeName(target),
-                Span.synthetic());
+                Errors.current());
     }
 
     private record JavaField(boolean found, Object value) {
@@ -60,13 +60,13 @@ public final class DataValues {
         try {
             Class<?> bridge = Class.forName("dev.oqthara.core.JavaBridge");
             Object value = bridge.getMethod("readField", Object.class, String.class, Span.class)
-                    .invoke(null, target, name, Span.synthetic());
+                    .invoke(null, target, name, Errors.current());
             if (value == bridge.getField("NOT_FOUND").get(null)) return NOT_FOUND;
             return new JavaField(true, value);
         } catch (InvocationTargetException e) {
             Throwable cause = e.getTargetException();
             if (cause instanceof RuntimeException runtime) throw runtime;
-            throw new OqError(String.valueOf(cause), Span.synthetic());
+            throw new OqError(String.valueOf(cause), Errors.current());
         } catch (ReflectiveOperationException e) {
             return NOT_FOUND;
         }
@@ -76,7 +76,7 @@ public final class DataValues {
         if (target instanceof OqData data) {
             if (!data.has(name)) {
                 throw new OqError("type " + data.typeName() + " has no field named '" + name + "'",
-                        Span.synthetic());
+                        Errors.current());
             }
             data.set(name, value);
             return;
@@ -88,6 +88,6 @@ public final class DataValues {
             return;
         }
         throw new OqError("cannot set field '" + name + "' on " + Values.typeName(target),
-                Span.synthetic());
+                Errors.current());
     }
 }

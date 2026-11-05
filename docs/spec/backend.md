@@ -78,7 +78,8 @@ The compiled subset today:
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
 | variables: assignment, reassignment, scoping, shadowing | lambdas, callbacks, closures |
 | top-level `fun` with parameters, `return`, recursion, mutual recursion | `use`, modules |
-| `+ - * / % **` and unary `-`, unary `+` | `try` / `catch` |
+| `+ - * / % **` and unary `-`, unary `+` | `try` with an empty body |
+| `try` / `catch`, nested, with rethrow | |
 | comparisons `== != < <= > >=` | `spawn` |
 | `and`, `or`, `not` with short-circuiting | builtins other than `print`, `write`, `length` |
 | `if` / `else`, including `else if` chains | Java interop |
@@ -94,7 +95,7 @@ The compiled subset today:
 | `data` declarations, construction with defaults, field read and write | |
 | method calls: `.push()`, `.add()`, `.pop()`, `.keys()`, `.values()`, `.upper()` ... | |
 
-As of T-0060b, **139 of the 197 executable conformance programs** compile to real bytecode
+As of T-0061, **145 of the 197 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
 silently go down. Every refusal is reported by name in the `oq build` output.
@@ -185,8 +186,8 @@ The compiled mode is real bytecode, but the subset is small. Remaining work for 
 1. **Closures and lambdas.** A function that touches an enclosing variable is refused, and a
    lambda is refused by name (`lambdas are not compiled yet`). Captured environments need a
    generated environment class, which is the next stage of the backend. Every conformance
-   program that still falls back does so because of a lambda, a closure, a builtin, or a
-   `try`, so this is the single biggest remaining tier.
+   program that still falls back does so because of a lambda, a closure, or a builtin, so
+   this is the single biggest remaining tier.
 2. **Java interop.** `use` is refused by name; compiled code cannot call Java classes directly.
    Method calls on Java objects that arrive from a compiled call still work, because they go
    through `Methods` -> `JavaBridge`, exactly as under the interpreter.
@@ -212,8 +213,48 @@ difficult in exactly one place:
 - All locals are initialized to `null` in a prologue. An uninitialized slot is `top`, and no
   frame may claim `top` is a reference; starting from `null` makes one frame shape valid at
   every join point.
-- There is no code generation for exception handlers yet, so no frame ever needs an
-  exception on the stack.
+- A handler label is the one frame that is not empty-stack: it is entered with the caught
+  `OqError` on the stack, so its frame is a `full_frame` with one stack item of that class.
+  It carries the same locals as every other frame, which is sound because the handler runs
+  with the try body's locals still in place.
+- Exception-table rows are emitted inner-region first. JVMS 4.7.3 picks the first row whose
+  range contains the throw, so an enclosing region listed first would swallow a nested
+  handler's throw. `patch()` sorts by end offset ascending, which puts every inner region
+  ahead of the region that encloses it.
+
+## How `try` / `catch` is emitted
+
+The interpreter's rule is exact and narrow (see `Interpreter`'s `TryStmt` case): the body
+runs in a child environment, a thrown `OqError` is caught, `error.toValue()` becomes the
+binding, and the handler runs in another child environment with that binding fixed. No other
+throwable is caught.
+
+The backend reproduces that literally:
+
+- `Ir.TryStart(handler)` / `Ir.TryEnd(handler)` mark a protected region. The lowering emits
+  them around the body only, so a handler cannot catch its own rethrow; that is why the
+  nested rethrow case works.
+- `Ir.HandlerLabel` opens the handler and `Ir.CatchValue` calls `Errors.catchValue`, which is
+  `OqError.toValue()`. The binding is an `Ir.Declare(name, fixed)`, so assigning to it is
+  refused exactly as the interpreter refuses to change a `defineConst`.
+- The exception table names `dev/oqthara/runtime/OqError` and **only** that class. A
+  `NullPointerException` or any other `RuntimeException` escapes the handler on both
+  backends; naming `RuntimeException` would make a compiled jar catch what `oq run` does not.
+- The body and handler are `try`-scoped, so a `catch` variable cannot leak into the code
+  after `end`, matching the child environment.
+- A `return`, `break` or `continue` inside the body still closes the region: `TryEnd` is
+  processed even when it is unreachable, so a body that always returns leaves a valid table.
+- An **empty** body is refused by name (`an empty 'try' body is not compiled yet`) rather
+  than emitted as a zero-length row, which the verifier rejects.
+
+Error spans are the subtle part. A caught error exposes `message`, `hint`, `line`, `column`
+and `file`, and `133-try-error-fields.oq` prints three of them. Generated code therefore
+emits `Errors.mark(file, line, column)` immediately before every operation inside a `try`
+(or inside any function, since its caller may catch) that can raise. The runtime helpers
+`Arithmetic`, `Collections`, `DataValues` and `Methods` read that position instead of
+`Span.synthetic()`. `Errors` reduces the source to its file name because that is what
+`oq run` reports, so `oq build dir/prog.oq` and `oq run dir/prog.oq` produce the same
+`err.file` in the jar.
 
 Descending ranges are the clearest example of why the IR is not simplified: the interpreter
 computes `step = from <= to ? 1 : -1` and walks downwards, so a compiled `i <= to` loop would
@@ -264,12 +305,13 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
 3. ~~**T-0050a** — local variables in compiled bytecode.~~ Done.
 4. ~~**T-0050b** — branches and loops.~~ Done.
 5. ~~**T-0060b** — `data` declarations, constructors, field access and method calls.~~ Done.
-6. ~~**T-0060c** — precise field descriptors for `data`.~~ Refused with evidence: fields stay
+6. ~~**T-0061** — `try` / `catch` with a real exception table and handler frames.~~ Done.
+7. ~~**T-0060c** — precise field descriptors for `data`.~~ Refused with evidence: fields stay
    boxed `Object` because the language has no field type and allows a field to change type.
    See "Why data fields are still boxed `Object`".
-7. **T-0037b** — closures/lambdas as generated classes with a captured environment.
-8. **T-0049** — Java interop from generated code.
-9. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
+8. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+9. **T-0049** — Java interop from generated code.
+10. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
 Every step must keep the conformance suite green and delete the corresponding limitation
 from this page. If a step cannot, the page changes, not the claim.

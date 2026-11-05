@@ -1,5 +1,7 @@
 package dev.oqthara.compiler;
 
+import dev.oqthara.runtime.Span;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,8 +12,8 @@ public final class Ir {
     public sealed interface Instr permits Const, Load, Store, Declare, Call, CallValue, Print, Binary,
             Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeMap, MakeSet, Index,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
-            GetField, SetField, Range, TryStart, TryEnd, Throw, Halt, Label, JumpLabel, Break,
-            Continue, ScopeEnter, ScopeExit, ToBool, Refuse {
+            GetField, SetField, Range, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
+            JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -134,13 +136,32 @@ public final class Ir {
     public record Range(boolean inclusive) implements Instr {
     }
 
-    public record TryStart(int handler) implements Instr {
+    /**
+     * Opens a protected region. Everything emitted until the matching {@link TryEnd} is
+     * covered by one exception-table entry that jumps to {@code handler}. The handler label
+     * is entered with the caught {@code OqError} on the operand stack, which is why it is a
+     * label the backend must describe with a one-item stack map frame, not an empty one.
+     */
+    public record TryStart(String handler) implements Instr {
     }
 
-    public record TryEnd() implements Instr {
+    public record TryEnd(String handler) implements Instr {
     }
 
-    public record Throw() implements Instr {
+    /**
+     * The sole entry point of an exception handler. Unlike {@link Label}, the operand stack
+     * here holds the caught exception, which is why the backend must describe it with a
+     * one-item stack map frame instead of the usual empty-stack frame.
+     */
+    public record HandlerLabel(String name) implements Instr {
+    }
+
+    /**
+     * Converts the caught {@code OqError} on the stack into the value the interpreter binds:
+     * {@code OqError.toValue()}, an {@code Error} record with message, hint, line, column and
+     * file. Emitted immediately after the handler label.
+     */
+    public record CatchValue() implements Instr {
     }
 
     public record Halt() implements Instr {
@@ -162,6 +183,14 @@ public final class Ir {
 
     /** Jumps to the loop's continue label. */
     public record Continue(String loopId) implements Instr {
+    }
+
+    /**
+     * Carries the source position of the operation that follows it, so a helper that can
+     * throw an {@code OqError} reports the same line, column and file as {@code oq run}.
+     * The backend applies it to exactly one instruction and then clears it.
+     */
+    public record At(Span span) implements Instr {
     }
 
     /** Converts any value to an Oqthara boolean, exactly like the interpreter's truthiness. */
@@ -241,8 +270,9 @@ public final class Ir {
             case SetField s -> "set_field " + s.name();
             case Range r -> "range " + (r.inclusive() ? "to" : "until");
             case TryStart t -> "try_start " + t.handler();
-            case TryEnd t -> "try_end";
-            case Throw t -> "throw";
+            case TryEnd t -> "try_end " + t.handler();
+            case HandlerLabel h -> h.name() + ": (catch)";
+            case CatchValue c -> "catch_value";
             case Halt h -> "halt";
             case Label l -> l.name() + ":";
             case JumpLabel j -> "jump " + j.label();
@@ -251,6 +281,7 @@ public final class Ir {
             case ToBool ignored -> "to_bool";
             case ScopeEnter ignored -> "scope_enter";
             case ScopeExit ignored -> "scope_exit";
+            case At at -> "at " + at.span().line() + ":" + at.span().column();
             case Refuse r -> "refuse " + r.reason();
         };
     }
