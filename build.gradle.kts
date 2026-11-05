@@ -88,6 +88,8 @@ subprojects {
             "jsonParseNeverThrowsUnexpectedExceptions"),
         FuzzTarget("JsonNesting", "dev.oqthara.stdlib.JsonFuzzTest",
             "deeplyNestedJsonDoesNotOverflow"),
+        FuzzTarget("StdlibBuiltins", "dev.oqthara.stdlib.StdlibFuzzTest",
+            "pureBuiltinsNeverThrowUnexpectedExceptions"),
     )
     // A target can only run in the module whose fuzz source set contains its class.
     val packageOfTarget = mapOf(

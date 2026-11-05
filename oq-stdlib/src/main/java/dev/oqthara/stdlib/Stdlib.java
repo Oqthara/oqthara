@@ -100,11 +100,12 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("length", 1, (host, args, span) ->
                 (long) Values.size(args.get(0), span)));
         interpreter.defineBuiltin(NativeFunction.of("range", 1, (host, args, span) -> {
-            long n = Values.asLong(args.get(0));
+            long n = wholeNumber(args.get(0), "range", span);
             return new OqRange(0, Math.max(0, n), false);
         }));
         interpreter.defineBuiltin(NativeFunction.of("range", 2, (host, args, span) ->
-                new OqRange(Values.asLong(args.get(0)), Values.asLong(args.get(1)), false)));
+                new OqRange(wholeNumber(args.get(0), "range", span),
+                        wholeNumber(args.get(1), "range", span), false)));
         interpreter.defineBuiltin(NativeFunction.of("error", 1, (host, args, span) -> {
             throw new OqError(Values.display(args.get(0)), span);
         }));
@@ -249,29 +250,48 @@ public final class Stdlib {
     private static void installMath(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("abs", 1, (host, args, span) -> {
             Object value = args.get(0);
-            if (value instanceof Long l) return Math.abs(l);
+            if (value instanceof Long l) {
+                // Math.abs(Long.MIN_VALUE) is negative again: the magnitude does not fit a
+                // whole number, so keep the exact positive value as a decimal instead of
+                // silently returning the input unchanged.
+                if (l == Long.MIN_VALUE) return -((double) l);
+                return Math.abs(l);
+            }
             if (value instanceof Double d) return Math.abs(d);
             throw new OqError("abs() needs a number, got " + Values.typeName(value), span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("floor", 1, (host, args, span) ->
-                (long) Math.floor(Values.asDouble(args.get(0)))));
+                whole(Math.floor(asNumber(args.get(0), "floor", span)), "floor", span)));
         interpreter.defineBuiltin(NativeFunction.of("ceil", 1, (host, args, span) ->
-                (long) Math.ceil(Values.asDouble(args.get(0)))));
-        interpreter.defineBuiltin(NativeFunction.of("round", 1, (host, args, span) ->
-                Math.round(Values.asDouble(args.get(0)))));
+                whole(Math.ceil(asNumber(args.get(0), "ceil", span)), "ceil", span)));
+        interpreter.defineBuiltin(NativeFunction.of("round", 1, (host, args, span) -> {
+            double value = asNumber(args.get(0), "round", span);
+            requireWhole(value, "round", span);
+            // Beyond the long range the double is already integral (spacing > 1), so the
+            // value itself is the rounded result. Math.round would saturate at Long.MAX_VALUE.
+            return Values.fitsInLong(value) ? (Object) Math.round(value) : (Object) value;
+        }));
         interpreter.defineBuiltin(NativeFunction.of("round", 2, (host, args, span) -> {
-            double value = Values.asDouble(args.get(0));
+            double value = asNumber(args.get(0), "round", span);
             long places = Values.asLong(args.get(1));
             if (places < 0 || places > 15) {
                 throw new OqError("round() places must be between 0 and 15, got " + places, span);
             }
             double factor = Math.pow(10, places);
-            double rounded = Math.round(value * factor) / factor;
-            if (places == 0) return (long) rounded;
+            double scaled = value * factor;
+            if (!Double.isFinite(scaled)) {
+                throw new OqError("round() cannot round " + Values.display(value)
+                        + " to " + places + " places: the number is too large", span);
+            }
+            // A value whose scaled form does not fit a long has no fractional digits left to
+            // round at this precision, so it is already the answer. Using Math.round there
+            // would saturate at Long.MAX_VALUE and silently change the number.
+            double rounded = Values.fitsInLong(scaled) ? Math.round(scaled) / factor : value;
+            if (places == 0) return whole(rounded, "round", span);
             return rounded;
         }));
         interpreter.defineBuiltin(NativeFunction.of("sqrt", 1, (host, args, span) ->
-                Math.sqrt(Values.asDouble(args.get(0)))));
+                Math.sqrt(asNumber(args.get(0), "sqrt", span))));
         interpreter.defineBuiltin(NativeFunction.of("pow", 2, (host, args, span) ->
                 Values.power(args.get(0), args.get(1), span)));
         interpreter.defineBuiltin(NativeFunction.of("min", 2, (host, args, span) ->
@@ -546,6 +566,42 @@ public final class Stdlib {
         } catch (java.util.regex.PatternSyntaxException e) {
             throw new OqError("invalid regular expression: " + e.getDescription(), span,
                     "Check the pattern syntax.");
+        }
+    }
+
+    /**
+     * A numeric argument for a math builtin. {@link Values#asDouble} throws a raw
+     * {@code IllegalArgumentException} for text, nothing or collections, which would reach the
+     * CLI as an internal error; this reports the usual type diagnostic instead.
+     */
+    private static double asNumber(Object value, String builtin, Span span) {
+        if (Values.isNumber(value)) return Values.asDouble(value);
+        throw new OqError(builtin + "() needs a number, got " + Values.typeName(value), span);
+    }
+
+    /**
+     * An integer argument for a builtin that needs one, with the same diagnostic a wrong type
+     * gets everywhere else. {@link Values#asLong} throws a raw {@code IllegalArgumentException},
+     * which reached the CLI as "internal error" instead of a program error.
+     */
+    private static long wholeNumber(Object value, String builtin, Span span) {
+        return Values.asLong(asNumber(value, builtin, span));
+    }
+
+    /**
+     * The whole-number result of {@code floor}, {@code ceil} and friends, or the decimal when
+     * the value does not fit a {@code long}. Casting {@code 1e300} to {@code long} saturates at
+     * {@link Long#MAX_VALUE}, which silently turns a large number into a wrong one.
+     */
+    private static Object whole(double value, String builtin, Span span) {
+        requireWhole(value, builtin, span);
+        return Values.fitsInLong(value) ? (Object) (long) value : (Object) value;
+    }
+
+    private static void requireWhole(double value, String builtin, Span span) {
+        if (!Double.isFinite(value)) {
+            throw new OqError(builtin + "() needs a finite number, got "
+                    + Values.display(value), span);
         }
     }
 

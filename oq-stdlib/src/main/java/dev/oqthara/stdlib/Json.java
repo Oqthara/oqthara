@@ -188,17 +188,29 @@ public final class Json {
         }
         String text = src.substring(start, pos);
         try {
-            if (decimal) return Double.parseDouble(text);
+            if (decimal) return finite(Double.parseDouble(text), text);
             return Long.parseLong(text);
         } catch (NumberFormatException e) {
             // Out-of-range integers fall back to a double, which never throws for valid
             // numeric syntax; guard anyway so a malformed value cannot escape as a crash.
             try {
-                return Double.parseDouble(text);
+                return finite(Double.parseDouble(text), text);
             } catch (NumberFormatException again) {
                 throw fail("invalid number '" + text + "'");
             }
         }
+    }
+
+    /**
+     * A parsed number that overflows a double ({@code 1e400}) or has no finite value is not
+     * usable JSON: the writer cannot represent it and every round-trip would change it. Reject
+     * it with the same diagnostic instead of returning {@code Infinity}/{@code NaN}.
+     */
+    private Object finite(double value, String text) {
+        if (!Double.isFinite(value)) {
+            throw fail("number '" + text + "' is out of range");
+        }
+        return value;
     }
 
     private Object literal(String text, Object value) {
@@ -249,7 +261,13 @@ public final class Json {
             return;
         }
         if (value instanceof Double d) {
-            if (d == Math.rint(d) && !Double.isInfinite(d)) {
+            if (!Double.isFinite(d)) {
+                // The writer has no source position of its own; the caller's span is not
+                // threaded through every recursive call just for this message.
+                throw new OqError("cannot write " + Values.display(d) + " as JSON",
+                        Span.synthetic());
+            }
+            if (d == Math.rint(d) && Values.fitsInLong(d)) {
                 sb.append(d.longValue());
             } else {
                 sb.append(d);

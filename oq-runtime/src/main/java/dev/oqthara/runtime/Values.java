@@ -30,6 +30,18 @@ public final class Values {
         return value instanceof Long || value instanceof Double;
     }
 
+    /** The first double that no longer fits in a {@code long}: 2^63. */
+    private static final double LONG_LIMIT = 0x1.0p63;
+
+    /**
+     * True when casting {@code value} to {@code long} is exact and cannot saturate. Every
+     * conversion that formats a decimal as a whole number goes through this, so a huge double
+     * becomes {@code 1.0E300} instead of silently turning into {@link Long#MAX_VALUE}.
+     */
+    public static boolean fitsInLong(double value) {
+        return Double.isFinite(value) && value >= -LONG_LIMIT && value < LONG_LIMIT;
+    }
+
     public static double asDouble(Object value) {
         if (value instanceof Long l) return l;
         if (value instanceof Double d) return d;
@@ -274,7 +286,12 @@ public final class Values {
     public static Object power(Object a, Object b, Span span) {
         if (isNumber(a) && isNumber(b)) {
             double result = Math.pow(asDouble(a), asDouble(b));
-            if (a instanceof Long && b instanceof Long && b instanceof Long n && n >= 0 && result == Math.rint(result)) {
+            // `Math.pow(10, 400)` is infinity, and `(long) Double.POSITIVE_INFINITY` is
+            // Long.MAX_VALUE, so an unchecked cast turned an unrepresentable power into a
+            // plausible-looking wrong answer. Only an exact whole value that fits stays a
+            // long; everything else keeps its double, including infinity.
+            if (a instanceof Long && b instanceof Long n && n >= 0
+                    && result == Math.rint(result) && fitsInLong(result)) {
                 return (long) result;
             }
             return result;

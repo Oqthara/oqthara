@@ -33,3 +33,7 @@ _site/
 # Python bytecode from scripts/
 __pycache__/
 *.pyc
+
+# Jazzer writes minimized crashing inputs next to the fuzz source set.
+crash-*
+oq-*/crash-*

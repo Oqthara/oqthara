@@ -14,6 +14,7 @@ fuzzing. Fuzzing is part of the permanent engineering lifecycle, not a one-off a
 | `PipelineFuzzTest#fullPipelineNeverThrowsUnexpectedExceptions` | `fuzzPipeline` | parse → lower → class-file emission | any exception other than `OqError`/`NotSupported`, or a malformed class file |
 | `JsonFuzzTest#jsonParseNeverThrowsUnexpectedExceptions` | `fuzzJsonParse` | JSON text, then round-trips through both writers | any exception other than `OqError` |
 | `JsonFuzzTest#deeplyNestedJsonDoesNotOverflow` | `fuzzJsonNesting` | arrays nested up to 2000 deep | `StackOverflowError` |
+| `StdlibFuzzTest#pureBuiltinsNeverThrowUnexpectedExceptions` | `fuzzStdlibBuiltins` | pure text, math, JSON and collection builtins with arbitrary arguments | any exception other than `OqError`; a result the JSON writer cannot express |
 
 **A lexical or syntax error is a valid outcome.** The contract is that user input produces a
 diagnostic, never an internal crash.
