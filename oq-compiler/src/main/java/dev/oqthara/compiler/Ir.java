@@ -13,7 +13,7 @@ public final class Ir {
             Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeMap, MakeSet, Index,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
             GetField, SetField, Range, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
-            JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse {
+            JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -47,7 +47,14 @@ public final class Ir {
     public record Call(String name, int argc) implements Instr {
     }
 
-    public record CallValue(int argc) implements Instr {
+    public record CallValue(int argc, String name) implements Instr {
+    }
+
+    /**
+     * Creates a function value: the name of a static method on the generated class, its
+     * arity, and how many captured values are already on the stack.
+     */
+    public record Lambda(String method, int arity, int captures) implements Instr {
     }
 
     public record Print(int count) implements Instr {
@@ -245,7 +252,8 @@ public final class Ir {
             case Store s -> "store " + s.name();
             case Declare d -> "declare " + d.name() + (d.fixed() ? " const" : "");
             case Call c -> "call " + c.name() + "/" + c.argc();
-            case CallValue c -> "call_value/" + c.argc();
+            case CallValue c -> "call_value/" + c.argc() + " " + c.name();
+            case Lambda l -> "lambda " + l.method() + "/" + l.arity() + " captures " + l.captures();
             case Print p -> "print " + p.count();
             case Binary b -> "binary " + b.op();
             case Unary u -> "unary " + u.op();

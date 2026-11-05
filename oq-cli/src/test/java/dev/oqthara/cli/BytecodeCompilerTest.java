@@ -345,15 +345,53 @@ class BytecodeCompilerTest {
 
     @Test
     void unsupportedConstructsAreRefusedWithAReason() {
-        // Lambdas cannot become a value in a compiled class, so they are refused by name
-        // instead of letting a method call receive a placeholder receiver.
-        assertFalse(BytecodeCompiler.canCompile(ir("xs = [1, 2]\nprint xs.map(x -> x)")));
-        String lambdaReason = BytecodeCompiler.whyNot(ir("xs = [1, 2]\nprint xs.map(x -> x)"));
-        assertTrue(lambdaReason.contains("lambda"), lambdaReason);
+        // A lambda now compiles, but the *capturing* form still does not, and `use` does not.
+        assertTrue(BytecodeCompiler.canCompile(ir("xs = [1, 2]\nprint xs.map(x -> x)")));
+        String captureReason = BytecodeCompiler.whyNot(
+                ir("n = 2\nf = x -> x + n\nprint f(1)"));
+        assertNotNull(captureReason, "a capturing lambda must fall back");
+        assertTrue(captureReason.contains("enclosing scope"), captureReason);
 
         assertFalse(BytecodeCompiler.canCompile(ir("x = 1\nfun f()\n  return x\nend\nprint f()")));
         assertTrue(BytecodeCompiler.whyNot(ir("x = 1\nfun f()\n  return x\nend\nprint f()"))
                 .contains("enclosing"));
+    }
+
+    @Test
+    void compilesLambdasThatCaptureNothing(@TempDir Path dir) throws Exception {
+        // A lambda becomes one extra static method plus a CompiledFunction value, so the call
+        // goes through the value rather than through a name.
+        String source = """
+                double = x -> x * 2
+                print double(21)
+                print double(1)
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("42\n2\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesALambdaPassedToAStdlibMethod(@TempDir Path dir) throws Exception {
+        // `Methods` used to refuse every callback because it had no host; a compiled
+        // function is an ordinary OqCallable, so the method resolves it like the interpreter.
+        String source = """
+                xs = [1, 2, 3, 4]
+                print xs.map(x -> x * x)
+                print xs.filter(x -> x % 2 == 0)
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("[1, 4, 9, 16]\n[2, 4]\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void aCapturingLambdaFallsBackInsteadOfBindingAStaleValue(@TempDir Path dir) throws Exception {
+        // Capturing would copy the enclosing value at creation time, and the interpreter
+        // reads it at call time; silently binding the old value would be a wrong answer.
+        String source = "n = 2\nf = x -> x + n\nprint f(1)";
+        assertNotNull(BytecodeCompiler.whyNot(ir(source)));
+        assertEquals("3\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
     }
 
     @Test
@@ -996,7 +1034,7 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(169, compiled,
+        assertEquals(182, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
     }
 

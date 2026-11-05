@@ -130,8 +130,14 @@ public final class Methods {
 
         @Override
         public Object call(Object callee, List<Object> args, Span span) {
-            throw new OqError("callbacks are not compiled yet", span,
-                    "Use the interpreter for programs that pass functions to methods.");
+            // A compiled lambda reaches a stdlib method such as `map` or `sort_by` through
+            // here. It is an ordinary OqCallable, so the method resolves it the same way the
+            // interpreter does; anything else gets the interpreter's own diagnostic.
+            if (callee instanceof OqCallable callable) {
+                return callable.call(this, args, span);
+            }
+            throw new OqError("'" + Values.typeName(callee) + "' is not a function", span,
+                    "This value cannot be called.");
         }
 
         @Override

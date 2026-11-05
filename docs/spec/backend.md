@@ -76,7 +76,7 @@ The compiled subset today:
 | Supported | Refused (falls back) |
 |---|---|
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
-| variables: assignment, reassignment, scoping, shadowing | lambdas, callbacks, closures |
+| variables: assignment, reassignment, scoping, shadowing | lambdas that capture an enclosing variable |
 | top-level `fun` with parameters, `return`, recursion, mutual recursion | `use`, modules |
 | `+ - * / % **` and unary `-`, unary `+` | `try` with an empty body |
 | `try` / `catch`, nested, with rethrow | |
@@ -84,7 +84,8 @@ The compiled subset today:
 | `and`, `or`, `not` with short-circuiting | `args()`, `input()`, `exit()` |
 | `if` / `else`, including `else if` chains | the filesystem, clock, randomness, network and process builtins |
 | `while`, `for ... to`, `for ... until`, descending ranges | `spawn`, `await`, `done`, `par_map` and other callable-taking builtins |
-| `break`, `continue`, nested loops | lambdas and function values |
+| `break`, `continue`, nested loops | a capturing lambda stored for later |
+| lambdas that capture nothing, called directly or through a stdlib method (`xs.map(x -> x * x)`) | |
 | list, set and map literals; `xs[i]`; `xs[i] = v` | Java interop |
 | `length(x)` over text, list, set, map and range | |
 | `1 to 5` as a value | |
@@ -96,7 +97,7 @@ The compiled subset today:
 | method calls: `.push()`, `.add()`, `.pop()`, `.keys()`, `.values()`, `.upper()` ... | |
 | deterministic stdlib builtins: `abs`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `min`, `max`, `clamp`, `number`, `text`, `type_of`, `is_nothing`, `is_number`, `is_text`, `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `format`, `set`, `list`, `zip`, `keys`, `values`, `sum`, `sort`, `reverse`, `unique`, `push`, `pop`, `clone`, `range`, `assert`, `json_parse`, `json`, `json_write`, `json_pretty` | |
 
-As of T-0071, **169 of the 197 executable conformance programs** compile to real bytecode
+As of T-0037b, **182 of the 197 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
 silently go down. Every refusal is reported by name in the `oq build` output.
@@ -214,11 +215,13 @@ differently from `oq run` would be worse than no jar.
 
 The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
 
-1. **Closures and lambdas.** A function that touches an enclosing variable is refused, and a
-   lambda is refused by name (`lambdas are not compiled yet`). Captured environments need a
-   generated environment class, which is the next stage of the backend. Every conformance
-   program that still falls back does so because of a lambda, a closure, or a builtin, so
-   this is the single biggest remaining tier.
+1. **Capturing closures.** A lambda that captures nothing now compiles: it becomes one extra
+   static method on the generated class plus a `runtime.CompiledFunction` value holding the
+   method name, so a call goes through the value and `xs.map(x -> x * x)` works. A lambda
+   that reads an enclosing variable is still refused, because capturing would copy that
+   variable's value at creation time while the interpreter reads it at call time; binding the
+   stale value silently would be a wrong answer. A function that touches a top-level variable
+   is refused for the same reason.
 2. **Java interop.** `use` is refused by name; compiled code cannot call Java classes directly.
    Method calls on Java objects that arrive from a compiled call still work, because they go
    through `Methods` -> `JavaBridge`, exactly as under the interpreter.
@@ -342,7 +345,7 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
    See "Why data fields are still boxed `Object`".
 8. ~~**T-0071** — stdlib builtins dispatched from generated code.~~ Done: deterministic
    builtins go through `stdlib.Builtins`, which calls the interpreter's own `NativeFunction`.
-9. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+9. ~~**T-0037b** — lambdas~~ Done for non-capturing lambdas; captured environments remain.
 10. **T-0049** — Java interop from generated code.
 11. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
