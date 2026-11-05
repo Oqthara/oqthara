@@ -7,4 +7,5 @@ include(
     "oq-compiler",
     "oq-cli",
     "oq-lsp",
+    "bench-jmh",
 )

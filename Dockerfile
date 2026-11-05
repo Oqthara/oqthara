@@ -11,6 +11,9 @@ COPY oq-stdlib ./oq-stdlib
 COPY oq-compiler ./oq-compiler
 COPY oq-cli ./oq-cli
 COPY oq-lsp ./oq-lsp
+# settings.gradle.kts includes every module, so the image build needs the module
+# directories to exist even though only the CLI jar is built.
+COPY bench-jmh ./bench-jmh
 
 RUN chmod +x gradlew \
     && ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
