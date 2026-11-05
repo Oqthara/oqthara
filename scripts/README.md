@@ -24,7 +24,9 @@ library only, no install step. Every script is run from the repository root.
 
 | Path | What it does |
 | --- | --- |
-| `check-circleci.py` | Verifies the CircleCI configuration matches the Gradle tasks CI runs. |
+| `check-circleci.py` | Fail-closed release gate: requires the three CircleCI job statuses on a commit. |
+| `apply-branch-protection.sh` | Applies the `main` ruleset (12 required checks, no bypass, squash-only). |
+| `verify-conformance.py` | Runs `oq run` and the compiled jar over the whole corpus and reports divergences. |
 
 ## Benchmarks
 
