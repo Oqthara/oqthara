@@ -443,7 +443,16 @@ public final class Parser {
         while (true) {
             if (match(Token.Kind.LPAREN)) {
                 Token paren = previous();
-                List<Ast.Expr> args = arguments();
+                // `f(f(f(...)))` nests through the argument list, and `primary()` has already
+                // released its depth by the time the arguments are parsed. Holding the counter
+                // across the arguments is what makes this shape bounded.
+                enterNesting();
+                List<Ast.Expr> args;
+                try {
+                    args = arguments();
+                } finally {
+                    nesting--;
+                }
                 expr = new Ast.Call(expr, args, paren.span());
             } else if (match(Token.Kind.LBRACKET)) {
                 Token bracket = previous();
@@ -455,7 +464,13 @@ public final class Parser {
                 Token name = expect(Token.Kind.IDENT, "a field or method name after '.'");
                 if (check(Token.Kind.LPAREN)) {
                     advance();
-                    List<Ast.Expr> args = arguments();
+                    enterNesting();
+                    List<Ast.Expr> args;
+                    try {
+                        args = arguments();
+                    } finally {
+                        nesting--;
+                    }
                     expr = new Ast.MethodCall(expr, name.lexeme(), args, dot.span());
                 } else {
                     expr = new Ast.Field(expr, name.lexeme(), dot.span());
