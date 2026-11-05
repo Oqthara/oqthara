@@ -14,31 +14,31 @@ public final class Arithmetic {
     }
 
     public static Object add(Object a, Object b) {
-        return Values.add(a, b, Span.synthetic());
+        return Values.add(a, b, Errors.current());
     }
 
     public static Object subtract(Object a, Object b) {
-        return Values.subtract(a, b, Span.synthetic());
+        return Values.subtract(a, b, Errors.current());
     }
 
     public static Object multiply(Object a, Object b) {
-        return Values.multiply(a, b, Span.synthetic());
+        return Values.multiply(a, b, Errors.current());
     }
 
     public static Object divide(Object a, Object b) {
-        return Values.divide(a, b, Span.synthetic());
+        return Values.divide(a, b, Errors.current());
     }
 
     public static Object modulo(Object a, Object b) {
-        return Values.modulo(a, b, Span.synthetic());
+        return Values.modulo(a, b, Errors.current());
     }
 
     public static Object power(Object a, Object b) {
-        return Values.power(a, b, Span.synthetic());
+        return Values.power(a, b, Errors.current());
     }
 
     public static Object negate(Object a) {
-        return Values.negate(a, Span.synthetic());
+        return Values.negate(a, Errors.current());
     }
 
     /**
@@ -71,19 +71,19 @@ public final class Arithmetic {
     }
 
     public static Object less(Object a, Object b) {
-        return Values.compare(a, b, Span.synthetic()) < 0;
+        return Values.compare(a, b, Errors.current()) < 0;
     }
 
     public static Object lessOrEqual(Object a, Object b) {
-        return Values.compare(a, b, Span.synthetic()) <= 0;
+        return Values.compare(a, b, Errors.current()) <= 0;
     }
 
     public static Object greater(Object a, Object b) {
-        return Values.compare(a, b, Span.synthetic()) > 0;
+        return Values.compare(a, b, Errors.current()) > 0;
     }
 
     public static Object greaterOrEqual(Object a, Object b) {
-        return Values.compare(a, b, Span.synthetic()) >= 0;
+        return Values.compare(a, b, Errors.current()) >= 0;
     }
 
     public static Object equal(Object a, Object b) {

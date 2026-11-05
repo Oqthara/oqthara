@@ -38,6 +38,14 @@ public final class Lowering {
     private List<Ir.Instr> code;
     private int tempCounter = 0;
     private int labelCounter = 0;
+    /**
+     * How many {@code try} bodies enclose the current statement. Source marks are emitted only
+     * inside one: an error there may be caught and its span read by the program, so the span
+     * must be exact. Everywhere else the position cannot be observed through a compiled
+     * program, and leaving those instructions out keeps the IR of already-compiled programs
+     * byte-for-byte unchanged.
+     */
+    private int tryDepth = 0;
 
     public static Ir.Program lower(Ast.Program program) {
         return lowerWithReport(program).program();
@@ -159,11 +167,13 @@ public final class Lowering {
             case Ast.CompoundAssign assign -> {
                 code.add(new Ir.Load(assign.name()));
                 expression(assign.value());
+                mark(assign.span());
                 code.add(new Ir.Binary(operatorName(assign.op())));
                 code.add(new Ir.Store(assign.name()));
             }
             case Ast.Command command -> {
                 emitCallArguments(command.args());
+                mark(command.span());
                 code.add(new Ir.Call(command.name(), command.args().size()));
                 // print/write are void in the backend; every other command yields a value,
                 // which a statement discards. Emitting a Pop for a void call underflows.
@@ -208,20 +218,18 @@ public final class Lowering {
                 expression(assign.target());
                 expression(assign.index());
                 expression(assign.value());
+                mark(assign.span());
                 // SetIndex is void in the bytecode backend, so nothing is left to pop.
                 code.add(new Ir.SetIndex());
             }
             case Ast.FieldAssign assign -> {
                 expression(assign.target());
                 expression(assign.value());
+                mark(assign.span());
                 // SetField is void in the bytecode backend, so nothing is left to pop.
                 code.add(new Ir.SetField(assign.field()));
             }
-            case Ast.TryStmt ignored -> {
-                // The backend never emitted an exception table, so lowering a handler would
-                // promise catch semantics that the generated class cannot deliver.
-                code.add(new Ir.Refuse("'try' / 'catch' is not compiled yet"));
-            }
+            case Ast.TryStmt attempt -> tryStatement(attempt);
             case Ast.UseStmt ignored -> {
                 // Resolving a Java class is interpreter-only; compiling it would need the
                 // Java interop bridge, which the backend does not emit yet.
@@ -233,14 +241,43 @@ public final class Lowering {
         }
     }
 
+    private void tryStatement(Ast.TryStmt attempt) {
+        String handler = label("catch");
+        String done = label("catch_end");
+        code.add(new Ir.TryStart(handler));
+        code.add(new Ir.ScopeEnter());
+        tryDepth++;
+        block(attempt.body());
+        tryDepth--;
+        code.add(new Ir.ScopeExit());
+        code.add(new Ir.TryEnd(handler));
+        // Normal completion skips the handler, which is reachable only from the exception
+        // table entry. The handler label carries the caught OqError on the operand stack.
+        code.add(new Ir.JumpLabel(done));
+        code.add(new Ir.HandlerLabel(handler));
+        code.add(new Ir.CatchValue());
+        code.add(new Ir.ScopeEnter());
+        code.add(new Ir.Declare(attempt.errorName(), true));
+        tryDepth++;
+        block(attempt.handler());
+        tryDepth--;
+        code.add(new Ir.ScopeExit());
+        code.add(new Ir.Label(done));
+    }
+
     private Ir.Function function(String name, List<String> params, List<Ast.Stmt> body) {
         List<Ir.Instr> saved = code;
         code = Ir.list();
+        // A function body is marked unconditionally: an error raised here can be caught by a
+        // caller's `try`, and the span it reports must be this function's own source line.
+        int savedTryDepth = tryDepth;
+        tryDepth = Math.max(tryDepth, 1);
         pushTypes(body);
         for (Ast.Stmt stmt : body) {
             statement(stmt);
         }
         popTypes();
+        tryDepth = savedTryDepth;
         code.add(new Ir.Const(null));
         code.add(new Ir.Return());
         Ir.Function function = new Ir.Function(name, params, List.copyOf(code));
@@ -384,6 +421,7 @@ public final class Lowering {
         // A real iterator, not length + Index: map keys and set members are not 0..n-1,
         // and the interpreter iterates the same way through Values.iterable.
         expression(loop.iterable());
+        mark(loop.span());
         code.add(new Ir.IterNew());
         code.add(new Ir.Store(iterator));
         code.add(new Ir.Label(head));
@@ -432,16 +470,19 @@ public final class Lowering {
                 }
                 code.add(new Ir.MakeMap(map.entries().size()));
             }
-        case Ast.Unary unary -> {
-            expression(unary.operand());
-            code.add(new Ir.Unary(unary.op() == Token.Kind.KEYWORD ? "not" : operatorName(unary.op())));
-            if (unary.op() == Token.Kind.KEYWORD) {
-                code.add(new Ir.ToBool());
+            case Ast.Unary unary -> {
+                expression(unary.operand());
+                mark(unary.span());
+                code.add(new Ir.Unary(
+                        unary.op() == Token.Kind.KEYWORD ? "not" : operatorName(unary.op())));
+                if (unary.op() == Token.Kind.KEYWORD) {
+                    code.add(new Ir.ToBool());
+                }
             }
-        }
             case Ast.Binary binary -> {
                 expression(binary.left());
                 expression(binary.right());
+                mark(binary.span());
                 code.add(new Ir.Binary(operatorName(binary.op())));
             }
             case Ast.Logical logical -> {
@@ -482,6 +523,7 @@ public final class Lowering {
                         constructor(call, type);
                     } else {
                         emitCallArguments(call.args());
+                        mark(call.span());
                         code.add(new Ir.Call(var.name(), call.args().size()));
                     }
                 } else {
@@ -493,15 +535,18 @@ public final class Lowering {
             case Ast.MethodCall call -> {
                 expression(call.receiver());
                 emitCallArguments(call.args());
+                mark(call.span());
                 code.add(new Ir.MethodCall(call.method(), call.args().size() + 1));
             }
             case Ast.Index index -> {
                 expression(index.target());
                 expression(index.index());
+                mark(index.span());
                 code.add(new Ir.Index());
             }
             case Ast.Field field -> {
                 expression(field.target());
+                mark(field.span());
                 code.add(new Ir.GetField(field.name()));
             }
             case Ast.Lambda lambda -> code.add(new Ir.Refuse(
@@ -510,11 +555,13 @@ public final class Lowering {
             case Ast.InExpr in -> {
                 expression(in.item());
                 expression(in.container());
+                mark(in.span());
                 code.add(new Ir.Contains());
             }
             case Ast.RangeExpr range -> {
                 expression(range.from());
                 expression(range.to());
+                mark(range.span());
                 code.add(new Ir.Range(range.inclusive()));
             }
         }
@@ -620,6 +667,14 @@ public final class Lowering {
             case Ast.Binary binary -> isScopeFree(binary.left()) && isScopeFree(binary.right());
             default -> false;
         };
+    }
+
+    /**
+     * Records the source position of the operation that follows, so an error it raises can be
+     * caught with the same line, column and file as {@code oq run}.
+     */
+    private void mark(Span span) {
+        if (span != null && tryDepth > 0) code.add(new Ir.At(span));
     }
 
     private String temp(String prefix) {
