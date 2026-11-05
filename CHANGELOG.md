@@ -128,6 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `oq build` with AST-to-IR lowering, an IR disassembler (`--emit-ir`), and runtime
   backend detection: on JDK 24+ it selects the classfile backend, and on JDK 21-23 it
   explains the requirement and exits with code 3.
+- New `bench-jmh` Gradle module with JMH benchmarks for steady-state interpreter
+  throughput (`numericLoop`, `fib`, `listOps`, `stringBuild`). Each benchmark parses its
+  program once, runs it on a fresh CLI-equivalent interpreter writing to an in-memory
+  sink, and asserts the exact expected output before measuring. The module is not wired
+  into `check`/`build`, and a JUnit test re-checks every workload without running JMH.
 
 ### Fixed
 
