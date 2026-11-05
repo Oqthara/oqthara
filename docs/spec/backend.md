@@ -132,9 +132,11 @@ contains"). Each `try` in the program contributes its own row, and because rows 
 offset ascending an inner region always wins for its own range, so a caught error is never
 mistaken for an uncaught one.
 
-One known gap remains and is tracked as **T-0073**: `print(1, 2)` written as an expression is
-refused rather than compiled, because the statement lowering pops a value the void call never
-pushes. That falls back to the launcher jar, so no program changes meaning.
+`print` and `write` also compile when used as expressions. The interpreter's builtin returns
+`nothing`, so the generated call performs the output and then leaves `nothing` on the stack;
+the statement form discards it with the same `Pop` every other call uses. There is therefore
+no void special case keyed on the name, and `x = print(1)` and `print(1) + 1` behave exactly
+as they do under `oq run`, including the arithmetic failure the latter raises.
 
 `data` types are a compile-time table in the lowering, because the interpreter hoists every
 declaration in a block before running it. A construction pushes the given values, evaluates

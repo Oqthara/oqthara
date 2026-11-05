@@ -951,6 +951,17 @@ public final class BytecodeCompiler {
             call(ERRORS, "mark", "(Ljava/lang/String;Ljava/lang/Object;Ljava/lang/Object;)V");
         }
 
+        /**
+         * Leaves {@code nothing} on the stack. The void print helpers write to stdout only;
+         * Oqthara's {@code print}/{@code write} calls still evaluate to {@code nothing}
+         * (the interpreter returns {@code null}), so the IR contract of one value per call
+         * is restored here rather than by a special case in every consumer.
+         */
+        private void pushNothing() {
+            bytes.write(ACONST_NULL);
+            push();
+        }
+
         private void emitConstant(Object value) {
             if (value == null) {
                 bytes.write(ACONST_NULL);
@@ -1064,21 +1075,25 @@ public final class BytecodeCompiler {
                 case "print" -> {
                     if (call.argc() == 1) {
                         call(ARITHMETIC, "print", "(Ljava/lang/Object;)V");
-                        return;
+                    } else {
+                        // `print a, b` is the interpreter's variadic print, which separates
+                        // the values with a space. Build the same argument list and call it.
+                        emitMakeCollection(call.argc(), slot, false);
+                        call(BUILTINS, "printList", "(Ljava/lang/Object;)V");
                     }
-                    // `print a, b` is the interpreter's variadic print, which separates the
-                    // values with a space. Build the same argument list and call it there.
-                    emitMakeCollection(call.argc(), slot, false);
-                    call(BUILTINS, "printList", "(Ljava/lang/Object;)V");
+                    // Every Ir.Call leaves exactly one value so the IR needs no void special
+                    // case; print yields the interpreter's `nothing`.
+                    pushNothing();
                 }
                 case "write" -> {
                     if (call.argc() == 1) {
                         call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
-                        return;
+                    } else {
+                        // `write a, b` concatenates without a separator.
+                        emitMakeCollection(call.argc(), slot, false);
+                        call(BUILTINS, "writeList", "(Ljava/lang/Object;)V");
                     }
-                    // `write a, b` concatenates without a separator.
-                    emitMakeCollection(call.argc(), slot, false);
-                    call(BUILTINS, "writeList", "(Ljava/lang/Object;)V");
+                    pushNothing();
                 }
                 case "length" -> {
                     requireArgc(call, 1);

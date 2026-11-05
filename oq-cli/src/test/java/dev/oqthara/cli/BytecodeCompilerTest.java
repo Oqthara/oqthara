@@ -644,6 +644,57 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void compilesPrintAndWriteInExpressionPosition(@TempDir Path dir) throws Exception {
+        // A print call is an ordinary expression whose value is `nothing`: the compiled call
+        // must leave that value on the stack even though the helper itself is void.
+        List<String> programs = List.of(
+                "print(1, 2)",
+                "print(1)",
+                "write(\"a\")",
+                "x = print(1)\nprint type_of(x)",
+                "y = print(1, 2)\nprint type_of(y)",
+                "z = write(\"a\")\nprint type_of(z)");
+        for (String source : programs) {
+            String reason = BytecodeCompiler.whyNot(ir(source));
+            assertNull(reason, "expected " + source + " to compile, refused because: " + reason);
+            OqRunner.Result expected = OqRunner.run("<t>", source, List.of(), "", dir);
+            assertEquals(0, expected.code(), source);
+            assertEquals(expected.stdout(), compileAndRun(source, dir), "mismatch for: " + source);
+        }
+    }
+
+    @Test
+    void printAsAnExpressionFailsIdenticallyOnBothBackends(@TempDir Path dir) throws Exception {
+        // `print(1) + 1` prints 1 and then fails, because the call evaluates to nothing. The
+        // compiler must not turn that into a silent success or a different message.
+        String source = "print(1) + 1";
+        OqRunner.Result expected = OqRunner.run("<t>", source, List.of(), "", dir);
+        assertEquals(1, expected.code());
+        assertEquals("1\n", expected.stdout());
+        assertTrue(expected.stderr().contains("cannot add nothing and number"), expected.stderr());
+
+        Path jar = dir.resolve("prog.jar");
+        byte[] compiled = BytecodeCompiler.compile(ir(source), "oq.generated.Program");
+        JarBuilder.build(jar, "oq.generated.Program", source, "prog.oq", compiled);
+        ProcessResult result = runJarProcess(jar, dir);
+        assertEquals(1, result.exit(), result.stderr());
+        assertEquals(expected.stdout(), result.stdout());
+        assertTrue(result.stderr().contains("cannot add nothing and number"), result.stderr());
+    }
+
+    @Test
+    void consecutiveStatementPrintsLeaveNoValueBehind(@TempDir Path dir) throws Exception {
+        // The statement form discards the call's `nothing`; if any value survived, the next
+        // instruction would see a dirty operand stack and the verifier or a later value would
+        // be wrong. Comparing many back-to-back prints catches both.
+        String source = "print 1\nprint 2\nwrite \"a\"\nwrite \"b\"\nprint \"\"\n"
+                + "print 3, 4\nprint 5\nprint 6";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("1\n2\nab\n3 4\n5\n6\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
     void compilesAssertAsAMultiArityBuiltin(@TempDir Path dir) throws Exception {
         String source = "assert true\nassert 1 + 1 == 2, \"math works\"\nprint \"ok\"";
         assertEquals("ok\n", compileAndRun(source, dir));
