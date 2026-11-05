@@ -51,6 +51,25 @@ jobs:
           cp "$GITHUB_WORKSPACE/oq-cli/build/libs/oq.jar" .
           printf 'print "Hello from a released Oqthara!"\n' > hello.oq
           java -jar oq.jar hello.oq | grep -q "Hello from a released Oqthara!"
+      # macOS (JDK 21/25) and Jazzer fuzzing run on CircleCI, not GitHub
+      # (.circleci/config.yml, docs/adr/0002-ci-split.md). Block publishing
+      # unless those workflows are green for this commit.
+      #
+      # Optional secret: CIRCLECI_TOKEN (CircleCI personal API token). Without
+      # it this step prints a warning and skips the check, so forks and the
+      # period before CircleCI is enabled can still release. Add the secret to
+      # enforce the gate. The token is only sent to circleci.com and is
+      # never printed. The commit is matched on any branch, because a tag
+      # pipeline and the main-branch pipeline can both carry the same SHA.
+      - name: Verify CircleCI macOS and fuzzing checks
+        env:
+          CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check-circleci.py \
+            --sha "$GITHUB_SHA" \
+            --timeout-minutes 20 \
+            --interval-seconds 30
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:

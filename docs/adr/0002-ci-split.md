@@ -51,3 +51,10 @@ small open-source project and keep GitHub minutes for the Linux/Windows matrix.
   does not assume GitHub is the only source of truth.
 - If CircleCI becomes unavailable, the fallback is to re-add `macos-latest` to the GitHub
   matrix; the workflow is a single-line change and the ADR documents the tradeoff.
+- The release gate is automated: `release.yml` runs `scripts/check-circleci.py` before
+  `softprops/action-gh-release`. The script matches the pipeline by `$GITHUB_SHA` on any
+  branch, requires successful `macos` jobs for JDK 21 and 25 and a successful `fuzzing`
+  job, and polls for at most 20 minutes. The optional `CIRCLECI_TOKEN` repository secret
+  (a CircleCI personal API token, read-only) enables the check; without it the step warns
+  and skips, so forks can release. The token is sent only to `circleci.com` and is never
+  printed.
