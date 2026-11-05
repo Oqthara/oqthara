@@ -1,7 +1,35 @@
+# Version control and local state
 .git
-.gradle
-*/build
-build
+.gitignore
+.gitattributes
+.worktrees
 .oqthara-ai
 .kilo
+.github
+.circleci
+.idea
+.vscode
+*.iml
+.DS_Store
+
+# Build outputs and caches
+build
+**/build
+.gradle
+**/.gradle
+tmp
+.cifuzz-corpus
+*.class
+
+# Not needed by the image build
+docs
+site
+scripts
+bench
+editors
+conformance
 node_modules
+
+# Python bytecode from scripts
+__pycache__
+*.pyc

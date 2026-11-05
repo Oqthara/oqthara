@@ -73,6 +73,60 @@ class CuratedCorpusTest {
     }
 
     @Test
+    void deeplyNestedUnaryChainsAreRejectedWithADiagnostic() {
+        // Found by fuzzing (T-0021): `not` and unary `-` recurse through unary(), which had
+        // no nesting guard, so ~20k prefixes overflowed the stack and crashed the CLI.
+        for (int depth : new int[]{20000, 50000}) {
+            String minus = "x = " + "-".repeat(depth) + "1";
+            OqError minusError = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                    () -> Parser.parse("<deep>", minus), "unary minus at depth " + depth);
+            assertTrue(minusError.getMessage().contains("nested too deeply"), minusError.getMessage());
+
+            String not = "x = " + "not ".repeat(depth) + "true";
+            OqError notError = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                    () -> Parser.parse("<deep>", not), "'not' chain at depth " + depth);
+            assertTrue(notError.getMessage().contains("nested too deeply"), notError.getMessage());
+        }
+    }
+
+    @Test
+    void deeplyNestedPowerChainsAreRejectedWithADiagnostic() {
+        // Same defect class: `**` is right-recursive and bypassed MAX_NESTING.
+        String source = "x = " + "1 ** ".repeat(50000) + "1";
+        OqError error = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                () -> Parser.parse("<deep>", source));
+        assertTrue(error.getMessage().contains("nested too deeply"), error.getMessage());
+    }
+
+    @Test
+    void reasonableUnaryAndPowerChainsStillParse() {
+        Parser.parse("<ok>", "x = " + "-".repeat(100) + "1");
+        Parser.parse("<ok>", "x = " + "not ".repeat(100) + "true");
+        Parser.parse("<ok>", "x = " + "1 ** ".repeat(100) + "1");
+    }
+
+    @Test
+    void deeplyNestedInterpolationIsRejectedQuickly() {
+        // Found by fuzzing (T-0021): nested text interpolation re-parsed the inner text at
+        // every level, so a ~200 byte file took tens of seconds and grew without bound.
+        String inner = "0";
+        for (int i = 0; i < 40; i++) inner = "{\"" + inner + "\"}";
+        String source = "x = \"" + inner + "\"\n";
+        long start = System.nanoTime();
+        OqError error = org.junit.jupiter.api.Assertions.assertThrows(OqError.class,
+                () -> Parser.parse("<deep>", source));
+        long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(error.getMessage().contains("nested too deeply"), error.getMessage());
+        assertTrue(elapsedMillis < 5000, "took " + elapsedMillis + " ms, expected under 5 s");
+    }
+
+    @Test
+    void shallowInterpolationStillWorks() {
+        Parser.parse("<ok>", "name = \"oq\"\nprint \"hello {name}\"\n");
+        Parser.parse("<ok>", "print \"{\"a\"}\"\n");
+    }
+
+    @Test
     void reasonableBlockNestingStillParses() {
         int depth = 100;
         String source = "if true\n".repeat(depth) + "print 1\n" + "end\n".repeat(depth);

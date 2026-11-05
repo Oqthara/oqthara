@@ -19,12 +19,22 @@ public final class Parser {
     private static final int MAX_NESTING = 128;
     /** Same idea for statements: deeply nested blocks must not crash the parser. */
     private static final int MAX_BLOCK_NESTING = 128;
+    /**
+     * Text interpolation is parsed by a fresh parser and lexer, so the ordinary counters
+     * reset. Without a dedicated cap, nested text such as {@code "{"{"0"}"}"} re-parses the
+     * same bytes at every level: the work grows exponentially and a 100-byte file can hang
+     * the CLI. This limit is deliberately small; real programs nest one or two levels.
+     */
+    public static final int MAX_INTERPOLATION_NESTING = 16;
+    /** Visible so the lexer can recognize the limit it must not swallow as a plain syntax error. */
+    public static final String INTERPOLATION_LIMIT_MESSAGE = "text interpolation is nested too deeply";
 
     private final List<Token> tokens;
     private final String sourceName;
     private int current = 0;
     private int nesting = 0;
     private int blockNesting = 0;
+    private int interpolationNesting = 0;
 
     public Parser(String sourceName, List<Token> tokens) {
         this.sourceName = sourceName;
@@ -398,24 +408,34 @@ public final class Parser {
         Ast.Expr expr = unary();
         if (match(Token.Kind.STARSTAR)) {
             Token op = previous();
-            Ast.Expr right = power();
+            enterNesting();
+            Ast.Expr right;
+            try {
+                right = power();
+            } finally {
+                nesting--;
+            }
             expr = new Ast.Binary(expr, op.kind(), right, op.span());
         }
         return expr;
     }
 
     private Ast.Expr unary() {
+        Token op = null;
         if (match(Token.Kind.MINUS, Token.Kind.PLUS)) {
-            Token op = previous();
-            Ast.Expr operand = unary();
-            return new Ast.Unary(op.kind(), operand, op.span());
+            op = previous();
+        } else if (matchKeyword("not")) {
+            op = previous();
         }
-        if (matchKeyword("not")) {
-            Token op = previous();
-            Ast.Expr operand = unary();
-            return new Ast.Unary(Token.Kind.KEYWORD, operand, op.span());
+        if (op == null) {
+            return postfix();
         }
-        return postfix();
+        enterNesting();
+        try {
+            return new Ast.Unary(op.kind(), unary(), op.span());
+        } finally {
+            nesting--;
+        }
     }
 
     private Ast.Expr postfix() {
@@ -782,14 +802,23 @@ public final class Parser {
     }
 
     private Ast.Expr parseInterpolated(String source, Span span) {
+        if (interpolationNesting >= MAX_INTERPOLATION_NESTING) {
+            throw new OqError(INTERPOLATION_LIMIT_MESSAGE, span,
+                    "The limit is " + MAX_INTERPOLATION_NESTING
+                            + " levels. Move the inner expression to a named value.");
+        }
         source = source.replace("\\\"", "\"").replace("\\'", "'");
         List<Token> innerTokens;
         try {
-            innerTokens = Lexer.lex(sourceName, source);
+            innerTokens = Lexer.lex(sourceName, source, interpolationNesting + 1);
         } catch (OqError e) {
+            if (INTERPOLATION_LIMIT_MESSAGE.equals(e.getMessage())) {
+                throw new OqError(INTERPOLATION_LIMIT_MESSAGE, span, e.hint());
+            }
             throw new OqError("invalid expression inside text: " + e.getMessage(), span, e.hint());
         }
         Parser inner = new Parser(sourceName, innerTokens);
+        inner.interpolationNesting = interpolationNesting + 1;
         try {
             Ast.Expr expr = inner.expression();
             if (!inner.check(Token.Kind.EOF) && !inner.check(Token.Kind.NEWLINE)) {

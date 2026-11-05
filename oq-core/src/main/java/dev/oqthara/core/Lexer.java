@@ -54,6 +54,7 @@ public final class Lexer {
 
     private final String sourceName;
     private final String src;
+    private final int interpolationDepth;
     private int pos = 0;
     private int line = 1;
     private int column = 1;
@@ -61,12 +62,22 @@ public final class Lexer {
     private final List<Token> tokens = new ArrayList<>();
 
     public Lexer(String sourceName, String src) {
+        this(sourceName, src, 0);
+    }
+
+    private Lexer(String sourceName, String src, int interpolationDepth) {
         this.sourceName = sourceName;
         this.src = src;
+        this.interpolationDepth = interpolationDepth;
     }
 
     public static List<Token> lex(String sourceName, String src) {
-        Lexer lexer = new Lexer(sourceName, src);
+        return lex(sourceName, src, 0);
+    }
+
+    /** Same as {@link #lex(String, String)} but carrying the interpolation depth. */
+    static List<Token> lex(String sourceName, String src, int interpolationDepth) {
+        Lexer lexer = new Lexer(sourceName, src, interpolationDepth);
         lexer.run();
         return lexer.tokens;
     }
@@ -175,14 +186,29 @@ public final class Lexer {
         String inner = src.substring(openIndex + 1, closeIndex);
         if (inner.isBlank()) return false;
         if (inner.contains(":")) return false;
+        if (interpolationDepth >= Parser.MAX_INTERPOLATION_NESTING) {
+            throw new OqError(Parser.INTERPOLATION_LIMIT_MESSAGE,
+                    Span.at(sourceName, line, column),
+                    "The limit is " + Parser.MAX_INTERPOLATION_NESTING
+                            + " levels. Move the inner expression to a named value.");
+        }
         try {
-            var tokens = Lexer.lex("<interpolation>", inner);
+            // Keep the caller's file name: the only error that escapes from here is the
+            // nesting limit, and pointing it at a pseudo-file would confuse the user.
+            var tokens = lex(sourceName, inner, interpolationDepth + 1);
             var parser = new dev.oqthara.core.Parser("<interpolation>", tokens);
             var expr = parser.interpolationExpression();
             return expr != null;
+        } catch (OqError e) {
+            if (isNestingLimit(e)) throw e;
+            return false;
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    private static boolean isNestingLimit(OqError error) {
+        return Parser.INTERPOLATION_LIMIT_MESSAGE.equals(error.getMessage());
     }
 
     private int findClosingBrace(int openIndex) {

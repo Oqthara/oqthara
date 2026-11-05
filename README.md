@@ -33,10 +33,13 @@ java -jar oq-cli/build/libs/oq.jar examples/hello.oq
 ./gradlew :oq-cli:packageApp   # native launcher with an embedded JRE
 ```
 
-Docker:
+Docker (build the image locally; nothing is published to a registry yet):
 
 ```bash
-docker run --rm -v "$PWD:/work" oqthara/oq:latest hello.oq
+docker build -t oqthara/oq .
+docker run --rm oqthara/oq --version
+docker run --rm -v "$PWD/examples:/work" oqthara/oq hello.oq
+docker run --rm -v "$PWD/examples:/work" oqthara/oq test tests
 ```
 
 ## A tour
