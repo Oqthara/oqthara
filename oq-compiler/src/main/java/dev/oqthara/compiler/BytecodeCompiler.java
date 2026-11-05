@@ -57,6 +57,7 @@ public final class BytecodeCompiler {
     private static final int LDC2_W = 0x14;
     private static final int ALOAD = 0x19;
     private static final int ASTORE = 0x3A;
+    private static final int DUP = 0x59;
     private static final int POP = 0x57;
     private static final int IFEQ = 0x99;
     private static final int GOTO = 0xA7;
@@ -66,6 +67,7 @@ public final class BytecodeCompiler {
     private static final int RETURN = 0xB1;
 
     private static final String ARITHMETIC = "dev/oqthara/runtime/Arithmetic";
+    private static final String COLLECTIONS = "dev/oqthara/runtime/Collections";
 
     /** Thrown when a program uses a construct outside the compiled subset. */
     public static final class NotSupportedException extends RuntimeException {
@@ -350,6 +352,23 @@ public final class BytecodeCompiler {
                             resolved[i] = declare(declare.name(), declare.fixed(), next++);
                     case Ir.Store store -> resolved[i] = assign(store.name(), next++);
                     case Ir.Load load -> resolved[i] = lookup(load.name()).slot();
+                    // Collection literals need one scratch slot per item (two per map
+                    // entry); resolved[i] records the first slot.
+                    case Ir.MakeList make -> {
+                        resolved[i] = next;
+                        next += make.count();
+                        checkSlotLimit(next);
+                    }
+                    case Ir.MakeSet make -> {
+                        resolved[i] = next;
+                        next += make.count();
+                        checkSlotLimit(next);
+                    }
+                    case Ir.MakeMap make -> {
+                        resolved[i] = next;
+                        next += make.count() * 2;
+                        checkSlotLimit(next);
+                    }
                     default -> {
                     }
                 }
@@ -361,6 +380,12 @@ public final class BytecodeCompiler {
                 topLevelNames = new LinkedHashSet<>(root.keySet());
             }
             return resolved;
+        }
+
+        private void checkSlotLimit(int next) {
+            if (next > 255) {
+                throw new NotSupportedException("too many variables for one method");
+            }
         }
 
         /** VarDecl: always a new binding in the current scope, even if one is visible. */
@@ -534,6 +559,65 @@ public final class BytecodeCompiler {
                 }
                 case Ir.ScopeExit ignored -> {
                 }
+                case Ir.MakeList make -> {
+                    if (reachable) emitMakeCollection(make.count(), slot, false);
+                }
+                case Ir.MakeSet make -> {
+                    if (reachable) emitMakeCollection(make.count(), slot, true);
+                }
+                case Ir.MakeMap make -> {
+                    if (reachable) emitMakeMap(make.count(), slot);
+                }
+                case Ir.Index ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "index",
+                                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.SetIndex ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "setIndex",
+                                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
+                    }
+                }
+                case Ir.Range range -> {
+                    if (reachable) {
+                        call(COLLECTIONS, range.inclusive() ? "rangeInclusive" : "rangeExclusive",
+                                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.IterNew ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "iterator",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.IterHasNext ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "hasNext",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.IterNext ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "next",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.Text ignored -> {
+                    if (reachable) {
+                        call(ARITHMETIC, "text",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.Contains ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "contains",
+                                "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
+                case Ir.MethodCall methodCall -> throw new NotSupportedException(
+                        "method call '." + methodCall.name() + "()' is not compiled yet");
                 default -> throw new NotSupportedException(
                         "instruction " + instr.getClass().getSimpleName() + " is not compiled yet");
             }
@@ -656,6 +740,18 @@ public final class BytecodeCompiler {
         }
 
         private void emitCall(Ir.Call call) {
+            // The interpreter hoists user functions over the builtins, so a user `fun length`
+            // must win here too. Builtin resolution is only the fallback.
+            Integer arity = functionArities.get(call.name());
+            if (arity != null) {
+                if (call.argc() != arity) {
+                    throw new NotSupportedException("call to '" + call.name() + "' with "
+                            + call.argc() + " argument(s), but the function declares "
+                            + arity + " parameter(s)");
+                }
+                call(ownerInternalName, call.name(), functionDescriptor(arity));
+                return;
+            }
             switch (call.name()) {
                 case "print" -> {
                     requireArgc(call, 1);
@@ -665,22 +761,49 @@ public final class BytecodeCompiler {
                     requireArgc(call, 1);
                     call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
                 }
-                default -> {
-                    Integer arity = functionArities.get(call.name());
-                    if (arity != null) {
-                        if (call.argc() != arity) {
-                            throw new NotSupportedException("call to '" + call.name() + "' with "
-                                    + call.argc() + " argument(s), but the function declares "
-                                    + arity + " parameter(s)");
-                        }
-                        call(ownerInternalName, call.name(),
-                                functionDescriptor(arity));
-                        return;
-                    }
-                    throw new NotSupportedException(
-                            "call to '" + call.name() + "' with " + call.argc()
-                                    + " argument(s) is not compiled yet");
+                case "length" -> {
+                    requireArgc(call, 1);
+                    call(COLLECTIONS, "length", "(Ljava/lang/Object;)Ljava/lang/Object;");
                 }
+                default -> throw new NotSupportedException(
+                        "call to '" + call.name() + "' with " + call.argc()
+                                + " argument(s) is not compiled yet");
+            }
+        }
+
+        /**
+         * Builds a list or set from {@code count} values on the stack, last one on top.
+         * The values are parked in planned scratch slots because the container constructor
+         * itself needs the stack; every scratch slot was null-initialised like any local.
+         */
+        private void emitMakeCollection(int count, int firstSlot, boolean set) {
+            for (int i = count - 1; i >= 0; i--) {
+                store(firstSlot + i);
+            }
+            call(COLLECTIONS, set ? "newSet" : "newList", "()Ljava/lang/Object;");
+            for (int i = 0; i < count; i++) {
+                bytes.write(DUP);
+                push();
+                load(firstSlot + i);
+                call(COLLECTIONS, set ? "addToSet" : "addToList",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)V");
+            }
+        }
+
+        /** Builds a map from {@code count} key/value pairs, value on top of each pair. */
+        private void emitMakeMap(int count, int firstSlot) {
+            for (int i = count - 1; i >= 0; i--) {
+                store(firstSlot + 2 * i + 1);
+                store(firstSlot + 2 * i);
+            }
+            call(COLLECTIONS, "newMap", "()Ljava/lang/Object;");
+            for (int i = 0; i < count; i++) {
+                bytes.write(DUP);
+                push();
+                load(firstSlot + 2 * i);
+                load(firstSlot + 2 * i + 1);
+                call(COLLECTIONS, "putInMap",
+                        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
             }
         }
 

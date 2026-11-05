@@ -78,18 +78,31 @@ The compiled subset today:
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
 | variables: assignment, reassignment, scoping, shadowing | lambdas, callbacks, closures |
 | top-level `fun` with parameters, `return`, recursion, mutual recursion | `data`, `use`, modules |
-| `+ - * / % **` and unary `-`, unary `+` | collections, indexing, fields |
-| comparisons `== != < <= > >=` | interpolation |
-| `if` / `else`, including `else if` chains | `try` / `catch` |
-| `while`, `for ... to`, `for ... until`, descending ranges | method calls, `spawn` |
-| `break`, `continue`, nested loops | Java interop |
-| `and`, `or`, `not` with short-circuiting | |
+| `+ - * / % **` and unary `-`, unary `+` | method calls (`.push()`, `.keys()`) |
+| comparisons `== != < <= > >=` | `try` / `catch` |
+| `and`, `or`, `not` with short-circuiting | `spawn` |
+| `if` / `else`, including `else if` chains | Java interop |
+| `while`, `for ... to`, `for ... until`, descending ranges | builtins other than `print`, `write`, `length` |
+| `break`, `continue`, nested loops | |
+| list, set and map literals; `xs[i]`; `xs[i] = v` | |
+| `length(x)` over text, list, set, map and range | |
+| `1 to 5` as a value | |
+| `for x in list / set / map / range / text` | |
+| `x in collection` | |
+| string interpolation | |
 | `print` / `write` of one expression | |
 
-As of T-0059, **52 of the 197 executable conformance programs** compile to real bytecode and
+As of T-0060, **72 of the 197 executable conformance programs** compile to real bytecode and
 produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
 silently go down.
+
+Collections reuse the interpreter's own semantics instead of reimplementing them: literals,
+`xs[i]`, `xs[i] = v`, `length`, `x in xs` and `for x in xs` all call the same
+`Values` methods through `runtime.Collections`, so the two backends cannot drift. Iteration
+uses a real `java.util.Iterator`, not `length` plus indexing, because maps iterate keys and
+text iterates characters. A user `fun length` still wins over the builtin, matching the
+interpreter's hoisting rules.
 
 Functions become real static methods: every parameter is one boxed `java/lang/Object`, the
 descriptor is `(Ljava/lang/Object;...)Ljava/lang/Object;`, calls are `invokestatic` against
@@ -112,10 +125,12 @@ The compiled mode is real bytecode, but the subset is small. Remaining work for 
    generated environment class, which is the next stage of the backend.
 2. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
 3. **Modules as separate artifacts.** Module sources are flattened into one program.
-4. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
+4. **`data`, method calls and the rest of the stdlib.** `data` values, `xs.push(4)` and
+   builtins beyond `print`, `write` and `length` are refused by name.
+5. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
    above 10%" gate cannot be evaluated.
 
-Until items 1–4 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
+Until items 1–5 are done, the project stays on `0.x` and `STATUS.md` says the P3 gate is
 open.
 
 ## How control flow is emitted

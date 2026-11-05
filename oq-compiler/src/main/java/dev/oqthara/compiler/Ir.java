@@ -9,8 +9,9 @@ public final class Ir {
 
     public sealed interface Instr permits Const, Load, Store, Declare, Call, CallValue, Print, Binary,
             Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeMap, MakeSet, Index,
-            SetIndex, MakeData, GetField, SetField, Range, TryStart, TryEnd, Throw, Halt,
-            Label, JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool {
+            SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
+            GetField, SetField, Range, TryStart, TryEnd, Throw, Halt, Label, JumpLabel, Break,
+            Continue, ScopeEnter, ScopeExit, ToBool {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -85,6 +86,32 @@ public final class Ir {
     }
 
     public record SetIndex() implements Instr {
+    }
+
+    /** Wraps the iterable on the stack in a real {@code java.util.Iterator}. */
+    public record IterNew() implements Instr {
+    }
+
+    /** Pushes whether the iterator on the stack has another item. */
+    public record IterHasNext() implements Instr {
+    }
+
+    /** Pushes the iterator's next item; the caller must have checked {@link IterHasNext}. */
+    public record IterNext() implements Instr {
+    }
+    /** Renders the value on the stack as text, exactly like the interpreter's display. */
+    public record Text() implements Instr {
+    }
+
+    /** Membership test; the stack holds the item and then the container. */
+    public record Contains() implements Instr {
+    }
+
+    /**
+     * A method call resolved at runtime. Kept distinct from {@link Call} so a user method
+     * name cannot be confused with a builtin or a top-level function.
+     */
+    public record MethodCall(String name, int argc) implements Instr {
     }
 
     public record MakeData(String type, int count) implements Instr {
@@ -187,6 +214,12 @@ public final class Ir {
             case MakeSet m -> "make_set " + m.count();
             case Index i -> "index";
             case SetIndex s -> "set_index";
+            case IterNew i -> "iter_new";
+            case IterHasNext i -> "iter_has_next";
+            case IterNext i -> "iter_next";
+            case Text t -> "text";
+            case Contains c -> "contains";
+            case MethodCall m -> "method_call " + m.name() + "/" + m.argc();
             case MakeData d -> "make_data " + d.type() + "/" + d.count();
             case GetField g -> "get_field " + g.name();
             case SetField s -> "set_field " + s.name();

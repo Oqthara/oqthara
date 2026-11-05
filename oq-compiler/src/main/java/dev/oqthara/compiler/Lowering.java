@@ -64,7 +64,9 @@ public final class Lowering {
             case Ast.Command command -> {
                 emitCallArguments(command.args());
                 code.add(new Ir.Call(command.name(), command.args().size()));
-                if (!command.name().equals("print")) {
+                // print/write are void in the backend; every other command yields a value,
+                // which a statement discards. Emitting a Pop for a void call underflows.
+                if (!command.name().equals("print") && !command.name().equals("write")) {
                     code.add(new Ir.Pop());
                 }
             }
@@ -104,8 +106,8 @@ public final class Lowering {
                 expression(assign.target());
                 expression(assign.index());
                 expression(assign.value());
+                // SetIndex is void in the bytecode backend, so nothing is left to pop.
                 code.add(new Ir.SetIndex());
-                code.add(new Ir.Pop());
             }
             case Ast.FieldAssign assign -> {
                 expression(assign.target());
@@ -281,39 +283,33 @@ public final class Lowering {
 
     private void forEach(Ast.ForEach loop) {
         String iterator = temp("iter");
-        String index = temp("n");
         String id = "loop" + loopCounter++;
         String head = id + "_head";
         String step = id + "_step";
         String exitLabel = id + "_end";
+        // A real iterator, not length + Index: map keys and set members are not 0..n-1,
+        // and the interpreter iterates the same way through Values.iterable.
         expression(loop.iterable());
+        code.add(new Ir.IterNew());
         code.add(new Ir.Store(iterator));
-        code.add(new Ir.Const(0L));
-        code.add(new Ir.Store(index));
         code.add(new Ir.Label(head));
         loops.add(new LoopContext(id, exitLabel, step));
-        code.add(new Ir.Load(index));
         code.add(new Ir.Load(iterator));
-        code.add(new Ir.Call("length", 1));
-        code.add(new Ir.Binary("<"));
-        int exit = code.size();
-        code.add(new Ir.JumpIfFalse(-1));
-        code.add(new Ir.Load(iterator));
-        code.add(new Ir.Load(index));
-        code.add(new Ir.Index());
-        code.add(new Ir.Declare(loop.name(), true));
+        code.add(new Ir.IterHasNext());
+        code.add(new Ir.JumpIfFalseLabel(exitLabel));
+        // The loop variable belongs to the body's scope, exactly as the interpreter's
+        // per-iteration environment: `ScopeEnter` must precede its `Declare`, or the
+        // binding leaks into the enclosing scope after the loop ends.
         code.add(new Ir.ScopeEnter());
+        code.add(new Ir.Load(iterator));
+        code.add(new Ir.IterNext());
+        code.add(new Ir.Declare(loop.name(), true));
         for (Ast.Stmt stmt : loop.body()) {
             statement(stmt);
         }
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(step));
-        code.add(new Ir.Load(index));
-        code.add(new Ir.Const(1L));
-        code.add(new Ir.Binary("+"));
-        code.add(new Ir.Store(index));
         code.add(new Ir.JumpLabel(head));
-        code.set(exit, new Ir.JumpIfFalse(code.size()));
         loops.remove(loops.size() - 1);
         code.add(new Ir.Label(exitLabel));
     }
@@ -400,7 +396,7 @@ public final class Lowering {
             case Ast.MethodCall call -> {
                 expression(call.receiver());
                 emitCallArguments(call.args());
-                code.add(new Ir.Call(call.method(), call.args().size() + 1));
+                code.add(new Ir.MethodCall(call.method(), call.args().size() + 1));
             }
             case Ast.Index index -> {
                 expression(index.target());
@@ -416,7 +412,7 @@ public final class Lowering {
             case Ast.InExpr in -> {
                 expression(in.item());
                 expression(in.container());
-                code.add(new Ir.Call("contains", 2));
+                code.add(new Ir.Contains());
             }
             case Ast.RangeExpr range -> {
                 expression(range.from());
@@ -441,7 +437,7 @@ public final class Lowering {
             code.add(new Ir.Const(raw.text()));
         } else if (first instanceof Ast.ExprPart exprPart) {
             expression(exprPart.expr());
-            code.add(new Ir.Call("text", 1));
+            code.add(new Ir.Text());
         }
         for (int i = 1; i < parts.size(); i++) {
             Ast.StringPart part = parts.get(i);
@@ -449,7 +445,7 @@ public final class Lowering {
                 code.add(new Ir.Const(raw.text()));
             } else if (part instanceof Ast.ExprPart exprPart) {
                 expression(exprPart.expr());
-                code.add(new Ir.Call("text", 1));
+                code.add(new Ir.Text());
             }
             code.add(new Ir.Binary("+"));
         }
