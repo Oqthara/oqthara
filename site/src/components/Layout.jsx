@@ -1,5 +1,6 @@
 import { createElement as h } from "react";
 import { BASE_PATH, NAV, VERSION } from "../data/meta.js";
+import { Search } from "./Search.jsx";
 
 /**
  * Page links are root-relative in the nav data so the routes read clearly. On GitHub Pages
@@ -38,6 +39,7 @@ export function Layout({ current, children }) {
             ),
           ),
         ),
+        h(Search, null),
       ),
     ),
     h("main", { id: "main" }, h("div", { className: "wrap" }, children)),
