@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `oq build` compiles collections to real JVM bytecode: list, set and map literals,
+  `xs[i]` reads, `xs[i] = v` writes, `length(x)` over text/list/set/map/range, `1 to 5` as
+  a value, `x in collection`, and `for x in list / set / map / range / text` using a real
+  iterator. Conformance programs compiling to bytecode rose from 52 to 72 of 197, still with
+  zero divergences from `oq run`. Collections reuse the interpreter's own `Values` methods
+  through `runtime.Collections`, so the backends cannot drift. Method calls (`xs.push(4)`),
+  `data` and other builtins are refused by name and fall back to the launcher jar.
+- Fixed: `write "a"` produced bytecode that underflowed the operand stack, because the
+  lowering popped a value the void call never pushed. Found while measuring the collections
+  subset; now covered by a regression test.
 - `oq build` compiles top-level `fun` declarations to real static JVM methods: parameters,
   return values, recursion and mutual recursion. Every parameter is one boxed `Object`, the
   descriptor is `(Ljava/lang/Object;...)Ljava/lang/Object;`, calls are `invokestatic` and

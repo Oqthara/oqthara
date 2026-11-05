@@ -127,8 +127,10 @@ class BytecodeCompilerTest {
 
     @Test
     void unsupportedConstructsAreRefusedWithAReason() {
-        assertFalse(BytecodeCompiler.canCompile(ir("print [1, 2]")));
-        assertTrue(BytecodeCompiler.whyNot(ir("print [1, 2]")).contains("MakeList"));
+        assertFalse(BytecodeCompiler.canCompile(ir("xs = [1, 2]\nprint xs.map(x -> x)")));
+        String listReason = BytecodeCompiler.whyNot(ir("xs = [1, 2]\nprint xs.map(x -> x)"));
+        assertTrue(listReason.contains("map") || listReason.contains("containing"),
+                listReason);
 
         assertFalse(BytecodeCompiler.canCompile(ir("x = 1\nfun f()\n  return x\nend\nprint f()")));
         assertTrue(BytecodeCompiler.whyNot(ir("x = 1\nfun f()\n  return x\nend\nprint f()"))
@@ -139,6 +141,62 @@ class BytecodeCompilerTest {
                 ir("print \"a\".upper()")));
         assertTrue(BytecodeCompiler.whyNot(ir("print \"a\".upper()")).contains("length")
                 || BytecodeCompiler.whyNot(ir("print \"a\".upper()")).contains("upper"));
+    }
+
+    @Test
+    void compilesListLiteralsAndIndexing(@TempDir Path dir) throws Exception {
+        assertEquals("[1, 2, 3]\n1\n3\n3\n", compileAndRun(
+                "xs = [1, 2, 3]\nprint xs\nprint xs[0]\nprint xs[-1]\nprint length(xs)", dir));
+    }
+
+    @Test
+    void compilesListIndexAssignment(@TempDir Path dir) throws Exception {
+        assertEquals("[1, 20, 3]\n", compileAndRun(
+                "xs = [1, 2, 3]\nxs[1] = 20\nprint xs", dir));
+    }
+
+    @Test
+    void compilesMapLiteralsIndexingAndAssignment(@TempDir Path dir) throws Exception {
+        assertEquals("1\n3\nnothing\n", compileAndRun(
+                "m = {\"one\": 1, \"two\": 2}\nprint m[\"one\"]\n"
+                        + "m[\"three\"] = 3\nprint m[\"three\"]\nprint m[\"nope\"]", dir));
+    }
+
+    @Test
+    void compiledIterationMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "for x in [1, 2, 3]\n  print x\nend",
+                "for x in {1, 2, 3}\n  print x\nend",
+                "for k in {\"a\": 1, \"b\": 2}\n  print k\nend",
+                "for n in 1 to 3\n  print n\nend",
+                "for c in \"abc\"\n  print c\nend",
+                "for x in [1, 2, 3, 4]\n  if x == 2\n    continue\n  end\n"
+                        + "  if x == 4\n    break\n  end\n  print x\nend");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+        }
+        assertEquals("a\nb\n", compileAndRun(
+                "for k in {\"a\": 1, \"b\": 2}\n  print k\nend", dir));
+        assertEquals("a\nb\nc\n", compileAndRun("for c in \"abc\"\n  print c\nend", dir));
+    }
+
+    @Test
+    void compilesWriteWithoutStackUnderflow(@TempDir Path dir) throws Exception {
+        assertEquals("ab\n", compileAndRun("write \"a\"\nwrite \"b\"\nprint \"\"", dir));
+    }
+
+    @Test
+    void compilesNestedCollectionLiterals(@TempDir Path dir) throws Exception {
+        assertEquals("3\n[[1, 2], [3, 4]]\n", compileAndRun(
+                "grid = [[1, 2], [3, 4]]\nprint grid[1][0]\nprint grid", dir));
+    }
+
+    @Test
+    void compilesEmptyCollectionLiterals(@TempDir Path dir) throws Exception {
+        String source = "print []\nprint {}";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals(expected, compileAndRun(source, dir));
     }
 
     @Test
@@ -229,6 +287,52 @@ class BytecodeCompilerTest {
         String reason = BytecodeCompiler.whyNot(ir("fun print()\n  return 1\nend\nprint print()"));
         assertNotNull(reason);
         assertTrue(reason.contains("print"), reason);
+    }
+
+    @Test
+    void aUserFunctionShadowingLengthWinsOverTheBuiltin(@TempDir Path dir) throws Exception {
+        // The interpreter hoists user functions over builtins, so `fun length` must win.
+        String source = "fun length(x)\n  return 99\nend\nprint length([1, 2, 3])";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("99\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void interpolationCallsTheBuiltinNotAUserFunctionNamedText(@TempDir Path dir) throws Exception {
+        // Interpolation is a language construct, not a user-facing `text` call.
+        String source = "fun text(x)\n  return \"CUSTOM\"\nend\nn = 5\nprint \"v={n}\"";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("v=5\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void membershipCallsTheBuiltinNotAUserFunctionNamedContains(@TempDir Path dir) throws Exception {
+        // `in` is a language construct, not a user-facing `contains` call.
+        String source = "fun contains(a, b)\n  return false\nend\nprint 2 in [1, 2, 3]";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("true\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void loopVariableDoesNotLeakAfterTheLoop(@TempDir Path dir) {
+        // The interpreter scopes the loop variable to each iteration.
+        String source = "for x in [1, 2, 3]\n  print x\nend\nprint x";
+        String reason = BytecodeCompiler.whyNot(ir(source));
+        assertNotNull(reason, "a leaked loop variable must not compile");
+        assertTrue(reason.contains("x"), reason);
+        // OqRunner reports a runtime error as a non-zero result instead of throwing.
+        assertTrue(OqRunner.run("<t>", source, List.of(), "", dir).code() != 0,
+                "the interpreter must reject reading the loop variable after the loop");
+    }
+
+    @Test
+    void methodCallsAreRefusedByTheMethodName() {
+        String reason = BytecodeCompiler.whyNot(ir("xs = [1]\nprint xs.clone()"));
+        assertNotNull(reason, "method calls are not compiled yet");
+        assertTrue(reason.contains("clone"), reason);
     }
 
     @Test
@@ -396,8 +500,8 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertTrue(compiled >= 50,
-                "expected at least 50 conformance programs to compile, got " + compiled);
+        assertTrue(compiled >= 72,
+                "expected at least 72 conformance programs to compile, got " + compiled);
     }
 
     @Test

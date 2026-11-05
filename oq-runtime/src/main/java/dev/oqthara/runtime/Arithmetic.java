@@ -60,6 +60,11 @@ public final class Arithmetic {
         return Values.not(value);
     }
 
+    /** Renders a value as text, exactly as interpolation does in the interpreter. */
+    public static Object text(Object value) {
+        return Values.display(value);
+    }
+
     /** Converts any value to an Oqthara boolean, as the interpreter's truthiness does. */
     public static Object toBoolean(Object value) {
         return Values.truthy(value);

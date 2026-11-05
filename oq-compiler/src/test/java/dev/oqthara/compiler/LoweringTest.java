@@ -156,7 +156,7 @@ class LoweringTest {
     void lowersInterpolation() {
         Ir.Program program = lower("name = \"a\"\nprint \"hi {name}\"");
         List<Ir.Instr> body = program.main().body();
-        assertTrue(body.contains(new Ir.Call("text", 1)));
+        assertTrue(body.contains(new Ir.Text()));
         assertTrue(body.contains(new Ir.Binary("+")));
     }
 
