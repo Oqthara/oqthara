@@ -1,0 +1,8 @@
+# Recursive calls: naive Fibonacci of 28.
+fun fib(n)
+  if n < 2
+    return n
+  end
+  return fib(n - 1) + fib(n - 2)
+end
+print fib(28)

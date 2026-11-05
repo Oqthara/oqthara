@@ -1,0 +1,14 @@
+# String and list iteration: 100,000 rounds over five words.
+words = ["alpha", "beta", "gamma", "delta", "epsilon"]
+total = 0
+hits = 0
+for round in 1 to 100000
+  for word in words
+    total = total + length(word)
+    if word[0] == "a"
+      hits = hits + 1
+    end
+  end
+end
+print total
+print hits
