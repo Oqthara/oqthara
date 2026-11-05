@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseMarkdown, plainInline, renderMarkdown, slugify } from "../src/markdown.js";
+import { extractReferences, parseMarkdown, plainInline, renderMarkdown, slugify } from "../src/markdown.js";
 
 const render = (source, options) => renderMarkdown(source, options).html;
 
@@ -113,4 +113,42 @@ test("paragraph text is joined across source line breaks", () => {
 test("raw HTML in prose is escaped, never emitted", () => {
   const html = render("<script>alert(1)</script>\n");
   assert.equal(html, "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>");
+});
+
+test("reference-style links resolve from definitions and keep their label", () => {
+  const source = [
+    "The format follows [Keep a Changelog], and [semver][sv] too.",
+    "",
+    "## [Unreleased]",
+    "",
+    "[keep a changelog]: https://keepachangelog.com/en/1.1.0/",
+    "[SV]: https://semver.org/spec/v2.0.0.html",
+    "[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.1...HEAD",
+  ].join("\n");
+  const { html, headings } = renderMarkdown(source);
+  assert.match(html, /<a href="https:\/\/keepachangelog\.com\/en\/1\.1\.0\/">Keep a Changelog<\/a>/);
+  assert.match(html, /<a href="https:\/\/semver\.org\/spec\/v2\.0\.0\.html">semver<\/a>/);
+  assert.match(html, /<h2 id="unreleased"><a href="https:\/\/github\.com\/Oqthara\/oqthara\/compare\/[^"]+">Unreleased<\/a><\/h2>/);
+  assert.deepEqual(headings.map((heading) => heading.text), ["Unreleased"]);
+  assert.ok(!html.includes("[keep a changelog]:") && !html.includes("[SV]:"), "definitions are not content");
+  assert.equal(extractReferences(source).size, 3);
+});
+
+test("unknown shortcut labels stay literal text", () => {
+  const html = render("Use `xs[i]` and [not a link].\n");
+  assert.match(html, /<code>xs\[i\]<\/code>/);
+  assert.match(html, /\[not a link\]/);
+  assert.ok(!html.includes("<a "), "nothing becomes a link without a target");
+});
+
+test("definitions inside code fences are not link targets", () => {
+  const source = "```\n[x]: https://example.com\n```\n\n[x]\n";
+  assert.equal(extractReferences(source).size, 0);
+  assert.ok(!renderMarkdown(source).html.includes("<a "));
+});
+
+test("heading ids begin with a letter, even for version numbers", () => {
+  const { html, headings } = renderMarkdown("## 0.1.0-alpha.1 - 2026-11-04\n");
+  assert.equal(headings[0].id, "section-010-alpha1-2026-11-04");
+  assert.match(html, /<h2 id="section-010-alpha1-2026-11-04">/);
 });
