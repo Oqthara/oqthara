@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the host — files, clock, randomness, network, process state, `args`/`input`, and the
   callable-taking `spawn`/`await`/`par_map`/`map`/`filter` — are still refused by name and
   fall back to the launcher jar.
+- A compiled jar now renders an uncaught `OqError` instead of a Java stack trace. The
+  generated `main` carries one exception-table row over its whole body that hands the error
+  to `EmbeddedMain.renderUncaught`, which uses the same `Details`/`Diagnostics` renderer as
+  `oq run`; message, `file:line:column` and hint are byte-identical and the exit code is 1.
+  The source line and caret are omitted because a compiled jar embeds no source. A program's
+  own `try`/`catch` still wins for its range, so caught errors stay caught. Source position
+  marks are now emitted for every operation that can raise, not only inside `try`, which is
+  what makes an uncaught error report the interpreter's exact location.
 - `oq build` compiles collections to real JVM bytecode: list, set and map literals,
   `xs[i]` reads, `xs[i] = v` writes, `length(x)` over text/list/set/map/range, `1 to 5` as
   a value, `x in collection`, and `for x in list / set / map / range / text` using a real

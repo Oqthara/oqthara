@@ -83,6 +83,69 @@ class BytecodeCompilerTest {
         ProcessResult result = runJarProcess(jar, dir);
         assertTrue(result.exit() != 0, "expected a non-zero exit");
         assertTrue(result.stderr().contains("division by zero"), result.stderr());
+        // T-0072: a compiled jar used to print a Java stack trace here.
+        assertFalse(result.stderr().contains("Exception in thread"),
+                "an uncaught OqError must not surface as a Java stack trace: " + result.stderr());
+        assertFalse(result.stderr().contains("\tat "),
+                "no Java frames may appear in a program error: " + result.stderr());
+    }
+
+    @Test
+    void anUncaughtErrorRendersTheSameDiagnosticAsOqRun(@TempDir Path dir) throws Exception {
+        // The caret block needs the source, and a compiled jar embeds none, so parity is the
+        // message, the location and the hint — everything the interpreter prints without the
+        // source line. Each case is a different runtime path: builtin, operator, assert, index.
+        List<String> programs = List.of(
+                "print abs(\"x\")",
+                "print 1 / 0",
+                "assert false, \"boom\"",
+                "print [1, 2][5]");
+        for (String source : programs) {
+            // The source name travels with the IR: parse with the same name the interpreter
+            // is given below, so the locations are comparable rather than trivially different.
+            dev.oqthara.compiler.Ir.Program program =
+                    Lowering.lower(Parser.parse("u.oq", source));
+            String reason = BytecodeCompiler.whyNot(program);
+            assertNull(reason, "expected to compile: " + source + " but " + reason);
+            Path jar = dir.resolve("uncaught.jar");
+            JarBuilder.build(jar, "oq.generated.Program", source, "u.oq",
+                    BytecodeCompiler.compile(program, "oq.generated.Program"));
+            ProcessResult compiled = runJarProcess(jar, dir);
+            assertEquals(1, compiled.exit(), "exit code for: " + source);
+
+            OqRunner.Result interpreted = OqRunner.run("u.oq", source, List.of(), "", dir);
+            assertEquals(1, interpreted.code(), "interpreter exit code for: " + source);
+
+            // Everything except the source line and the caret, which need the embedded text.
+            for (String line : interpreted.stderr().lines()
+                    .filter(text -> !text.isBlank())
+                    .filter(text -> !text.trim().startsWith("1 |"))
+                    .filter(text -> !text.trim().startsWith("^"))
+                    .toList()) {
+                assertTrue(compiled.stderr().contains(line.strip()),
+                        "missing [" + line.strip() + "] for " + source
+                                + "\ncompiled stderr was:\n" + compiled.stderr());
+            }
+            assertFalse(compiled.stderr().contains("Exception in thread"),
+                    "no stack trace for " + source + ": " + compiled.stderr());
+        }
+    }
+
+    @Test
+    void aCaughtErrorIsNotRenderedAsUncaught(@TempDir Path dir) throws Exception {
+        // The top-level handler covers the whole body, so it must lose to the program's own
+        // exception table row for the try region.
+        String source = """
+                try
+                  print 1 / 0
+                catch e
+                  print "caught: {e.message}"
+                end
+                print "after"
+                """;
+        String expected = OqRunner.run("c.oq", source, List.of(), "", dir).stdout();
+        assertEquals("caught: division by zero\nafter\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
     }
 
 
@@ -104,8 +167,9 @@ class BytecodeCompilerTest {
         try (JarFile file = new JarFile(jar.toFile())) {
             byte[] bytes = file.getInputStream(file.getEntry("oq/generated/Program.class"))
                     .readAllBytes();
-            assertEquals(1, exceptionTableRows(bytes),
-                    "the generated class must carry exactly one exception-table row");
+            // One row for the program's `try`, one for the top-level handler in main.
+            assertEquals(2, exceptionTableRows(bytes),
+                    "the generated class must carry the try row and the top-level row");
             assertTrue(indexOf(bytes, "dev/oqthara/runtime/OqError"
                     .getBytes(StandardCharsets.UTF_8)) > 0,
                     "the exception table must name OqError");
@@ -221,7 +285,8 @@ class BytecodeCompilerTest {
             bytes = file.getInputStream(file.getEntry("oq/generated/Program.class"))
                     .readAllBytes();
         }
-        assertEquals(1, exceptionTableRows(bytes));
+        // Only OqError may be named: the program's row and the top-level handler both do.
+        assertEquals(2, exceptionTableRows(bytes));
         assertTrue(indexOf(bytes, "dev/oqthara/runtime/OqError"
                 .getBytes(StandardCharsets.UTF_8)) > 0, "OqError must be the catch type");
         assertTrue(indexOf(bytes, "java/lang/RuntimeException"

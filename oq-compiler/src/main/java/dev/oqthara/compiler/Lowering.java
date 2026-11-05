@@ -38,14 +38,6 @@ public final class Lowering {
     private List<Ir.Instr> code;
     private int tempCounter = 0;
     private int labelCounter = 0;
-    /**
-     * How many {@code try} bodies enclose the current statement. Source marks are emitted only
-     * inside one: an error there may be caught and its span read by the program, so the span
-     * must be exact. Everywhere else the position cannot be observed through a compiled
-     * program, and leaving those instructions out keeps the IR of already-compiled programs
-     * byte-for-byte unchanged.
-     */
-    private int tryDepth = 0;
 
     public static Ir.Program lower(Ast.Program program) {
         return lowerWithReport(program).program();
@@ -246,9 +238,7 @@ public final class Lowering {
         String done = label("catch_end");
         code.add(new Ir.TryStart(handler));
         code.add(new Ir.ScopeEnter());
-        tryDepth++;
         block(attempt.body());
-        tryDepth--;
         code.add(new Ir.ScopeExit());
         code.add(new Ir.TryEnd(handler));
         // Normal completion skips the handler, which is reachable only from the exception
@@ -258,9 +248,7 @@ public final class Lowering {
         code.add(new Ir.CatchValue());
         code.add(new Ir.ScopeEnter());
         code.add(new Ir.Declare(attempt.errorName(), true));
-        tryDepth++;
         block(attempt.handler());
-        tryDepth--;
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(done));
     }
@@ -268,16 +256,14 @@ public final class Lowering {
     private Ir.Function function(String name, List<String> params, List<Ast.Stmt> body) {
         List<Ir.Instr> saved = code;
         code = Ir.list();
-        // A function body is marked unconditionally: an error raised here can be caught by a
-        // caller's `try`, and the span it reports must be this function's own source line.
-        int savedTryDepth = tryDepth;
-        tryDepth = Math.max(tryDepth, 1);
+        // Every function body records its source positions unconditionally: an error raised
+        // here can be caught by a caller's `try`, and the span it reports must be this
+        // function's own source line.
         pushTypes(body);
         for (Ast.Stmt stmt : body) {
             statement(stmt);
         }
         popTypes();
-        tryDepth = savedTryDepth;
         code.add(new Ir.Const(null));
         code.add(new Ir.Return());
         Ir.Function function = new Ir.Function(name, params, List.copyOf(code));
@@ -671,10 +657,15 @@ public final class Lowering {
 
     /**
      * Records the source position of the operation that follows, so an error it raises can be
-     * caught with the same line, column and file as {@code oq run}.
+     * reported with the same line, column and file as {@code oq run}.
+     *
+     * <p>Marks are emitted everywhere, not only inside {@code try}: code outside a {@code try}
+     * can still raise, and a compiled jar must report that error at the same position the
+     * interpreter does. A mark is three constants and one call, so the cost is bytecode size,
+     * not behaviour.
      */
     private void mark(Span span) {
-        if (span != null && tryDepth > 0) code.add(new Ir.At(span));
+        if (span != null) code.add(new Ir.At(span));
     }
 
     private String temp(String prefix) {

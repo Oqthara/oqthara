@@ -82,6 +82,14 @@ public final class BytecodeCompiler {
      */
     private static final String BUILTINS = "dev/oqthara/stdlib/Builtins";
     /**
+     * The jar entry point. Generated {@code main} ends by delegating an escaping error to it,
+     * so a compiled jar renders the same diagnostic {@code oq run} does instead of a Java
+     * stack trace.
+     */
+    private static final String EMBEDDED_MAIN = "dev/oqthara/cli/EmbeddedMain";
+    /** Label for the one handler {@code main} owns; never collides with lowered labels. */
+    private static final String UNCAUGHT_HANDLER = "\u0000uncaught";
+    /**
      * The interpreter's {@code try} catches {@code OqError} and nothing else, so the
      * exception table names exactly this class. A {@code NullPointerException} or an
      * {@code IllegalArgumentException} escapes the handler on both backends.
@@ -609,6 +617,14 @@ public final class BytecodeCompiler {
 
         void compileBody() {
             slots = plan();
+            // Main needs one extra local for the top-level handler below. It is reserved
+            // before the null-init loop so the slot is a real null reference at every frame;
+            // a slot described as Object while actually holding `top` fails verification.
+            int uncaughtSlot = -1;
+            if (!isFunction) {
+                uncaughtSlot = localCount++;
+                checkSlotLimit(localCount);
+            }
             // Every planned local is set to null before any branch target. A stack map frame
             // must describe the exact state at a label, and an unassigned slot is `top`, which
             // no frame may claim is a reference. Starting every slot as a real null reference
@@ -623,6 +639,7 @@ public final class BytecodeCompiler {
                     bytes.write(slot);
                 }
             }
+            int protectedStart = bytes.size();
             for (int index = 0; index < body.size(); index++) {
                 emit(body.get(index), slots[index]);
             }
@@ -637,7 +654,44 @@ public final class BytecodeCompiler {
                     bytes.write(RETURN);
                 }
             }
+            int protectedEnd = bytes.size();
+            if (uncaughtSlot >= 0) {
+                emitUncaughtHandler(protectedStart, protectedEnd, uncaughtSlot);
+            }
             patch();
+        }
+
+        /**
+         * Emits the handler that renders an {@code OqError} escaping {@code main} instead of
+         * letting Java print a stack trace.
+         *
+         * <p>The protected range spans the whole body, so this row sorts after every row the
+         * program's own {@code try} statements contribute: {@link #exceptionRows()} orders by
+         * end offset ascending, and an inner region can never end after the body. User
+         * {@code catch} clauses therefore keep winning for their own ranges, which is what
+         * makes an uncaught error and a caught one behave differently.
+         */
+        private void emitUncaughtHandler(int start, int end, int errorSlot) {
+            labels.put(UNCAUGHT_HANDLER, bytes.size());
+            handlerOffsets.add(bytes.size());
+            // Entered through the exception table, so the caught OqError is on the stack.
+            depth = 1;
+            peak = Math.max(peak, 1);
+            if (errorSlot <= 3) {
+                bytes.write(0x4B + errorSlot); // astore_0..3
+            } else {
+                bytes.write(ASTORE);
+                bytes.write(errorSlot);
+            }
+            depth = 0;
+            load(errorSlot);
+            bytes.write(ACONST_NULL); // no embedded source: render without the caret block
+            push();
+            call(EMBEDDED_MAIN, "renderUncaught",
+                    "(Ljava/lang/Object;Ljava/lang/String;)V");
+            bytes.write(RETURN);
+            reachable = false;
+            exceptionTable.add(new ExceptionRow(start, end, UNCAUGHT_HANDLER));
         }
 
         private void emit(Ir.Instr instr, int slot) {

@@ -4,6 +4,7 @@ import dev.oqthara.core.Ast;
 import dev.oqthara.core.Interpreter;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.Span;
 import dev.oqthara.stdlib.MethodResolverImpl;
 import dev.oqthara.stdlib.Stdlib;
 
@@ -76,9 +77,33 @@ public final class EmbeddedMain {
         } catch (Stdlib.ExitSignal exit) {
             System.exit(exit.code());
         } catch (OqError error) {
-            Details.render(err, error, source, System.console() != null);
+            renderUncaught(err, error, source);
             System.exit(1);
         }
+    }
+
+    /**
+     * Renders an {@code OqError} that escaped compiled bytecode and terminates with exit 1.
+     *
+     * <p>A compiled jar embeds no source, so the caret block cannot be drawn. Everything that
+     * does not need the source is still shown: the message, the {@code file:line:column}
+     * location, the hint, and the interpreter's exact spacing. That is deliberately the same
+     * renderer {@code oq run} uses, called with no source lines, so the two can never drift
+     * in wording, colouring or layout.
+     */
+    public static void renderUncaught(Object error, String source) {
+        java.io.PrintStream err = utf8(System.err);
+        OqError oqError = error instanceof OqError typed
+                ? typed
+                : new OqError(String.valueOf(error), Span.synthetic());
+        renderUncaught(err, oqError, source);
+        System.exit(1);
+    }
+
+    private static void renderUncaught(java.io.PrintStream err, OqError error, String source) {
+        // The compiled jar has no embedded program text, so `source` is usually null here.
+        Details.render(err, error, source, System.console() != null);
+        err.flush();
     }
 
     private static java.io.PrintStream utf8(java.io.OutputStream stream) {
