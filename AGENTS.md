@@ -6,8 +6,8 @@ Repo: https://github.com/Oqthara/oqthara
 
 ## Golden rules
 
-1. One bounded task per invocation, with evidence and a checkpoint, then exit; the
-   supervisor starts the next cycle. Never say the project is done.
+1. The Kilo chat is the control plane: dispatch parallel specialist agents, integrate,
+   validate, checkpoint, then start the next task. Never say the project is done.
 2. Never ask the user: decide, record an ADR, continue.
 3. State lives on disk in `.oqthara-ai/`, never only in context.
 4. Nothing is done without executed evidence: paste the command and its result.
@@ -37,7 +37,7 @@ semicolons, or the words crate/borrow/move. Memory belongs to the JVM GC.
 ./gradlew build                          # everything CI runs
 ./gradlew test                           # unit + conformance
 ./gradlew :oq-cli:standaloneJar
-python3 scripts/ai-watchdog.py           # supervised cycles
+
 ```
 
 ## Language in one screen
@@ -58,6 +58,8 @@ Blocks close with `end`; statements end at a newline; `use` imports any Java cla
 
 ## Operation
 
-Read `.oqthara-ai/MASTER_PROMPT.md` and `RESUME.md`; do one task; checkpoint; exit.
-`touch .oqthara-ai/STOP` halts the supervisor; never remove it automatically. Agents live in
-`.kilo/agents/` (`oq-orchestrator` primary); delegate via the real `task` tool.
+Read `.oqthara-ai/MASTER_PROMPT.md` and `RESUME.md`; pick the next task; checkpoint.
+Orchestration is chat-native (ADR-0009): no watchdog, launchd unit, or detached loop. Agents
+live in `.kilo/agents/` (`oq-orchestrator` primary); delegate via the real `task` tool, one
+git worktree per concurrent writer under `.worktrees/`. `.oqthara-ai/STOP` is an emergency
+halt; never remove it automatically.
