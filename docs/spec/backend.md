@@ -9,7 +9,7 @@ being surprised at runtime, and so the gate for a stable release is unambiguous.
 |---|---|---|
 | Interpreter | `oq-core` (`Interpreter`) | **Authoritative.** Runs every conformance case. |
 | Class file emitter | `oq-compiler` (`ClassFileWriter`, `JarBuilder`) | **Works.** Emits a real class file and jar. |
-| Bytecode compiler | `oq-compiler` (`BytecodeCompiler`) | **Partial.** Real JVM instructions for a small straight-line subset; everything else falls back explicitly. |
+| Bytecode compiler | `oq-compiler` (`BytecodeCompiler`) | **Partial.** Real JVM instructions for most of the language; lambdas, closures, Java interop and host-dependent builtins still fall back explicitly. |
 
 `oq build file.oq` produces `file.jar`:
 
@@ -81,21 +81,22 @@ The compiled subset today:
 | `+ - * / % **` and unary `-`, unary `+` | `try` with an empty body |
 | `try` / `catch`, nested, with rethrow | |
 | comparisons `== != < <= > >=` | `spawn` |
-| `and`, `or`, `not` with short-circuiting | builtins other than `print`, `write`, `length` |
-| `if` / `else`, including `else if` chains | Java interop |
-| `while`, `for ... to`, `for ... until`, descending ranges | |
-| `break`, `continue`, nested loops | |
-| list, set and map literals; `xs[i]`; `xs[i] = v` | |
+| `and`, `or`, `not` with short-circuiting | `args()`, `input()`, `exit()` |
+| `if` / `else`, including `else if` chains | the filesystem, clock, randomness, network and process builtins |
+| `while`, `for ... to`, `for ... until`, descending ranges | `spawn`, `await`, `done`, `par_map` and other callable-taking builtins |
+| `break`, `continue`, nested loops | lambdas and function values |
+| list, set and map literals; `xs[i]`; `xs[i] = v` | Java interop |
 | `length(x)` over text, list, set, map and range | |
 | `1 to 5` as a value | |
 | `for x in list / set / map / range / text` | |
 | `x in collection` | |
 | string interpolation | |
-| `print` / `write` of one expression | |
+| `print` / `write` of one or more expressions | |
 | `data` declarations, construction with defaults, field read and write | |
 | method calls: `.push()`, `.add()`, `.pop()`, `.keys()`, `.values()`, `.upper()` ... | |
+| deterministic stdlib builtins: `abs`, `floor`, `ceil`, `round`, `sqrt`, `pow`, `min`, `max`, `clamp`, `number`, `text`, `type_of`, `is_nothing`, `is_number`, `is_text`, `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `format`, `set`, `list`, `zip`, `keys`, `values`, `sum`, `sort`, `reverse`, `unique`, `push`, `pop`, `clone`, `range`, `assert`, `json_parse`, `json`, `json_write`, `json_pretty` | |
 
-As of T-0061, **145 of the 197 executable conformance programs** compile to real bytecode
+As of T-0071, **169 of the 197 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
 silently go down. Every refusal is reported by name in the `oq build` output.
@@ -106,6 +107,27 @@ Collections reuse the interpreter's own semantics instead of reimplementing them
 uses a real `java.util.Iterator`, not `length` plus indexing, because maps iterate keys and
 text iterates characters. A user `fun length` still wins over the builtin, matching the
 interpreter's hoisting rules.
+
+Ordinary stdlib builtins are not reimplemented either. A compiled call such as
+`clamp(12, 1, 10)` becomes an `invokestatic` to `stdlib.Builtins`, which installs the real
+`Stdlib` into one headless interpreter and calls the same `NativeFunction` the interpreter
+calls, so there is exactly one implementation of every builtin. The compiler asks
+`Builtins.supports(name, argc)` before emitting, which is why an unknown name, a wrong arity
+or a host-dependent builtin is still refused by name instead of failing inside a jar.
+Host-dependent means files (`read`, `save`, `exists`, ...), time (`now`, `today`, `sleep`),
+randomness, HTTP, process state (`env`, `run_command`, `cpu_count`) and the concurrency
+helpers (`spawn`, `await`, `par_map`); those stay on the interpreter, because a generated
+class would either block on a stream it does not own or produce output that `oq run` cannot
+reproduce. `args()` and `input()` are refused for the same reason. Variadic `print a, b` and
+`write a, b` build an argument list and call the interpreter's variadic builtin, so the
+separator rule does not get a second implementation.
+
+Two known gaps remain and are tracked as **T-0072** and **T-0073**. A builtin that throws
+inside a compiled jar escapes as an uncaught `OqError` stack trace instead of `oq run`'s
+rendered diagnostic (same message and exit code 1, different presentation); this predates
+the builtin work and affects arithmetic errors too. And `print(1, 2)` written as an
+expression is refused rather than compiled, because the statement lowering pops a value the
+void call never pushes. Both fall back to the launcher jar, so no program changes meaning.
 
 `data` types are a compile-time table in the lowering, because the interpreter hoists every
 declaration in a block before running it. A construction pushes the given values, evaluates
@@ -309,9 +331,11 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
 7. ~~**T-0060c** — precise field descriptors for `data`.~~ Refused with evidence: fields stay
    boxed `Object` because the language has no field type and allows a field to change type.
    See "Why data fields are still boxed `Object`".
-8. **T-0037b** — closures/lambdas as generated classes with a captured environment.
-9. **T-0049** — Java interop from generated code.
-10. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
+8. ~~**T-0071** — stdlib builtins dispatched from generated code.~~ Done: deterministic
+   builtins go through `stdlib.Builtins`, which calls the interpreter's own `NativeFunction`.
+9. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+10. **T-0049** — Java interop from generated code.
+11. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
 Every step must keep the conformance suite green and delete the corresponding limitation
 from this page. If a step cannot, the page changes, not the claim.

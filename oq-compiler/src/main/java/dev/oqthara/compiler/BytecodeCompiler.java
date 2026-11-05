@@ -1,6 +1,7 @@
 package dev.oqthara.compiler;
 
 import dev.oqthara.runtime.Span;
+import dev.oqthara.stdlib.Builtins;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -75,6 +76,11 @@ public final class BytecodeCompiler {
     private static final String DATA_VALUES = "dev/oqthara/runtime/DataValues";
     private static final String METHODS = "dev/oqthara/runtime/Methods";
     private static final String ERRORS = "dev/oqthara/runtime/Errors";
+    /**
+     * The stdlib's own dispatch table. Generated code calls a builtin through it instead of
+     * reimplementing the builtin, so there is exactly one implementation per backend.
+     */
+    private static final String BUILTINS = "dev/oqthara/stdlib/Builtins";
     /**
      * The interpreter's {@code try} catches {@code OqError} and nothing else, so the
      * exception table names exactly this class. A {@code NullPointerException} or an
@@ -476,6 +482,15 @@ public final class BytecodeCompiler {
                         next += make.count();
                         checkSlotLimit(next);
                     }
+                    // `print a, b` and `write a, b` build an argument list on the way to the
+                    // interpreter's variadic builtin, which needs one scratch slot per value.
+                    case Ir.Call call when needsScratchList(call) -> {
+                        refuseShadowedCall(call);
+                        resolved[i] = next;
+                        next += call.argc();
+                        checkSlotLimit(next);
+                    }
+                    case Ir.Call call -> refuseShadowedCall(call);
                     default -> {
                     }
                 }
@@ -493,6 +508,38 @@ public final class BytecodeCompiler {
             if (next > 255) {
                 throw new NotSupportedException("too many variables for one method");
             }
+        }
+
+        /**
+         * A variadic {@code print}/{@code write} call is rewritten into a list literal, which
+         * needs one scratch slot per argument during planning.
+         */
+        private static boolean needsScratchList(Ir.Call call) {
+            return (call.name().equals("print") || call.name().equals("write"))
+                    && call.argc() > 1;
+        }
+
+        /**
+         * Refuses a call whose name a visible variable shadows. The interpreter looks the
+         * callee up in its environment, so after {@code abs = 5} a later {@code abs(1)} fails
+         * with "'abs' is not a function"; emitting the builtin or the user function instead
+         * would change behaviour silently. Planning sees exactly the bindings that are live at
+         * this instruction, so the check matches the interpreter's execution order.
+         */
+        private void refuseShadowedCall(Ir.Call call) {
+            if (nameIsVariable(call.name())) {
+                throw new NotSupportedException("'" + call.name()
+                        + "' is a variable here, not a function, so this call is not compiled");
+            }
+        }
+
+        /** True when a variable binding, not a function, currently owns this name. */
+        private boolean nameIsVariable(String name) {
+            Binding binding = lookupOrNull(name);
+            if (binding != null) return true;
+            // A parameter of the enclosing function is a binding too, and so is a variable
+            // declared at the top level of main as seen from a nested block.
+            return isFunction && outerNames.contains(name);
         }
 
         /** VarDecl: always a new binding in the current scope, even if one is visible. */
@@ -684,7 +731,7 @@ public final class BytecodeCompiler {
                     }
                 }
                 case Ir.Call callValue -> {
-                    if (reachable) emitCall(callValue);
+                    if (reachable) emitCall(callValue, slot);
                 }
                 case Ir.Pop ignored -> {
                     if (reachable) {
@@ -946,7 +993,7 @@ public final class BytecodeCompiler {
             }
         }
 
-        private void emitCall(Ir.Call call) {
+        private void emitCall(Ir.Call call, int slot) {
             // The interpreter hoists user functions over the builtins, so a user `fun length`
             // must win here too. Builtin resolution is only the fallback.
             Integer arity = functionArities.get(call.name());
@@ -961,12 +1008,23 @@ public final class BytecodeCompiler {
             }
             switch (call.name()) {
                 case "print" -> {
-                    requireArgc(call, 1);
-                    call(ARITHMETIC, "print", "(Ljava/lang/Object;)V");
+                    if (call.argc() == 1) {
+                        call(ARITHMETIC, "print", "(Ljava/lang/Object;)V");
+                        return;
+                    }
+                    // `print a, b` is the interpreter's variadic print, which separates the
+                    // values with a space. Build the same argument list and call it there.
+                    emitMakeCollection(call.argc(), slot, false);
+                    call(BUILTINS, "printList", "(Ljava/lang/Object;)V");
                 }
                 case "write" -> {
-                    requireArgc(call, 1);
-                    call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
+                    if (call.argc() == 1) {
+                        call(ARITHMETIC, "write", "(Ljava/lang/Object;)V");
+                        return;
+                    }
+                    // `write a, b` concatenates without a separator.
+                    emitMakeCollection(call.argc(), slot, false);
+                    call(BUILTINS, "writeList", "(Ljava/lang/Object;)V");
                 }
                 case "length" -> {
                     requireArgc(call, 1);
@@ -976,10 +1034,35 @@ public final class BytecodeCompiler {
                     requireArgc(call, 1);
                     call(ERRORS, "raise", "(Ljava/lang/Object;)Ljava/lang/Object;");
                 }
-                default -> throw new NotSupportedException(
-                        "call to '" + call.name() + "' with " + call.argc()
-                                + " argument(s) is not compiled yet");
+                default -> emitBuiltinCall(call);
             }
+        }
+
+        /**
+         * Delegates an ordinary builtin to {@code stdlib.Builtins}, which calls the very
+         * {@code NativeFunction} the interpreter installs. The compiler never reimplements a
+         * builtin, and the name/arity pair is refused unless that shared table accepts it, so
+         * the compiled subset cannot drift from the interpreter's.
+         */
+        private void emitBuiltinCall(Ir.Call call) {
+            int argc = call.argc();
+            if (!Builtins.supports(call.name(), argc)) {
+                throw new NotSupportedException("call to '" + call.name() + "' with " + argc
+                        + " argument(s) is not compiled yet");
+            }
+            // Arguments are already on the stack; the name goes last, which is why every
+            // invokeN in Builtins takes the name as its final parameter.
+            emitConstant(call.name());
+            call(BUILTINS, "invoke" + argc, builtinDescriptor(argc));
+        }
+
+        /**
+         * {@code (Object x argc, Object name)Object}. The name is a boxed {@code Object}
+         * rather than a {@code String} parameter so one descriptor shape covers every arity,
+         * including zero.
+         */
+        private static String builtinDescriptor(int argc) {
+            return "(" + OBJECT_DESCRIPTOR.repeat(argc + 1) + ")Ljava/lang/Object;";
         }
 
         /**
