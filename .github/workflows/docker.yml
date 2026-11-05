@@ -6,32 +6,55 @@ on:
     paths:
       - "Dockerfile"
       - ".dockerignore"
+      - ".github/workflows/docker.yml"
       - "oq-*/**"
       - "gradle/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
+      - "gradle.properties"
+      - "examples/**"
   pull_request:
     paths:
       - "Dockerfile"
       - ".dockerignore"
+      - ".github/workflows/docker.yml"
+      - "oq-*/**"
+      - "gradle/**"
+      - "build.gradle.kts"
+      - "settings.gradle.kts"
+      - "gradle.properties"
+      - "examples/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build and run the image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - name: Build
         run: docker build -t oqthara/oq:ci .
       - name: Version
-        run: docker run --rm oqthara/oq:ci --version | grep -q "oq "
+        run: |
+          set -euo pipefail
+          docker run --rm oqthara/oq:ci --version | tee /tmp/oq-version.txt
+          grep -q "^oq " /tmp/oq-version.txt
       - name: Run hello world from the image
         run: |
-          docker run --rm -v "$PWD/examples:/work" oqthara/oq:ci hello.oq | grep -q "Hello, World!"
+          set -euo pipefail
+          docker run --rm -v "$PWD/examples:/work" oqthara/oq:ci hello.oq | tee /tmp/oq-hello.txt
+          grep -q "Hello, World!" /tmp/oq-hello.txt
       - name: Run the test suite from the image
         run: |
-          docker run --rm -v "$PWD/examples:/work" oqthara/oq:ci test tests | grep -q "passed"
+          set -euo pipefail
+          output=$(docker run --rm -v "$PWD/examples:/work" oqthara/oq:ci test tests)
+          echo "$output"
+          grep -q ", 0 failed," <<<"$output"
