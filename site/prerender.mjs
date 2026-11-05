@@ -108,6 +108,11 @@ if (pages.length !== ROUTE_COUNT + docs.length) {
 const { buildSearchIndex } = await import(pathToFileURL(join(here, "src", "search-index.js")).href);
 const searchIndex = buildSearchIndex(pages);
 
+// The search index is derived from the HTML that was just rendered, so a result can only
+// point at a page that exists. It is a plain static file; no server is involved.
+const { buildSearchIndex } = await import(pathToFileURL(join(here, "src", "search-index.js")).href);
+const searchIndex = buildSearchIndex(pages);
+
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 for (const page of pages) {
