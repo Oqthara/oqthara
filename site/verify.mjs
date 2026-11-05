@@ -1,9 +1,10 @@
 // Structural verification for the prerendered React site. Runs in CI before publishing.
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const root = join(here, "..");
 const site = join(here, "_site");
 const problems = [];
 
@@ -12,13 +13,42 @@ if (!existsSync(site)) {
   process.exit(1);
 }
 
-const pages = readdirSync(site).filter((file) => file.endsWith(".html"));
+const pageFiles = [];
+function collectHtml(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "versions" || entry.name === "assets") continue;
+      collectHtml(path);
+    } else if (entry.name.endsWith(".html")) {
+      pageFiles.push(relative(site, path));
+    }
+  }
+}
+collectHtml(site);
+
 const EXPECTED = ["index.html", "tour.html", "docs.html", "examples.html", "stdlib.html", "status.html"];
 for (const page of EXPECTED) {
-  if (!pages.includes(page)) problems.push(`missing page ${page}`);
+  if (!pageFiles.includes(page)) problems.push(`missing page ${page}`);
 }
 
-for (const page of pages) {
+// Every Markdown document under docs/spec and docs/adr must have a generated page.
+const renderedDocs = [];
+for (const dir of ["spec", "adr"]) {
+  const absolute = join(root, "docs", dir);
+  if (!existsSync(absolute)) continue;
+  for (const name of readdirSync(absolute).sort()) {
+    if (!name.endsWith(".md")) continue;
+    const source = `docs/${dir}/${name}`;
+    const page = `docs/${dir}/${name.replace(/\.md$/, ".html")}`;
+    renderedDocs.push({ source, page });
+    if (!pageFiles.includes(page)) problems.push(`missing documentation page ${page}`);
+  }
+}
+if (!renderedDocs.length) problems.push("no documentation pages were discovered under docs/");
+
+const ids = new Map();
+for (const page of pageFiles) {
   const html = readFileSync(join(site, page), "utf8");
   const required = [
     ["<!DOCTYPE html>", "doctype"],
@@ -41,19 +71,23 @@ for (const page of pages) {
     problems.push(`${page}: prerendered text is suspiciously short (${text.trim().length} chars)`);
   }
 
+  ids.set(page, new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1])));
+
   for (const match of html.matchAll(/href="([^"]*)"/g)) {
     const target = match[1];
-    if (target.startsWith("http") || target.startsWith("mailto") || target.startsWith("#")) continue;
+    if (target.startsWith("http") || target.startsWith("mailto")) continue;
+    if (target.startsWith("#")) {
+      if (!ids.get(page).has(target.slice(1))) {
+        problems.push(`${page}: missing anchor target ${target}`);
+      }
+      continue;
+    }
     if (!target.startsWith("/oqthara/")) {
       problems.push(`${page}: internal link without the Pages base path: ${target}`);
       continue;
     }
-    const relative = target.slice("/oqthara/".length) || "index.html";
-    const resolved = relative.endsWith("/") ? `${relative}index.html` : relative;
-    if (relative.endsWith(".md")) {
-      if (!existsSync(join(site, relative))) problems.push(`${page}: missing ${target}`);
-      continue;
-    }
+    const relativeTarget = target.slice("/oqthara/".length) || "index.html";
+    const resolved = relativeTarget.endsWith("/") ? `${relativeTarget}index.html` : relativeTarget;
     if (!existsSync(join(site, resolved))) problems.push(`${page}: broken link ${target}`);
   }
 
@@ -64,10 +98,36 @@ for (const page of pages) {
   if (statSync(join(site, page)).size < 1200) problems.push(`${page}: suspiciously small page`);
 }
 
+// The docs index must link every rendered document, not a hand-picked subset.
+const docsIndex = readFileSync(join(site, "docs.html"), "utf8");
+for (const doc of renderedDocs) {
+  const url = `/oqthara/${doc.page.replace(/\.html$/, ".html")}`;
+  if (!docsIndex.includes(`href="${url}"`)) problems.push(`docs.html: does not list ${doc.source}`);
+  const html = readFileSync(join(site, doc.page), "utf8");
+  if (!html.includes('<article class="doc">')) problems.push(`${doc.page}: missing article`);
+  if (!/<h1 id="[^"]+">/.test(html)) problems.push(`${doc.page}: missing anchored h1`);
+}
+
+// Markdown conversion must produce real structure, not escaped literal syntax.
+const spec = readFileSync(join(site, "docs/spec/language.md".replace(/\.md$/, ".html")), "utf8");
+for (const [needle, label] of [
+  ["<table>", "table"],
+  ["<pre><code", "fenced code"],
+  ["<h2 id=", "headings"],
+  ["<ul>", "list"],
+  ["<a href=", "links"],
+]) {
+  if (!spec.includes(needle)) problems.push(`rendered specification: missing ${label}`);
+}
+
 // The embedded reference must actually be present, so /stdlib renders from generated data.
 const stdlib = readFileSync(join(site, "stdlib.html"), "utf8");
 if (!stdlib.includes('id="oq-reference"')) problems.push("stdlib.html: missing embedded reference");
 if (!stdlib.includes("Global functions")) problems.push("stdlib.html: reference has no functions section");
+
+// Documentation pages must embed the same documentation the client hydrates from.
+const docsData = readFileSync(join(site, "docs/spec/design.html"), "utf8");
+if (!docsData.includes('id="oq-docs"')) problems.push("docs pages: missing embedded documentation data");
 
 const assets = join(site, "assets");
 if (!existsSync(assets)) problems.push("missing assets/");
@@ -140,4 +200,4 @@ if (problems.length) {
   for (const problem of problems) console.error("  -", problem);
   process.exit(1);
 }
-console.log(`Verified ${pages.length} prerendered pages, assets and stdlib reference.`);
+console.log(`Verified ${pageFiles.length} prerendered pages (${renderedDocs.length} from docs/), assets and stdlib reference.`);
