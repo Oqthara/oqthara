@@ -68,6 +68,12 @@
       "slug": "docs/adr/0010-release-gate"
     },
     {
+      "path": "docs/adr/0011-standalone-website-repository.md",
+      "title": "0011 — Extract the website into its own repository",
+      "section": "adr",
+      "slug": "docs/adr/0011-standalone-website-repository"
+    },
+    {
       "path": "docs/reference/cli.md",
       "title": "`oq` command line",
       "section": "reference",

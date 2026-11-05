@@ -101,6 +101,12 @@ removes the ceremony:
 
 ## Documentation
 
+The website at <https://oqthara.github.io/> renders these files directly from this
+repository, so a documentation change merged into `main` appears there without a site
+deploy. This repository's `docs/` tree is the only authoritative documentation; the site
+([Oqthara/Oqthara.github.io](https://github.com/Oqthara/Oqthara.github.io)) holds no copy.
+
+- [`docs/README.md`](docs/README.md) — how the documentation is organized and validated
 - [`docs/spec/language.md`](docs/spec/language.md) — complete language reference
 - [`docs/spec/design.md`](docs/spec/design.md) — goals, non-goals and metrics
 - [`docs/spec/backend.md`](docs/spec/backend.md) — what the bytecode backend does and does
