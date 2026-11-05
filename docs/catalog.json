@@ -62,6 +62,12 @@
       "slug": "docs/adr/0009-chat-native-orchestration"
     },
     {
+      "path": "docs/adr/0010-release-gate.md",
+      "title": "ADR-0010: Fail-closed release gate on CircleCI commit statuses",
+      "section": "adr",
+      "slug": "docs/adr/0010-release-gate"
+    },
+    {
       "path": "docs/reference/cli.md",
       "title": "`oq` command line",
       "section": "reference",
