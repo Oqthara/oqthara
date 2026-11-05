@@ -1,0 +1,40 @@
+/* Rendered documentation and the docs index.
+ *
+ * The Markdown is converted to semantic HTML at build time, so these rules only style real
+ * elements and never depend on a wrapper class per construct. They live beside the
+ * components that use them so the shared design tokens stay in assets/site.css.
+ */
+
+.doc { max-width: 76ch; }
+.doc > h1 { margin-bottom: 24px; }
+.doc h2 { margin-top: 48px; }
+.doc h3 { margin-top: 32px; }
+.doc h4, .doc h5, .doc h6 { margin: 24px 0 12px; font-size: .98rem; font-weight: 650; }
+.doc ul, .doc ol { margin: 0 0 18px; padding-left: 24px; }
+.doc li { margin-bottom: 6px; }
+.doc li > p { margin-bottom: 8px; }
+.doc blockquote {
+  margin: 20px 0;
+  padding: 4px 16px;
+  border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.doc hr { border: 0; border-top: 1px solid var(--border); margin: 36px 0; }
+.doc img { max-width: 100%; height: auto; }
+.doc table { display: block; overflow-x: auto; }
+.doc a { overflow-wrap: anywhere; }
+.doc-source { color: var(--muted); font-size: .85rem; margin-top: 48px; }
+
+.doc-index { margin: 32px 0 8px; }
+.doc-index h2 { margin-top: 40px; }
+.doc-list { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 12px; }
+.doc-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  background: var(--card);
+}
+.doc-list li > a { font-weight: 650; font-size: 1.02rem; }
+.doc-list li > p { color: var(--muted); font-size: .93rem; margin: 6px 0 8px; }
+.doc-list li > code { font-size: .78rem; color: var(--muted); }
+.toc .toc-level-3 { margin-left: 14px; }

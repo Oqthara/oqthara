@@ -77,12 +77,12 @@ The compiled subset today:
 |---|---|
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
 | variables: assignment, reassignment, scoping, shadowing | lambdas, callbacks, closures |
-| top-level `fun` with parameters, `return`, recursion, mutual recursion | `data`, `use`, modules |
-| `+ - * / % **` and unary `-`, unary `+` | method calls (`.push()`, `.keys()`) |
-| comparisons `== != < <= > >=` | `try` / `catch` |
-| `and`, `or`, `not` with short-circuiting | `spawn` |
+| top-level `fun` with parameters, `return`, recursion, mutual recursion | `use`, modules |
+| `+ - * / % **` and unary `-`, unary `+` | `try` / `catch` |
+| comparisons `== != < <= > >=` | `spawn` |
+| `and`, `or`, `not` with short-circuiting | builtins other than `print`, `write`, `length` |
 | `if` / `else`, including `else if` chains | Java interop |
-| `while`, `for ... to`, `for ... until`, descending ranges | builtins other than `print`, `write`, `length` |
+| `while`, `for ... to`, `for ... until`, descending ranges | |
 | `break`, `continue`, nested loops | |
 | list, set and map literals; `xs[i]`; `xs[i] = v` | |
 | `length(x)` over text, list, set, map and range | |
@@ -91,11 +91,13 @@ The compiled subset today:
 | `x in collection` | |
 | string interpolation | |
 | `print` / `write` of one expression | |
+| `data` declarations, construction with defaults, field read and write | |
+| method calls: `.push()`, `.add()`, `.pop()`, `.keys()`, `.values()`, `.upper()` ... | |
 
-As of T-0060, **72 of the 197 executable conformance programs** compile to real bytecode and
-produce byte-identical output to the interpreter. That number is asserted by
+As of T-0060b, **139 of the 197 executable conformance programs** compile to real bytecode
+and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so it cannot
-silently go down.
+silently go down. Every refusal is reported by name in the `oq build` output.
 
 Collections reuse the interpreter's own semantics instead of reimplementing them: literals,
 `xs[i]`, `xs[i] = v`, `length`, `x in xs` and `for x in xs` all call the same
@@ -103,6 +105,29 @@ Collections reuse the interpreter's own semantics instead of reimplementing them
 uses a real `java.util.Iterator`, not `length` plus indexing, because maps iterate keys and
 text iterates characters. A user `fun length` still wins over the builtin, matching the
 interpreter's hoisting rules.
+
+`data` types are a compile-time table in the lowering, because the interpreter hoists every
+declaration in a block before running it. A construction pushes the given values, evaluates
+the declaration's defaults for the omitted ones, and calls `DataValues.make`, which builds the
+same `OqData` with the same ordered field map. Field reads and writes go through
+`DataValues.get` / `DataValues.set`.
+
+Two construction shapes are refused by name instead of being compiled. Too many arguments, or
+a missing field with no default, is a call the interpreter would reject anyway. A default that
+reads a name or calls a function is the subtle one: the interpreter closes over the scope where
+the *type* was declared, while a compiled constructor can only evaluate at the *call site*, and
+the two differ as soon as a variable is reassigned in between. Only literal defaults are
+compiled; the rest keep the program on the interpreter. A `data` type whose name is also a
+variable, parameter or function is refused for the same reason: the interpreter resolves that
+shadowing through its environment chain.
+
+Method calls compile to `runtime.Methods`, which does **not** reimplement dispatch. It calls
+the same `MethodResolver` the interpreter uses for lists, maps, sets, text, numbers and data
+records, and delegates unknown names to the interpreter's own `JavaBridge` by reflection, so
+overload selection and argument conversion are the same code on both backends. `Methods`
+lives in `oq-runtime`, below both, which is why those calls are reflective: the alternative
+would be a second copy of the resolver, and a second copy is exactly how a compiled jar starts
+diverging from `oq run`.
 
 Functions become real static methods: every parameter is one boxed `java/lang/Object`, the
 descriptor is `(Ljava/lang/Object;...)Ljava/lang/Object;`, calls are `invokestatic` against
@@ -120,13 +145,17 @@ differently from `oq run` would be worse than no jar.
 
 The compiled mode is real bytecode, but the subset is small. Remaining work for the P3 gate:
 
-1. **Closures and lambdas.** A function that touches an enclosing variable is refused, and
-   `Lowering` still emits a placeholder constant for a lambda. Captured environments need a
-   generated environment class, which is the next stage of the backend.
-2. **Java interop.** `use` is not lowered; compiled code cannot call Java directly.
+1. **Closures and lambdas.** A function that touches an enclosing variable is refused, and a
+   lambda is refused by name (`lambdas are not compiled yet`). Captured environments need a
+   generated environment class, which is the next stage of the backend. Every conformance
+   program that still falls back does so because of a lambda, a closure, a builtin, or a
+   `try`, so this is the single biggest remaining tier.
+2. **Java interop.** `use` is refused by name; compiled code cannot call Java classes directly.
+   Method calls on Java objects that arrive from a compiled call still work, because they go
+   through `Methods` -> `JavaBridge`, exactly as under the interpreter.
 3. **Modules as separate artifacts.** Module sources are flattened into one program.
-4. **`data`, method calls and the rest of the stdlib.** `data` values, `xs.push(4)` and
-   builtins beyond `print`, `write` and `length` are refused by name.
+4. **The rest of the stdlib.** Builtins beyond `print`, `write` and `length` (`json`,
+   `json_parse`, `zip`, `type_of`, `read`, ...) are refused by name.
 5. **Benchmarks.** Nobody has measured interpreter versus compiled, so the "no regression
    above 10%" gate cannot be evaluated.
 
@@ -196,10 +225,11 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
 1. ~~**T-0038** — emit a real class file and jar.~~ Done (launcher model).
 2. ~~**T-0048** — straight-line arithmetic bytecode.~~ Done.
 3. ~~**T-0050a** — local variables in compiled bytecode.~~ Done.
-4. **T-0050b** — branches and loops, which requires `StackMapTable` generation.
-5. **T-0037b** — closures/lambdas as generated classes with a captured environment.
-6. **T-0049** — Java interop from generated code.
-7. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
+4. ~~**T-0050b** — branches and loops.~~ Done.
+5. ~~**T-0060b** — `data` declarations, constructors, field access and method calls.~~ Done.
+6. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+7. **T-0049** — Java interop from generated code.
+8. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
 Every step must keep the conformance suite green and delete the corresponding limitation
 from this page. If a step cannot, the page changes, not the claim.

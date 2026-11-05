@@ -2,39 +2,7 @@ import { createElement as h } from "react";
 import { hrefFor, Note, PageHead, Table } from "../components/Layout.jsx";
 import { Code } from "../components/Code.jsx";
 import { VersionSelect } from "../components/VersionSelect.jsx";
-
-const CARDS = [
-  {
-    href: "https://github.com/Oqthara/oqthara/blob/main/docs/spec/language.md",
-    title: "Language reference",
-    body: "Every construct, operator, method and built-in.",
-  },
-  {
-    href: hrefFor("/stdlib.html"),
-    title: "Standard library",
-    body: "Generated from the implementation, so it cannot drift.",
-  },
-  {
-    href: "https://github.com/Oqthara/oqthara/blob/main/docs/spec/backend.md",
-    title: "Compiler and JVM backend",
-    body: "What compiles, what falls back, and why.",
-  },
-  {
-    href: "https://github.com/Oqthara/oqthara/blob/main/docs/spec/fuzzing.md",
-    title: "Fuzzing",
-    body: "Jazzer targets, the regression corpus and findings.",
-  },
-  {
-    href: "https://github.com/Oqthara/oqthara/tree/main/docs/adr",
-    title: "Decision records",
-    body: "Why the syntax, the CI split and the class-file writer look like this.",
-  },
-  {
-    href: "https://github.com/Oqthara/oqthara/blob/main/CONTRIBUTING.md",
-    title: "Contributing",
-    body: "How to add a feature, a conformance case or a fuzz target.",
-  },
-];
+import { DOC_SECTIONS, docHref, sectionForSource } from "../docs.js";
 
 const COMMANDS = [
   ["oq file.oq", "Run a program"],
@@ -51,30 +19,66 @@ const COMMANDS = [
   ["oq help", "Show the command list"],
 ];
 
-export function DocsPage({ versions = [], latest = null }) {
+/**
+ * The documentation index. Every entry is read from `docs/` during the build, so a new
+ * Markdown file appears here and gets its own page without anyone editing this component.
+ */
+function DocList({ docs }) {
+  return h(
+    "div",
+    { className: "doc-index" },
+    DOC_SECTIONS.map((section) => {
+      const entries = docs.filter((doc) => sectionForSource(doc.source).dir === section.dir);
+      if (!entries.length) return null;
+      return h(
+        "section",
+        { key: section.dir },
+        h("h2", null, section.title),
+        section.blurb ? h("p", { className: "lead lead-tight" }, section.blurb) : null,
+        h(
+          "ul",
+          { className: "doc-list" },
+          entries.map((doc) =>
+            h(
+              "li",
+              { key: doc.source },
+              h("a", { href: docHref(doc.source) }, doc.title),
+              doc.summary ? h("p", null, doc.summary) : null,
+              h("code", null, doc.source),
+            ),
+          ),
+        ),
+      );
+    }),
+  );
+}
+
+export function DocsPage({ versions = [], latest = null, docs = [] }) {
+  const rendered = docs.filter(
+    (doc) => DOC_SECTIONS.some((section) => section.dir === sectionForSource(doc.source).dir),
+  );
   return h(
     "div",
     null,
     h(PageHead, {
       eyebrow: "Documentation",
       title: "Documentation",
-      lead: "Reference material for the language, the CLI, the compiler and the standard library. Everything here describes what is implemented today.",
+      lead: "Reference material for the language, the CLI, the compiler and the standard library. Every page is generated from the Markdown in this repository, so the site and the source cannot drift.",
     }),
 
-    h(
-      "div",
-      { className: "grid" },
-      CARDS.map((card) =>
-        h(
-          "a",
-          { key: card.title, className: "card card-link", href: card.href },
-          h("h3", null, card.title),
-          h("p", null, card.body),
-        ),
-      ),
-    ),
-
     h(VersionSelect, { versions, latest }),
+
+    h(DocList, { docs: rendered }),
+
+    h(
+      "p",
+      null,
+      "The ",
+      h("a", { href: hrefFor("/stdlib.html") }, "standard library"),
+      " and ",
+      h("a", { href: hrefFor("/examples.html") }, "examples"),
+      " pages are generated from the implementation and the example corpus.",
+    ),
 
     h("h2", null, "The oq command"),
     h(Table, {
