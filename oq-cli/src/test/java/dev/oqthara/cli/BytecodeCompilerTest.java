@@ -465,6 +465,153 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void aVariableShadowingABuiltinIsRefusedNotSilentlyCompiled(@TempDir Path dir) throws Exception {
+        // The interpreter looks the callee up in its environment, so `abs = 5` makes a later
+        // `abs(1)` fail with "'abs' is not a function". Emitting the builtin would print 1.
+        String shadowedBuiltin = "abs = 5\nprint abs(1)";
+        String reason = BytecodeCompiler.whyNot(ir(shadowedBuiltin));
+        assertNotNull(reason, "a call through a shadowing variable must be refused");
+        assertTrue(reason.contains("abs"), reason);
+        assertEquals(1, OqRunner.run("<t>", shadowedBuiltin, List.of(), "", dir).code());
+
+        String shadowedFunction = "fun f(x)\n  return x + 1\nend\nf = 5\nprint f(1)";
+        String reason2 = BytecodeCompiler.whyNot(ir(shadowedFunction));
+        assertNotNull(reason2, "a call through a variable shadowing a function must be refused");
+        assertTrue(reason2.contains("f"), reason2);
+    }
+
+    @Test
+    void aCallBeforeTheShadowingAssignmentStillCompiles(@TempDir Path dir) throws Exception {
+        // The check follows execution order, not "does this name appear anywhere": `fun f` is
+        // hoisted, so the call before `f = 5` still resolves to the function and must compile.
+        String source = "print f(1)\nf = 5\nfun f(x)\n  return x + 1\nend";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("2\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+        String builtin = "print abs(-1)\nabs = 5";
+        assertEquals("1\n", compileAndRun(builtin, dir));
+    }
+
+    @Test
+    void aVariadicWriteFlushesWhenTheProgramEnds(@TempDir Path dir) throws Exception {
+        // `write a, b` goes through the shared builtin table rather than Arithmetic.write, so
+        // the flush that makes a jar byte-identical when stdout is a pipe must be explicit.
+        String source = "write \"only\", \"\"";
+        assertEquals("only", compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesStdlibBuiltinsThroughTheInterpreterTable(@TempDir Path dir) throws Exception {
+        // Each of these is a real NativeFunction call on the compiled path. They all go
+        // through stdlib.Builtins, which installs the same Stdlib the interpreter uses, so
+        // the assertion below is a genuine two-backend comparison, not a reimplementation.
+        String source = """
+                print abs(-7)
+                print abs(2.5)
+                print floor(3.9)
+                print ceil(3.1)
+                print round(2.5)
+                print round(3.14159, 2)
+                print sqrt(9)
+                print pow(2, 10)
+                print min(3, 8)
+                print max(3, 8)
+                print clamp(12, 1, 10)
+                print number("42")
+                print number("3.5")
+                print type_of(1)
+                print type_of("x")
+                print is_nothing(nothing)
+                print is_nothing(1)
+                print text(12)
+                print upper("abc")
+                print lower("ABC")
+                print trim("   x  ")
+                print split("a,b,c", ",")
+                print contains("hello", "ell")
+                print replace("a-b", "-", "+")
+                print join([1, 2, 3], "-")
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertFalse(expected.isBlank(), "the interpreter must produce output to compare");
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesJsonBuiltinsThroughTheInterpreterTable(@TempDir Path dir) throws Exception {
+        String source = """
+                parsed = json_parse("[1, 2, 3]")
+                print parsed
+                print json(parsed)
+                print json_pretty({"a": 1})
+                print json_parse("{\\"n\\": 3}").n
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesCollectionBuiltinsThroughTheInterpreterTable(@TempDir Path dir) throws Exception {
+        String source = """
+                print set([1, 2, 2, 3])
+                print list(set([1, 2, 2]))
+                print zip([1, 2], ["a", "b"])
+                print keys({"a": 1, "b": 2})
+                print values({"a": 1})
+                print sum([1, 2, 3])
+                print sort([3, 1, 2])
+                print reverse([1, 2, 3])
+                print unique([1, 1, 2])
+                print push([1], 2)
+                print pop([1, 2])
+                print clone([1, [2]])
+                """;
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesVariadicPrintAndWrite(@TempDir Path dir) throws Exception {
+        String source = "print 1, 2, 3\nprint \"a\", true, nothing\nwrite \"x\", \"y\"\nprint \"\"";
+        String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+        assertEquals("1 2 3\na true nothing\nxy\n", expected);
+        assertEquals(expected, compileAndRun(source, dir));
+    }
+
+    @Test
+    void compilesAssertAsAMultiArityBuiltin(@TempDir Path dir) throws Exception {
+        String source = "assert true\nassert 1 + 1 == 2, \"math works\"\nprint \"ok\"";
+        assertEquals("ok\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void hostDependentBuiltinsStayOnTheInterpreter(@TempDir Path dir) throws Exception {
+        // Reading a file, the clock, randomness and process state are not reproducible in a
+        // generated class, so each must be refused by name and fall back to the launcher.
+        List<String> refused = List.of(
+                "print read(\"x.txt\")",
+                "print now()",
+                "print random()",
+                "print cwd()",
+                "print args()",
+                "save(\"x.txt\", \"y\")");
+        for (String source : refused) {
+            String reason = BytecodeCompiler.whyNot(ir(source));
+            assertNotNull(reason, "expected a refusal for: " + source);
+            assertTrue(reason.contains("not compiled yet"), reason);
+        }
+    }
+
+    @Test
+    void anArityTheBuiltinRejectsIsRefusedNotCompiled(@TempDir Path dir) {
+        // `abs` takes exactly one argument; a wrong arity must fall back rather than produce
+        // a jar that fails at runtime where the interpreter would have reported the mistake.
+        String reason = BytecodeCompiler.whyNot(ir("print abs(1, 2)"));
+        assertNotNull(reason, "wrong arity must be refused");
+        assertTrue(reason.contains("abs"), reason);
+    }
+
+    @Test
     void loopVariableDoesNotLeakAfterTheLoop(@TempDir Path dir) {
         // The interpreter scopes the loop variable to each iteration.
         String source = "for x in [1, 2, 3]\n  print x\nend\nprint x";
@@ -733,7 +880,7 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(145, compiled,
+        assertEquals(169, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
     }
 
