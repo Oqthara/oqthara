@@ -167,11 +167,9 @@ public final class Lowering {
                 emitCallArguments(command.args());
                 mark(command.span());
                 code.add(new Ir.Call(command.name(), command.args().size()));
-                // print/write are void in the backend; every other command yields a value,
-                // which a statement discards. Emitting a Pop for a void call underflows.
-                if (!command.name().equals("print") && !command.name().equals("write")) {
-                    code.add(new Ir.Pop());
-                }
+                // Every call yields exactly one IR value, including print and write, whose
+                // result is `nothing`. A statement discards it, so the pop is unconditional.
+                code.add(new Ir.Pop());
             }
             case Ast.If conditional -> ifStatement(conditional);
             case Ast.While loop -> whileStatement(loop);
