@@ -87,6 +87,8 @@ public final class BytecodeCompiler {
      * stack trace.
      */
     private static final String EMBEDDED_MAIN = "dev/oqthara/cli/EmbeddedMain";
+    /** Call site and closure factory for function values in generated code. */
+    private static final String CALLABLES = "dev/oqthara/runtime/Callables";
     /** Label for the one handler {@code main} owns; never collides with lowered labels. */
     private static final String UNCAUGHT_HANDLER = "\u0000uncaught";
     /**
@@ -499,6 +501,19 @@ public final class BytecodeCompiler {
                         checkSlotLimit(next);
                     }
                     case Ir.Call call -> refuseShadowedCall(call);
+                    // A call through a value parks its arguments, then the callee.
+                    case Ir.CallValue call -> {
+                        resolved[i] = next;
+                        next += call.argc() + 1;
+                        checkSlotLimit(next);
+                    }
+                    // A lambda collects its captured values, then holds the list while the
+                    // owner, method and arity are pushed.
+                    case Ir.Lambda lambda -> {
+                        resolved[i] = next;
+                        next += Math.max(1, lambda.captures());
+                        checkSlotLimit(next);
+                    }
                     default -> {
                     }
                 }
@@ -891,8 +906,39 @@ public final class BytecodeCompiler {
                                 "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
                     }
                 }
-                case Ir.CallValue ignored -> throw new NotSupportedException(
-                        "calling a function value is not compiled yet");
+                case Ir.CallValue call -> {
+                    if (reachable) {
+                        // The callee is below its arguments on the stack. Park the arguments
+                        // in scratch slots, then reload callee-then-arguments so the runtime
+                        // helper sees them in parameter order.
+                        int argc = call.argc();
+                        for (int i = argc - 1; i >= 0; i--) {
+                            store(slot + i);
+                        }
+                        store(slot + argc);
+                        load(slot + argc);
+                        for (int i = 0; i < argc; i++) load(slot + i);
+                        emitConstant(call.name());
+                        call(CALLABLES, "call" + argc,
+                                callValueDescriptor(argc));
+                    }
+                }
+                case Ir.Lambda lambda -> {
+                    if (reachable) {
+                        // Parameters run owner, method, captured, arity, so they are pushed in
+                        // that order. The captured values are already on the stack and are
+                        // collected into a list first because the helper takes one value.
+                        emitMakeCollection(lambda.captures(), slot, false);
+                        store(slot);
+                        emitClassConstant(ownerInternalName);
+                        emitConstant(lambda.method());
+                        load(slot);
+                        emitConstant((long) lambda.arity());
+                        call(CALLABLES, "closure",
+                                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;"
+                                        + "Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
                 default -> throw new NotSupportedException(
                         "instruction " + instr.getClass().getSimpleName() + " is not compiled yet");
             }
@@ -960,6 +1006,23 @@ public final class BytecodeCompiler {
         private void pushNothing() {
             bytes.write(ACONST_NULL);
             push();
+        }
+
+        /** Pushes the {@code Class} object for an internal name such as {@code oq/generated/Program}. */
+        private void emitClassConstant(String internalName) {
+            int index = pool.classRef(internalName);
+            bytes.write(LDC_W);
+            bytes.write(hi(index));
+            bytes.write(lo(index));
+            push();
+        }
+
+        /**
+         * {@code (Object callee, Object x argc, Object name)Object}: the same shape as the
+         * builtin dispatcher, with the name last so one descriptor covers every arity.
+         */
+        private static String callValueDescriptor(int argc) {
+            return "(" + OBJECT_DESCRIPTOR.repeat(argc + 2) + ")Ljava/lang/Object;";
         }
 
         private void emitConstant(Object value) {

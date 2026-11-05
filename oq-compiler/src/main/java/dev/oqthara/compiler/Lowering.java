@@ -38,6 +38,13 @@ public final class Lowering {
     private List<Ir.Instr> code;
     private int tempCounter = 0;
     private int labelCounter = 0;
+    /** Distinct names for the generated methods that hold lambda bodies. */
+    private int lambdaCounter = 0;
+    /**
+     * Names a statement in this function has bound to a function value. A call to one of them
+     * must dispatch through the value at run time, not to a builtin or a `fun` of that name.
+     */
+    private final Set<String> callableNames = new java.util.LinkedHashSet<>();
 
     public static Ir.Program lower(Ast.Program program) {
         return lowerWithReport(program).program();
@@ -150,10 +157,13 @@ public final class Lowering {
                 // VarDecl defines a new binding in the current scope, which is not the same
                 // as assignment: assignment updates an existing binding instead of shadowing.
                 expression(decl.value());
+                if (decl.value() instanceof Ast.Lambda) callableNames.add(decl.name());
                 code.add(new Ir.Declare(decl.name(), false));
             }
             case Ast.Assign assign -> {
                 expression(assign.value());
+                if (assign.value() instanceof Ast.Lambda) callableNames.add(assign.name());
+                else callableNames.remove(assign.name());
                 code.add(new Ir.Store(assign.name()));
             }
             case Ast.CompoundAssign assign -> {
@@ -249,6 +259,41 @@ public final class Lowering {
         block(attempt.handler());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(done));
+    }
+
+    /**
+     * Lowers a lambda to a generated static method plus a {@link Ir.Lambda} that creates the
+     * value. A method named {@code lambda$N} lives next to the program's own functions, so the
+     * body is ordinary emitted bytecode and there is no second execution path.
+     *
+     * <p>Only a lambda that captures nothing is compiled. Capturing would mean copying the
+     * enclosing variable's current value into the created function, and a lambda that reads a
+     * variable assigned later must see the later value; refusing is honest, silently binding
+     * the old value is not.
+     */
+    private void lambda(Ast.Lambda value, int captures) {
+        String name = "lambda$" + lambdaCounter++;
+        List<Ir.Instr> saved = code;
+        code = Ir.list();
+        List<String> params = new ArrayList<>(value.params());
+        // Parameters already occupy their slots, exactly as for a `fun`; declaring them again
+        // would allocate a second slot and emit a store with nothing on the stack.
+        if (value.body() != null) {
+            expression(value.body());
+            code.add(new Ir.Return());
+        } else {
+            block(value.blockBody());
+            code.add(new Ir.Const(null));
+            code.add(new Ir.Return());
+        }
+        functions.add(new Ir.Function(name, List.copyOf(params), List.copyOf(code)));
+        code = saved;
+        code.add(new Ir.Lambda(name, params.size(), captures));
+    }
+
+    /** The text a failed call reports, matching the interpreter's own message. */
+    private static String describeCallee(Ast.Expr callee) {
+        return callee instanceof Ast.Var var ? var.name() : "<value>";
     }
 
     private Ir.Function function(String name, List<String> params, List<Ast.Stmt> body) {
@@ -505,6 +550,13 @@ public final class Lowering {
                     DataType type = lookupType(var.name());
                     if (type != null) {
                         constructor(call, type);
+                    } else if (callableNames.contains(var.name())) {
+                        // The name holds a function value, so the call goes through the value.
+                        // A builtin or a `fun` of the same name must not win on name alone.
+                        code.add(new Ir.Load(var.name()));
+                        emitCallArguments(call.args());
+                        mark(call.span());
+                        code.add(new Ir.CallValue(call.args().size(), var.name()));
                     } else {
                         emitCallArguments(call.args());
                         mark(call.span());
@@ -513,7 +565,7 @@ public final class Lowering {
                 } else {
                     expression(call.callee());
                     emitCallArguments(call.args());
-                    code.add(new Ir.CallValue(call.args().size()));
+                    code.add(new Ir.CallValue(call.args().size(), describeCallee(call.callee())));
                 }
             }
             case Ast.MethodCall call -> {
@@ -533,8 +585,7 @@ public final class Lowering {
                 mark(field.span());
                 code.add(new Ir.GetField(field.name()));
             }
-            case Ast.Lambda lambda -> code.add(new Ir.Refuse(
-                    "lambdas are not compiled yet; a compiled jar cannot create a function value"));
+            case Ast.Lambda lambda -> lambda(lambda, 0);
             case Ast.Grouping group -> expression(group.expr());
             case Ast.InExpr in -> {
                 expression(in.item());

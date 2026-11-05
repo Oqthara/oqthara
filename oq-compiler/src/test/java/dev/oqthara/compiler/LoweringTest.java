@@ -374,8 +374,10 @@ class LoweringTest {
     }
 
     @Test
-    void lambdasAndJavaInteropAreRefusedByName() {
-        assertTrue(Ir.disassemble(lower("f = x -> x")).contains("lambdas are not compiled yet"));
+    void lambdasLowerToAGeneratedMethodAndJavaInteropIsRefusedByName() {
+        String disassembly = Ir.disassemble(lower("f = x -> x"));
+        assertTrue(disassembly.contains("lambda lambda$0/1"), disassembly);
+        assertTrue(disassembly.contains("function lambda$0"), disassembly);
         assertTrue(Ir.disassemble(lower("use java.time.LocalDate")).contains("'use'"));
     }
 
