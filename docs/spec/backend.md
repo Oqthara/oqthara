@@ -121,6 +121,43 @@ compiled; the rest keep the program on the interpreter. A `data` type whose name
 variable, parameter or function is refused for the same reason: the interpreter resolves that
 shadowing through its environment chain.
 
+### Why data fields are still boxed `Object`
+
+`data` records are not JVM fields. The generated class has **no field at all**; `javap -p` on
+a compiled program shows only `main`, and every record is one `OqData` from `oq-runtime`
+backed by a `LinkedHashMap<String, Object>`. Reads and writes go through `DataValues.get` /
+`DataValues.set`, which index that map. Two facts make a precise descriptor unsafe today:
+
+1. **There is no declared type to encode.** `Ast.FieldDef` carries a name and an optional
+   default expression, nothing else. A `data` field is dynamically typed, and the language
+   has no type annotations to derive a descriptor from.
+2. **The interpreter accepts heterogeneous values in one field.** This program prints
+   `0`, `text`, `[1, 2]` under both `oq run` and the compiled jar:
+
+   ```
+   data Slot(value = 0)
+   s = Slot()
+   print s.value
+   s.value = "text"
+   print s.value
+   s.value = [1, 2]
+   print s.value
+   ```
+
+A precise descriptor would have to reject the second write, which the interpreter allows, so
+it would be a behavioural divergence, not an optimisation. It is also not reachable by a
+`getfield`/`putfield` rewrite alone: `OqData.fields()` is read directly by `Values.repr`,
+`Json.writeValue`, `Stdlib.deepCopy` and `DataValues`, so a typed layout would break JSON,
+`text(record)`, equality and deep copies, or need a second parallel representation.
+
+Making fields precise therefore needs, in order: optional type annotations on `data` fields
+(T-0069), a language rule for a write whose value does not match the annotation (the
+interpreter must reject it too), generated accessors or typed locals with matching stack map
+frames, and a way to serialise a typed record through the same `Map`-shaped APIs. Until all
+four exist, every data field stays a boxed `java/lang/Object` inside the shared `OqData`
+map, which is exactly the interpreter's value model. This is a decision, not a pending
+rewrite: changing it requires the language change first.
+
 Method calls compile to `runtime.Methods`, which does **not** reimplement dispatch. It calls
 the same `MethodResolver` the interpreter uses for lists, maps, sets, text, numbers and data
 records, and delegates unknown names to the interpreter's own `JavaBridge` by reflection, so
@@ -227,9 +264,12 @@ non-BMP text, program arguments, module embedding and jar-entry safety.
 3. ~~**T-0050a** — local variables in compiled bytecode.~~ Done.
 4. ~~**T-0050b** — branches and loops.~~ Done.
 5. ~~**T-0060b** — `data` declarations, constructors, field access and method calls.~~ Done.
-6. **T-0037b** — closures/lambdas as generated classes with a captured environment.
-7. **T-0049** — Java interop from generated code.
-8. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
+6. ~~**T-0060c** — precise field descriptors for `data`.~~ Refused with evidence: fields stay
+   boxed `Object` because the language has no field type and allows a field to change type.
+   See "Why data fields are still boxed `Object`".
+7. **T-0037b** — closures/lambdas as generated classes with a captured environment.
+8. **T-0049** — Java interop from generated code.
+9. **T-0047** — benchmarks: interpreter versus generated versus hand-written Java.
 
 Every step must keep the conformance suite green and delete the corresponding limitation
 from this page. If a step cannot, the page changes, not the claim.
