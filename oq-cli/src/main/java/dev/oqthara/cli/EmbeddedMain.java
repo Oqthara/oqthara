@@ -79,7 +79,41 @@ public final class EmbeddedMain {
         } catch (OqError error) {
             renderUncaught(err, error, source);
             System.exit(1);
+        } catch (Throwable failure) {
+            // Bytecode hands every escaping throwable here, including the JVM failures the
+            // interpreter's own catch chain reports. Wording lives in one place so the two
+            // backends cannot drift.
+            if (!renderFailure(err, failure)) throw new IllegalStateException(failure);
+            System.exit(1);
         }
+    }
+
+    /**
+     * Renders a throwable that escaped the program as the interpreter would, and returns
+     * whether it was recognised. Unrecognised failures belong to Oqthara itself, so the caller
+     * rethrows them rather than blaming the program.
+     */
+    static boolean renderFailure(java.io.PrintStream err, Throwable failure) {
+        if (failure instanceof OutOfMemoryError) {
+            // A compiled jar has no step budget, so runaway allocation is only stopped by the
+            // heap. Report it as the interpreter does instead of dumping a stack trace.
+            err.println();
+            err.println("error: the program ran out of memory");
+            err.println("  help: it asked for more data than this machine can hold. "
+                    + "Work on smaller pieces, or read the file in another language.");
+            err.println();
+            err.flush();
+            return true;
+        }
+        if (failure instanceof StackOverflowError) {
+            err.println();
+            err.println("error: the program recursed too deeply");
+            err.println("  help: check that a recursive function has a stopping condition.");
+            err.println();
+            err.flush();
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -93,6 +127,7 @@ public final class EmbeddedMain {
      */
     public static void renderUncaught(Object error, String source) {
         java.io.PrintStream err = utf8(System.err);
+        if (error instanceof Throwable failure && renderFailure(err, failure)) System.exit(1);
         OqError oqError = error instanceof OqError typed
                 ? typed
                 : new OqError(String.valueOf(error), Span.synthetic());

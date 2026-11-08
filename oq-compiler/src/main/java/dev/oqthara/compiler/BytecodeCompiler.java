@@ -173,6 +173,7 @@ public final class BytecodeCompiler {
         int thisClass = pool.classRef(pool.utf8(internalName));
         int objectClass = pool.classRef(pool.utf8("java/lang/Object"));
         int oqErrorClass = pool.classRef(OQ_ERROR);
+        int throwableClass = pool.classRef("java/lang/Throwable");
         int codeAttribute = pool.utf8("Code");
         // Every constant must exist before the pool is serialized; adding one afterwards
         // leaves the pool's declared entry count stale and produces a ClassFormatError.
@@ -185,8 +186,10 @@ public final class BytecodeCompiler {
         byte[][] stackMaps = new byte[methods.size()][];
         nameIndices[0] = pool.utf8("main");
         descriptorIndices[0] = pool.utf8("([Ljava/lang/String;)V");
+        // main's top-level handler catches Throwable while its own rows catch OqError, so the
+        // handler frame is typed with their common supertype. Object matches either.
         stackMaps[0] = stackMap(pool, objectClass, main.frameOffsets(), main.handlerOffsets(),
-                main.localCount(), oqErrorClass);
+                main.localCount(), objectClass);
         for (int i = 1; i < methods.size(); i++) {
             Ir.Function function = program.functions().get(i - 1);
             nameIndices[i] = pool.utf8(function.name());
@@ -211,7 +214,8 @@ public final class BytecodeCompiler {
             out.writeShort(methods.size());
             for (int i = 0; i < methods.size(); i++) {
                 writeMethod(out, nameIndices[i], descriptorIndices[i], codeAttribute,
-                        stackMapAttribute, methods.get(i), stackMaps[i], oqErrorClass);
+                        stackMapAttribute, methods.get(i), stackMaps[i], oqErrorClass,
+                        throwableClass);
             }
             out.writeShort(1); // class attributes
             out.writeShort(sourceFile);
@@ -230,7 +234,7 @@ public final class BytecodeCompiler {
      */
     private static void writeMethod(DataOutputStream out, int nameIndex, int descriptorIndex,
             int codeAttribute, int stackMapAttribute, Method method, byte[] stackMap,
-            int catchType) throws IOException {
+            int catchType, int throwableClass) throws IOException {
         byte[] code = method.code();
         List<ResolvedRow> rows = method.exceptionRows();
         // 12 already counts max_stack, max_locals, code_length, the exception-table count
@@ -251,8 +255,10 @@ public final class BytecodeCompiler {
             out.writeShort(row.start());
             out.writeShort(row.end());
             out.writeShort(row.handler());
-            // Exactly OqError: the interpreter's catch does not see any other RuntimeException.
-            out.writeShort(catchType);
+            // Program `try` rows catch exactly OqError, matching the interpreter. The top-level
+            // row catches Throwable so JVM failures such as OutOfMemoryError are still reported
+            // as program errors rather than dumped as a stack trace.
+            out.writeShort(row.catchAll() ? throwableClass : catchType);
         }
         if (stackMap == null) {
             out.writeShort(0);
@@ -302,7 +308,9 @@ public final class BytecodeCompiler {
                     out.writeShort(objectType);
                 }
                 if (handlers.contains(offset)) {
-                    // A handler is entered with the caught OqError on the stack.
+                    // A handler is entered with the caught throwable on the stack. Every local is
+                    // typed Object and the caught value is stored into one, so a Throwable handler
+                    // needs no frame of its own.
                     out.writeShort(1);
                     out.writeByte(objectInfo);
                     out.writeShort(catchType);
@@ -327,15 +335,15 @@ public final class BytecodeCompiler {
      * handler label. The handler's offset is only known once every instruction is placed, so
      * the row keeps the label until then.
      */
-    private record ExceptionRow(int start, int end, String handler) {
+    private record ExceptionRow(int start, int end, String handler, boolean catchAll) {
     }
 
     /**
-     * One resolved exception-table row: all three values are bytecode offsets. The caught
-     * type is always {@code OqError}, because that is the only throwable the interpreter's
-     * {@code try} catches.
+     * One resolved exception-table row: all three values are bytecode offsets. {@code catchAll}
+     * rows name {@code java.lang.Throwable}, so an {@code OutOfMemoryError} or any other JVM
+     * failure still reaches the renderer instead of escaping as a stack trace.
      */
-    private record ResolvedRow(int start, int end, int handler) {
+    private record ResolvedRow(int start, int end, int handler, boolean catchAll) {
     }
 
     /**
@@ -426,7 +434,7 @@ public final class BytecodeCompiler {
                 if (handler == null) {
                     throw new NotSupportedException("unresolved handler " + row.handler());
                 }
-                resolved.add(new ResolvedRow(row.start(), row.end(), handler));
+                resolved.add(new ResolvedRow(row.start(), row.end(), handler, row.catchAll()));
             }
             resolved.sort((a, b) -> {
                 // JVMS 4.7.3: the first row whose range covers the throw wins, so a nested
@@ -711,7 +719,7 @@ public final class BytecodeCompiler {
                     "(Ljava/lang/Object;Ljava/lang/String;)V");
             bytes.write(RETURN);
             reachable = false;
-            exceptionTable.add(new ExceptionRow(start, end, UNCAUGHT_HANDLER));
+            exceptionTable.add(new ExceptionRow(start, end, UNCAUGHT_HANDLER, true));
         }
 
         private void emit(Ir.Instr instr, int slot) {
@@ -970,7 +978,7 @@ public final class BytecodeCompiler {
             if (stop <= start) {
                 throw new NotSupportedException("an empty 'try' body is not compiled yet");
             }
-            exceptionTable.add(new ExceptionRow(start, stop, handler));
+            exceptionTable.add(new ExceptionRow(start, stop, handler, false));
         }
 
         private void requireEmptyStack(String where) {

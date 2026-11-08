@@ -159,17 +159,10 @@ public final class Main {
                 Details.render(err, error, source, color);
                 return 1;
             } catch (StackOverflowError overflow) {
-                err.println();
-                err.println("error: the program recursed too deeply");
-                err.println("  help: check that a recursive function has a stopping condition.");
-                err.println();
+                EmbeddedMain.renderFailure(err, overflow);
                 return 1;
             } catch (OutOfMemoryError notEnough) {
-                err.println();
-                err.println("error: the program ran out of memory");
-                err.println("  help: it asked for more data than this machine can hold. "
-                        + "Work on smaller pieces, or read the file in another language.");
-                err.println();
+                EmbeddedMain.renderFailure(err, notEnough);
                 return 1;
             } catch (RuntimeException e) {
                 err.println();
