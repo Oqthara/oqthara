@@ -92,7 +92,7 @@ class HostBuiltinLimitsTest {
         outBytes.reset();
         OqError error = assertThrows(OqError.class,
                 () -> call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES + 1)));
-        assertTrue(error.getMessage().contains("wrote too much output"), error.getMessage());
+        assertEquals("the program wrote too much output", error.getMessage());
         assertEquals(0, outBytes.size(), "a refused print must not write its bytes first");
     }
 
@@ -113,7 +113,7 @@ class HostBuiltinLimitsTest {
         int newline = System.lineSeparator().length();
         OqError error = assertThrows(OqError.class,
                 () -> call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES - newline + 1)));
-        assertTrue(error.getMessage().contains("wrote too much output"), error.getMessage());
+        assertEquals("the program wrote too much output", error.getMessage());
         assertEquals(0, outBytes.size(), "a refused print must not write its bytes first");
     }
 
@@ -130,7 +130,7 @@ class HostBuiltinLimitsTest {
         OqError error = assertThrows(OqError.class, () -> {
             for (int i = 0; i < prints; i++) call("print", "");
         });
-        assertTrue(error.getMessage().contains("wrote too much output"), error.getMessage());
+        assertEquals("the program wrote too much output", error.getMessage());
     }
 
     @Test
@@ -194,7 +194,7 @@ class HostBuiltinLimitsTest {
         java.util.Arrays.fill(filler, (byte) 'a');
         Files.write(file, filler);
         OqError error = assertThrows(OqError.class, () -> call("read", file.toString()));
-        assertTrue(error.getMessage().contains("too large"), error.getMessage());
+        assertEquals("the file is too large to read: " + file, error.getMessage());
         assertFalse(error.getMessage().contains("ran for too long"), error.getMessage());
     }
 
@@ -208,7 +208,7 @@ class HostBuiltinLimitsTest {
         Files.write(file, filler);
 
         OqError error = assertThrows(OqError.class, () -> call("read_lines", file.toString()));
-        assertTrue(error.getMessage().contains("too large"), error.getMessage());
+        assertEquals("the file is too large to read: " + file, error.getMessage());
     }
 
     @Test

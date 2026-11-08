@@ -281,6 +281,10 @@ public final class Values {
                         "The limit is " + MAX_COLLECTION_SIZE
                                 + ". Repeat fewer times, or build the list as you need it.");
             }
+            // An empty list has size 0 whatever the count, so the guard above cannot see a
+            // billion repetitions of it and the loop below would run that many times. There is
+            // only one answer, so return it without looping.
+            if (l.isEmpty()) return new ArrayList<>();
             List<Object> result = new ArrayList<>();
             for (long i = 0; i < n; i++) result.addAll(l);
             return result;
@@ -311,13 +315,19 @@ public final class Values {
      */
     private static String repeat(String text, Long count, Span span) {
         long n = Math.max(0, count);
+        // Empty text repeats to empty text whatever the count, and the total below stays 0, so
+        // the guard would not fire and the cast at the end would truncate a count in the billions
+        // to a negative number. There is one answer, so give it without casting.
+        if (text.isEmpty() || n == 0) return "";
         long total = repeatCount(text.length(), n, span);
         if (total > MAX_REPEAT_LENGTH) {
             throw new OqError("the repeated text would be " + total + " characters", span,
                     "The limit is " + MAX_REPEAT_LENGTH
                             + ". Repeat fewer times, or write it in pieces.");
         }
-        // The limit above is well below Integer.MAX_VALUE, so the cast below is always safe.
+        // A non-empty text makes `total` at least `n`, and `total` was just bounded by
+        // MAX_REPEAT_LENGTH, which is far below Integer.MAX_VALUE. The cast is safe here only
+        // because of that ordering.
         return text.repeat((int) n);
     }
 

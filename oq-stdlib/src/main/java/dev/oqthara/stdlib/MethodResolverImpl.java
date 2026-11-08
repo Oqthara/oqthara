@@ -205,6 +205,29 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 int n = ((Number) args.get(0)).intValue();
                 return new ArrayList<>(list.subList(Math.max(0, Math.min(n, list.size())), list.size()));
             });
+            case "subList", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
+                    (host, args, callSpan) -> {
+                int from;
+                int to;
+                if (args.size() == 1) {
+                    from = ((Number) args.get(0)).intValue();
+                    to = list.size();
+                } else {
+                    from = ((Number) args.get(0)).intValue();
+                    to = ((Number) args.get(1)).intValue();
+                }
+                if (from < 0) from = 0;
+                if (to > list.size()) to = list.size();
+                if (from > to) from = to;
+                // A copy, never java.util.List.subList: that returns a live view whose mutators
+                // are not in Oqthara's list API, so they fell through to Java reflection. On a
+                // tuple the view also lost the immutable identity, so `t.subList(0,2).set(...)`
+                // reached the JDK instead of the tuple refusal.
+                List<Object> sliced = new ArrayList<>(list.subList(from, to));
+                return list instanceof dev.oqthara.runtime.OqTuple
+                        ? dev.oqthara.runtime.OqTuple.of(sliced)
+                        : sliced;
+            });
             case "sum" -> fixed(name, 0, (host, args) -> sum(list, span));
             case "min" -> fixed(name, 0, (host, args) -> extreme(list, span, true));
             case "max" -> fixed(name, 0, (host, args) -> extreme(list, span, false));

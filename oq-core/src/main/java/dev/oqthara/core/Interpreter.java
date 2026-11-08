@@ -12,6 +12,7 @@ import dev.oqthara.runtime.OqRange;
 import dev.oqthara.runtime.OqTuple;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
+import dev.oqthara.runtime.WaitedBudget;
 
 import java.io.BufferedReader;
 import java.io.PrintStream;
@@ -111,6 +112,7 @@ public final class Interpreter implements OqHost {
     public void resetSteps() {
         steps.set(0);
         OutputBudget.reset();
+        WaitedBudget.reset();
     }
 
     public void defineBuiltin(NativeFunction function) {

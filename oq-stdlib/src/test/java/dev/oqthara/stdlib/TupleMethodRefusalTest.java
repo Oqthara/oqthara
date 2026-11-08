@@ -49,6 +49,37 @@ class TupleMethodRefusalTest {
     }
 
     @Test
+    void aResolvedViewIsStillATuple() {
+        // subList used to fall through to java.util.List.subList, which returns a live view of a
+        // private JDK class. Mutators on that view were not in Oqthara's list API, so they skipped
+        // the resolver guard entirely and surfaced as either a raw IllegalAccessException or, for
+        // a mutable parent, a silent write. The resolver now returns a copy that keeps its type.
+        OqCallable sub = resolver.resolve(tuple, "subList", span);
+        assertNotNull(sub);
+        Object view = sub.call(null, List.of(0L, 1L), span);
+        assertTrue(view instanceof OqTuple, "subList() returned " + view.getClass().getName());
+        assertEquals(1, ((List<?>) view).size());
+
+        OqCallable set = resolver.resolve(view, "set", span);
+        assertNotNull(set);
+        OqError error = assertThrows(OqError.class, () -> set.call(null, List.of(0L, 9L), span));
+        assertEquals(OqTuple.IMMUTABLE, error.getMessage());
+    }
+
+    @Test
+    void aViewOfATupleCannotBeSortedInPlace() {
+        // `sort` is functional in Oqthara - it returns a new list - so a tuple refuses it as a
+        // mutator even though nothing is mutated. The old reflection path silently returned a
+        // sorted list, which meant a tuple quietly turned into a mutable list.
+        OqCallable sub = resolver.resolve(tuple, "subList", span);
+        Object view = sub.call(null, List.of(0L, 1L), span);
+        OqCallable sort = resolver.resolve(view, "sort", span);
+        assertNotNull(sort);
+        OqError error = assertThrows(OqError.class, () -> sort.call(null, List.of(), span));
+        assertEquals(OqTuple.IMMUTABLE, error.getMessage());
+    }
+
+    @Test
     void readOnlyMethodsStillResolve() {
         OqCallable length = resolver.resolve(tuple, "length", span);
         assertNotNull(length);

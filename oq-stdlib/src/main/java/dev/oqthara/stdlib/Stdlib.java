@@ -42,13 +42,14 @@ public final class Stdlib {
     static final int MAX_TEXT_BYTES = 16 * 1024 * 1024;
 
     /** How many steps one byte of transferred text costs. */
-    static final int STEPS_PER_BYTE = 256;
 
     /** How long {@code run_command} waits before it gives up on the child process. */
     static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
 
     /** The longest single {@code sleep} call, so one statement cannot block the program for hours. */
     static final long MAX_SLEEP_MILLIS = 10_000;
+
+
 
     /** The most names {@code list_files} will return from one directory. */
     static final int MAX_LIST_ENTRIES = 100_000;
@@ -461,7 +462,9 @@ public final class Stdlib {
                         "A long wait would block the program; the limit is "
                                 + MAX_SLEEP_MILLIS / 1000 + " seconds per call.");
             }
-            chargeTransfer(host, millis);
+            // Time is not a transfer: billing a millisecond as one step let a program wait
+            // 50,000,000 ms (about 13.9 hours). Waiting has its own aggregate budget.
+            dev.oqthara.runtime.WaitedBudget.charge(millis, span);
             try {
                 Thread.sleep(Math.max(0, millis));
             } catch (InterruptedException e) {
@@ -645,12 +648,13 @@ public final class Stdlib {
     }
 
     /**
-     * Bills the program for the text it just transferred.
+     * Bills the program one step per byte it moved.
      *
-     * <p>Builtins run as a single interpreter step, so a loop that prints a large string cost
-     * one step per iteration no matter how many bytes moved. Charging by size means the one
-     * budget covers output too: a program that tries to write a gigabyte exhausts the steps it
-     * would have needed anyway. {@code host} is an {@link Interpreter} for every path that runs
+     * <p>Builtins run as a single interpreter step, so a loop that prints a large string would
+     * otherwise cost one step per iteration no matter how many bytes moved. The per-byte charge
+     * makes a program pay for what it transfers. It is <em>not</em> the bound itself: each call
+     * has its own size limit in the table above, and the charge only ensures a loop of small
+     * transfers cannot be free. {@code host} is an {@link Interpreter} for every path that runs
      * user code; a compiled program and a bare method resolver have no counter to charge.
      */
     private static void chargeTransfer(OqHost host, long bytes) {

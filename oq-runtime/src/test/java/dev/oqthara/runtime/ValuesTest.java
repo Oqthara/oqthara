@@ -2,12 +2,14 @@ package dev.oqthara.runtime;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ValuesTest {
@@ -159,6 +161,33 @@ class ValuesTest {
         OqError error = assertThrows(OqError.class,
                 () -> Values.multiply("ab", 4611686018427387905L, span));
         assertEquals("the repetition is too large to build", error.getMessage());
+    }
+
+    @Test
+    void repeatingEmptyTextAnyNumberOfTimesStaysEmpty() {
+        // The size guard casts the requested count to int once it knows the product, and an
+        // empty text makes that product zero no matter how large the count is. Checking for
+        // empty text first keeps `"" * 3000000000` from becoming a negative-count crash.
+        assertEquals("", Values.multiply("", 3_000_000_000L, span));
+        assertEquals("", Values.multiply("", 0L, span));
+        assertEquals("", Values.multiply("", -2L, span));
+    }
+
+    @Test
+    void repeatingAnEmptyListAnyNumberOfTimesStaysEmpty() {
+        // The size guard sees size zero and passes, but the loop still ran `n` times: a four-
+        // quadrillion-iteration loop that appended nothing. Empty is answered up front.
+        // Preemptively, because the unguarded version does not fail this test - it hangs it.
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            assertEquals(List.of(), Values.multiply(List.of(), 4_611_686_018_427_387_905L, span));
+            assertEquals(List.of(), Values.multiply(List.of(), 0L, span));
+        });
+    }
+
+    @Test
+    void anEmptyTextRepeatFinishesImmediatelyToo() {
+        assertTimeoutPreemptively(Duration.ofSeconds(5),
+                () -> assertEquals("", Values.multiply("", 3_000_000_000L, span)));
     }
 
     @Test
