@@ -29,9 +29,9 @@ class ConformanceTest {
         assertTrue(programs.size() >= 100, "expected at least 100 conformance cases, found " + programs.size());
 
         List<String> failures = new ArrayList<>();
-        int executed = 0;
+        int errorCases = 0;
+        int outputCases = 0;
         for (Path program : programs) {
-            executed++;
             String name = program.getFileName().toString();
             String base = name.substring(0, name.length() - 3);
             String source = Files.readString(program);
@@ -67,7 +67,9 @@ class ConformanceTest {
                     failures.add(name + ": diagnostic has no position\n  expected to find: --> "
                             + name + ":\n  actual:\n          "
                             + actual.replace("\n", "\n          "));
+                    continue;
                 }
+                errorCases++;
                 continue;
             }
 
@@ -79,16 +81,22 @@ class ConformanceTest {
             } else if (result.code() != 0) {
                 failures.add(name + ": expected exit code 0, got " + result.code()
                         + "\n--- stderr ---\n" + result.stderr());
+            } else {
+                outputCases++;
             }
         }
         if (!failures.isEmpty()) {
             fail(failures.size() + " conformance failure(s):\n\n" + String.join("\n\n", failures));
         }
-        // Every listed program must have been inspected. This counter makes a skipped case a
-        // failure; the previous assertion compared `programs.size()` with itself, which can
-        // never fail and therefore covered nothing.
-        assertEquals(programs.size(), executed,
-                "every discovered program must be inspected, not just counted");
+        // Both kinds of case must actually exist. This can fail: if the .err files were deleted,
+        // every error case would silently start being compared as output, and a corpus of
+        // purely-output cases would stop exercising the diagnostic path that this suite exists
+        // to pin. The count is only reachable once a case passes its own branch to the end, so
+        // a case that bails out early is not counted as covered.
+        assertEquals(programs.size(), errorCases + outputCases,
+                "every discovered program must reach the end of one of the two checks");
+        assertTrue(errorCases >= 10, "expected at least 10 error cases, found " + errorCases);
+        assertTrue(outputCases >= 100, "expected at least 100 output cases, found " + outputCases);
     }
 
     /**

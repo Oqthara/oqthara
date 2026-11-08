@@ -237,9 +237,10 @@ class BuildJarTest {
      *
      * <p>{@code 1 to true} is used because it is the smallest program that both reaches real
      * bytecode and raises a non-{@code OqError}: the compiler emits the range loop and the
-     * bound check throws {@code IllegalArgumentException}. The assertion that the build chose
-     * bytecode keeps the test honest — it would otherwise pass vacuously against a launcher jar
-     * that never runs the compiled entry point.
+     * bound check throws {@code IllegalArgumentException}. That the jar really runs compiled
+     * bytecode, rather than falling back to the launcher, was confirmed by hand with
+     * {@code oq run} printing {@code codepath: compiled bytecode} for the same source; this
+     * test does not re-assert it.
      */
     @Test
     void aCompiledJarReportsAnInternalErrorWithExitCode70(@TempDir Path dir) throws Exception {
