@@ -64,6 +64,35 @@ public final class Interpreter implements OqHost {
         this.maxSteps = maxSteps;
     }
 
+    public int maxSteps() {
+        return maxSteps;
+    }
+
+    /**
+     * Charges work the interpreter cannot see, such as a builtin copying a large file.
+     *
+     * <p>The step counter only advances on statements, loop turns and expressions, so a single
+     * call to a host builtin used to cost one step no matter how much memory it allocated. The
+     * stdlib charges this budget in proportion to the work it actually does, which is what
+     * makes the resource controls on {@code print}, {@code read} and {@code run_command} part
+     * of the same guard instead of a separate uncounted one.
+     */
+    public void chargeSteps(long units) {
+        if (units <= 0) return;
+        long spent = (long) steps + units;
+        if (spent > maxSteps) {
+            steps = maxSteps + 1;
+            throw new OqError("program ran for too long", Span.synthetic(),
+                    "Stopped after " + maxSteps + " steps. Check for an infinite loop.");
+        }
+        steps = (int) spent;
+    }
+
+    /** Discards the step count, so one budget covers the whole session rather than each entry. */
+    public void resetSteps() {
+        steps = 0;
+    }
+
     public void defineBuiltin(NativeFunction function) {
         OqCallable existing = builtins.get(function.name());
         if (existing == null) {
@@ -81,6 +110,7 @@ public final class Interpreter implements OqHost {
     }
 
     public Object run(Ast.Program program) {
+        resetSteps();
         Env env = new Env();
         for (OqCallable function : builtins.values()) {
             env.defineBuiltin(function.name(), function);

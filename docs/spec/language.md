@@ -420,10 +420,48 @@ Time: `now()`, `today()`, `datetime()`, `timestamp()`, `sleep(seconds)`.
 HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
 `.body` and `.ok`.
 
-Processes: `run_command(line)` returns `.code` and `.output`. `env(name)`,
+Processes: `run_command(path)` returns `.code` and `.output`. `env(name)`,
 `cpu_count()`, `memory_mb()`.
 
 Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
+
+### Host calls are bounded
+
+The language restricts the host calls that can consume unbounded time or memory, so a
+program cannot exhaust the machine by accident. These limits are part of the contract:
+
+| Call | Limit | On breach |
+| ---- | ----- | --------- |
+| `print`, `write`, `write_text` | 16 MiB of output, total | `program ran for too long` |
+| `read`, `read_lines` | 16 MiB per file | `the file is too large to read` |
+| `run_command` | 30 seconds, 16 MiB of output | `command timed out after 30 seconds`, `command output is too large` |
+| `http_get`, `http_post` | 16 MiB per response body | `response is too large` |
+
+Every byte transferred to or from the host is charged against the step budget, at 256 steps
+per byte. A single maximum-size transfer therefore costs more than the whole budget, so in
+practice the budget trips before a byte count reaches the cap and the diagnostic you see is
+`program ran for too long`. Both outcomes are refusals; which one appears depends on what
+the program had already spent.
+
+`run_command(path)` runs **one executable path** with no arguments and no shell. There is no
+command-line splitting and no interpolation, so `run_command("/bin/ls -l")` is a program
+error rather than a directory listing. To pass arguments, write a script and run the script:
+
+```
+result = run_command("/bin/ls")
+print result.code, result.output
+```
+
+A non-zero exit status is an ordinary result, not an error; the caller inspects `.code`. A
+missing executable, a timeout, or excessive output raises a program error.
+
+These bounds apply to programs run by the interpreter, which includes `oq run` and `oq build`
+output, because the embedded program is still interpreted. See [backend.md](backend.md).
+
+Oqthara is **not** a sandbox. A program that is allowed to run can read the files the user can
+read, start the processes the user can start, and reach the network the user can reach. The
+limits above prevent accidental exhaustion; they do not contain hostile code. See
+[SECURITY.md](../../SECURITY.md).
 
 ## Concurrency
 
