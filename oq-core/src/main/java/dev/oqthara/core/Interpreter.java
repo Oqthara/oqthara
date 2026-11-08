@@ -32,7 +32,10 @@ public final class Interpreter implements OqHost {
     private final Map<String, Class<?>> javaTypes = new LinkedHashMap<>();
     private final Map<String, OqCallable> builtins = new LinkedHashMap<>();
     private final ThreadLocal<List<String>> callStack = ThreadLocal.withInitial(ArrayList::new);
-    private int steps = 0;
+    // Written from every virtual thread a program runs, so it must not be a plain int: two
+    // threads incrementing concurrently would otherwise lose counts and weaken the budget.
+    private final java.util.concurrent.atomic.AtomicLong steps =
+            new java.util.concurrent.atomic.AtomicLong();
     private int maxSteps = 50_000_000;
     private int depth = 0;
     private final int maxDepth = 800;
@@ -79,18 +82,43 @@ public final class Interpreter implements OqHost {
      */
     public void chargeSteps(long units) {
         if (units <= 0) return;
-        long spent = (long) steps + units;
+        long spent = steps.addAndGet(units);
         if (spent > maxSteps) {
-            steps = maxSteps + 1;
+            steps.set(maxSteps + 1L);
             throw new OqError("program ran for too long", Span.synthetic(),
                     "Stopped after " + maxSteps + " steps. Check for an infinite loop.");
         }
-        steps = (int) spent;
     }
 
     /** Discards the step count, so one budget covers the whole session rather than each entry. */
+    /**
+     * Bills the program for bytes sent to the host.
+     *
+     * <p>Output gets its own ceiling instead of draining the step budget. Charging output as
+     * steps meant the budget tripped first and the documented 16 MiB figure was unreachable:
+     * a program could only print 50,000,000 / 256 = 195,312 bytes before dying. Two independent
+     * limits are what the docs promise, so this keeps the byte budget real and leaves the step
+     * budget for computation.
+     */
+    public void chargeOutput(long bytes) {
+        if (bytes <= 0) return;
+        long spent = outputBytes.addAndGet(bytes);
+        if (spent > MAX_OUTPUT_BYTES) {
+            throw new OqError("program wrote too much output", Span.synthetic(),
+                    "It wrote more than " + MAX_OUTPUT_BYTES + " bytes. "
+                            + "Write less, or send the data to a file instead.");
+        }
+    }
+
+    /** The largest total output one program may write, in bytes. */
+    public static final long MAX_OUTPUT_BYTES = 16L * 1024 * 1024;
+
+    private final java.util.concurrent.atomic.AtomicLong outputBytes =
+            new java.util.concurrent.atomic.AtomicLong();
+
     public void resetSteps() {
-        steps = 0;
+        steps.set(0);
+        outputBytes.set(0);
     }
 
     public void defineBuiltin(NativeFunction function) {
@@ -172,7 +200,7 @@ public final class Interpreter implements OqHost {
     }
 
     private void tick(Span span) {
-        if (++steps > maxSteps) {
+        if (steps.incrementAndGet() > maxSteps) {
             throw new OqError("program ran for too long", span,
                     "Stopped after " + maxSteps + " steps. Check for an infinite loop.");
         }

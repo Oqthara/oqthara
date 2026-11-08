@@ -73,16 +73,33 @@ class HostBuiltinLimitsTest {
     }
 
     @Test
-    void outputIsChargedAgainstTheStepBudget() {
-        // print is a single interpreter step, so before this the only cost of a huge write was
-        // the bytes themselves. The charge makes output consume the same budget as any other
-        // work, which is what lets one limit cover both.
+    void outputHasItsOwnByteCeilingRatherThanTheStepBudget() {
+        // Output is charged against a dedicated byte counter, not the step budget. Charging it
+        // as steps made the documented 16 MiB unreachable: the budget tripped at 195,312 bytes.
         int before = interpreter.maxSteps();
         interpreter.setMaxSteps(1_000);
-        OqError error = assertThrows(OqError.class,
-                () -> call("print", "x".repeat(100_000)));
-        assertTrue(error.getMessage().contains("ran for too long"), error.getMessage());
+        call("print", "x".repeat(100_000));
         interpreter.setMaxSteps(before);
+    }
+
+    @Test
+    void aPrintThatCrossesTheCeilingWritesNothing() {
+        // The charge lands before the bytes, so a refused print must not emit them first.
+        outBytes.reset();
+        OqError error = assertThrows(OqError.class,
+                () -> call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES + 1)));
+        assertTrue(error.getMessage().contains("wrote too much output"), error.getMessage());
+        assertEquals(0, outBytes.size(), "a refused print must not write its bytes first");
+    }
+
+    @Test
+    void exactlySixteenMebibytesIsAllowed() {
+        // 16 MiB is within the limit; only one byte more is refused. The earlier `>=` check on a
+        // `MAX + 1` read refused exactly 16 MiB, one byte short of what the docs promised.
+        outBytes.reset();
+        call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES));
+        assertEquals(Interpreter.MAX_OUTPUT_BYTES + System.lineSeparator().length(),
+                outBytes.size());
     }
 
     @Test

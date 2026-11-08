@@ -57,9 +57,9 @@ class StepBudgetTest {
                 result.stderr());
     }
 
-    /** `print` is billed by the characters it emits, so a writing loop cannot run forever. */
+    /** A writing loop hits the 16 MiB output ceiling, so it cannot run forever. */
     @Test
-    void printLoopIsBilledByOutputVolume() {
+    void printLoopStopsAtTheOutputCeiling() {
         OqRunner.Result result = assertTimeoutPreemptively(Duration.ofSeconds(120),
                 () -> OqRunner.run("""
                         n = 0
@@ -69,7 +69,7 @@ class StepBudgetTest {
                         end
                         """));
         assertNotEquals(0, result.code(), "an unbounded print loop must fail");
-        assertTrue(result.stderr().contains("program ran for too long"), result.stderr());
+        assertTrue(result.stderr().contains("wrote too much output"), result.stderr());
     }
 
     /** A single oversized read is refused, and the refusal is a step-budget or size error. */

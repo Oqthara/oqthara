@@ -46,6 +46,12 @@ public final class Stdlib {
     /** How long {@code run_command} waits before it gives up on the child process. */
     static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
 
+    /** The longest single {@code sleep} call, so one statement cannot block the program for hours. */
+    static final long MAX_SLEEP_MILLIS = 10_000;
+
+    /** The most names {@code list_files} will return from one directory. */
+    static final int MAX_LIST_ENTRIES = 100_000;
+
     private Stdlib() {
     }
 
@@ -69,42 +75,32 @@ public final class Stdlib {
                 if (i > 0) sb.append(' ');
                 sb.append(Values.display(args.get(i)));
             }
-            host.out().println(sb);
             chargeOutput(host, sb);
+            host.out().println(sb);
             return null;
         }));
         interpreter.defineBuiltin(NativeFunction.variadic("write_text", 0, (host, args, span) -> {
             StringBuilder sb = new StringBuilder();
             for (Object arg : args) sb.append(Values.display(arg));
-            host.out().print(sb);
             chargeOutput(host, sb);
+            host.out().print(sb);
             return null;
         }));
         interpreter.defineBuiltin(NativeFunction.variadic("write", 0, (host, args, span) -> {
             StringBuilder sb = new StringBuilder();
             for (Object arg : args) sb.append(Values.display(arg));
-            host.out().print(sb);
             chargeOutput(host, sb);
+            host.out().print(sb);
             return null;
         }));
         interpreter.defineBuiltin(NativeFunction.of("input", 0, (host, args, span) -> {
             host.out().flush();
-            try {
-                String line = host.in().readLine();
-                return line == null ? null : line;
-            } catch (IOException e) {
-                throw new OqError("cannot read input: " + e.getMessage(), span);
-            }
+            return readLineBounded(host, span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("input", 1, (host, args, span) -> {
             host.out().print(Values.display(args.get(0)));
             host.out().flush();
-            try {
-                String line = host.in().readLine();
-                return line == null ? null : line;
-            } catch (IOException e) {
-                throw new OqError("cannot read input: " + e.getMessage(), span);
-            }
+            return readLineBounded(host, span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("text", 1, (host, args, span) -> Values.display(args.get(0))));
         interpreter.defineBuiltin(NativeFunction.of("repr", 1, (host, args, span) -> Values.repr(args.get(0))));
@@ -353,9 +349,11 @@ public final class Stdlib {
         }));
         interpreter.defineBuiltin(NativeFunction.of("save", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
+            String text = Values.display(args.get(1));
+            chargeTransfer(host, text.length());
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
-                Files.writeString(path, Values.display(args.get(1)), StandardCharsets.UTF_8);
+                Files.writeString(path, text, StandardCharsets.UTF_8);
                 return null;
             } catch (IOException e) {
                 throw new OqError("cannot write file '" + path + "'", span, e.getMessage());
@@ -363,9 +361,11 @@ public final class Stdlib {
         }));
         interpreter.defineBuiltin(NativeFunction.of("append", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
+            String text = Values.display(args.get(1));
+            chargeTransfer(host, text.length());
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
-                Files.writeString(path, Values.display(args.get(1)), StandardCharsets.UTF_8,
+                Files.writeString(path, text, StandardCharsets.UTF_8,
                         java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
                 return null;
             } catch (IOException e) {
@@ -379,6 +379,12 @@ public final class Stdlib {
             try (var stream = Files.list(dir)) {
                 List<Object> names = new ArrayList<>();
                 stream.sorted().forEach(p -> names.add(p.getFileName().toString()));
+                if (names.size() > MAX_LIST_ENTRIES) {
+                    throw new OqError("directory has too many entries: " + dir, span,
+                            "It has more than " + MAX_LIST_ENTRIES + " entries; the limit is "
+                                    + MAX_LIST_ENTRIES + ". List it in another language.");
+                }
+                chargeTransfer(host, names.size());
                 return names;
             } catch (IOException e) {
                 throw new OqError("cannot list directory '" + dir + "'", span, e.getMessage());
@@ -440,6 +446,13 @@ public final class Stdlib {
                 System.currentTimeMillis()));
         interpreter.defineBuiltin(NativeFunction.of("sleep", 1, (host, args, span) -> {
             long millis = (long) (Values.asDouble(args.get(0)) * 1000);
+            if (millis > MAX_SLEEP_MILLIS) {
+                throw new OqError("cannot sleep for more than "
+                        + MAX_SLEEP_MILLIS / 1000 + " seconds", span,
+                        "A long wait would block the program; the limit is "
+                                + MAX_SLEEP_MILLIS / 1000 + " seconds per call.");
+            }
+            chargeTransfer(host, millis);
             try {
                 Thread.sleep(Math.max(0, millis));
             } catch (InterruptedException e) {
@@ -476,8 +489,10 @@ public final class Stdlib {
             // Stream the body and stop at the cap. `ofByteArray` would buffer an unlimited
             // response in memory before the size check could run, which is the very thing the
             // check exists to prevent.
-            byte[] bytes = readCapped(response.body());
-            if (bytes.length >= MAX_TEXT_BYTES) {
+            // The request timeout only bounds the wait for headers. A server that sends headers
+            // and then stalls the body would hang the program forever, so bound the body too.
+            byte[] bytes = readCappedWithinDeadline(response.body(), span);
+            if (bytes.length > MAX_TEXT_BYTES) {
                 throw new OqError("response is too large: " + url, span,
                         "It exceeded " + MAX_TEXT_BYTES + " bytes.");
             }
@@ -564,23 +579,24 @@ public final class Stdlib {
                 java.util.concurrent.CompletableFuture<byte[]> output =
                         java.util.concurrent.CompletableFuture.supplyAsync(
                                 () -> readCapped(process.getInputStream()));
+                // One deadline covers both waits. Giving the output read a full timeout and then
+                // the exit wait another would let a slow child run for twice the documented time.
+                long deadline = System.nanoTime() + COMMAND_TIMEOUT.toNanos();
                 byte[] bytes;
                 try {
-                    bytes = output.get(COMMAND_TIMEOUT.toMillis(),
-                            java.util.concurrent.TimeUnit.MILLISECONDS);
+                    bytes = output.get(remaining(deadline), java.util.concurrent.TimeUnit.NANOSECONDS);
                 } catch (java.util.concurrent.TimeoutException e) {
                     destroyTree(process);
                     throw timeoutError(command, span);
                 }
-                if (bytes.length >= MAX_TEXT_BYTES) {
+                if (bytes.length > MAX_TEXT_BYTES) {
                     destroyTree(process);
                     throw new OqError("command output is too large: " + command, span,
                             "It exceeded " + MAX_TEXT_BYTES + " bytes.");
                 }
                 // The reader stops at end of output, so reaching here means the child closed its
-                // output. It may still be running, so give it the same timeout to exit.
-                if (!process.waitFor(COMMAND_TIMEOUT.toMillis(),
-                        java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                // output. It may still be running, so spend what is left of the same deadline.
+                if (!process.waitFor(remaining(deadline), java.util.concurrent.TimeUnit.NANOSECONDS)) {
                     destroyTree(process);
                     throw timeoutError(command, span);
                 }
@@ -635,7 +651,17 @@ public final class Stdlib {
     }
 
     private static void chargeOutput(OqHost host, CharSequence text) {
-        chargeTransfer(host, text.length());
+        // Charge the UTF-8 size, not the character count: the docs say bytes, and a multi-byte
+        // character really does move more of them. Output has its own 16 MiB ceiling rather than
+        // draining the step budget, which would have tripped long before the documented limit.
+        if (host instanceof Interpreter interpreter) {
+            interpreter.chargeOutput(text.toString().getBytes(StandardCharsets.UTF_8).length);
+        }
+    }
+
+    /** What is left of a deadline, never negative, for a timed wait. */
+    private static long remaining(long deadlineNanos) {
+        return Math.max(0, deadlineNanos - System.nanoTime());
     }
 
     private static OqError timeoutError(String command, Span span) {
@@ -659,6 +685,36 @@ public final class Stdlib {
         }
     }
 
+    /**
+     * Reads one line of input, capped and billed like every other transfer.
+     *
+     * <p>A plain {@code readLine()} would happily build an 80 MB string from a hostile writer and
+     * would block forever on a pipe that never closes. This reads at most
+     * {@link #MAX_TEXT_BYTES}, so an oversized line is refused instead of loaded.
+     */
+    private static String readLineBounded(OqHost host, Span span) {
+        StringBuilder sb = new StringBuilder();
+        boolean sawEnd = false;
+        try {
+            int code = host.in().read();
+            while (code != -1 && code != '\n') {
+                if (sb.length() >= MAX_TEXT_BYTES) {
+                    throw new OqError("input line is too large", span,
+                            "It is more than the " + MAX_TEXT_BYTES + " byte limit. "
+                                    + "Read it in another language, or feed smaller lines.");
+                }
+                sb.append((char) code);
+                code = host.in().read();
+            }
+            sawEnd = code == -1;
+        } catch (IOException e) {
+            throw new OqError("cannot read input: " + e.getMessage(), span);
+        }
+        chargeTransfer(host, sb.length());
+        // End of input with nothing read is `nothing`, matching a Reader that returns null.
+        return sawEnd && sb.isEmpty() ? null : sb.toString();
+    }
+
     /** Drains a stream, keeping the first {@link #MAX_TEXT_BYTES} and stopping the child there. */
     private static byte[] readCapped(java.io.InputStream stream) {
         try (stream) {
@@ -668,18 +724,52 @@ public final class Stdlib {
         }
     }
 
-    /** Reads at most {@link #MAX_TEXT_BYTES}, refusing anything larger instead of loading it. */
-    private static String readBounded(OqHost host, Path path, Span span, String what) {
+    /**
+     * Drains a response body on its own thread and gives up at {@link #COMMAND_TIMEOUT}.
+     *
+     * <p>{@link java.net.http.HttpRequest#timeout} stops at the headers, so it does not cover a
+     * body that trickles or stops arriving. The reader thread is abandoned rather than joined:
+     * a blocking socket read cannot be cancelled, and it ends when the connection is closed.
+     */
+    private static byte[] readCappedWithinDeadline(java.io.InputStream body, Span span) {
+        var reader = java.util.concurrent.CompletableFuture.supplyAsync(() -> readCapped(body));
         try {
-            long size = Files.size(path);
-            if (size > MAX_TEXT_BYTES) {
-                throw new OqError(what + " is too large to read: " + path, span,
-                        "It is " + size + " bytes; the limit is " + MAX_TEXT_BYTES
-                                + ". Read it in another language, or split it into smaller files.");
+            return reader.get(COMMAND_TIMEOUT.toMillis(),
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            reader.cancel(true);
+            throw new OqError("the response body did not finish in "
+                    + COMMAND_TIMEOUT.toSeconds() + " seconds", span,
+                    "The server sent headers but stalled the body. A response that never "
+                            + "finishes would block the program forever.");
+        } catch (java.util.concurrent.ExecutionException e) {
+            if (e.getCause() instanceof java.io.UncheckedIOException io) {
+                throw new OqError("cannot read the response body", span, io.getMessage());
             }
-            String text = Files.readString(path, StandardCharsets.UTF_8);
-            chargeTransfer(host, size);
-            return text;
+            throw new OqError("cannot read the response body", span, String.valueOf(e.getCause()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OqError("interrupted while reading the response body", span);
+        }
+    }
+
+    /**
+     * Reads at most {@link #MAX_TEXT_BYTES}, refusing anything larger instead of loading it.
+     *
+     * <p>The read is capped by how much it actually returns, not by {@link Files#size}. Size is
+     * advisory for anything that is not a regular file: a FIFO and {@code /dev/zero} both report
+     * 0 while yielding unbounded data, so trusting the reported size lets them through.
+     */
+    private static String readBounded(OqHost host, Path path, Span span, String what) {
+        try (java.io.InputStream stream = Files.newInputStream(path)) {
+            byte[] bytes = stream.readNBytes(MAX_TEXT_BYTES + 1);
+            if (bytes.length > MAX_TEXT_BYTES) {
+                throw new OqError(what + " is too large to read: " + path, span,
+                        "It is more than the " + MAX_TEXT_BYTES + " byte limit. "
+                                + "Read it in another language, or split it into smaller files.");
+            }
+            chargeTransfer(host, bytes.length);
+            return new String(bytes, StandardCharsets.UTF_8);
         } catch (OqError error) {
             throw error;
         } catch (IOException e) {
