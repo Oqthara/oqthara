@@ -18,6 +18,8 @@ than editing it, exactly as in [`docs/adr/`](../adr/).
 | OQ-DEC-2026-003 | Governance records live in `docs/governance/` | APPROVED |
 | OQ-DEC-2026-004 | Baseline audit is read-only and evidence-bound | APPROVED |
 | OQ-DEC-2026-005 | Hive agents pin the DeepSeek custom endpoint model | IMPLEMENTED |
+| OQ-DEC-2026-006 | Tuples are immutable, comma-delimited and distinct from lists | APPROVED |
+| OQ-DEC-2026-007 | Operator precedence is normative and documented from the parser | APPROVED |
 
 ## OQ-DEC-2026-001 — Agent architecture uses the native custom agent format
 
@@ -199,3 +201,131 @@ to the custom endpoint rather than to a Copilot-hosted model.
 Permission separation is verified from the same inventory: `oq-hive-review-escalation` has
 `read, search, execute, todo` and therefore no `edit` and no `agent`; only
 `oq-hive-orchestrator` carries the `agent` tool.
+
+## OQ-DEC-2026-006 — Tuples are immutable, comma-delimited and distinct from lists
+
+**State.** APPROVED
+
+**Context.** Alpha 3 must add tuples to the language. The directive requires that a tuple
+be distinguishable from a list in the contract, and that the design be reasoned from
+Oqthara's own rules rather than copied from a host language. The risk of copying is
+concrete: several languages reach for destructuring, pattern matching or static typing to
+make tuples worth having, and each of those imports a large feature set that Oqthara does
+not have and does not want.
+
+**Decision.**
+
+1. **`(a, b)` is a tuple; `(a)` is grouping.** One comma makes a tuple. Drop the
+   comma and the parentheses keep their current meaning. This is the rule that makes
+   tuples additive: no existing program changes meaning, and `(1)` keeps evaluating to
+   the number `1`.
+2. **`(a,)` is the one-item tuple.** The trailing comma is required, because `(a)` is
+   grouping. A trailing comma is accepted on any tuple, so appending an item never
+   requires editing the previous line.
+3. **`()` is an error.** The language has `nothing` for absence. An empty tuple would be
+   a second spelling of an idea that already exists, so it is refused by name.
+4. **Tuples are immutable.** Lists are the mutable ordered collection and already serve
+   that purpose. A tuple earns its place by being the immutable one: fixed length,
+   read-only, safe to share. Mutation (`push`, `pop`, `insert`, `remove`, `sort`,
+   `t[0] = x`) is refused with an error that names tuples.
+5. **A tuple is never equal to a list.** `(1, 2) == [1, 2]` is `false`. Equality is
+   structural and order sensitive within the same type, matching every other value in the
+   language. Without this rule a tuple would be an alias, not a type.
+6. **Reads are allowed.** Indexing, negative indexing, `length`, `first`, `last`,
+   `contains`, `in`, iteration with `for`, `==`, `!=`, and lexicographic `<`, `<=`, `>`,
+   `>=` all work, mirroring lists. Comparison is item by item, left to right.
+7. **`type_of` answers `tuple` and `repr` prints `(1, 2)`.** A one-item tuple prints with
+   its trailing comma, `(1,)`, so its text form round-trips.
+8. **The runtime type is an immutable `List`.** `OqTuple` implements `java.util.List`
+   over unmodifiable storage. This reuses the existing list read paths and Java interop
+   for free, while mutators throw `UnsupportedOperationException`. The distinction lives
+   in `typeName`, `repr`, `equal` and comparison, which is exactly the contract above.
+
+**Alternatives rejected.**
+
+- *Copy a host language's tuple design.* Rejected: the directive forbids it, and every
+  such design pulls in destructuring, pattern matching or static types that are explicit
+  non-goals.
+- *Make `(a)` a tuple.* Rejected: it silently changes the meaning of every parenthesised
+  expression in every existing program.
+- *Allow `()` as an empty tuple.* Rejected: duplicates `nothing`.
+- *Make tuples mutable.* Rejected: duplicates lists and removes the only reason to have
+  both.
+- *Make a tuple compare equal to a list with the same items.* Rejected: violates equality
+  being type-aware and makes `type_of` a lie.
+- *Add destructuring in the same change.* Rejected as scope: it is a second syntax
+  feature with its own decisions, and the roadmap records it as deferred.
+
+**Consequences.** Adding tuples is additive; no existing program changes meaning. The
+only observable change to existing surface is a new string from `type_of`. Tuple
+destructuring, named or typed tuple fields, and tuple arithmetic are deferred and named
+in the roadmap, so the deferred set is explicit rather than accidental.
+
+**Evidence.**
+
+```
+$ printf 'print (1, 2)\n' | ... before this decision
+error: expected to close the expression
+  help: Found ',' instead.
+```
+
+The same program after implementation is covered in the conformance suite; the exact
+cases are listed in the Alpha 3 final report.
+
+## OQ-DEC-2026-007 — Operator precedence is normative and documented from the parser
+
+**State.** APPROVED
+
+**Context.** The specification listed the boolean operators and nothing else:
+
+> Operators: `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`.
+
+Precedence existed only in `Parser.java`. A reader could not determine whether
+`-2 ** 2` is `4` or `-4`, whether `a or b and c` groups as `a or (b and c)`, or how
+comparison chains behave, without reading the implementation. A language whose reference
+disagrees with its parser is not specified.
+
+**Decision.** The ten precedence levels in `Parser.java` are normative, and the reference
+transcribes them from the code rather than from a host language. The method chain
+`expression` → `or` → `and` → `equality` → `comparison` → `additive` → `multiplicative`
+→ `power` → `unary` → `postfix` → `primary` is the specification of record.
+
+Two behaviors are called out explicitly because they surprise readers who arrive from
+another language:
+
+- **Unary minus binds tighter than `**`.** `-2 ** 2` is `(-2) ** 2` and prints `4`.
+- **Comparisons do not chain.** They share one level and evaluate left to right, so
+  `1 < 2 < 3` compares `1 < 2` with `3` and fails.
+
+**Alternatives rejected.**
+
+- *Leave precedence undocumented.* Rejected: the finding is HIGH precisely because a
+  reader cannot predict behavior.
+- *Document precedence from Python or another host language.* Rejected: it would be
+  wrong. Python prints `-4` for `-2 ** 2`; Oqthara prints `4`.
+- *Change the parser to match a host language.* Rejected: that is a breaking change with
+  no user request behind it, and the directive forbids copying host-language semantics.
+
+**Consequences.** The reference is now checkable against the parser. Precedence is
+covered by conformance cases per level so the document and the code cannot drift silently.
+
+**Evidence.**
+
+```
+$ java -jar oq-cli/build/libs/oq.jar p1.oq
+4
+512
+5
+5
+true
+false
+7
+1
+true
+true
+```
+
+Each line pins one level: `-2 ** 2` = `4`, `2 ** 3 ** 2` = `512` (right associative),
+`10 - 2 - 3` = `5` (left associative), `100 / 10 / 2` = `5` (left associative),
+`true or false and false` = `true` (`and` first), `not true and false` = `false`,
+`1 + 2 * 3` = `7`, `7 % 3` = `1`, `2 + 3 == 5` = `true`, `1 < 2 == true` = `true`.

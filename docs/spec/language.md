@@ -1,6 +1,6 @@
 # Oqthara language reference
 
-Version: 0.1.0-alpha.1
+Version: 0.1.0-alpha.3
 
 ## Running a program
 
@@ -24,6 +24,7 @@ print "Hello, World!"
 | boolean | `true`, `false` | |
 | nothing | `nothing` | the absent value |
 | list | `[1, 2, 3]` | ordered, mutable |
+| tuple | `(1, 2)` | ordered, immutable, fixed length |
 | map | `{"a": 1}` | key to value, insertion ordered |
 | set | `{1, 2, 3}` | unique values |
 | range | `1 to 5`, `0 until 5` | produced by range expressions |
@@ -95,7 +96,55 @@ else
 end
 ```
 
-Operators: `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`.
+Operators, from the parser itself, listed highest precedence first. Operators on the same
+row associate as shown.
+
+| Level | Operators | Associativity | Meaning |
+|---|---|---|---|
+| 1 | `f(x)`, `xs[i]`, `obj.field` | left | call, index, field |
+| 2 | `-x`, `+x`, `not x` | right | unary minus, unary plus, logical not |
+| 3 | `**` | right | exponentiation |
+| 4 | `*`, `/`, `%` | left | multiply, divide, remainder |
+| 5 | `+`, `-` | left | add, subtract |
+| 6 | `<`, `<=`, `>`, `>=`, `in` | left | comparison, membership |
+| 7 | `==`, `!=` | left | equality |
+| 8 | `and` | left | short-circuit and |
+| 9 | `or` | left | short-circuit or |
+| 10 | `to`, `until` | none | range, only in `for` headers and range expressions |
+
+Because unary minus binds tighter than `**`, `-2 ** 2` is `(-2) ** 2` and prints `4`.
+This differs from Python, where it would be `-4`. Because `and` binds tighter than
+`or`, `a or b and c` is `a or (b and c)`. Comparison operators share one level and
+evaluate left to right, so `1 < 2 < 3` compares `1 < 2` with `3` and fails rather than
+chaining.
+
+`in` tests membership. For a list, map, set, range or text it reports whether the right
+side contains the left side; text uses substring membership. It is not a `for` loop.
+
+```
+print 3 in [1, 2, 3]        # true
+print "ell" in "hello"      # true
+print "a" in {"a": 1}       # true
+print 3 in (1 to 5)         # true
+```
+
+The parentheses in the last line are required. `in` binds tighter than `to`, so
+`3 in 1 to 5` is read as `(3 in 1) to 5` and fails. Write `3 in (1 to 5)`.
+
+### Assignment and compound assignment
+
+```
+count = 0
+count += 1                  # count = count + 1
+count -= 1
+count *= 4
+count /= 2
+```
+
+`=`, `+=`, `-=`, `*=` and `/=` are statements, not expressions. They return `nothing`
+and cannot be nested inside an expression. The left side of a compound assignment must
+be a plain variable; `xs[0] += 1` is rejected with "compound assignment needs a variable
+on the left". Unlike `x = x + 1`, a compound assignment evaluates its target once.
 
 Truthiness: `nothing`, `false`, `0`, `0.0`, `""`, empty collections and empty ranges
 are falsy. Everything else is truthy.
@@ -206,6 +255,74 @@ Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallbac
 Set methods: `.length()`, `.add(x)`, `.remove(x)`, `.has(x)`, `.items()`,
 `.union(other)`, `.intersection(other)`, `.difference(other)`.
 
+## Tuples
+
+A tuple is a fixed-length, ordered, immutable group of values. It is not a list: a list
+can grow and shrink, a tuple cannot, and `type_of` tells them apart.
+
+```
+point = (3, 4)
+print point[0]        # 3
+print point[1]        # 4
+print type_of(point)  # tuple
+print point           # (3, 4)
+```
+
+Syntax rules, exactly:
+
+| You write | You get |
+|---|---|
+| `(a)` | grouping, not a tuple; `(1)` is the number `1` |
+| `(a,)` | one-item tuple; the trailing comma is required |
+| `(a, b)` | two-item tuple |
+| `(a, b,)` | same tuple; a trailing comma is allowed |
+| `()` | an error: an empty tuple is not a value |
+| `((a, b), c)` | nested tuple |
+| `(a, b) -> ...` | a lambda, not a tuple |
+
+One comma makes a tuple; two or more values make a tuple. `(1)` is grouping because a
+one-item tuple would otherwise be indistinguishable from a parenthesised expression, and
+`()` is an error because there is nothing to hold.
+
+Tuples support:
+
+```
+t = (1, 2, 3)
+print t.length()          # 3
+print t[0]                # 1
+print t[-1]               # 3
+print 2 in t              # true
+print (1, 2) == (1, 2)    # true
+print (1, 2) == (2, 1)    # false
+print (1, 2) < (1, 3)     # true, compared left to right
+for v in (1, 2)
+  print v
+end
+```
+
+Equality is structural and order sensitive. Comparison is lexicographic, item by item.
+A tuple never equals a list, even with the same items and order, so `(1, 2) == [1, 2]`
+is `false`. `for` iterates over a tuple in order. A function may take and return tuples:
+
+```
+fun swap(pair)
+  return (pair[1], pair[0])
+end
+
+print swap((1, 2))        # (2, 1)
+```
+
+Mutation is refused; tuples are immutable. `.push`, `.pop`, `.insert`, `.remove` and
+`.sort` raise an error naming the tuple, and `t[0] = 9` is rejected. To change a tuple,
+build a new one.
+
+Tuples are read-only from Oqthara and from Java-interop methods that require a `List`.
+A tuple satisfies Java's `List` interface for reading, but mutating it through Java
+throws `UnsupportedOperationException`.
+
+**Deferred.** Tuple destructuring (`a, b = pair`), named or typed tuple fields, and tuple
+arithmetic (`+`, `*`) are not part of Alpha 3. See `docs/governance/roadmap-alpha-3.md`.
+
 ## Data types
 
 ```
@@ -278,6 +395,20 @@ Raise your own with `error("message")`. Guard with `assert(condition, "message")
 
 Text: `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `regex`,
 `matches`, `format`.
+
+`format(value)` takes exactly one argument and returns the same text `print` would show,
+without a newline. It is the display form, not a template language: there are no format
+specifiers and no placeholders. Use string interpolation for that.
+
+Output: `print` writes its arguments separated by single spaces and ends the line.
+`write` writes its arguments with no separator and no newline. Both accept any number
+of arguments and return `nothing`.
+
+```
+print "a", "b"     # a b
+write "a", "b"     # ab, cursor stays on the line
+write_text "x"     # same as write
+```
 
 Files: `read`, `read_lines`, `save`, `append`, `exists`, `list_files`, `delete`,
 `make_dir`, `file_size`, `path_join`, `path_name`, `path_parent`, `cwd`.
