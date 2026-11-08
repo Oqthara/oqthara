@@ -153,6 +153,22 @@ class ValuesTest {
     }
 
     @Test
+    void aRepetitionThatOverflowsTheProductIsRefused() {
+        // `"ab" * 4611686018427387905` overflowed a long product to a negative number, slipped
+        // past the limit check, and silently repeated once. The product is now exact.
+        OqError error = assertThrows(OqError.class,
+                () -> Values.multiply("ab", 4611686018427387905L, span));
+        assertEquals("the repetition is too large to build", error.getMessage());
+    }
+
+    @Test
+    void anOverflowingListRepetitionIsRefused() {
+        OqError error = assertThrows(OqError.class,
+                () -> Values.multiply(List.of(1L, 2L), 4611686018427387905L, span));
+        assertEquals("the repetition is too large to build", error.getMessage());
+    }
+
+    @Test
     void tupleSupportsMembership() {
         OqTuple tuple = new OqTuple(List.of(1L, 2L));
         assertTrue(Values.contains(tuple, 2L, span));

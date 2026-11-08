@@ -47,9 +47,11 @@ public final class Arithmetic {
      */
     public static void print(Object value) {
         String text = Values.display(value);
-        chargeWritten(text.length());
+        String newline = System.lineSeparator();
+        chargeWritten(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                + newline.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
         out().print(text);
-        out().print(System.lineSeparator());
+        out().print(newline);
         out().flush();
     }
 
@@ -99,7 +101,7 @@ public final class Arithmetic {
     /** Prints a value without a newline. */
     public static void write(Object value) {
         String text = Values.display(value);
-        chargeWritten(text.length());
+        chargeWritten(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
         out().print(text);
         out().flush();
     }
@@ -108,21 +110,12 @@ public final class Arithmetic {
      * The most one compiled program may write, matching {@code MAX_TEXT_BYTES} in the stdlib.
      *
      * <p>Compiled code has no step counter to bill — the program is bytecode, so there is no
-     * interpreter loop to charge. Output is the one host transfer a jar performs through this
-     * class, so it keeps its own ceiling rather than letting a built program print without
-     * bound. The charge happens before the bytes are written, so a refused print emits nothing.
+     * interpreter loop to charge. Output is the one host transfer a jar performs, so it keeps
+     * its own ceiling rather than letting a built program print without bound. The charge
+     * happens before the bytes are written, so a refused print emits nothing.
      */
-    private static final long MAX_OUTPUT = 16L * 1024 * 1024;
-
-    private static long written;
-
-    private static void chargeWritten(long characters) {
-        written += characters;
-        if (written > MAX_OUTPUT) {
-            throw new OqError("the program wrote too much output", Errors.current(),
-                    "It wrote more than " + MAX_OUTPUT + " characters. The limit applies to "
-                            + "compiled programs too, so a runaway print is refused.");
-        }
+    private static void chargeWritten(long bytes) {
+        OutputBudget.charge(bytes);
     }
 
     private static java.io.PrintStream out() {

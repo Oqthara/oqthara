@@ -47,6 +47,9 @@ class HostBuiltinLimitsTest {
 
     @BeforeEach
     void setUp() {
+        // The output ceiling is shared by every interpreter in the JVM, so a test that spends
+        // it must not silently refuse the next test's writes.
+        dev.oqthara.runtime.OutputBudget.reset();
         outBytes = new ByteArrayOutputStream();
         PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
         interpreter = new Interpreter(out, out,
@@ -66,7 +69,8 @@ class HostBuiltinLimitsTest {
 
     @Test
     void printStillWritesWhatItAlwaysWrote() {
-        // The charge must not change behaviour for ordinary output.
+        // The charge must not change behaviour for ordinary output. The separator is added by
+        // `print` itself, not between arguments, and the final newline is what `println` appends.
         call("print", "hello", 1L);
         assertEquals("hello 1" + System.lineSeparator(),
                 outBytes.toString(StandardCharsets.UTF_8));
@@ -94,12 +98,39 @@ class HostBuiltinLimitsTest {
 
     @Test
     void exactlySixteenMebibytesIsAllowed() {
-        // 16 MiB is within the limit; only one byte more is refused. The earlier `>=` check on a
-        // `MAX + 1` read refused exactly 16 MiB, one byte short of what the docs promised.
+        // `print` adds a newline outside the text it was given, so the newline is part of what
+        // the ceiling counts. Spend the newline first, then fill the rest with text.
         outBytes.reset();
-        call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES));
-        assertEquals(Interpreter.MAX_OUTPUT_BYTES + System.lineSeparator().length(),
-                outBytes.size());
+        int newline = System.lineSeparator().length();
+        call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES - newline));
+        assertEquals(Interpreter.MAX_OUTPUT_BYTES, outBytes.size());
+    }
+
+    @Test
+    void oneBytePastSixteenMebibytesIsRefused() {
+        // The boundary has to bite exactly once: 16 MiB is allowed, one byte more is not.
+        outBytes.reset();
+        int newline = System.lineSeparator().length();
+        OqError error = assertThrows(OqError.class,
+                () -> call("print", "x".repeat((int) Interpreter.MAX_OUTPUT_BYTES - newline + 1)));
+        assertTrue(error.getMessage().contains("wrote too much output"), error.getMessage());
+        assertEquals(0, outBytes.size(), "a refused print must not write its bytes first");
+    }
+
+    @Test
+    void theNewlinePrintAddsCountsTowardsTheCeiling() {
+        // `println` adds the newline outside the text argument, so it used to be free. An empty
+        // print emitted nothing charged, which made a loop of them unbounded output.
+        dev.oqthara.runtime.OutputBudget.reset();
+        int newline = System.lineSeparator().length();
+        int prints = (int) Interpreter.MAX_OUTPUT_BYTES / newline;
+        for (int i = 0; i < prints - 1; i++) call("print", "");
+        int before = outBytes.size();
+        assertEquals(newline * (prints - 1), before);
+        OqError error = assertThrows(OqError.class, () -> {
+            for (int i = 0; i < prints; i++) call("print", "");
+        });
+        assertTrue(error.getMessage().contains("wrote too much output"), error.getMessage());
     }
 
     @Test
@@ -130,6 +161,41 @@ class HostBuiltinLimitsTest {
 
         OqError error = assertThrows(OqError.class, () -> call("read", file.toString()));
         assertTrue(error.getMessage().contains("too large"), error.getMessage());
+    }
+
+    @Test
+    void readAcceptsAFileWellPastTheOld195KilobyteCeiling() throws IOException {
+        // Transfers used to be billed at 256 steps per byte against a 50,000,000-step budget,
+        // which refused anything past 195,312 bytes however large the documented limit was.
+        // The read limit is 16 MiB, so a 1 MiB file must load.
+        Path file = dir.resolve("onemib.txt");
+        byte[] filler = new byte[1024 * 1024];
+        java.util.Arrays.fill(filler, (byte) 'a');
+        Files.write(file, filler);
+        assertEquals(1024 * 1024, ((String) call("read", file.toString())).length());
+    }
+
+    @Test
+    void readAcceptsExactlyTheWholeLimit() throws IOException {
+        // The documented 16 MiB is reachable: exactly the limit passes, one byte more does not.
+        Path file = dir.resolve("exactly.txt");
+        byte[] filler = new byte[Stdlib.MAX_TEXT_BYTES];
+        java.util.Arrays.fill(filler, (byte) 'a');
+        Files.write(file, filler);
+        assertEquals(Stdlib.MAX_TEXT_BYTES, ((String) call("read", file.toString())).length());
+    }
+
+    @Test
+    void readingPastTheLimitIsATooLargeErrorNotAStepError() throws IOException {
+        // The refusal must name the size limit, not the step budget: the two used to be
+        // confused, and the step budget won.
+        Path file = dir.resolve("oversize.txt");
+        byte[] filler = new byte[Stdlib.MAX_TEXT_BYTES + 1];
+        java.util.Arrays.fill(filler, (byte) 'a');
+        Files.write(file, filler);
+        OqError error = assertThrows(OqError.class, () -> call("read", file.toString()));
+        assertTrue(error.getMessage().contains("too large"), error.getMessage());
+        assertFalse(error.getMessage().contains("ran for too long"), error.getMessage());
     }
 
     @Test

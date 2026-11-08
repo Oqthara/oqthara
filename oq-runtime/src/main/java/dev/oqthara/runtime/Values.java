@@ -275,7 +275,7 @@ public final class Values {
         if (a instanceof Long n && b instanceof String s) return repeat(s, n, span);
         if (a instanceof List<?> l && b instanceof Long n) {
             requireNotTuples("multiply", a, b, span);
-            long size = l.size() * n;
+            long size = repeatCount(l.size(), n, span);
             if (size > MAX_COLLECTION_SIZE) {
                 throw new OqError("the repeated list would have " + size + " items", span,
                         "The limit is " + MAX_COLLECTION_SIZE
@@ -311,12 +311,29 @@ public final class Values {
      */
     private static String repeat(String text, Long count, Span span) {
         long n = Math.max(0, count);
-        if (text.length() * n > MAX_REPEAT_LENGTH) {
-            throw new OqError("the repeated text would be " + (text.length() * n) + " characters", span,
+        long total = repeatCount(text.length(), n, span);
+        if (total > MAX_REPEAT_LENGTH) {
+            throw new OqError("the repeated text would be " + total + " characters", span,
                     "The limit is " + MAX_REPEAT_LENGTH
                             + ". Repeat fewer times, or write it in pieces.");
         }
+        // The limit above is well below Integer.MAX_VALUE, so the cast below is always safe.
         return text.repeat((int) n);
+    }
+
+    /**
+     * Multiplies a size by a repeat count without overflowing.
+     *
+     * <p>A plain {@code size * n} wraps silently, so a huge count could produce a tiny,
+     * wrong result and then be cast to an {@code int} that no longer means anything.
+     */
+    private static long repeatCount(long size, long n, Span span) {
+        try {
+            return Math.multiplyExact(size, n);
+        } catch (ArithmeticException overflow) {
+            throw new OqError("the repetition is too large to build", span,
+                    "The count is larger than the machine can hold. Repeat fewer times.");
+        }
     }
 
     public static Object divide(Object a, Object b, Span span) {
@@ -401,7 +418,7 @@ public final class Values {
 
     public static void setIndex(Object target, Object key, Object value, Span span) {
         if (target instanceof OqTuple) {
-            throw new OqError("a tuple is immutable", span,
+            throw new OqError(OqTuple.IMMUTABLE, span,
                     "Tuples cannot change after they are made. Build a new tuple instead,"
                             + " or use a list if the items need to change.");
         }

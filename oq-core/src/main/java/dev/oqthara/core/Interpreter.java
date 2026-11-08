@@ -6,6 +6,7 @@ import dev.oqthara.runtime.OverloadedFunction;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OutputBudget;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
 import dev.oqthara.runtime.OqTuple;
@@ -101,24 +102,15 @@ public final class Interpreter implements OqHost {
      * budget for computation.
      */
     public void chargeOutput(long bytes) {
-        if (bytes <= 0) return;
-        long spent = outputBytes.addAndGet(bytes);
-        if (spent > MAX_OUTPUT_BYTES) {
-            throw new OqError("program wrote too much output", Span.synthetic(),
-                    "It wrote more than " + MAX_OUTPUT_BYTES + " bytes. "
-                            + "Write less, or send the data to a file instead.");
-        }
+        OutputBudget.charge(bytes);
     }
 
     /** The largest total output one program may write, in bytes. */
-    public static final long MAX_OUTPUT_BYTES = 16L * 1024 * 1024;
-
-    private final java.util.concurrent.atomic.AtomicLong outputBytes =
-            new java.util.concurrent.atomic.AtomicLong();
+    public static final long MAX_OUTPUT_BYTES = OutputBudget.MAX_BYTES;
 
     public void resetSteps() {
         steps.set(0);
-        outputBytes.set(0);
+        OutputBudget.reset();
     }
 
     public void defineBuiltin(NativeFunction function) {
@@ -484,6 +476,16 @@ public final class Interpreter implements OqHost {
             }
             try {
                 return callable.call(this, args, span);
+            } catch (UnsupportedOperationException e) {
+                // A tuple reached through a view, such as subList or a reversal, is a plain
+                // java.util.List, so the resolver's guard never sees it and the JDK's own refusal
+                // arrives here. Report it as a program error instead of an internal one.
+                if (OqTuple.IMMUTABLE.equals(e.getMessage())) {
+                    throw new OqError(OqTuple.IMMUTABLE, span,
+                            "Tuples cannot change after they are made. Build a new tuple with the"
+                                    + " items you want, or use a list when the items must change.");
+                }
+                throw e;
             } finally {
                 stack.remove(stack.size() - 1);
             }

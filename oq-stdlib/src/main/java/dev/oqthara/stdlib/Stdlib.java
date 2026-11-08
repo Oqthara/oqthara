@@ -7,6 +7,7 @@ import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
+import dev.oqthara.runtime.OutputBudget;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
@@ -75,7 +76,10 @@ public final class Stdlib {
                 if (i > 0) sb.append(' ');
                 sb.append(Values.display(args.get(i)));
             }
+            // The newline is output too: charging only the text let a loop of empty prints
+            // stream without ever moving the counter.
             chargeOutput(host, sb);
+            chargeOutput(host, System.lineSeparator());
             host.out().println(sb);
             return null;
         }));
@@ -98,7 +102,10 @@ public final class Stdlib {
             return readLineBounded(host, span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("input", 1, (host, args, span) -> {
-            host.out().print(Values.display(args.get(0)));
+            String prompt = Values.display(args.get(0));
+            // A prompt is written output, and it is caller-controlled, so it is billed too.
+            chargeOutput(host, prompt);
+            host.out().print(prompt);
             host.out().flush();
             return readLineBounded(host, span);
         }));
@@ -350,6 +357,7 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("save", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             String text = Values.display(args.get(1));
+            chargeWrittenText(text, span);
             chargeTransfer(host, text.length());
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
@@ -362,6 +370,7 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("append", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             String text = Values.display(args.get(1));
+            chargeWrittenText(text, span);
             chargeTransfer(host, text.length());
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
@@ -645,17 +654,38 @@ public final class Stdlib {
      * user code; a compiled program and a bare method resolver have no counter to charge.
      */
     private static void chargeTransfer(OqHost host, long bytes) {
-        if (bytes > 0 && host instanceof Interpreter interpreter) {
-            interpreter.chargeSteps(bytes * STEPS_PER_BYTE);
-        }
+        if (bytes <= 0) return;
+        // A per-byte step multiplier made the documented per-call ceiling unreachable: at 256
+        // steps per byte the 50,000,000 budget ran out at 195,312 bytes, so `read` refused a
+        // 1 MiB file with "program ran for too long" no matter what the table said. Transfers
+        // are now bounded by their own size checks and billed one step per byte, which still
+        // makes a program pay for what it moves.
+        if (host instanceof Interpreter interpreter) interpreter.chargeSteps(bytes);
     }
 
     private static void chargeOutput(OqHost host, CharSequence text) {
         // Charge the UTF-8 size, not the character count: the docs say bytes, and a multi-byte
-        // character really does move more of them. Output has its own 16 MiB ceiling rather than
-        // draining the step budget, which would have tripped long before the documented limit.
-        if (host instanceof Interpreter interpreter) {
-            interpreter.chargeOutput(text.toString().getBytes(StandardCharsets.UTF_8).length);
+        // character really does move more of them. Billing unconditionally matters because the
+        // budget is shared with compiled bytecode, which reaches it through Arithmetic.
+        chargeOutputBytes(text.toString().getBytes(StandardCharsets.UTF_8).length);
+    }
+
+    private static void chargeOutputBytes(long bytes) {
+        if (bytes > 0) OutputBudget.charge(bytes);
+    }
+
+    /**
+     * Refuses a single {@code save}/{@code append} larger than the documented transfer ceiling.
+     *
+     * <p>These do not print, so they must not draw on the output budget; without this check the
+     * only limit on one call was the step budget.
+     */
+    private static void chargeWrittenText(String text, Span span) {
+        int bytes = text.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > MAX_TEXT_BYTES) {
+            throw new OqError("cannot save " + bytes + " bytes in one call", span,
+                    "A single write is limited to " + MAX_TEXT_BYTES
+                            + " bytes. Write it in pieces, or use append.");
         }
     }
 

@@ -50,6 +50,10 @@ final class Repl {
             if (trimmed.isEmpty()) continue;
             if (trimmed.equals("exit") || trimmed.equals("exit()") || trimmed.equals("quit")) return 0;
             try {
+                // One command is one unit of work, so it gets a fresh budget. The REPL never calls
+                // Interpreter.run(), which is where the counters are normally reset, so without
+                // this a single large command would exhaust the session permanently.
+                interpreter.resetSteps();
                 var program = Parser.parse("<repl>", line);
                 if (program.statements().size() == 1
                         && program.statements().get(0) instanceof dev.oqthara.core.Ast.ExprStmt exprStmt) {
