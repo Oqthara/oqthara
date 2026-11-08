@@ -29,7 +29,9 @@ class ConformanceTest {
         assertTrue(programs.size() >= 100, "expected at least 100 conformance cases, found " + programs.size());
 
         List<String> failures = new ArrayList<>();
+        int executed = 0;
         for (Path program : programs) {
+            executed++;
             String name = program.getFileName().toString();
             String base = name.substring(0, name.length() - 3);
             String source = Files.readString(program);
@@ -82,7 +84,11 @@ class ConformanceTest {
         if (!failures.isEmpty()) {
             fail(failures.size() + " conformance failure(s):\n\n" + String.join("\n\n", failures));
         }
-        assertEquals(programs.size(), programs.size());
+        // Every listed program must have been inspected. This counter makes a skipped case a
+        // failure; the previous assertion compared `programs.size()` with itself, which can
+        // never fail and therefore covered nothing.
+        assertEquals(programs.size(), executed,
+                "every discovered program must be inspected, not just counted");
     }
 
     /**

@@ -19,10 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `shuffle`, `sort_by`, and assignment to an index) refuses with `a tuple is immutable` instead
   of silently copying. The names that only exist as `java.util.List` methods — `set`, `addAll`,
   `removeAll`, `retainAll`, `removeIf`, `replaceAll` — refuse the same way rather than leaking
-  a Java exception. A view of a tuple, such as `t.subList(0, 2)` or `t.reverse()`, refuses the
-  same way instead of surfacing a Java exception. `.unique()` returns a tuple, and a tuple can
-  hold `nothing`. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false` in both
-  backends. Tuples compile to real bytecode, so `oq build` matches `oq run`. The decision is
+  a Java exception. `.unique()` returns a tuple, `t.subList(0, 2)` returns a tuple slice, and a
+  tuple can hold `nothing`. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false`
+  in both backends. Tuples compile to real bytecode, so `oq build` matches `oq run`, including
+  a tuple passed as a function argument. The decision is
   recorded as `OQ-DEC-2026-006` in [the governance log](docs/governance/README.md).
 - The specification now states operator precedence as a ten-level table read out of the
   parser, including the divergence that unary binds tighter than `**`, so `-2 ** 2` is `4`
