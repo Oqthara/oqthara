@@ -197,27 +197,22 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 }
                 return result;
             });
-            case "take" -> fixed(name, 1, (host, args) -> {
-                int n = ((Number) args.get(0)).intValue();
-                return new ArrayList<>(list.subList(0, Math.max(0, Math.min(n, list.size()))));
-            });
-            case "skip" -> fixed(name, 1, (host, args) -> {
-                int n = ((Number) args.get(0)).intValue();
-                return new ArrayList<>(list.subList(Math.max(0, Math.min(n, list.size())), list.size()));
-            });
+            case "take" -> fixed(name, 1, (host, args) ->
+                    new ArrayList<>(list.subList(0, clampIndex(args.get(0), list.size()))));
+            case "skip" -> fixed(name, 1, (host, args) ->
+                    new ArrayList<>(list.subList(clampIndex(args.get(0), list.size()), list.size())));
             case "subList", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
                     (host, args, callSpan) -> {
-                int from;
-                int to;
-                if (args.size() == 1) {
-                    from = ((Number) args.get(0)).intValue();
-                    to = list.size();
-                } else {
-                    from = ((Number) args.get(0)).intValue();
-                    to = ((Number) args.get(1)).intValue();
-                }
-                if (from < 0) from = 0;
-                if (to > list.size()) to = list.size();
+                // Both bounds land in [0, size] before touching java.util.List.subList, which
+                // throws IndexOutOfBoundsException for anything else and would surface an
+                // Oqthara bug to the program.
+                int from = clampIndex(args.get(0), list.size());
+                int to = args.size() == 1
+                        ? list.size()
+                        : clampIndex(args.get(1), list.size());
+                // An inverted range is empty, not an error: the spec promises clamping, and a
+                // caller that computed start > end gets the same empty answer as start == end.
+                // Java's subList would throw here, so the two indices are ordered explicitly.
                 if (from > to) from = to;
                 // A copy, never java.util.List.subList: that returns a live view whose mutators
                 // are not in Oqthara's list API, so they fell through to Java reflection. On a
@@ -412,6 +407,20 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             padding.setLength(Math.max(0, width - text.length()));
         }
         return start ? padding + text : text + padding;
+    }
+
+    /**
+     * Clamps {@code value} to {@code [0, size]} without letting a long wider than an int wrap.
+     *
+     * <p>Narrowing with {@code intValue()} first turns {@code 4294967297} into {@code 1}, which
+     * silently slices the wrong range, and turns a large negative into a positive index. The
+     * clamp happens in {@code long} so neither can occur.
+     */
+    private static int clampIndex(Object value, int size) {
+        long index = ((Number) value).longValue();
+        if (index < 0) return 0;
+        if (index > size) return size;
+        return (int) index;
     }
 
     private static dev.oqthara.runtime.NativeFunction fixed(String name, int arity,
