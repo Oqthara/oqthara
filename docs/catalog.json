@@ -86,6 +86,12 @@
       "slug": "docs/governance/audit/baseline-2026-11"
     },
     {
+      "path": "docs/governance/roadmap-alpha-3.md",
+      "title": "Alpha 3 engineering roadmap",
+      "section": "governance",
+      "slug": "docs/governance/roadmap-alpha-3"
+    },
+    {
       "path": "docs/reference/cli.md",
       "title": "`oq` command line",
       "section": "reference",
