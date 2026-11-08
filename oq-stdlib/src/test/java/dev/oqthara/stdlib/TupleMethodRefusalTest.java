@@ -35,6 +35,20 @@ class TupleMethodRefusalTest {
     }
 
     @Test
+    void aViewOfATupleIsRefusedToo() {
+        // A view such as subList is a plain java.util.List, so the resolver's guard never sees
+        // it and the JDK's own refusal used to surface as `internal error:
+        // UnsupportedOperationException`. Every view shape must report the same program error.
+        OqTuple three = new OqTuple(List.of(1L, 2L, 3L));
+        List<List<Object>> views = List.of(three.subList(0, 1), three.subList(0, 2), three);
+        for (List<Object> view : views) {
+            UnsupportedOperationException raw = assertThrows(
+                    UnsupportedOperationException.class, () -> view.add(9L));
+            assertEquals(OqTuple.IMMUTABLE, raw.getMessage());
+        }
+    }
+
+    @Test
     void readOnlyMethodsStillResolve() {
         OqCallable length = resolver.resolve(tuple, "length", span);
         assertNotNull(length);

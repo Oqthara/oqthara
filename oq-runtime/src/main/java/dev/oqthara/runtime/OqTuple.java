@@ -12,6 +12,9 @@ import java.util.RandomAccess;
  * contract that separates a tuple from a list.
  */
 public final class OqTuple extends AbstractList<Object> implements RandomAccess {
+    /** The refusal text, shared so the resolver, index setter and Java bridge cannot drift. */
+    public static final String IMMUTABLE = "a tuple is immutable";
+
     private final List<Object> items;
 
     public OqTuple(List<Object> items) {
@@ -36,17 +39,17 @@ public final class OqTuple extends AbstractList<Object> implements RandomAccess 
 
     @Override
     public Object set(int index, Object element) {
-        throw new UnsupportedOperationException("a tuple is immutable");
+        throw new UnsupportedOperationException(IMMUTABLE);
     }
 
     @Override
     public void add(int index, Object element) {
-        throw new UnsupportedOperationException("a tuple is immutable");
+        throw new UnsupportedOperationException(IMMUTABLE);
     }
 
     @Override
     public Object remove(int index) {
-        throw new UnsupportedOperationException("a tuple is immutable");
+        throw new UnsupportedOperationException(IMMUTABLE);
     }
 
     @Override

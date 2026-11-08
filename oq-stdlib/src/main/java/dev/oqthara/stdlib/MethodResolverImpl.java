@@ -432,7 +432,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         if (!TUPLE_MUTATORS.contains(name)) return null;
         return dev.oqthara.runtime.NativeFunction.variadic(name, 0,
                 (host, args, callSpan) -> {
-                    throw new OqError("a tuple is immutable", span,
+                    throw new OqError(dev.oqthara.runtime.OqTuple.IMMUTABLE, span,
                             "Tuples cannot change after they are made. Build a new tuple with"
                                     + " the items you want, or use a list when the items must change.");
                 });
