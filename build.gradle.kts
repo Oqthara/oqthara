@@ -5,7 +5,7 @@ plugins {
 
 allprojects {
     group = "dev.oqthara"
-    version = "0.1.0-alpha.2"
+    version = "0.1.0-alpha.3"
     repositories {
         mavenCentral()
     }

@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-11-06
+
+### Added
+
+- **Tuples.** One comma makes a tuple: `(1, 2, 3)`, `(5,)` for a single value, and `((1, 2), 3)`
+  to nest. `(a)` is still grouping, so parentheses keep their old meaning, and `()` is an error
+  rather than an empty tuple. A tuple is immutable: indexing, slicing, `length`, iteration,
+  `contains`, `index_of`, equality and lexicographic ordering all work, and every list mutator
+  (`push`, `pop`, `sort`, `add`, `remove`, `insert`, `reverse`, `clear`, `fill`, `shuffle`,
+  `sort_by`, and assignment to an index) refuses with `a tuple is immutable` instead of
+  silently copying. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false` in both
+  backends. Tuples compile to real bytecode, so `oq build` matches `oq run`. The decision is
+  recorded as `OQ-DEC-2026-006` in [the governance log](docs/governance/README.md).
+- The specification now states operator precedence as a ten-level table read out of the
+  parser, including the divergence that unary binds tighter than `**`, so `-2 ** 2` is `4`
+  rather than Python's `-4`. It also specifies `format`, `write`, compound assignment and the
+  `in`/`to` interaction that requires parentheses.
+
+### Changed
+
+- Host calls are bounded, and the work they do is charged against the execution step budget
+  instead of counting as a single step. `print`, `write` and `write_text` stop at 16 MiB of
+  output; `read` and `read_lines` refuse a file over 16 MiB; `run_command` gives up after 30
+  seconds and refuses output over 16 MiB, killing the whole process tree rather than leaking
+  the children it started; `http_get` and `http_post` stream the response and stop at 16 MiB
+  instead of buffering it. The specification states these limits and states plainly that they
+  are resource controls, not a sandbox.
+
+### Fixed
+
+- `run_command` leaked the processes a timed-out command had started: only the direct child
+  was destroyed. The whole tree is now killed and the program reports
+  `command timed out after 30 seconds`.
+- The conformance harness accepted an error message that merely contained the expected text,
+  so an error that gained a prefix, lost a detail, or reported a different problem still
+  passed. It now compares the whole first line and requires the diagnostic to carry a
+  position.
+- The compiled conformance count in `docs/spec/backend.md` drifted from what the suite
+  measured; the documentation checker now compares it against both the test and the corpus.
+
+### Documentation
+
+- `run_command` is documented as taking one executable path with no arguments and no shell,
+  which is what it has always done and what its tests now assert.
+- The version declaration agrees across the CLI, the build, the LSP server, the specification
+  header and this changelog, and the documentation checker now compares the specification
+  header and the LSP server so they cannot drift again.
+
 ## [0.1.0-alpha.2] - 2026-11-05
 
 ### Added
@@ -172,6 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 130 conformance cases plus unit tests for the lexer, parser, values and interpreter.
 - GitHub Actions CI across Linux, macOS and Windows on JDK 21 and 25.
 
-[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.1

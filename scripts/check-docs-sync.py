@@ -107,12 +107,11 @@ def documented_commands_exist() -> None:
     if not help_block:
         problems.append("could not read the help text from Main.java")
         return
+    # Read the commands out of the help text instead of restating them here. A hard-coded
+    # list drifts: it kept accepting `serve` long after the command stopped existing, so the
+    # check guarded a wider surface than the CLI actually offered.
     commands = set(
-        re.findall(
-            r"^\s*oq (run|check|repl|fmt|test|new|doc|build|version|help|serve)\b",
-            help_block.group(1),
-            re.M,
-        )
+        re.findall(r"^\s*oq ([a-z][a-z-]*)\b", help_block.group(1), re.M)
     )
     if not commands:
         problems.append("the help text lists no commands")
@@ -121,6 +120,11 @@ def documented_commands_exist() -> None:
     for command in sorted(commands):
         if not re.search(rf"^## `oq {re.escape(command)}`", page, re.M):
             problems.append(f"docs/reference/cli.md has no section for `oq {command}`")
+    # The other direction: a documented command the CLI never dispatches is dead documentation.
+    dispatch = set(re.findall(r'case "([a-z][a-z-]*)"', main))
+    for command in sorted(commands):
+        if command not in dispatch:
+            problems.append(f"the help text advertises `oq {command}` but dispatch has no case for it")
     note(f"{len(commands)} CLI commands in the help text all documented in cli.md: "
          + ", ".join(sorted(commands)))
 
@@ -202,6 +206,28 @@ def version_is_consistent() -> None:
             f"Main.VERSION {code_version}"
         )
 
+    # The specification header and the LSP server are version declarations too. They drifted
+    # apart from the CLI before, so they are compared rather than trusted.
+    spec = read("docs/spec/language.md")
+    spec_version = re.search(r"^Version:\s*([0-9][^\s]*)", spec, re.M)
+    if not spec_version:
+        problems.append("docs/spec/language.md has no `Version:` line")
+    elif spec_version.group(1) != code_version:
+        problems.append(
+            f"docs/spec/language.md version {spec_version.group(1)} does not match "
+            f"Main.VERSION {code_version}"
+        )
+
+    lsp = read("oq-lsp/src/main/java/dev/oqthara/lsp/Server.java")
+    lsp_version = re.search(r'"version"\s*,\s*"([^"]+)"', lsp)
+    if not lsp_version:
+        problems.append("the LSP Server does not declare a version")
+    elif lsp_version.group(1) != code_version:
+        problems.append(
+            f"the LSP Server version {lsp_version.group(1)} does not match "
+            f"Main.VERSION {code_version}"
+        )
+
     changelog = read("CHANGELOG.md")
     # The newest *release* heading, skipping `## [Unreleased]`.
     releases = [
@@ -216,7 +242,10 @@ def version_is_consistent() -> None:
             f"{code_version}"
         )
 
-    note(f"Main.VERSION, build.gradle.kts and CHANGELOG agree on {code_version}")
+    note(
+        "Main.VERSION, build.gradle.kts, the spec header, the LSP server and CHANGELOG "
+        f"agree on {code_version}"
+    )
 
 
 CHECKS = (
