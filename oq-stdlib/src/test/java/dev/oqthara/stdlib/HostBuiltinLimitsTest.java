@@ -42,6 +42,10 @@ class HostBuiltinLimitsTest {
     @TempDir
     Path dir;
 
+    /** Windows cannot launch a shell script, so the fixtures below carry two bodies. */
+    private static final boolean WINDOWS = System.getProperty("os.name", "")
+            .toLowerCase(java.util.Locale.ROOT).startsWith("windows");
+
     private Interpreter interpreter;
     private ByteArrayOutputStream outBytes;
 
@@ -231,7 +235,9 @@ class HostBuiltinLimitsTest {
 
     @Test
     void runCommandCapturesOutputAndExitCode() throws IOException {
-        OqData result = (OqData) call("run_command", script("echo oqthara"));
+        // Both fixtures write the same line and a trailing newline, so the exact assertion
+        // below holds on either platform.
+        OqData result = (OqData) call("run_command", script("echo oqthara", "echo oqthara"));
         assertEquals(0L, result.get("code"));
         assertEquals("oqthara" + System.lineSeparator(), result.get("output"));
     }
@@ -241,7 +247,7 @@ class HostBuiltinLimitsTest {
         // A failing command is an ordinary result, not a program error: the caller gets the
         // code and decides.
         OqData result = (OqData) call("run_command",
-                script("echo boom; exit 3"));
+                script("echo boom; exit 3", "echo boom & exit /b 3"));
         assertEquals(3L, result.get("code"));
         assertTrue(String.valueOf(result.get("output")).contains("boom"));
     }
@@ -261,7 +267,15 @@ class HostBuiltinLimitsTest {
         // A script that starts a long-lived child and then waits. Destroying only the script
         // would leave the child running after the program errored.
         Path marker = dir.resolve("child.pid");
-        Path script = script("sleep 60 & echo $! > " + marker + "; wait");
+        Path script = script(
+                "sleep 60 & echo $! > " + marker + "; wait",
+                powershell("$i = New-Object System.Diagnostics.ProcessStartInfo; "
+                        + "$i.FileName = 'powershell.exe'; "
+                        + "$i.Arguments = '-NoProfile -Command Start-Sleep -Seconds 60'; "
+                        + "$i.UseShellExecute = $false; "
+                        + "$c = [System.Diagnostics.Process]::Start($i); "
+                        + "[IO.File]::WriteAllText('" + marker + "', [string]$c.Id); "
+                        + "$c.WaitForExit()"));
         OqError error = assertThrows(OqError.class, () -> call("run_command", script.toString()));
         assertTrue(error.getMessage().contains("timed out"), error.getMessage());
         long pid = Long.parseLong(Files.readString(marker).trim());
@@ -278,17 +292,40 @@ class HostBuiltinLimitsTest {
     void runCommandTimeoutsACommandThatNeverClosesItsOutput() throws Exception {
         // Holding the output stream open forever must be caught by the same timeout, not hang
         // the program waiting for end of stream.
-        Path script = script("sleep 60");
+        Path script = script("sleep 60", powershell("Start-Sleep -Seconds 60"));
         OqError error = assertThrows(OqError.class, () -> call("run_command", script.toString()));
         assertTrue(error.getMessage().contains("timed out"), error.getMessage());
     }
 
-    /** Writes an executable script and returns its path, since run_command takes no arguments. */
-    private Path script(String body) throws IOException {
-        Path file = dir.resolve("script.sh");
-        Files.writeString(file, "#!/bin/sh\n" + body + "\n");
-        assertTrue(file.toFile().setExecutable(true), "could not mark the script executable");
+    /**
+     * Writes an executable fixture and returns its path, since run_command takes no arguments.
+     *
+     * <p>A POSIX host runs the {@code #!/bin/sh} form directly. Windows cannot execute a shell
+     * script at all: CreateProcess rejects it as a bad image format, because a text file is not a
+     * valid executable image and there is no shebang handling. The same behaviour is produced
+     * there by a batch file, which the JDK detects as a shell file and hands to cmd.exe. Each
+     * caller supplies both bodies, so a test keeps one set of assertions and the platform
+     * difference stays here rather than being duplicated into every test.
+     */
+    private Path script(String posixBody, String windowsBody) throws IOException {
+        if (WINDOWS) {
+            // cmd.exe wants CRLF and can misread a final line with no terminator.
+            Path file = dir.resolve("fixture.bat");
+            Files.writeString(file, "@echo off\r\n"
+                    + windowsBody.replace("\n", "\r\n") + "\r\n");
+            return file;
+        }
+        Path file = dir.resolve("fixture.sh");
+        Files.writeString(file, "#!/bin/sh\n" + posixBody + "\n");
+        // Only POSIX carries an execute bit; Windows has no equivalent and needs none, since
+        // the image format alone decides what can be launched.
+        assertTrue(file.toFile().setExecutable(true), "could not mark the fixture executable");
         return file;
+    }
+
+    /** Runs a PowerShell snippet as the body of a Windows fixture. */
+    private static String powershell(String snippet) {
+        return "powershell.exe -NoProfile -Command \"" + snippet + "\"";
     }
 
     @Test
@@ -302,7 +339,11 @@ class HostBuiltinLimitsTest {
     void runCommandOutputIsBounded() throws IOException {
         // Without the cap the child's whole output was read into memory.
         OqError error = assertThrows(OqError.class,
-                () -> call("run_command", script("head -c 20000000 /dev/zero")));
+                () -> call("run_command", script("head -c 20000000 /dev/zero",
+                        powershell("$b = [Text.Encoding]::ASCII.GetBytes('x' * 65536); "
+                                + "$o = [Console]::OpenStandardOutput(); "
+                                + "for ($i = 0; $i -lt 320; $i++) { $o.Write($b, 0, $b.Length) }; "
+                                + "$o.Flush()"))));
         assertTrue(error.getMessage().contains("too large"), error.getMessage());
     }
 
