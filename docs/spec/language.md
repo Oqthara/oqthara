@@ -313,11 +313,14 @@ print swap((1, 2))        # (2, 1)
 ```
 
 Mutation is refused; tuples are immutable. Every mutator raises `a tuple is immutable`, and
-`t[0] = 9` is rejected. To change a tuple, build a new one.
+`t[0] = 9` is rejected. That includes a mutator called on a *view* of a tuple, such as
+`t.subList(0, 2)` or `t.reverse()`: those are read-only slices of the same value, so changing
+one is refused with the same error rather than a Java exception. To change a tuple, build a
+new one.
 
-Tuples are read-only from Oqthara and from Java-interop methods that require a `List`.
-A tuple satisfies Java's `List` interface for reading, but mutating it through Java
-throws `UnsupportedOperationException`.
+A tuple satisfies Java's `List` interface for reading. Mutating it from Java throws
+`UnsupportedOperationException`; reaching a tuple's `List` methods through Oqthara reports
+`a tuple is immutable` instead.
 
 **Deferred.** Tuple destructuring (`a, b = pair`), named or typed tuple fields, and tuple
 arithmetic (`+`, `*`) are not part of Alpha 3. See `docs/governance/roadmap-alpha-3.md`.
@@ -436,19 +439,26 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | `input()` | 16 MiB per line | `input line is too large` |
 | `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds`, `command output is too large` |
 | `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large` |
+| `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call` |
 | `sleep` | 10 seconds per call | `cannot sleep for more than 10 seconds` |
 | `list_files` | 100,000 entries | `directory has too many entries` |
 
 A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allowed and one
 byte more is refused. Output is refused **before** it is written, so a program that exceeds
-the limit prints nothing from the call that crossed it.
+the limit prints nothing from the call that crossed it. The newline `print` adds counts
+towards the total, as do the bytes of an `input` prompt.
 
 Output has its own ceiling rather than draining the step budget, because charging output as
 steps made the documented 16 MiB unreachable: a program could print only 50,000,000 / 256 =
-195,312 bytes before the budget stopped it.
+195,312 bytes before the budget stopped it. Output and file transfers share one counter, so a
+program cannot spend the ceiling twice by mixing the two.
 
-`save` and `append` are charged against the step budget at 256 steps per byte for the text
-they write, so a single very large write trips the budget rather than the byte cap.
+Every transfer is billed one step per byte on top of its own size limit. Billing at 256 steps
+per byte made the documented per-call figure unreachable the same way: `read` refused any file
+past 195,312 bytes with `program ran for too long`, whatever the table said.
+
+`save` and `append` are bounded by the same 16 MiB per call and refuse more with `cannot save
+<N> bytes in one call`.
 
 `run_command(path)` runs **one executable path** with no arguments and no shell. There is no
 command-line splitting and no interpolation, so `run_command("/bin/ls -l")` is a program
@@ -462,13 +472,26 @@ print result.code, result.output
 A non-zero exit status is an ordinary result, not an error; the caller inspects `.code`. A
 missing executable, a timeout, or excessive output raises a program error.
 
-These bounds are enforced by the interpreter, so they apply to `oq run`. A jar produced by
-`oq build` is real bytecode, not an embedded interpreter, so it has **no step budget and no
-host-call deadlines**: only its output is capped, at the same 16 MiB, because output is the
-one host call generated code routes through a shared helper. A compiled program that loops
-runs until something outside stops it, and one that calls `read` or `run_command` gets no
-protection from these limits. Build with `oq run` in front of untrusted programs if that
-matters. See [backend.md](backend.md).
+These bounds are enforced by the interpreter, so they always apply to `oq run`. A jar produced
+by `oq build` takes one of two shapes, and `oq build` prints which:
+
+```
+codepath: compiled bytecode
+codepath: interpreter launcher (call to 'read' uses a builtin the compiler cannot lower)
+```
+
+A jar built as an **interpreter launcher** runs the program in the embedded interpreter, so
+every limit in the table applies to it exactly as it does to `oq run`. That is what happens
+whenever the program calls a builtin the compiler cannot lower, such as `read` or
+`run_command`.
+
+A jar built as **compiled bytecode** is real bytecode, not an embedded interpreter, so it has
+no step budget and no host-call deadlines: only its output is capped, at the same shared
+16 MiB. A compiled program that loops runs until something outside stops it, and runaway
+allocation is stopped only by the JVM heap. When that happens the jar reports
+`the program ran out of memory`, the same wording `oq run` uses, instead of dumping a stack
+trace — but it is still the heap that stops it, not a budget. Run untrusted programs through
+`oq run`, or use a jar built as an interpreter launcher. See [backend.md](backend.md).
 
 Oqthara is **not** a sandbox. A program that is allowed to run can read the files the user can
 read, start the processes the user can start, and reach the network the user can reach. The

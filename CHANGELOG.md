@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `shuffle`, `sort_by`, and assignment to an index) refuses with `a tuple is immutable` instead
   of silently copying. The names that only exist as `java.util.List` methods — `set`, `addAll`,
   `removeAll`, `retainAll`, `removeIf`, `replaceAll` — refuse the same way rather than leaking
-  a Java exception. `.unique()` returns a tuple, and a tuple can hold `nothing`. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false` in both
+  a Java exception. A view of a tuple, such as `t.subList(0, 2)` or `t.reverse()`, refuses the
+  same way instead of surfacing a Java exception. `.unique()` returns a tuple, and a tuple can
+  hold `nothing`. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false` in both
   backends. Tuples compile to real bytecode, so `oq build` matches `oq run`. The decision is
   recorded as `OQ-DEC-2026-006` in [the governance log](docs/governance/README.md).
 - The specification now states operator precedence as a ten-level table read out of the
@@ -36,13 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   total and refuses output over 16 MiB, killing the whole process tree rather than leaking the
   children it started; `http_get` and `http_post` bound the body as well as the headers, so a
   server that stalls mid-body cannot hang the program, and stop at 16 MiB instead of
-  buffering; `sleep` is capped at 10 seconds per call; `save`, `append` and `list_files` are
-  charged for the work they do. Transfers are charged against the step budget at 256 steps per
-  byte, while output has its own 16 MiB ceiling so the documented figure is actually
-  reachable. Running out of memory renders a program error instead of a JVM stack trace. The
-  specification states these limits and states plainly that they are resource controls, not a
-  sandbox — and that a jar produced by `oq build` has no step budget at all, only the output
-  cap.
+  buffering; `sleep` is capped at 10 seconds per call; `save` and `append` refuse more than
+  16 MiB in one call; `list_files` caps a directory at 100,000 entries. Output and input
+  transfers share one 16 MiB counter rather than keeping a spendable ceiling each, and the
+  newline `print` adds and the prompt `input` writes count against it, so neither is a way to
+  emit unbounded bytes. Transfers are billed one step per byte; the older 256-steps-per-byte
+  rate made the documented 16 MiB unreachable, because `read` tripped the 50,000,000-step
+  budget at 195,312 bytes and reported `program ran for too long` instead of the size error.
+  The specification states these limits and states plainly that they are resource controls,
+  not a sandbox — and that a jar built as pure compiled bytecode has no step budget or
+  deadlines, only the shared output cap, while a jar built as an interpreter launcher
+  enforces every limit.
 
 ### Fixed
 
@@ -55,6 +61,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   position.
 - The compiled conformance count in `docs/spec/backend.md` drifted from what the suite
   measured; the documentation checker now compares it against both the test and the corpus.
+- A jar built as compiled bytecode printed a raw `OutOfMemoryError` stack trace when the heap
+  ran out, and compiled jars in general let any non-`OqError` failure escape the same way. The
+  generated top-level handler now catches `Throwable` and routes the heap and stack cases
+  through the renderer `oq run` already used, so both backends print `the program ran out of
+  memory` and exit 1.
+- `"ab" * 4611686018427387905` silently returned `ab`. The repetition product overflowed a
+  `long`, slipped past the length check as a negative number, and repeated once. Both text and
+  list repetition now use an exact product and refuse with `the repetition is too large to
+  build`.
+- The REPL never reset the step budget, so a long session eventually refused every command it
+  had left. Each command now starts with the budget it would have on its own.
 
 ### Documentation
 
