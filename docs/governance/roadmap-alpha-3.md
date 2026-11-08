@@ -87,9 +87,11 @@ already are in list and set literals.
 Deferred, stated plainly so nobody discovers it by experiment:
 
 1. Destructuring — `a, b = (1, 2)` — is not supported in Alpha 3.
-2. Tuples are not compiled to bytecode; `oq build` refuses them by name and falls back.
+2. ~~Tuples are not compiled to bytecode~~ — done: `oq build` emits a real tuple type, so a
+   built jar matches `oq run`.
 3. No named fields and no tuple type annotations, because there is no static type system.
-4. No tuple `+`, `*`, or repetition operators; those stay list-only.
+4. No tuple `+`, `*`, or repetition operators; those stay list-only and raise `cannot add a
+   tuple` rather than quietly returning a list.
 
 ## 5. Specification work
 

@@ -312,9 +312,8 @@ end
 print swap((1, 2))        # (2, 1)
 ```
 
-Mutation is refused; tuples are immutable. `.push`, `.pop`, `.insert`, `.remove` and
-`.sort` raise an error naming the tuple, and `t[0] = 9` is rejected. To change a tuple,
-build a new one.
+Mutation is refused; tuples are immutable. Every mutator raises `a tuple is immutable`, and
+`t[0] = 9` is rejected. To change a tuple, build a new one.
 
 Tuples are read-only from Oqthara and from Java-interop methods that require a `List`.
 A tuple satisfies Java's `List` interface for reading, but mutating it through Java
@@ -432,16 +431,24 @@ program cannot exhaust the machine by accident. These limits are part of the con
 
 | Call | Limit | On breach |
 | ---- | ----- | --------- |
-| `print`, `write`, `write_text` | 16 MiB of output, total | `program ran for too long` |
+| `print`, `write`, `write_text` | 16 MiB of output, total | `program wrote too much output` |
 | `read`, `read_lines` | 16 MiB per file | `the file is too large to read` |
-| `run_command` | 30 seconds, 16 MiB of output | `command timed out after 30 seconds`, `command output is too large` |
-| `http_get`, `http_post` | 16 MiB per response body | `response is too large` |
+| `input()` | 16 MiB per line | `input line is too large` |
+| `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds`, `command output is too large` |
+| `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large` |
+| `sleep` | 10 seconds per call | `cannot sleep for more than 10 seconds` |
+| `list_files` | 100,000 entries | `directory has too many entries` |
 
-Every byte transferred to or from the host is charged against the step budget, at 256 steps
-per byte. A single maximum-size transfer therefore costs more than the whole budget, so in
-practice the budget trips before a byte count reaches the cap and the diagnostic you see is
-`program ran for too long`. Both outcomes are refusals; which one appears depends on what
-the program had already spent.
+A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allowed and one
+byte more is refused. Output is refused **before** it is written, so a program that exceeds
+the limit prints nothing from the call that crossed it.
+
+Output has its own ceiling rather than draining the step budget, because charging output as
+steps made the documented 16 MiB unreachable: a program could print only 50,000,000 / 256 =
+195,312 bytes before the budget stopped it.
+
+`save` and `append` are charged against the step budget at 256 steps per byte for the text
+they write, so a single very large write trips the budget rather than the byte cap.
 
 `run_command(path)` runs **one executable path** with no arguments and no shell. There is no
 command-line splitting and no interpolation, so `run_command("/bin/ls -l")` is a program
@@ -455,8 +462,13 @@ print result.code, result.output
 A non-zero exit status is an ordinary result, not an error; the caller inspects `.code`. A
 missing executable, a timeout, or excessive output raises a program error.
 
-These bounds apply to programs run by the interpreter, which includes `oq run` and `oq build`
-output, because the embedded program is still interpreted. See [backend.md](backend.md).
+These bounds are enforced by the interpreter, so they apply to `oq run`. A jar produced by
+`oq build` is real bytecode, not an embedded interpreter, so it has **no step budget and no
+host-call deadlines**: only its output is capped, at the same 16 MiB, because output is the
+one host call generated code routes through a shared helper. A compiled program that loops
+runs until something outside stops it, and one that calls `read` or `run_command` gets no
+protection from these limits. Build with `oq run` in front of untrusted programs if that
+matters. See [backend.md](backend.md).
 
 Oqthara is **not** a sandbox. A program that is allowed to run can read the files the user can
 read, start the processes the user can start, and reach the network the user can reach. The

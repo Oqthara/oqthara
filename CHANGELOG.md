@@ -13,11 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Tuples.** One comma makes a tuple: `(1, 2, 3)`, `(5,)` for a single value, and `((1, 2), 3)`
   to nest. `(a)` is still grouping, so parentheses keep their old meaning, and `()` is an error
-  rather than an empty tuple. A tuple is immutable: indexing, slicing, `length`, iteration,
-  `contains`, `index_of`, equality and lexicographic ordering all work, and every list mutator
-  (`push`, `pop`, `sort`, `add`, `remove`, `insert`, `reverse`, `clear`, `fill`, `shuffle`,
-  `sort_by`, and assignment to an index) refuses with `a tuple is immutable` instead of
-  silently copying. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false` in both
+  rather than an empty tuple. A tuple is immutable: indexing, `length`, iteration,
+  `contains`, equality and lexicographic ordering all work, and every list mutator
+  (`push`, `pop`, `sort`, `add`, `remove`, `remove_value`, `insert`, `reverse`, `clear`, `fill`,
+  `shuffle`, `sort_by`, and assignment to an index) refuses with `a tuple is immutable` instead
+  of silently copying. The names that only exist as `java.util.List` methods — `set`, `addAll`,
+  `removeAll`, `retainAll`, `removeIf`, `replaceAll` — refuse the same way rather than leaking
+  a Java exception. `.unique()` returns a tuple, and a tuple can hold `nothing`. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false` in both
   backends. Tuples compile to real bytecode, so `oq build` matches `oq run`. The decision is
   recorded as `OQ-DEC-2026-006` in [the governance log](docs/governance/README.md).
 - The specification now states operator precedence as a ten-level table read out of the
@@ -27,13 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Host calls are bounded, and the work they do is charged against the execution step budget
-  instead of counting as a single step. `print`, `write` and `write_text` stop at 16 MiB of
-  output; `read` and `read_lines` refuse a file over 16 MiB; `run_command` gives up after 30
-  seconds and refuses output over 16 MiB, killing the whole process tree rather than leaking
-  the children it started; `http_get` and `http_post` stream the response and stop at 16 MiB
-  instead of buffering it. The specification states these limits and states plainly that they
-  are resource controls, not a sandbox.
+- Host calls are bounded. `print`, `write` and `write_text` stop at 16 MiB of output, refused
+  before anything is written; `read` and `read_lines` refuse a file over 16 MiB by capping the
+  bytes read, so a pipe or `/dev/zero` cannot slip past; `input()` caps a line at 16 MiB
+  instead of building it unbounded; `run_command` gives up after 30 seconds of wall clock in
+  total and refuses output over 16 MiB, killing the whole process tree rather than leaking the
+  children it started; `http_get` and `http_post` bound the body as well as the headers, so a
+  server that stalls mid-body cannot hang the program, and stop at 16 MiB instead of
+  buffering; `sleep` is capped at 10 seconds per call; `save`, `append` and `list_files` are
+  charged for the work they do. Transfers are charged against the step budget at 256 steps per
+  byte, while output has its own 16 MiB ceiling so the documented figure is actually
+  reachable. Running out of memory renders a program error instead of a JVM stack trace. The
+  specification states these limits and states plainly that they are resource controls, not a
+  sandbox — and that a jar produced by `oq build` has no step budget at all, only the output
+  cap.
 
 ### Fixed
 
