@@ -164,6 +164,13 @@ public final class Main {
                 err.println("  help: check that a recursive function has a stopping condition.");
                 err.println();
                 return 1;
+            } catch (OutOfMemoryError notEnough) {
+                err.println();
+                err.println("error: the program ran out of memory");
+                err.println("  help: it asked for more data than this machine can hold. "
+                        + "Work on smaller pieces, or read the file in another language.");
+                err.println();
+                return 1;
             } catch (RuntimeException e) {
                 err.println();
                 err.println("internal error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
