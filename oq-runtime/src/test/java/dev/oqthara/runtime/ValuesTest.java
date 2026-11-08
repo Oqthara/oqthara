@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -68,6 +69,51 @@ class ValuesTest {
         assertTrue(Values.equal(1L, 1.0));
         assertTrue(Values.equal("a", "a"));
         assertFalse(Values.equal(1L, 2L));
+    }
+
+    @Test
+    void tupleIsItsOwnType() {
+        assertEquals("tuple", Values.typeName(new OqTuple(List.of(1L, 2L))));
+        assertEquals("list", Values.typeName(List.of(1L, 2L)));
+    }
+
+    @Test
+    void tupleReprUsesParentheses() {
+        assertEquals("(1, 2)", Values.repr(new OqTuple(List.of(1L, 2L))));
+        assertEquals("(1,)", Values.repr(new OqTuple(List.of(1L))));
+        assertEquals("((1, 2), 3)", Values.repr(new OqTuple(
+                List.of(new OqTuple(List.of(1L, 2L)), 3L))));
+    }
+
+    @Test
+    void tupleNeverEqualsAList() {
+        assertTrue(Values.equal(new OqTuple(List.of(1L, 2L)), new OqTuple(List.of(1L, 2L))));
+        assertFalse(Values.equal(new OqTuple(List.of(1L, 2L)), List.of(1L, 2L)));
+        assertFalse(Values.equal(List.of(1L, 2L), new OqTuple(List.of(1L, 2L))));
+    }
+
+    @Test
+    void tupleComparesLexicographically() {
+        assertTrue(Values.compare(new OqTuple(List.of(1L, 2L)),
+                new OqTuple(List.of(1L, 3L)), span) < 0);
+        assertTrue(Values.compare(new OqTuple(List.of(1L, 2L)),
+                new OqTuple(List.of(1L, 2L, 0L)), span) < 0);
+    }
+
+    @Test
+    void tupleIsImmutable() {
+        OqTuple tuple = new OqTuple(List.of(1L, 2L));
+        assertThrows(UnsupportedOperationException.class, () -> tuple.set(0, 9L));
+        assertThrows(UnsupportedOperationException.class, () -> tuple.add(3L));
+        assertThrows(UnsupportedOperationException.class, () -> tuple.remove(0));
+        assertThrows(OqError.class, () -> Values.setIndex(tuple, 0L, 9L, span));
+    }
+
+    @Test
+    void tupleSupportsMembership() {
+        OqTuple tuple = new OqTuple(List.of(1L, 2L));
+        assertTrue(Values.contains(tuple, 2L, span));
+        assertFalse(Values.contains(tuple, 9L, span));
     }
 
     @Test

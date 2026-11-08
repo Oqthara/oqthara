@@ -1,0 +1,10 @@
+t = (10, 20, 30)
+print t[0]
+print t[-1]
+print t.length()
+print 20 in t
+print 99 in t
+for v in t
+  print v
+end
+print t.map(x -> x * 2)

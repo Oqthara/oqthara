@@ -407,6 +407,25 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void compilesTupleLiteralsAndReads(@TempDir Path dir) throws Exception {
+        assertEquals("(1, 2)\n(1,)\ntuple\n2\n30\n", compileAndRun(
+                "t = (1, 2)\nprint t\nprint (1,)\nprint type_of(t)\n"
+                        + "print t[1]\nprint (10, 20, 30)[-1]", dir));
+    }
+
+    @Test
+    void compilesTupleEqualityAgainstLists(@TempDir Path dir) throws Exception {
+        assertEquals("true\nfalse\nfalse\n", compileAndRun(
+                "print (1, 2) == (1, 2)\nprint (1, 2) == (2, 1)\nprint (1, 2) == [1, 2]", dir));
+    }
+
+    @Test
+    void compilesTupleIteration(@TempDir Path dir) throws Exception {
+        assertEquals("10\n20\n", compileAndRun(
+                "for v in (10, 20)\n  print v\nend", dir));
+    }
+
+    @Test
     void compilesMapLiteralsIndexingAndAssignment(@TempDir Path dir) throws Exception {
         assertEquals("1\n3\nnothing\n", compileAndRun(
                 "m = {\"one\": 1, \"two\": 2}\nprint m[\"one\"]\n"
@@ -1034,7 +1053,7 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(182, compiled,
+        assertEquals(192, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
     }
 

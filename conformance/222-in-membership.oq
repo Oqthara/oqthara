@@ -1,0 +1,5 @@
+print 3 in [1, 2, 3]
+print "ell" in "hello"
+print "a" in {"a": 1}
+print 9 in (1 to 5)
+print 3 in (1 to 5)
