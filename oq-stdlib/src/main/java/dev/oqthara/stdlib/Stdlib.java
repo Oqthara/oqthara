@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -387,8 +388,17 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("list_files", 1, (host, args, span) -> {
             Path dir = resolve(host, args.get(0));
             try (var stream = Files.list(dir)) {
+                Iterator<Path> entries = stream.sorted().iterator();
                 List<Object> names = new ArrayList<>();
-                stream.sorted().forEach(p -> names.add(p.getFileName().toString()));
+                // The names list now holds at most the cap plus one, where it used to hold the
+                // whole directory. java.util.stream.Stream.sorted() is a stateful operation and
+                // still buffers every Path internally before yielding the first one, so this
+                // bounds Oqthara's own list, not the sort. Removing that buffer would mean
+                // dropping sorted() and changing the returned order, which the spec fixes; the
+                // residual is recorded as debt rather than fixed by an ordering change here.
+                while (names.size() <= MAX_LIST_ENTRIES && entries.hasNext()) {
+                    names.add(entries.next().getFileName().toString());
+                }
                 if (names.size() > MAX_LIST_ENTRIES) {
                     throw new OqError("directory has too many entries: " + dir, span,
                             "It has more than " + MAX_LIST_ENTRIES + " entries; the limit is "
@@ -738,7 +748,7 @@ public final class Stdlib {
             while (code != -1 && code != '\n') {
                 if (sb.length() >= MAX_TEXT_BYTES) {
                     throw new OqError("input line is too large", span,
-                            "It is more than the " + MAX_TEXT_BYTES + " byte limit. "
+                            "It is more than the " + MAX_TEXT_BYTES + " character limit. "
                                     + "Read it in another language, or feed smaller lines.");
                 }
                 sb.append((char) code);

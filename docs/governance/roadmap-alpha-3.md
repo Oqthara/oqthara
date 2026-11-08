@@ -36,7 +36,6 @@ past the point where it can be verified.
 | --- | --- |
 | Destructuring and pattern matching | The directive lists them as an interaction to *evaluate*, not to build. Named-tuple destructuring is a second feature with its own grammar; see `OQ-DEC-2026-006` for the deferral. |
 | Named tuple fields, tuple types in a static type system | Oqthara has no static type checker; adding one to support tuples would be a language redesign, not a feature. |
-| Tuples in compiled-jar argument position | The backend's call convention for struct-like values is a separate change; `oq build` refuses tuples by name and falls back to the launcher jar, exactly as it already does for other unsupported shapes. |
 | Structuring `serve` | `serve` is listed in a checker whitelist but is not implemented. Removing one stale regex is cheap; implementing a server is not an Alpha 3 feature. |
 | Retiring or merging `.kilo/agents/` | `OQ-DEC-2026-002` and the directive both defer this to a human decision. |
 | A sandbox for host access | Out of scope. What Alpha 3 does instead is *stop claiming* safety and *measure* the real behavior. |

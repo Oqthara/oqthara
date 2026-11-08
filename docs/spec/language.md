@@ -440,7 +440,7 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | ---- | ----- | --------- |
 | `print`, `write`, `write_text` | 16 MiB of output, total | `the program wrote too much output` |
 | `read`, `read_lines` | 16 MiB per file | `the file is too large to read: <path>` |
-| `input()` | 16 MiB per line | `input line is too large` |
+| `input()` | 16,777,216 characters per line | `input line is too large` |
 | `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
 | `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large: <url>` |
 | `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call` |
@@ -448,20 +448,42 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | `list_files` | 100,000 entries | `directory has too many entries: <path>` |
 
 A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allowed and one
-byte more is refused. Output is refused **before** it is written, so a program that exceeds
-the limit prints nothing from the call that crossed it. The newline `print` adds counts
-towards the total, as do the bytes of an `input` prompt.
+byte more is refused. `input` is the exception: its 16,777,216 ceiling counts characters, so
+that sentence reads "character" for `input` and "byte" everywhere else. Output is refused
+**before** it is written, so a program that exceeds the limit prints nothing from the call that
+crossed it. The newline `print` adds counts towards the total, as do the characters of an
+`input` prompt.
 
 Output has its own 16 MiB counter rather than draining the step budget. Charging output as
 steps made the documented ceiling unreachable: at 256 steps per byte a program could print
 only 50,000,000 / 256 = 195,312 bytes before the budget stopped it. That counter covers output
 only. Reading a file does not draw on it, because reading is not writing output.
 
-Every transfer is billed one step per byte against the step budget, on top of its own per-call
-size limit. The per-byte rate is not itself a bound: at 1 step per byte, the 50,000,000-step
-budget allows 50,000,000 bytes to move in total, which is about 47.7 MiB — less than two
-16 MiB calls, but far more than one. The per-call limits are what bind, and the step charge
-only stops a program from moving data for free. Billing at 256 steps per byte failed the other
+Every host transfer also bills the step budget, on top of its own per-call size limit. The
+per-call limits are what bind; the step charge only stops a program from moving data for free.
+The billing unit differs per call, and the step charge is always the same figure the size check
+used, never a re-derived one:
+
+| Call | Billed | Unit |
+| ---- | ------ | ---- |
+| `read`, `read_lines` | bytes read | UTF-8 bytes |
+| `save`, `append` | bytes written | UTF-8 bytes |
+| `write`, `write_text` | bytes written | UTF-8 bytes |
+| `http_get`, `http_post` | body length | UTF-8 bytes |
+| `run_command` | output length | UTF-8 bytes |
+| `input()` | line length | Java `String` characters |
+| `list_files` | entry count | directory entries |
+
+`input` is the one call that bills characters rather than bytes, because it accumulates into a
+`StringBuilder` and charges `sb.length()`. Its 16 MiB ceiling is also counted in characters, so
+a line of astral characters is billed and refused by character count, not byte count.
+`list_files` bills one unit per directory entry, so its 100,000-entry cap and its step charge
+are the same number.
+
+The per-byte rate is not itself a bound. At one step per byte the 50,000,000-step budget would
+allow 50,000,000 bytes — about 47.68 MiB, or 2.98 calls of 16,777,216 bytes — so two full
+per-call transfers fit and a third does not. No single transfer can approach that total,
+because the per-call limit refuses it first. Billing at 256 steps per byte failed the other
 way and made the per-call figure unreachable, since `read` refused any file past 195,312 bytes
 with `program ran for too long`, whatever the table said.
 
@@ -540,18 +562,23 @@ oq build hello.oq            # lower to the intermediate representation
 oq build hello.oq --emit-ir  # print the IR
 ```
 
-`oq build` writes an executable jar next to the program:
+`oq build` writes an executable jar next to the program. This output was captured from the
+current build:
 
 ```
 $ oq build hello.oq
-compiled hello.oq (0 functions, 3 main instructions)
+compiled hello.oq (0 functions, 5 main instructions)
 backend=classfile (self-contained writer, JDK 21)
-wrote hello.jar (89 classes, 0 skipped)
+codepath: compiled bytecode
+wrote hello.jar (103 classes, 0 skipped)
 run it with: java -jar hello.jar
 
 $ java -jar hello.jar
 Hello, World!
 ```
+
+The instruction and class counts move as the compiler and runtime grow; the shape of the
+transcript — the five lines, in that order — is what the contract fixes, not those numbers.
 
 The jar contains a real class file with a real `main`, the Oqthara runtime, the program
 source and its original file name. The class file is written by Oqthara itself, so it works

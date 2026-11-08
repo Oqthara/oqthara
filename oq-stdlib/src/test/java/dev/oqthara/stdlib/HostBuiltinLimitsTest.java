@@ -442,4 +442,101 @@ class HostBuiltinLimitsTest {
     private static String url(HttpServer server, String path) {
         return "http://127.0.0.1:" + server.getAddress().getPort() + path;
     }
+
+    // --- billing units ---------------------------------------------------------------------
+
+    /**
+     * Sets a budget just below what one call would cost, so the call trips it and the charge is
+     * observable. {@code steps} is private to the interpreter, and adding a test-only getter to
+     * production code to read it back is worse than proving the charge by what it refuses.
+     */
+    private void budgetExactly(long units) {
+        interpreter.resetSteps();
+        interpreter.setMaxSteps((int) units);
+    }
+
+    private static void assertTrips(OqError error, String what) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains("program ran for too long")) return;
+        }
+        throw new AssertionError(what + " did not charge the step budget", error);
+    }
+
+    @Test
+    void listFilesBillsOneStepPerDirectoryEntry() throws IOException {
+        for (String name : List.of("a.txt", "b.txt", "c.txt")) {
+            Files.writeString(dir.resolve(name), "x");
+        }
+        // Three entries in the working directory. A budget of 3 is exactly enough; asking for
+        // one less must trip, which is only true if the charge is the entry count and not a
+        // flat cost or a byte count.
+        budgetExactly(3);
+        assertEquals(3, ((List<?>) call("list_files", ".")).size());
+        budgetExactly(2);
+        OqError error = assertThrows(OqError.class, () -> call("list_files", "."));
+        assertTrips(error, "list_files");
+    }
+
+    @Test
+    void inputBillsOneStepPerCharacterRatherThanPerByte() {
+        // "é" is one Java char but two UTF-8 bytes, so it bills exactly 1. A budget of 1 must
+        // therefore suffice. Billing bytes would charge 2 and trip, which is what this pins.
+        Interpreter line = interpreterReading("é\n");
+        line.setMaxSteps(1);
+        assertEquals("é", line.builtins().get("input").call(line, List.of(), Span.synthetic()));
+
+        // A budget of 0 refuses before the first character is appended.
+        Interpreter none = interpreterReading("x\n");
+        none.setMaxSteps(0);
+        OqError error = assertThrows(OqError.class,
+                () -> none.builtins().get("input").call(none, List.of(), Span.synthetic()));
+        assertTrips(error, "input");
+    }
+
+    private Interpreter interpreterReading(String text) {
+        dev.oqthara.runtime.OutputBudget.reset();
+        Interpreter created = new Interpreter(
+                new PrintStream(ByteArrayOutputStream.nullOutputStream()),
+                new PrintStream(ByteArrayOutputStream.nullOutputStream()),
+                new java.io.BufferedReader(new java.io.StringReader(text)),
+                List.of(), dir, new MethodResolverImpl());
+        Stdlib.install(created);
+        return created;
+    }
+
+    @Test
+    void theInputLimitMessageCountsCharactersNotBytes() {
+        // The bound is checked against sb.length(), which counts Java chars, so the refusal
+        // must not call them bytes: an astral character is one char but four UTF-8 bytes. The
+        // reader never ends, so the call is guaranteed to stop at the bound rather than EOF.
+        Interpreter tight = new Interpreter(
+                new PrintStream(ByteArrayOutputStream.nullOutputStream()),
+                new PrintStream(ByteArrayOutputStream.nullOutputStream()),
+                new java.io.BufferedReader(new java.io.Reader() {
+                    @Override
+                    public int read(char[] buffer, int offset, int length) {
+                        java.util.Arrays.fill(buffer, offset, offset + length, 'a');
+                        return length;
+                    }
+
+                    @Override
+                    public int read() {
+                        return 'a';
+                    }
+
+                    @Override
+                    public void close() {
+                    }
+                }),
+                List.of(), dir, new MethodResolverImpl());
+        Stdlib.install(tight);
+        OqError error = assertThrows(OqError.class, () -> {
+            OqCallable input = tight.builtins().get("input");
+            input.call(tight, List.of(), Span.synthetic());
+        });
+        assertEquals("input line is too large", error.getMessage());
+        String hint = error.hint();
+        assertTrue(hint.contains("character"), "hint said: " + hint);
+        assertFalse(hint.contains("byte"), "hint said: " + hint);
+    }
 }
