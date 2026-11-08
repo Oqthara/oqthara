@@ -246,7 +246,7 @@ List methods: `.length()`, `.push(x)`, `.pop()`, `.first()`, `.last()`, `.get(i)
 `.insert(i, x)`, `.remove(i)`, `.map(f)`, `.filter(f)`, `.each(f)`, `.any(f)`,
 `.all(f)`, `.find(f)`, `.find_index(f)`, `.reduce(f, start)`, `.sort()`,
 `.sort(key)`, `.reverse()`, `.join(sep)`, `.contains(x)`, `.unique()`, `.flatten()`,
-`.take(n)`, `.skip(n)`, `.sum()`, `.min()`, `.max()`, `.clone()`.
+`.take(n)`, `.skip(n)`, `.subList(from, to)`, `.sum()`, `.min()`, `.max()`, `.clone()`.
 
 Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallback)`,
 `.set(k, v)`, `.has(k)`, `.has_value(v)`, `.remove(k)`, `.clear()`, `.each(f)`,
@@ -314,9 +314,13 @@ print swap((1, 2))        # (2, 1)
 
 Mutation is refused; tuples are immutable. Every mutator raises `a tuple is immutable`, and
 `t[0] = 9` is rejected. That includes a mutator called on a *view* of a tuple, such as
-`t.subList(0, 2)` or `t.reverse()`: those are read-only slices of the same value, so changing
-one is refused with the same error rather than a Java exception. To change a tuple, build a
-new one.
+`t.subList(0, 2)` or `t.reverse()`: slicing a tuple yields another tuple, so changing one is
+refused with the same error rather than a Java exception. To change a tuple, build a new one.
+
+`subList(from, to)` and its one-argument form `subList(from)` return a **new** list or tuple,
+never a live view. Mutating the result leaves the original untouched. Indices are clamped to
+the sequence, so `l.subList(0, 99)` is the whole list rather than an error. `slice` is an
+alias. `take(n)` and `skip(n)` are the prefix and suffix forms.
 
 A tuple satisfies Java's `List` interface for reading. Mutating it from Java throws
 `UnsupportedOperationException`; reaching a tuple's `List` methods through Oqthara reports
@@ -434,31 +438,36 @@ program cannot exhaust the machine by accident. These limits are part of the con
 
 | Call | Limit | On breach |
 | ---- | ----- | --------- |
-| `print`, `write`, `write_text` | 16 MiB of output, total | `program wrote too much output` |
-| `read`, `read_lines` | 16 MiB per file | `the file is too large to read` |
+| `print`, `write`, `write_text` | 16 MiB of output, total | `the program wrote too much output` |
+| `read`, `read_lines` | 16 MiB per file | `the file is too large to read: <path>` |
 | `input()` | 16 MiB per line | `input line is too large` |
-| `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds`, `command output is too large` |
-| `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large` |
+| `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
+| `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large: <url>` |
 | `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call` |
-| `sleep` | 10 seconds per call | `cannot sleep for more than 10 seconds` |
-| `list_files` | 100,000 entries | `directory has too many entries` |
+| `sleep` | 10 seconds per call, 60 seconds total | `cannot sleep for more than 10 seconds`, `the program waited for too long` |
+| `list_files` | 100,000 entries | `directory has too many entries: <path>` |
 
 A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allowed and one
 byte more is refused. Output is refused **before** it is written, so a program that exceeds
 the limit prints nothing from the call that crossed it. The newline `print` adds counts
 towards the total, as do the bytes of an `input` prompt.
 
-Output has its own ceiling rather than draining the step budget, because charging output as
-steps made the documented 16 MiB unreachable: a program could print only 50,000,000 / 256 =
-195,312 bytes before the budget stopped it. Output and file transfers share one counter, so a
-program cannot spend the ceiling twice by mixing the two.
+Output has its own 16 MiB counter rather than draining the step budget. Charging output as
+steps made the documented ceiling unreachable: at 256 steps per byte a program could print
+only 50,000,000 / 256 = 195,312 bytes before the budget stopped it. That counter covers output
+only. Reading a file does not draw on it, because reading is not writing output.
 
-Every transfer is billed one step per byte on top of its own size limit. Billing at 256 steps
-per byte made the documented per-call figure unreachable the same way: `read` refused any file
-past 195,312 bytes with `program ran for too long`, whatever the table said.
+Every transfer is billed one step per byte against the step budget, on top of its own per-call
+size limit. The per-byte rate is not itself a bound: at 1 step per byte, the 50,000,000-step
+budget allows 50,000,000 bytes to move in total, which is about 47.7 MiB — less than two
+16 MiB calls, but far more than one. The per-call limits are what bind, and the step charge
+only stops a program from moving data for free. Billing at 256 steps per byte failed the other
+way and made the per-call figure unreachable, since `read` refused any file past 195,312 bytes
+with `program ran for too long`, whatever the table said.
 
-`save` and `append` are bounded by the same 16 MiB per call and refuse more with `cannot save
-<N> bytes in one call`.
+`sleep` is bounded separately again. The 10-second per-call cap alone would let a program drip
+ten seconds at a time forever, so a program may wait 60 seconds in total and is refused with
+`the program waited for too long`.
 
 `run_command(path)` runs **one executable path** with no arguments and no shell. There is no
 command-line splitting and no interpolation, so `run_command("/bin/ls -l")` is a program
@@ -477,7 +486,7 @@ by `oq build` takes one of two shapes, and `oq build` prints which:
 
 ```
 codepath: compiled bytecode
-codepath: interpreter launcher (call to 'read' uses a builtin the compiler cannot lower)
+codepath: interpreter launcher (call to 'read' with 1 argument(s) is not compiled yet)
 ```
 
 A jar built as an **interpreter launcher** runs the program in the embedded interpreter, so

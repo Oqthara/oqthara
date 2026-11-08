@@ -39,15 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   children it started; `http_get` and `http_post` bound the body as well as the headers, so a
   server that stalls mid-body cannot hang the program, and stop at 16 MiB instead of
   buffering; `sleep` is capped at 10 seconds per call; `save` and `append` refuse more than
-  16 MiB in one call; `list_files` caps a directory at 100,000 entries. Output and input
-  transfers share one 16 MiB counter rather than keeping a spendable ceiling each, and the
-  newline `print` adds and the prompt `input` writes count against it, so neither is a way to
-  emit unbounded bytes. Transfers are billed one step per byte; the older 256-steps-per-byte
-  rate made the documented 16 MiB unreachable, because `read` tripped the 50,000,000-step
-  budget at 195,312 bytes and reported `program ran for too long` instead of the size error.
+  16 MiB in one call; `list_files` caps a directory at 100,000 entries; `sleep` is bounded at
+  60 seconds in total, because the per-call cap alone let a loop wait forever ten seconds at a
+  time. Output has its own 16 MiB counter, and the newline `print` adds and the prompt `input`
+  writes count against it, so neither is a way to emit unbounded bytes. That counter covers
+  output only — reading a file does not draw on it, because reading is not writing output.
+  Transfers are billed one step per byte against the step budget on top of their per-call
+  limits; the older 256-steps-per-byte rate made the documented 16 MiB unreachable, because
+  `read` tripped the 50,000,000-step budget at 195,312 bytes and reported
+  `program ran for too long` instead of the size error.
   The specification states these limits and states plainly that they are resource controls,
   not a sandbox — and that a jar built as pure compiled bytecode has no step budget or
-  deadlines, only the shared output cap, while a jar built as an interpreter launcher
+  deadlines, only the 16 MiB output cap, while a jar built as an interpreter launcher
   enforces every limit.
 
 ### Fixed
@@ -72,6 +75,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build`.
 - The REPL never reset the step budget, so a long session eventually refused every command it
   had left. Each command now starts with the budget it would have on its own.
+- `"" * 3000000000` failed with `internal error: IllegalArgumentException: count is negative`,
+  and `[] * 4611686018427387905` looped over four quadrillion empty iterations. Repeating an
+  empty text or list now returns empty immediately, without consulting the size guard that an
+  empty value makes meaningless.
+- `subList` was not part of the list API, so it fell through to `java.util.List.subList` and
+  returned a live view of a JDK-private class. On a mutable list that view wrote through to the
+  parent; on a tuple, mutating it leaked either `IllegalAccessException` or, for `sort`, a
+  sorted list — a quietly mutable tuple. `subList` and `slice` are now real methods that return
+  a copy, clamped to the sequence and keeping their type, so `t.subList(0, 2)` is a tuple and
+  every mutator on it refuses with `a tuple is immutable`.
 
 ### Documentation
 
