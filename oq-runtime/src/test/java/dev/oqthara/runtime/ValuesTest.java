@@ -110,6 +110,49 @@ class ValuesTest {
     }
 
     @Test
+    void aTupleCanHoldNothing() {
+        OqTuple tuple = new OqTuple(java.util.Arrays.asList(null, 1L));
+        assertEquals(2, tuple.size());
+        assertEquals("(nothing, 1)", Values.repr(tuple));
+        assertEquals("tuple", Values.typeName(tuple));
+    }
+
+    @Test
+    void aTupleOfOnlyNothingIsStillATuple() {
+        OqTuple tuple = new OqTuple(java.util.Collections.singletonList(null));
+        assertEquals(1, tuple.size());
+        assertEquals("(nothing,)", Values.repr(tuple));
+    }
+
+    @Test
+    void tupleArithmeticIsRefused() {
+        OqTuple tuple = new OqTuple(List.of(1L, 2L));
+        OqError added = assertThrows(OqError.class,
+                () -> Values.add(tuple, List.of(3L), span));
+        assertEquals("cannot add a tuple", added.getMessage());
+        OqError times = assertThrows(OqError.class,
+                () -> Values.multiply(tuple, 2L, span));
+        assertEquals("cannot multiply a tuple", times.getMessage());
+        OqError reverse = assertThrows(OqError.class,
+                () -> Values.multiply(2L, tuple, span));
+        assertEquals("cannot multiply number by tuple", reverse.getMessage());
+    }
+
+    @Test
+    void repeatingTextPastTheLimitIsRefused() {
+        OqError error = assertThrows(OqError.class,
+                () -> Values.multiply("ab", 4294967297L, span));
+        assertEquals("the repeated text would be 8589934594 characters", error.getMessage());
+    }
+
+    @Test
+    void repeatingAListPastTheLimitIsRefused() {
+        OqError error = assertThrows(OqError.class,
+                () -> Values.multiply(List.of(1L), 4294967297L, span));
+        assertEquals("the repeated list would have 4294967297 items", error.getMessage());
+    }
+
+    @Test
     void tupleSupportsMembership() {
         OqTuple tuple = new OqTuple(List.of(1L, 2L));
         assertTrue(Values.contains(tuple, 2L, span));

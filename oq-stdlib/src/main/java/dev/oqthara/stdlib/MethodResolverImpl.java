@@ -182,7 +182,12 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                     Values.contains(list, args.get(0), span));
             case "unique" -> fixed(name, 0, (host, args) -> {
                 Set<Object> seen = new LinkedHashSet<>(list);
-                return new ArrayList<>(seen);
+                // A tuple stays a tuple; otherwise `(1, 1, 2).unique()` silently handed back a
+                // mutable list, which is the one thing a tuple is not.
+                List<Object> unique = new ArrayList<>(seen);
+                return list instanceof dev.oqthara.runtime.OqTuple
+                        ? dev.oqthara.runtime.OqTuple.of(unique)
+                        : unique;
             });
             case "flatten" -> fixed(name, 0, (host, args) -> {
                 List<Object> result = new ArrayList<>();
@@ -433,9 +438,15 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 });
     }
 
+    /**
+     * Every name that would mutate a sequence. The last group is not in Oqthara's list API at
+     * all, but Java reflection on a tuple finds the {@link java.util.List} methods, so naming
+     * them here is what turns a leaked {@code UnsupportedOperationException} into a program error.
+     */
     private static final java.util.Set<String> TUPLE_MUTATORS = java.util.Set.of(
-            "push", "add", "pop", "insert", "remove", "clear", "sort", "reverse",
-            "sort_by", "shuffle", "fill");
+            "push", "add", "pop", "insert", "remove", "remove_value", "clear", "sort",
+            "reverse", "sort_by", "shuffle", "fill",
+            "set", "addAll", "removeAll", "retainAll", "removeIf", "replaceAll");
 
     @SuppressWarnings("unchecked")
     private static Map<Object, Object> asMutableMap(Map<?, ?> map) {

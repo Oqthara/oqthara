@@ -15,7 +15,9 @@ public final class OqTuple extends AbstractList<Object> implements RandomAccess 
     private final List<Object> items;
 
     public OqTuple(List<Object> items) {
-        this.items = List.copyOf(items);
+        // Deliberately not `List.copyOf`: it rejects nulls, and `nothing` is represented as
+        // null, so a tuple holding `nothing` would crash instead of printing `(nothing,)`.
+        this.items = java.util.Collections.unmodifiableList(new java.util.ArrayList<>(items));
     }
 
     public static OqTuple of(List<Object> items) {

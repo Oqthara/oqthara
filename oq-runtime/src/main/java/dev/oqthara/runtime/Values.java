@@ -186,7 +186,7 @@ public final class Values {
         if (a instanceof OqTuple != b instanceof OqTuple) {
             throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
                     "A tuple is compared with another tuple, and a list with another list."
-                            + " Convert one with list(...) or tuple(...) first.");
+                            + " Convert the tuple with list(...) first.");
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
             int limit = Math.min(x.size(), y.size());
@@ -231,6 +231,7 @@ public final class Values {
             return display(a) + display(b);
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
+            requireNotTuples("add", a, b, span);
             List<Object> result = new ArrayList<>(x);
             result.addAll(y);
             return result;
@@ -270,14 +271,52 @@ public final class Values {
             if (a instanceof Long x && b instanceof Long y) return x * y;
             return asDouble(a) * asDouble(b);
         }
-        if (a instanceof String s && b instanceof Long n) return s.repeat(Math.max(0, n.intValue()));
-        if (a instanceof Long n && b instanceof String s) return s.repeat(Math.max(0, n.intValue()));
+        if (a instanceof String s && b instanceof Long n) return repeat(s, n, span);
+        if (a instanceof Long n && b instanceof String s) return repeat(s, n, span);
         if (a instanceof List<?> l && b instanceof Long n) {
+            requireNotTuples("multiply", a, b, span);
+            long size = l.size() * n;
+            if (size > MAX_COLLECTION_SIZE) {
+                throw new OqError("the repeated list would have " + size + " items", span,
+                        "The limit is " + MAX_COLLECTION_SIZE
+                                + ". Repeat fewer times, or build the list as you need it.");
+            }
             List<Object> result = new ArrayList<>();
             for (long i = 0; i < n; i++) result.addAll(l);
             return result;
         }
         throw new OqError("cannot multiply " + typeName(a) + " by " + typeName(b), span);
+    }
+
+    /**
+     * Refuses arithmetic on tuples. They are read-only sequences, and because they share the list
+     * code path, ordinary list arithmetic would silently turn them into mutable lists.
+     */
+    private static void requireNotTuples(String operation, Object a, Object b, Span span) {
+        if (a instanceof OqTuple || b instanceof OqTuple) {
+            throw new OqError("cannot " + operation + " a tuple", span,
+                    "Tuples do not support arithmetic in Alpha 3. Convert one with list(...) "
+                            + "first if you need list behaviour.");
+        }
+    }
+
+    /** The most a single repetition will build, so one expression cannot exhaust the heap. */
+    private static final long MAX_REPEAT_LENGTH = 64L * 1024 * 1024;
+
+    private static final long MAX_COLLECTION_SIZE = 10_000_000L;
+
+    /**
+     * Repeats text. {@link String#repeat} takes an {@code int}, so a {@code Long} count above
+     * {@link Integer#MAX_VALUE} must be refused, not silently wrapped to a small number.
+     */
+    private static String repeat(String text, Long count, Span span) {
+        long n = Math.max(0, count);
+        if (text.length() * n > MAX_REPEAT_LENGTH) {
+            throw new OqError("the repeated text would be " + (text.length() * n) + " characters", span,
+                    "The limit is " + MAX_REPEAT_LENGTH
+                            + ". Repeat fewer times, or write it in pieces.");
+        }
+        return text.repeat((int) n);
     }
 
     public static Object divide(Object a, Object b, Span span) {
