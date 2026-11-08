@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -46,9 +47,24 @@ class ConformanceTest {
                     continue;
                 }
                 String actual = result.stderr().strip();
-                if (!actual.contains(expected)) {
-                    failures.add(name + ": wrong error message\n  expected to contain: " + expected
-                            + "\n  actual: " + actual.replace("\n", "\n          "));
+                // The first line of every diagnostic is the message itself (`OqRunner` leaves the
+                // `error: ` prefix to the CLI); the rest is the position, the source excerpt and
+                // the hint. Matching the whole first line
+                // exactly means a message that gains a prefix, loses a detail, or is reported
+                // for a different reason no longer passes. `contains` would accept all three.
+                String firstLine = actual.lines().findFirst().orElse("");
+                if (!firstLine.equals(expected)) {
+                    failures.add(name + ": wrong error message\n  expected first line: "
+                            + expected + "\n  actual first line:   " + firstLine
+                            + "\n  full stderr:\n          " + actual.replace("\n", "\n          "));
+                    continue;
+                }
+                // Every diagnostic must say where it happened. Without this, an error that names
+                // the right problem in the wrong place still passes.
+                if (!actual.contains("--> " + name + ":")) {
+                    failures.add(name + ": diagnostic has no position\n  expected to find: --> "
+                            + name + ":\n  actual:\n          "
+                            + actual.replace("\n", "\n          "));
                 }
                 continue;
             }
@@ -67,6 +83,30 @@ class ConformanceTest {
             fail(failures.size() + " conformance failure(s):\n\n" + String.join("\n\n", failures));
         }
         assertEquals(programs.size(), programs.size());
+    }
+
+    /**
+     * The name of a case that promises a position must be backed by the harness rule that
+     * checks one. This used to be a comment-level promise: case 200 is called
+     * `error-message-includes-position` but asserted only a message.
+     */
+    @Test
+    void casesThatPromiseAPositionAreCheckedForOne() throws Exception {
+        List<String> promising = new ArrayList<>();
+        try (Stream<Path> stream = Files.list(CASES)) {
+            stream.map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith(".err"))
+                    .filter(n -> n.contains("position"))
+                    .sorted()
+                    .forEach(promising::add);
+        }
+        assertFalse(promising.isEmpty(),
+                "no .err case exercises the position rule; the check would be unreachable");
+        // The rule is enforced for every .err case by conformanceSuite, so the promise in the
+        // name is now a property of the corpus rather than a comment.
+        for (String name : promising) {
+            assertTrue(Files.exists(CASES.resolve(name)), name);
+        }
     }
 
     private static String normalize(String text) {
