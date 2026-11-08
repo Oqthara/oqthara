@@ -269,7 +269,14 @@ class HostBuiltinLimitsTest {
         Path marker = dir.resolve("child.pid");
         Path script = script(
                 "sleep 60 & echo $! > " + marker + "; wait",
-                powershell("$i = New-Object System.Diagnostics.ProcessStartInfo; "
+                // The child chain is moved out of the test's temp directory and the grandchild is
+                // started there too. Windows refuses to delete a directory that any live process
+                // still has as its current directory, so a child that was killed but not yet fully
+                // torn down would fail @TempDir cleanup rather than the assertion below, which is
+                // what actually guards the contract. run_command makes its own child's working
+                // directory the interpreter's, and that one is the process destroyTree waits for.
+                "cd /d \"%TEMP%\"\n"
+                        + powershell("$i = New-Object System.Diagnostics.ProcessStartInfo; "
                         + "$i.FileName = 'powershell.exe'; "
                         + "$i.Arguments = '-NoProfile -Command Start-Sleep -Seconds 60'; "
                         + "$i.UseShellExecute = $false; "
