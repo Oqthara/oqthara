@@ -8,6 +8,7 @@ tools:
   - execute
   - todo
 include-custom-instructions: true
+model: deepseek-ai/deepseek-v4.1-flash-1017
 ---
 
 # OQ-HIVE Development

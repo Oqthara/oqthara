@@ -14,9 +14,10 @@ than editing it, exactly as in [`docs/adr/`](../adr/).
 | ID | Title | State |
 | --- | --- | --- |
 | OQ-DEC-2026-001 | Agent architecture uses the native custom agent format | APPROVED |
-| OQ-DEC-2026-002 | Per-agent model pinning is not configured | DEFERRED |
+| OQ-DEC-2026-002 | Per-agent model pinning is not configured | DEFERRED (superseded by 005) |
 | OQ-DEC-2026-003 | Governance records live in `docs/governance/` | APPROVED |
 | OQ-DEC-2026-004 | Baseline audit is read-only and evidence-bound | APPROVED |
+| OQ-DEC-2026-005 | Hive agents pin the DeepSeek custom endpoint model | IMPLEMENTED |
 
 ## OQ-DEC-2026-001 — Agent architecture uses the native custom agent format
 
@@ -119,3 +120,82 @@ enforces an 80% line floor on `dev/oqthara/core`. No other module has a floor, s
 never generalises the one number it can prove.
 
 **Evidence.** `docs/governance/audit/baseline-2026-11.md`.
+
+## OQ-DEC-2026-005 — Hive agents pin the DeepSeek custom endpoint model
+
+**State:** IMPLEMENTED
+
+**Context.** OQ-DEC-2026-002 deferred per-agent model pinning because
+`copilot --model <deepseek-id>` reported `Model "..." from --model flag is not available.`
+That observation is still true, and it is not the whole mechanism. The DeepSeek model is
+served by a *custom endpoint provider*, not by GitHub Copilot's own catalog, so the
+`--model` flag is the wrong surface to test. Two facts resolve the question:
+
+1. `~/.copilot/data.db` registers provider `0c48b4ee-e62f-4e6a-ab1f-c8d2c83b6177`
+   (`type: custom`, `baseUrl: http://localhost:8990/deploy`) and model
+   `deepseek-ai/deepseek-v4.1-flash-1017` (`display_name: DeepSeek 4.1 Flash (TheHive)`,
+   `supported_reasoning_efforts: ["medium","high","max"]`).
+2. Custom-agent frontmatter supports a `model:` string field, and the runtime resolves it
+   against the available catalog. An unresolvable value produces an explicit warning:
+   `Warning: Custom agent "probe" specifies model "definitely-not-a-real-model" which is
+   not available; using "auto" instead`, then falls back to `auto`.
+
+**Decision.** All six `.github/agents/*.agent.md` files carry
+`model: deepseek-ai/deepseek-v4.1-flash-1017`. That is the bare model identifier as stored
+in `provider_models.model_id`; the provider UUID is deliberately *not* prefixed, because
+the frontmatter field accepts a model name and resolution is provider-aware. This
+supersedes OQ-DEC-2026-002, which remains on record as the earlier, narrower finding.
+
+**Alternatives rejected.** (a) `--model` flag only: rejected because it does not reach the
+custom provider and fails, and because it is per-invocation rather than per-agent.
+(b) `robin/deepseek-ai/...` or `customendpoint/Robin/deepseek-ai/...`: rejected because
+both are rejected by this runtime (`Model "..." from --model flag is not available.`).
+(c) `0c48b4ee-.../deepseek-ai/...`: rejected for the same reason. (d) `subagents.agents`
+entries in `~/.copilot/config.json`: rejected because they live in a user's home directory
+and are invisible to the repository, which is where the architecture has to be reviewable.
+
+**Consequences.** The model is now a repository-visible property of each agent. Because the
+provider is a local custom endpoint, an agent pin is only satisfiable on a machine where
+that endpoint is reachable; on any other machine the runtime warns and degrades to `auto`,
+which is explicit rather than silent. Model behaviour is now stable enough to design
+against. Changing it means editing six frontmatter lines and re-recording evidence, not
+editing a user's home directory.
+
+**Evidence.** Command: agent inventory read from the runtime's own event stream.
+
+```
+$ COPILOT_PROVIDER_BASE_URL=http://localhost:8990/deploy \
+  COPILOT_MODEL=deepseek-ai/deepseek-v4.1-flash-1017 \
+  copilot -p "Reply with exactly: AGENTS_LOADED" --trust-folder --output-format json
+```
+
+`session.custom_agents_updated` reports, with `warnings: []` and `errors: []`:
+
+| Agent | `model` | `tools` |
+| --- | --- | --- |
+| `oq-hive-architecture-governance` | `deepseek-ai/deepseek-v4.1-flash-1017` | read, edit, search, execute, todo |
+| `oq-hive-development` | `deepseek-ai/deepseek-v4.1-flash-1017` | read, edit, search, execute, todo |
+| `oq-hive-language-syntax` | `deepseek-ai/deepseek-v4.1-flash-1017` | read, edit, search, execute, todo |
+| `oq-hive-orchestrator` | `deepseek-ai/deepseek-v4.1-flash-1017` | execute, read, edit, search, agent, web, todo |
+| `oq-hive-review-escalation` | `deepseek-ai/deepseek-v4.1-flash-1017` | read, search, execute, todo |
+| `oq-hive-testing-security` | `deepseek-ai/deepseek-v4.1-flash-1017` | read, edit, search, execute, todo |
+
+Delegation was verified end to end, for the specialist rather than only the orchestrator.
+The orchestrator delegated via the `task` tool with
+`agent_type: oq-hive-language-syntax`, and the runtime reported the child's effective model:
+
+```json
+{"agentName": "oq-hive-language-syntax",
+ "model": "deepseek-ai/deepseek-v4.1-flash-1017",
+ "firstDispatchedModel": "deepseek-ai/deepseek-v4.1-flash-1017",
+ "modelSelectionSource": "agent_definition_default"}
+```
+
+`modelSelectionSource: agent_definition_default` is the load-bearing field: the child's
+model came from the agent definition, not from the parent session. Every
+`model.call_final_result` in that run reported `"isByok": true`, confirming inference went
+to the custom endpoint rather than to a Copilot-hosted model.
+
+Permission separation is verified from the same inventory: `oq-hive-review-escalation` has
+`read, search, execute, todo` and therefore no `edit` and no `agent`; only
+`oq-hive-orchestrator` carries the `agent` tool.
