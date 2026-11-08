@@ -19,7 +19,7 @@ public final class Ast {
     }
 
     public sealed interface Expr extends Node permits
-            NumberLit, StringLit, BoolLit, NothingLit, Var, ListLit, MapLit, SetLit,
+            NumberLit, StringLit, BoolLit, NothingLit, Var, ListLit, TupleLit, MapLit, SetLit,
             Unary, Binary, Logical, Call, MethodCall, Index, Field, Lambda, Grouping,
             InExpr, RangeExpr {
     }
@@ -116,6 +116,9 @@ public final class Ast {
     }
 
     public record ListLit(List<Expr> items, Span span) implements Expr {
+    }
+
+    public record TupleLit(List<Expr> items, Span span) implements Expr {
     }
 
     public record MapLit(List<Entry> entries, Span span) implements Expr {

@@ -19,6 +19,10 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     @Override
     public OqCallable resolve(Object receiver, String name, Span span) {
         if (receiver instanceof List<?> list) {
+            if (receiver instanceof dev.oqthara.runtime.OqTuple) {
+                OqCallable refusal = tupleRefusal(name, span);
+                if (refusal != null) return refusal;
+            }
             return listMethod(list, name, span);
         }
         if (receiver instanceof Map<?, ?> map) {
@@ -417,6 +421,21 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     private static List<Object> asMutable(List<?> list) {
         return (List<Object>) list;
     }
+
+    /** Tuple method names that would mutate, refused with a clear message instead of a raw Java error. */
+    private static dev.oqthara.runtime.OqCallable tupleRefusal(String name, Span span) {
+        if (!TUPLE_MUTATORS.contains(name)) return null;
+        return dev.oqthara.runtime.NativeFunction.variadic(name, 0,
+                (host, args, callSpan) -> {
+                    throw new OqError("a tuple is immutable", span,
+                            "Tuples cannot change after they are made. Build a new tuple with"
+                                    + " the items you want, or use a list when the items must change.");
+                });
+    }
+
+    private static final java.util.Set<String> TUPLE_MUTATORS = java.util.Set.of(
+            "push", "add", "pop", "insert", "remove", "clear", "sort", "reverse",
+            "sort_by", "shuffle", "fill");
 
     @SuppressWarnings("unchecked")
     private static Map<Object, Object> asMutableMap(Map<?, ?> map) {

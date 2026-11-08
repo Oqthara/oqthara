@@ -560,6 +560,9 @@ public final class Parser {
                 return new Ast.Lambda(params, body, null, paren.span());
             }
             Ast.Expr inner = expression();
+            if (match(Token.Kind.COMMA)) {
+                return tupleLiteral(paren, inner);
+            }
             expect(Token.Kind.RPAREN, "to close the expression");
             return new Ast.Grouping(inner, paren.span());
         }
@@ -595,6 +598,20 @@ public final class Parser {
         expect(Token.Kind.GT, "to finish the arrow");
         Ast.Expr body = expression();
         return new Ast.Lambda(params, body, null, keyword.span());
+    }
+
+    private Ast.Expr tupleLiteral(Token paren, Ast.Expr first) {
+        List<Ast.Expr> items = new ArrayList<>();
+        items.add(first);
+        while (true) {
+            skipNewlines();
+            if (check(Token.Kind.RPAREN)) break;
+            items.add(expression());
+            skipNewlines();
+            if (!match(Token.Kind.COMMA)) break;
+        }
+        expect(Token.Kind.RPAREN, "to close the tuple");
+        return new Ast.TupleLit(items, paren.span());
     }
 
     private Ast.Expr listLiteral(Token bracket) {

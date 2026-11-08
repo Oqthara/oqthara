@@ -486,6 +486,12 @@ public final class Lowering {
                 }
                 code.add(new Ir.MakeList(list.items().size()));
             }
+            case Ast.TupleLit tuple -> {
+                for (Ast.Expr item : tuple.items()) {
+                    expression(item);
+                }
+                code.add(new Ir.MakeTuple(tuple.items().size()));
+            }
             case Ast.SetLit set -> {
                 for (Ast.Expr item : set.items()) {
                     expression(item);
@@ -694,6 +700,7 @@ public final class Lowering {
             case Ast.StringLit text -> text.parts().stream()
                     .allMatch(part -> part instanceof Ast.TextPart);
             case Ast.ListLit list -> list.items().stream().allMatch(this::isScopeFree);
+            case Ast.TupleLit tuple -> tuple.items().stream().allMatch(this::isScopeFree);
             case Ast.SetLit set -> set.items().stream().allMatch(this::isScopeFree);
             case Ast.MapLit map -> map.entries().stream()
                     .allMatch(entry -> isScopeFree(entry.key()) && isScopeFree(entry.value()));

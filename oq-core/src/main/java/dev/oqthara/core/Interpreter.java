@@ -8,6 +8,7 @@ import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
+import dev.oqthara.runtime.OqTuple;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
@@ -325,6 +326,11 @@ public final class Interpreter implements OqHost {
                 List<Object> items = new ArrayList<>();
                 for (Ast.Expr item : list.items()) items.add(evaluate(item, env));
                 yield items;
+            }
+            case Ast.TupleLit tuple -> {
+                List<Object> items = new ArrayList<>();
+                for (Ast.Expr item : tuple.items()) items.add(evaluate(item, env));
+                yield new OqTuple(items);
             }
             case Ast.SetLit set -> {
                 Set<Object> items = new LinkedHashSet<>();

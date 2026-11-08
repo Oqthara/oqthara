@@ -29,6 +29,16 @@ public final class Collections {
         return new LinkedHashSet<>();
     }
 
+    /**
+     * Builds a tuple. Generated code fills an ordinary list and hands it over, so the
+     * tuple itself is the only immutable object in the path.
+     */
+    public static Object newTuple(Object items) {
+        @SuppressWarnings("unchecked")
+        List<Object> values = (List<Object>) items;
+        return new OqTuple(values);
+    }
+
     @SuppressWarnings("unchecked")
     public static void addToSet(Object set, Object item) {
         ((Set<Object>) set).add(item);

@@ -475,6 +475,11 @@ public final class BytecodeCompiler {
                         next += make.count();
                         checkSlotLimit(next);
                     }
+                    case Ir.MakeTuple make -> {
+                        resolved[i] = next;
+                        next += make.count();
+                        checkSlotLimit(next);
+                    }
                     case Ir.MakeSet make -> {
                         resolved[i] = next;
                         next += make.count();
@@ -829,6 +834,9 @@ public final class BytecodeCompiler {
                 }
                 case Ir.MakeList make -> {
                     if (reachable) emitMakeCollection(make.count(), slot, false);
+                }
+                case Ir.MakeTuple make -> {
+                    if (reachable) emitMakeTuple(make.count(), slot);
                 }
                 case Ir.MakeSet make -> {
                     if (reachable) emitMakeCollection(make.count(), slot, true);
@@ -1216,8 +1224,25 @@ public final class BytecodeCompiler {
             }
         }
 
-        /** Builds a map from {@code count} key/value pairs, value on top of each pair. */
-        private void emitMakeMap(int count, int firstSlot) {
+        /**
+         * Builds a tuple from {@code count} values on the stack. It reuses the list
+         * emitter and wraps the finished list, so only the wrapper differs.
+         */
+        private void emitMakeTuple(int count, int firstSlot) {
+            for (int i = count - 1; i >= 0; i--) {
+                store(firstSlot + i);
+            }
+            call(COLLECTIONS, "newList", "()Ljava/lang/Object;");
+            for (int i = 0; i < count; i++) {
+                bytes.write(DUP);
+                push();
+                load(firstSlot + i);
+                call(COLLECTIONS, "addToList", "(Ljava/lang/Object;Ljava/lang/Object;)V");
+            }
+            call(COLLECTIONS, "newTuple", "(Ljava/lang/Object;)Ljava/lang/Object;");
+        }
+
+        /** Builds a map from {@code count} key/value pairs, value on top of each pair. */        private void emitMakeMap(int count, int firstSlot) {
             for (int i = count - 1; i >= 0; i--) {
                 store(firstSlot + 2 * i + 1);
                 store(firstSlot + 2 * i);

@@ -61,6 +61,7 @@ public final class Values {
         if (value instanceof Long) return "number";
         if (value instanceof Double) return "decimal";
         if (value instanceof String) return "text";
+        if (value instanceof OqTuple) return "tuple";
         if (value instanceof List<?>) return "list";
         if (value instanceof Map<?, ?>) return "map";
         if (value instanceof Set<?>) return "set";
@@ -82,6 +83,16 @@ public final class Values {
         if (value instanceof Long l) return l.toString();
         if (value instanceof Double d) return formatDouble(d);
         if (value instanceof String s) return quote(s);
+        if (value instanceof OqTuple tuple) {
+            StringBuilder sb = new StringBuilder("(");
+            int size = tuple.size();
+            for (int i = 0; i < size; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(repr(tuple.get(i)));
+            }
+            if (size == 1) sb.append(',');
+            return sb.append(')').toString();
+        }
         if (value instanceof List<?> list) {
             StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < list.size(); i++) {
@@ -155,6 +166,7 @@ public final class Values {
 
     public static boolean equal(Object a, Object b) {
         if (a == null || b == null) return a == b;
+        if (a instanceof OqTuple != b instanceof OqTuple) return false;
         if (a instanceof Long x && b instanceof Double y) return x.doubleValue() == y;
         if (a instanceof Double x && b instanceof Long y) return x == y.doubleValue();
         if (isNumber(a) && isNumber(b)) return asDouble(a) == asDouble(b);
@@ -170,6 +182,11 @@ public final class Values {
         }
         if (a instanceof Boolean x && b instanceof Boolean y) {
             return Boolean.compare(x, y);
+        }
+        if (a instanceof OqTuple != b instanceof OqTuple) {
+            throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
+                    "A tuple is compared with another tuple, and a list with another list."
+                            + " Convert one with list(...) or tuple(...) first.");
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
             int limit = Math.min(x.size(), y.size());
@@ -307,8 +324,9 @@ public final class Values {
             long i = integerIndex(key, span);
             long index = i < 0 ? list.size() + i : i;
             if (index < 0 || index >= list.size()) {
+                String kind = target instanceof OqTuple ? "a tuple" : "a list";
                 throw new OqError(
-                        "index " + i + " is out of range for a list of length " + list.size(),
+                        "index " + i + " is out of range for " + kind + " of length " + list.size(),
                         span,
                         "Valid indexes are 0 to " + (list.size() - 1) + (list.isEmpty() ? " (the list is empty)" : "")
                                 + ", or negative from the end.");
@@ -343,6 +361,11 @@ public final class Values {
     }
 
     public static void setIndex(Object target, Object key, Object value, Span span) {
+        if (target instanceof OqTuple) {
+            throw new OqError("a tuple is immutable", span,
+                    "Tuples cannot change after they are made. Build a new tuple instead,"
+                            + " or use a list if the items need to change.");
+        }
         if (target instanceof List<?> raw) {
             @SuppressWarnings("unchecked")
             List<Object> list = (List<Object>) raw;
