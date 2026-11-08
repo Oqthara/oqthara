@@ -10,7 +10,7 @@ public final class Ir {
     }
 
     public sealed interface Instr permits Const, Load, Store, Declare, Call, CallValue, Print, Binary,
-            Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeMap, MakeSet, Index,
+            Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeTuple, MakeMap, MakeSet, Index,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
             GetField, SetField, Range, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
             JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda {
@@ -83,6 +83,9 @@ public final class Ir {
     }
 
     public record MakeList(int count) implements Instr {
+    }
+
+    public record MakeTuple(int count) implements Instr {
     }
 
     public record MakeMap(int count) implements Instr {
@@ -263,6 +266,7 @@ public final class Ir {
             case Return r -> "return";
             case Pop p -> "pop";
             case MakeList m -> "make_list " + m.count();
+            case MakeTuple m -> "make_tuple " + m.count();
             case MakeMap m -> "make_map " + m.count();
             case MakeSet m -> "make_set " + m.count();
             case Index i -> "index";

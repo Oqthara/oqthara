@@ -74,6 +74,24 @@
       "slug": "docs/adr/0011-standalone-website-repository"
     },
     {
+      "path": "docs/governance/README.md",
+      "title": "Architecture decisions",
+      "section": "governance",
+      "slug": "docs/governance/README"
+    },
+    {
+      "path": "docs/governance/audit/baseline-2026-11.md",
+      "title": "Baseline audit — November 2026",
+      "section": "governance",
+      "slug": "docs/governance/audit/baseline-2026-11"
+    },
+    {
+      "path": "docs/governance/roadmap-alpha-3.md",
+      "title": "Alpha 3 engineering roadmap",
+      "section": "governance",
+      "slug": "docs/governance/roadmap-alpha-3"
+    },
+    {
       "path": "docs/reference/cli.md",
       "title": "`oq` command line",
       "section": "reference",

@@ -133,7 +133,7 @@ public final class Server {
         capabilities.put("documentFormattingProvider", true);
         Map<String, Object> serverInfo = new LinkedHashMap<>();
         serverInfo.put("name", "oq-lsp");
-        serverInfo.put("version", "0.1.0-alpha.1");
+        serverInfo.put("version", "0.1.0-alpha.3");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("capabilities", capabilities);
         result.put("serverInfo", serverInfo);

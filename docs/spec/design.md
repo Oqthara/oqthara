@@ -104,6 +104,17 @@ An error message is a product surface. It must answer three questions:
 Internal errors are prefixed with `internal error:` and say that it is a bug in
 Oqthara, never blaming the user.
 
+### What the conformance harness enforces
+
+A `*.err` file holds the **exact** message, without the `error: ` prefix the CLI adds. The
+harness compares the whole first line of the diagnostic, not a substring, so an error that
+gains a prefix, drops a detail, or reports a different problem no longer passes. It also
+requires the diagnostic to carry a position (`--> <case>.oq:<line>:<column>`), because the
+second question above is part of the contract rather than a nicety.
+
+Assertion on the first line rather than on the whole stderr leaves the excerpt and the hint
+free to improve without rewriting expectations, while pinning the part a user reads first.
+
 ## Compatibility policy
 
 - Before 1.0, minor versions may change behaviour; patch versions do not.

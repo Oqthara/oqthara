@@ -2,6 +2,7 @@ package dev.oqthara.core;
 
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqTuple;
 import dev.oqthara.runtime.Values;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
@@ -256,6 +257,15 @@ public final class JavaBridge {
 
     private static OqError wrap(Throwable error, Span span) {
         if (error instanceof OqError oq) return oq;
+        // A tuple reached through a view, such as subList or a reversal, is a plain java.util.List,
+        // so the resolver's tuple guard never sees it and the JDK's own refusal arrives here.
+        // Report it as the program error it is, not as `UnsupportedOperationException: ...`.
+        if (error instanceof UnsupportedOperationException
+                && OqTuple.IMMUTABLE.equals(error.getMessage())) {
+            return new OqError(OqTuple.IMMUTABLE, span,
+                    "Tuples cannot change after they are made. Build a new tuple with the items"
+                            + " you want, or use a list when the items must change.");
+        }
         return new OqError(error.getClass().getSimpleName() + ": " + error.getMessage(), span);
     }
 }

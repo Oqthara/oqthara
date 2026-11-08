@@ -61,6 +61,7 @@ public final class Values {
         if (value instanceof Long) return "number";
         if (value instanceof Double) return "decimal";
         if (value instanceof String) return "text";
+        if (value instanceof OqTuple) return "tuple";
         if (value instanceof List<?>) return "list";
         if (value instanceof Map<?, ?>) return "map";
         if (value instanceof Set<?>) return "set";
@@ -82,6 +83,16 @@ public final class Values {
         if (value instanceof Long l) return l.toString();
         if (value instanceof Double d) return formatDouble(d);
         if (value instanceof String s) return quote(s);
+        if (value instanceof OqTuple tuple) {
+            StringBuilder sb = new StringBuilder("(");
+            int size = tuple.size();
+            for (int i = 0; i < size; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(repr(tuple.get(i)));
+            }
+            if (size == 1) sb.append(',');
+            return sb.append(')').toString();
+        }
         if (value instanceof List<?> list) {
             StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < list.size(); i++) {
@@ -155,6 +166,7 @@ public final class Values {
 
     public static boolean equal(Object a, Object b) {
         if (a == null || b == null) return a == b;
+        if (a instanceof OqTuple != b instanceof OqTuple) return false;
         if (a instanceof Long x && b instanceof Double y) return x.doubleValue() == y;
         if (a instanceof Double x && b instanceof Long y) return x == y.doubleValue();
         if (isNumber(a) && isNumber(b)) return asDouble(a) == asDouble(b);
@@ -170,6 +182,11 @@ public final class Values {
         }
         if (a instanceof Boolean x && b instanceof Boolean y) {
             return Boolean.compare(x, y);
+        }
+        if (a instanceof OqTuple != b instanceof OqTuple) {
+            throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
+                    "A tuple is compared with another tuple, and a list with another list."
+                            + " Convert the tuple with list(...) first.");
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
             int limit = Math.min(x.size(), y.size());
@@ -214,6 +231,7 @@ public final class Values {
             return display(a) + display(b);
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
+            requireNotTuples("add", a, b, span);
             List<Object> result = new ArrayList<>(x);
             result.addAll(y);
             return result;
@@ -253,14 +271,79 @@ public final class Values {
             if (a instanceof Long x && b instanceof Long y) return x * y;
             return asDouble(a) * asDouble(b);
         }
-        if (a instanceof String s && b instanceof Long n) return s.repeat(Math.max(0, n.intValue()));
-        if (a instanceof Long n && b instanceof String s) return s.repeat(Math.max(0, n.intValue()));
+        if (a instanceof String s && b instanceof Long n) return repeat(s, n, span);
+        if (a instanceof Long n && b instanceof String s) return repeat(s, n, span);
         if (a instanceof List<?> l && b instanceof Long n) {
+            requireNotTuples("multiply", a, b, span);
+            long size = repeatCount(l.size(), n, span);
+            if (size > MAX_COLLECTION_SIZE) {
+                throw new OqError("the repeated list would have " + size + " items", span,
+                        "The limit is " + MAX_COLLECTION_SIZE
+                                + ". Repeat fewer times, or build the list as you need it.");
+            }
+            // An empty list has size 0 whatever the count, so the guard above cannot see a
+            // billion repetitions of it and the loop below would run that many times. There is
+            // only one answer, so return it without looping.
+            if (l.isEmpty()) return new ArrayList<>();
             List<Object> result = new ArrayList<>();
             for (long i = 0; i < n; i++) result.addAll(l);
             return result;
         }
         throw new OqError("cannot multiply " + typeName(a) + " by " + typeName(b), span);
+    }
+
+    /**
+     * Refuses arithmetic on tuples. They are read-only sequences, and because they share the list
+     * code path, ordinary list arithmetic would silently turn them into mutable lists.
+     */
+    private static void requireNotTuples(String operation, Object a, Object b, Span span) {
+        if (a instanceof OqTuple || b instanceof OqTuple) {
+            throw new OqError("cannot " + operation + " a tuple", span,
+                    "Tuples do not support arithmetic in Alpha 3. Convert one with list(...) "
+                            + "first if you need list behaviour.");
+        }
+    }
+
+    /** The most a single repetition will build, so one expression cannot exhaust the heap. */
+    private static final long MAX_REPEAT_LENGTH = 64L * 1024 * 1024;
+
+    private static final long MAX_COLLECTION_SIZE = 10_000_000L;
+
+    /**
+     * Repeats text. {@link String#repeat} takes an {@code int}, so a {@code Long} count above
+     * {@link Integer#MAX_VALUE} must be refused, not silently wrapped to a small number.
+     */
+    private static String repeat(String text, Long count, Span span) {
+        long n = Math.max(0, count);
+        // Empty text repeats to empty text whatever the count, and the total below stays 0, so
+        // the guard would not fire and the cast at the end would truncate a count in the billions
+        // to a negative number. There is one answer, so give it without casting.
+        if (text.isEmpty() || n == 0) return "";
+        long total = repeatCount(text.length(), n, span);
+        if (total > MAX_REPEAT_LENGTH) {
+            throw new OqError("the repeated text would be " + total + " characters", span,
+                    "The limit is " + MAX_REPEAT_LENGTH
+                            + ". Repeat fewer times, or write it in pieces.");
+        }
+        // A non-empty text makes `total` at least `n`, and `total` was just bounded by
+        // MAX_REPEAT_LENGTH, which is far below Integer.MAX_VALUE. The cast is safe here only
+        // because of that ordering.
+        return text.repeat((int) n);
+    }
+
+    /**
+     * Multiplies a size by a repeat count without overflowing.
+     *
+     * <p>A plain {@code size * n} wraps silently, so a huge count could produce a tiny,
+     * wrong result and then be cast to an {@code int} that no longer means anything.
+     */
+    private static long repeatCount(long size, long n, Span span) {
+        try {
+            return Math.multiplyExact(size, n);
+        } catch (ArithmeticException overflow) {
+            throw new OqError("the repetition is too large to build", span,
+                    "The count is larger than the machine can hold. Repeat fewer times.");
+        }
     }
 
     public static Object divide(Object a, Object b, Span span) {
@@ -307,8 +390,9 @@ public final class Values {
             long i = integerIndex(key, span);
             long index = i < 0 ? list.size() + i : i;
             if (index < 0 || index >= list.size()) {
+                String kind = target instanceof OqTuple ? "a tuple" : "a list";
                 throw new OqError(
-                        "index " + i + " is out of range for a list of length " + list.size(),
+                        "index " + i + " is out of range for " + kind + " of length " + list.size(),
                         span,
                         "Valid indexes are 0 to " + (list.size() - 1) + (list.isEmpty() ? " (the list is empty)" : "")
                                 + ", or negative from the end.");
@@ -343,6 +427,11 @@ public final class Values {
     }
 
     public static void setIndex(Object target, Object key, Object value, Span span) {
+        if (target instanceof OqTuple) {
+            throw new OqError(OqTuple.IMMUTABLE, span,
+                    "Tuples cannot change after they are made. Build a new tuple instead,"
+                            + " or use a list if the items need to change.");
+        }
         if (target instanceof List<?> raw) {
             @SuppressWarnings("unchecked")
             List<Object> list = (List<Object>) raw;

@@ -1,0 +1,4 @@
+print "a", "b"
+write "c", "d"
+write "\n"
+print format(42)

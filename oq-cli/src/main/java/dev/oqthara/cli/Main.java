@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public final class Main {
-    public static final String VERSION = "0.1.0-alpha.2";
+    public static final String VERSION = "0.1.0-alpha.3";
 
     public static void main(String[] args) {
         int code = new Runner(System.out, System.err, new BufferedReader(new InputStreamReader(System.in)))
@@ -159,17 +159,16 @@ public final class Main {
                 Details.render(err, error, source, color);
                 return 1;
             } catch (StackOverflowError overflow) {
-                err.println();
-                err.println("error: the program recursed too deeply");
-                err.println("  help: check that a recursive function has a stopping condition.");
-                err.println();
+                EmbeddedMain.renderFailure(err, overflow);
+                return 1;
+            } catch (OutOfMemoryError notEnough) {
+                EmbeddedMain.renderFailure(err, notEnough);
                 return 1;
             } catch (RuntimeException e) {
-                err.println();
-                err.println("internal error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-                err.println("  This is a bug in Oqthara. Please report it.");
-                err.println();
-                return 70;
+                // One renderer for both backends, so a jar and `oq run` never disagree about
+                // who is to blame for the same failure.
+                EmbeddedMain.renderFailure(err, e);
+                return EmbeddedMain.exitCodeFor(e);
             }
         }
 

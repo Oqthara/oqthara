@@ -19,6 +19,10 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     @Override
     public OqCallable resolve(Object receiver, String name, Span span) {
         if (receiver instanceof List<?> list) {
+            if (receiver instanceof dev.oqthara.runtime.OqTuple) {
+                OqCallable refusal = tupleRefusal(name, span);
+                if (refusal != null) return refusal;
+            }
             return listMethod(list, name, span);
         }
         if (receiver instanceof Map<?, ?> map) {
@@ -178,7 +182,12 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                     Values.contains(list, args.get(0), span));
             case "unique" -> fixed(name, 0, (host, args) -> {
                 Set<Object> seen = new LinkedHashSet<>(list);
-                return new ArrayList<>(seen);
+                // A tuple stays a tuple; otherwise `(1, 1, 2).unique()` silently handed back a
+                // mutable list, which is the one thing a tuple is not.
+                List<Object> unique = new ArrayList<>(seen);
+                return list instanceof dev.oqthara.runtime.OqTuple
+                        ? dev.oqthara.runtime.OqTuple.of(unique)
+                        : unique;
             });
             case "flatten" -> fixed(name, 0, (host, args) -> {
                 List<Object> result = new ArrayList<>();
@@ -188,13 +197,31 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 }
                 return result;
             });
-            case "take" -> fixed(name, 1, (host, args) -> {
-                int n = ((Number) args.get(0)).intValue();
-                return new ArrayList<>(list.subList(0, Math.max(0, Math.min(n, list.size()))));
-            });
-            case "skip" -> fixed(name, 1, (host, args) -> {
-                int n = ((Number) args.get(0)).intValue();
-                return new ArrayList<>(list.subList(Math.max(0, Math.min(n, list.size())), list.size()));
+            case "take" -> fixed(name, 1, (host, args) ->
+                    new ArrayList<>(list.subList(0, clampIndex(args.get(0), list.size()))));
+            case "skip" -> fixed(name, 1, (host, args) ->
+                    new ArrayList<>(list.subList(clampIndex(args.get(0), list.size()), list.size())));
+            case "subList", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
+                    (host, args, callSpan) -> {
+                // Both bounds land in [0, size] before touching java.util.List.subList, which
+                // throws IndexOutOfBoundsException for anything else and would surface an
+                // Oqthara bug to the program.
+                int from = clampIndex(args.get(0), list.size());
+                int to = args.size() == 1
+                        ? list.size()
+                        : clampIndex(args.get(1), list.size());
+                // An inverted range is empty, not an error: the spec promises clamping, and a
+                // caller that computed start > end gets the same empty answer as start == end.
+                // Java's subList would throw here, so the two indices are ordered explicitly.
+                if (from > to) from = to;
+                // A copy, never java.util.List.subList: that returns a live view whose mutators
+                // are not in Oqthara's list API, so they fell through to Java reflection. On a
+                // tuple the view also lost the immutable identity, so `t.subList(0,2).set(...)`
+                // reached the JDK instead of the tuple refusal.
+                List<Object> sliced = new ArrayList<>(list.subList(from, to));
+                return list instanceof dev.oqthara.runtime.OqTuple
+                        ? dev.oqthara.runtime.OqTuple.of(sliced)
+                        : sliced;
             });
             case "sum" -> fixed(name, 0, (host, args) -> sum(list, span));
             case "min" -> fixed(name, 0, (host, args) -> extreme(list, span, true));
@@ -382,6 +409,20 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         return start ? padding + text : text + padding;
     }
 
+    /**
+     * Clamps {@code value} to {@code [0, size]} without letting a long wider than an int wrap.
+     *
+     * <p>Narrowing with {@code intValue()} first turns {@code 4294967297} into {@code 1}, which
+     * silently slices the wrong range, and turns a large negative into a positive index. The
+     * clamp happens in {@code long} so neither can occur.
+     */
+    private static int clampIndex(Object value, int size) {
+        long index = ((Number) value).longValue();
+        if (index < 0) return 0;
+        if (index > size) return size;
+        return (int) index;
+    }
+
     private static dev.oqthara.runtime.NativeFunction fixed(String name, int arity,
                                                             java.util.function.BiFunction<OqHost, List<Object>, Object> body) {
         return dev.oqthara.runtime.NativeFunction.of(name, arity,
@@ -417,6 +458,27 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     private static List<Object> asMutable(List<?> list) {
         return (List<Object>) list;
     }
+
+    /** Tuple method names that would mutate, refused with a clear message instead of a raw Java error. */
+    private static dev.oqthara.runtime.OqCallable tupleRefusal(String name, Span span) {
+        if (!TUPLE_MUTATORS.contains(name)) return null;
+        return dev.oqthara.runtime.NativeFunction.variadic(name, 0,
+                (host, args, callSpan) -> {
+                    throw new OqError(dev.oqthara.runtime.OqTuple.IMMUTABLE, span,
+                            "Tuples cannot change after they are made. Build a new tuple with"
+                                    + " the items you want, or use a list when the items must change.");
+                });
+    }
+
+    /**
+     * Every name that would mutate a sequence. The last group is not in Oqthara's list API at
+     * all, but Java reflection on a tuple finds the {@link java.util.List} methods, so naming
+     * them here is what turns a leaked {@code UnsupportedOperationException} into a program error.
+     */
+    private static final java.util.Set<String> TUPLE_MUTATORS = java.util.Set.of(
+            "push", "add", "pop", "insert", "remove", "remove_value", "clear", "sort",
+            "reverse", "sort_by", "shuffle", "fill",
+            "set", "addAll", "removeAll", "retainAll", "removeIf", "replaceAll");
 
     @SuppressWarnings("unchecked")
     private static Map<Object, Object> asMutableMap(Map<?, ?> map) {

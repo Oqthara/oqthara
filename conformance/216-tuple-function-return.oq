@@ -1,0 +1,6 @@
+fun swap(pair)
+  return (pair[1], pair[0])
+end
+
+print swap((1, 2))
+print type_of(swap((1, 2)))

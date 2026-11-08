@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.3] - 2026-11-06
+
+### Added
+
+- **Tuples.** One comma makes a tuple: `(1, 2, 3)`, `(5,)` for a single value, and `((1, 2), 3)`
+  to nest. `(a)` is still grouping, so parentheses keep their old meaning, and `()` is an error
+  rather than an empty tuple. A tuple is immutable: indexing, `length`, iteration,
+  `contains`, equality and lexicographic ordering all work, and every list mutator
+  (`push`, `pop`, `sort`, `add`, `remove`, `remove_value`, `insert`, `reverse`, `clear`, `fill`,
+  `shuffle`, `sort_by`, and assignment to an index) refuses with `a tuple is immutable` instead
+  of silently copying. The names that only exist as `java.util.List` methods — `set`, `addAll`,
+  `removeAll`, `retainAll`, `removeIf`, `replaceAll` — refuse the same way rather than leaking
+  a Java exception. `.unique()` returns a tuple, `t.subList(0, 2)` returns a tuple slice, and a
+  tuple can hold `nothing`. A tuple is never equal to a list, so `(1, 2) == [1, 2]` is `false`
+  in both backends. Tuples compile to real bytecode, so `oq build` matches `oq run`, including
+  a tuple passed as a function argument. The decision is
+  recorded as `OQ-DEC-2026-006` in [the governance log](docs/governance/README.md).
+- The specification now states operator precedence as a ten-level table read out of the
+  parser, including the divergence that unary binds tighter than `**`, so `-2 ** 2` is `4`
+  rather than Python's `-4`. It also specifies `format`, `write`, compound assignment and the
+  `in`/`to` interaction that requires parentheses.
+
+### Changed
+
+- Host calls are bounded. `print`, `write` and `write_text` stop at 16 MiB of output, refused
+  before anything is written; `read` and `read_lines` refuse a file over 16 MiB by capping the
+  bytes read, so a pipe or `/dev/zero` cannot slip past; `input()` caps a line at 16 MiB
+  instead of building it unbounded; `run_command` gives up after 30 seconds of wall clock in
+  total and refuses output over 16 MiB, killing the whole process tree rather than leaking the
+  children it started; `http_get` and `http_post` bound the body as well as the headers, so a
+  server that stalls mid-body cannot hang the program, and stop at 16 MiB instead of
+  buffering; `sleep` is capped at 10 seconds per call; `save` and `append` refuse more than
+  16 MiB in one call; `list_files` caps a directory at 100,000 entries; `sleep` is bounded at
+  60 seconds in total, because the per-call cap alone let a loop wait forever ten seconds at a
+  time. Output has its own 16 MiB counter, and the newline `print` adds and the prompt `input`
+  writes count against it, so neither is a way to emit unbounded bytes. That counter covers
+  output only — reading a file does not draw on it, because reading is not writing output.
+  The transfers that do bill the step budget are charged on top of their per-call limits, in
+  the unit each one actually moves: bytes for `read`, `save`, `append`, HTTP and `run_command`,
+  characters for `input`, directory entries for `list_files`. Output is the exception — `print`,
+  `write` and `write_text` are bounded by the output counter and charge no steps. The older
+  256-steps-per-byte rate made the documented 16 MiB unreachable, because `read` tripped the
+  50,000,000-step budget at 195,312 bytes and reported `program ran for too long` instead of
+  the size error.
+  The specification states these limits and states plainly that they are resource controls,
+  not a sandbox — and that a jar built as pure compiled bytecode has no step budget or
+  deadlines, only the 16 MiB output cap, while a jar built as an interpreter launcher
+  enforces every limit.
+
+### Fixed
+
+- `run_command` leaked the processes a timed-out command had started: only the direct child
+  was destroyed. The whole tree is now killed and the program reports
+  `command timed out after 30 seconds`.
+- The conformance harness accepted an error message that merely contained the expected text,
+  so an error that gained a prefix, lost a detail, or reported a different problem still
+  passed. It now compares the whole first line and requires the diagnostic to carry a
+  position.
+- The compiled conformance count in `docs/spec/backend.md` drifted from what the suite
+  measured; the documentation checker now compares it against both the test and the corpus.
+- A jar built as compiled bytecode printed a raw `OutOfMemoryError` stack trace when the heap
+  ran out, and compiled jars in general let any non-`OqError` failure escape the same way. The
+  generated top-level handler now catches `Throwable` and routes the heap and stack cases
+  through the renderer `oq run` already used, so both backends print `the program ran out of
+  memory` and exit 1.
+- `"ab" * 4611686018427387905` silently returned `ab`. The repetition product overflowed a
+  `long`, slipped past the length check as a negative number, and repeated once. Both text and
+  list repetition now use an exact product and refuse with `the repetition is too large to
+  build`.
+- The REPL never reset the step budget, so a long session eventually refused every command it
+  had left. Each command now starts with the budget it would have on its own.
+- `"" * 3000000000` failed with `internal error: IllegalArgumentException: count is negative`,
+  and `[] * 4611686018427387905` looped over four quadrillion empty iterations. Repeating an
+  empty text or list now returns empty immediately, without consulting the size guard that an
+  empty value makes meaningless.
+- `subList` was not part of the list API, so it fell through to `java.util.List.subList` and
+  returned a live view of a JDK-private class. On a mutable list that view wrote through to the
+  parent; on a tuple, mutating it leaked either `IllegalAccessException` or, for `sort`, a
+  sorted list — a quietly mutable tuple. `subList` and `slice` are now real methods that return
+  a copy, clamped to the sequence and keeping their type, so `t.subList(0, 2)` is a tuple and
+  every mutator on it refuses with `a tuple is immutable`.
+
+### Documentation
+
+- `run_command` is documented as taking one executable path with no arguments and no shell,
+  which is what it has always done and what its tests now assert.
+- The version declaration agrees across the CLI, the build, the LSP server, the specification
+  header and this changelog, and the documentation checker now compares the specification
+  header and the LSP server so they cannot drift again.
+
 ## [0.1.0-alpha.2] - 2026-11-05
 
 ### Added
@@ -172,6 +262,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 130 conformance cases plus unit tests for the lexer, parser, values and interpreter.
 - GitHub Actions CI across Linux, macOS and Windows on JDK 21 and 25.
 
-[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.2...HEAD
+[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.3...HEAD
+[0.1.0-alpha.3]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.1

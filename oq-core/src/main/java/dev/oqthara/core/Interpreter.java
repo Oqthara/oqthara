@@ -6,10 +6,13 @@ import dev.oqthara.runtime.OverloadedFunction;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OutputBudget;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
+import dev.oqthara.runtime.OqTuple;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
+import dev.oqthara.runtime.WaitedBudget;
 
 import java.io.BufferedReader;
 import java.io.PrintStream;
@@ -31,7 +34,10 @@ public final class Interpreter implements OqHost {
     private final Map<String, Class<?>> javaTypes = new LinkedHashMap<>();
     private final Map<String, OqCallable> builtins = new LinkedHashMap<>();
     private final ThreadLocal<List<String>> callStack = ThreadLocal.withInitial(ArrayList::new);
-    private int steps = 0;
+    // Written from every virtual thread a program runs, so it must not be a plain int: two
+    // threads incrementing concurrently would otherwise lose counts and weaken the budget.
+    private final java.util.concurrent.atomic.AtomicLong steps =
+            new java.util.concurrent.atomic.AtomicLong();
     private int maxSteps = 50_000_000;
     private int depth = 0;
     private final int maxDepth = 800;
@@ -63,6 +69,52 @@ public final class Interpreter implements OqHost {
         this.maxSteps = maxSteps;
     }
 
+    public int maxSteps() {
+        return maxSteps;
+    }
+
+    /**
+     * Charges work the interpreter cannot see, such as a builtin copying a large file.
+     *
+     * <p>The step counter only advances on statements, loop turns and expressions, so a single
+     * call to a host builtin used to cost one step no matter how much memory it allocated. The
+     * stdlib charges this budget in proportion to the work it actually does, which is what
+     * makes the resource controls on {@code print}, {@code read} and {@code run_command} part
+     * of the same guard instead of a separate uncounted one.
+     */
+    public void chargeSteps(long units) {
+        if (units <= 0) return;
+        long spent = steps.addAndGet(units);
+        if (spent > maxSteps) {
+            steps.set(maxSteps + 1L);
+            throw new OqError("program ran for too long", Span.synthetic(),
+                    "Stopped after " + maxSteps + " steps. Check for an infinite loop.");
+        }
+    }
+
+    /** Discards the step count, so one budget covers the whole session rather than each entry. */
+    /**
+     * Bills the program for bytes sent to the host.
+     *
+     * <p>Output gets its own ceiling instead of draining the step budget. Charging output as
+     * steps meant the budget tripped first and the documented 16 MiB figure was unreachable:
+     * a program could only print 50,000,000 / 256 = 195,312 bytes before dying. Two independent
+     * limits are what the docs promise, so this keeps the byte budget real and leaves the step
+     * budget for computation.
+     */
+    public void chargeOutput(long bytes) {
+        OutputBudget.charge(bytes);
+    }
+
+    /** The largest total output one program may write, in bytes. */
+    public static final long MAX_OUTPUT_BYTES = OutputBudget.MAX_BYTES;
+
+    public void resetSteps() {
+        steps.set(0);
+        OutputBudget.reset();
+        WaitedBudget.reset();
+    }
+
     public void defineBuiltin(NativeFunction function) {
         OqCallable existing = builtins.get(function.name());
         if (existing == null) {
@@ -80,6 +132,7 @@ public final class Interpreter implements OqHost {
     }
 
     public Object run(Ast.Program program) {
+        resetSteps();
         Env env = new Env();
         for (OqCallable function : builtins.values()) {
             env.defineBuiltin(function.name(), function);
@@ -141,7 +194,7 @@ public final class Interpreter implements OqHost {
     }
 
     private void tick(Span span) {
-        if (++steps > maxSteps) {
+        if (steps.incrementAndGet() > maxSteps) {
             throw new OqError("program ran for too long", span,
                     "Stopped after " + maxSteps + " steps. Check for an infinite loop.");
         }
@@ -326,6 +379,11 @@ public final class Interpreter implements OqHost {
                 for (Ast.Expr item : list.items()) items.add(evaluate(item, env));
                 yield items;
             }
+            case Ast.TupleLit tuple -> {
+                List<Object> items = new ArrayList<>();
+                for (Ast.Expr item : tuple.items()) items.add(evaluate(item, env));
+                yield new OqTuple(items);
+            }
             case Ast.SetLit set -> {
                 Set<Object> items = new LinkedHashSet<>();
                 for (Ast.Expr item : set.items()) items.add(evaluate(item, env));
@@ -420,6 +478,16 @@ public final class Interpreter implements OqHost {
             }
             try {
                 return callable.call(this, args, span);
+            } catch (UnsupportedOperationException e) {
+                // A tuple reached through a view, such as subList or a reversal, is a plain
+                // java.util.List, so the resolver's guard never sees it and the JDK's own refusal
+                // arrives here. Report it as a program error instead of an internal one.
+                if (OqTuple.IMMUTABLE.equals(e.getMessage())) {
+                    throw new OqError(OqTuple.IMMUTABLE, span,
+                            "Tuples cannot change after they are made. Build a new tuple with the"
+                                    + " items you want, or use a list when the items must change.");
+                }
+                throw e;
             } finally {
                 stack.remove(stack.size() - 1);
             }

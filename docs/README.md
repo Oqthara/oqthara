@@ -39,7 +39,7 @@ current build. Do not hand-write `oq` output.
 
 | Script | Checks |
 | --- | --- |
-| `scripts/check-docs-sync.py` | The stdlib reference matches a fresh `oq doc`; the keyword budget matches the lexer; every CLI command in the help text has a section in `docs/reference/cli.md`; `docs/catalog.json` is current; the compiled-backend counts in `docs/spec/backend.md` match the conformance suite and `BytecodeCompilerTest`; the version in `Main.java`, `build.gradle.kts` and `CHANGELOG.md` agrees. |
+| `scripts/check-docs-sync.py` | The stdlib reference matches a fresh `oq doc`; the keyword budget matches the lexer; every CLI command in the help text has a section in `docs/reference/cli.md` and a case in `Main.dispatch`; `docs/catalog.json` is current; the compiled-backend counts in `docs/spec/backend.md` match the conformance suite and `BytecodeCompilerTest`; the version agrees across `Main.java`, `build.gradle.kts`, `docs/spec/language.md`, the LSP server and `CHANGELOG.md`. |
 | `scripts/check-links.py` | Every relative link in `docs/**/*.md`, `README.md`, `CHANGELOG.md` and `examples/**` resolves on disk. |
 | `scripts/gen-docs-catalog.py` | Generates `docs/catalog.json`; `--check` fails when the committed file differs. |
 

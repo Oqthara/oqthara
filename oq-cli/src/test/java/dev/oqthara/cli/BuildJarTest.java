@@ -13,6 +13,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -200,6 +202,111 @@ class BuildJarTest {
         }
     }
 
+    /**
+     * A compiled jar has no step budget, so a runaway allocation is only stopped by the heap.
+     * It must be reported the way the interpreter reports it, not dumped as a JVM stack trace.
+     */
+    @Test
+    void aCompiledJarReportsRunningOutOfMemoryAsAProgramError(@TempDir Path dir) throws Exception {
+        Path jar = dir.resolve("oom.jar");
+        Path source = dir.resolve("oom.oq");
+        Files.writeString(source, """
+                l = [1]
+                while true
+                  l = l + l
+                end
+                """);
+        int code = build(source, jar);
+        assertEquals(0, code, "the program must compile to real bytecode for this test to mean"
+                + " anything");
+        ProcessResult result = runJar(jar, dir, "-Xmx32m");
+        assertNotEquals(0, result.exit());
+        assertFalse(result.stderr().contains("Exception in thread"), result.stderr());
+        assertFalse(result.stderr().contains("OutOfMemoryError"), result.stderr());
+        assertTrue(result.stderr().contains("error: the program ran out of memory"),
+                result.stderr());
+    }
+
+    /**
+     * An error raised inside Oqthara itself must not look like a program error once compiled.
+     *
+     * <p>{@code oq run} classifies a {@code RuntimeException} that is not an {@code OqError} as
+     * "Oqthara itself failed" and exits 70. The compiled entry point hardcoded 1, so the same
+     * source exited 70 interpreted and 1 from the jar, with byte-identical text. A script
+     * could not tell an Oqthara bug from a program that legitimately failed.
+     *
+     * <p>{@code 1 to true} is used because it is the smallest program that both reaches real
+     * bytecode and raises a non-{@code OqError}: the compiler emits the range loop and the
+     * bound check throws {@code IllegalArgumentException}. That the jar really runs compiled
+     * bytecode, rather than falling back to the launcher, was confirmed by hand with
+     * {@code oq run} printing {@code codepath: compiled bytecode} for the same source; this
+     * test does not re-assert it.
+     */
+    @Test
+    void aCompiledJarReportsAnInternalErrorWithExitCode70(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("internal.oq");
+        Files.writeString(source, "print 1 to true");
+        Path jar = dir.resolve("internal.jar");
+        assertEquals(0, build(source, jar));
+
+        ProcessResult result = runJar(jar, dir);
+        assertEquals(70, result.exit(),
+                "a jar must report an Oqthara bug as 70, not as a program error; stderr was:\n"
+                        + result.stderr());
+        assertTrue(result.stderr().contains("internal error"), result.stderr());
+        assertTrue(result.stderr().contains("This is a bug in Oqthara"), result.stderr());
+        // The 70 path must not be reached by mislabelling an ordinary program error.
+        assertFalse(result.stderr().contains("error: division by zero"), result.stderr());
+        assertFalse(result.stderr().contains("Exception in thread"), result.stderr());
+    }
+
+    /**
+     * The ordinary program-error path is unchanged by the classification fix: an {@code OqError}
+     * that escapes compiled bytecode still exits 1 and keeps its source location.
+     */
+    @Test
+    void aCompiledJarStillReportsAProgramErrorWithExitCode1(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("program.oq");
+        Files.writeString(source, """
+                fun boom(n)
+                  return n / 0
+                end
+                print boom(1)
+                """);
+        Path jar = dir.resolve("program.jar");
+        assertEquals(0, build(source, jar));
+
+        ProcessResult result = runJar(jar, dir);
+        assertEquals(1, result.exit(), "an OqError must stay a program error; stderr was:\n"
+                + result.stderr());
+        assertTrue(result.stderr().contains("error: division by zero"), result.stderr());
+        // The location line proves the OqError was not rerouted through the internal path,
+        // which renders a message but no span.
+        assertTrue(result.stderr().contains("--> program.oq:2"), result.stderr());
+        assertFalse(result.stderr().contains("internal error"), result.stderr());
+    }
+
+    /** A program that ends normally must still do so once the handler catches Throwable. */
+    @Test
+    void aCatchAllHandlerDoesNotDisturbNormalPrograms(@TempDir Path dir) throws Exception {
+        Path jar = dir.resolve("ok.jar");
+        Path source = dir.resolve("ok.oq");
+        Files.writeString(source, "print \"Hello, World!\"");
+        assertEquals(0, build(source, jar));
+        ProcessResult result = runJar(jar, dir);
+        assertEquals(0, result.exit());
+        assertEquals("Hello, World!", result.stdout().strip());
+        assertEquals("", result.stderr().strip());
+    }
+
+    /** Builds `source` into `jar` the way `oq build` does, and returns the CLI's exit code. */
+    private int build(Path source, Path jar) {
+        java.io.PrintStream quiet =
+                new java.io.PrintStream(java.io.OutputStream.nullOutputStream());
+        return new Main.Runner(quiet, quiet, new java.io.BufferedReader(new java.io.StringReader("")))
+                .dispatch(new String[]{"build", source.toString(), "-o", jar.toString()});
+    }
+
     private record ProcessResult(int exit, String stdout, String stderr) {
     }
 
@@ -210,9 +317,17 @@ class BuildJarTest {
     private ProcessResult runJar(Path jar, Path workingDirectory, String... args) throws Exception {
         List<String> command = new java.util.ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        // Flags such as -Xmx arrive as leading arguments; the jar path always follows -jar.
+        List<String> jvmFlags = new java.util.ArrayList<>();
+        List<String> programArgs = new java.util.ArrayList<>();
+        for (String arg : args) {
+            if (arg.startsWith("-X") || arg.startsWith("-D")) jvmFlags.add(arg);
+            else programArgs.add(arg);
+        }
+        command.addAll(jvmFlags);
         command.add("-jar");
         command.add(jar.toAbsolutePath().toString());
-        command.addAll(List.of(args));
+        command.addAll(programArgs);
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(workingDirectory.toFile());
         builder.environment().put("OQ_WORKDIR", workingDirectory.toAbsolutePath().toString());

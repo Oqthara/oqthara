@@ -1,0 +1,4 @@
+add = (a, b) -> a + b
+print add(2, 3)
+pair = (1, 2)
+print pair

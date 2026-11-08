@@ -1,6 +1,6 @@
 # Oqthara language reference
 
-Version: 0.1.0-alpha.1
+Version: 0.1.0-alpha.3
 
 ## Running a program
 
@@ -24,6 +24,7 @@ print "Hello, World!"
 | boolean | `true`, `false` | |
 | nothing | `nothing` | the absent value |
 | list | `[1, 2, 3]` | ordered, mutable |
+| tuple | `(1, 2)` | ordered, immutable, fixed length |
 | map | `{"a": 1}` | key to value, insertion ordered |
 | set | `{1, 2, 3}` | unique values |
 | range | `1 to 5`, `0 until 5` | produced by range expressions |
@@ -95,7 +96,55 @@ else
 end
 ```
 
-Operators: `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`.
+Operators, from the parser itself, listed highest precedence first. Operators on the same
+row associate as shown.
+
+| Level | Operators | Associativity | Meaning |
+|---|---|---|---|
+| 1 | `f(x)`, `xs[i]`, `obj.field` | left | call, index, field |
+| 2 | `-x`, `+x`, `not x` | right | unary minus, unary plus, logical not |
+| 3 | `**` | right | exponentiation |
+| 4 | `*`, `/`, `%` | left | multiply, divide, remainder |
+| 5 | `+`, `-` | left | add, subtract |
+| 6 | `<`, `<=`, `>`, `>=`, `in` | left | comparison, membership |
+| 7 | `==`, `!=` | left | equality |
+| 8 | `and` | left | short-circuit and |
+| 9 | `or` | left | short-circuit or |
+| 10 | `to`, `until` | none | range, only in `for` headers and range expressions |
+
+Because unary minus binds tighter than `**`, `-2 ** 2` is `(-2) ** 2` and prints `4`.
+This differs from Python, where it would be `-4`. Because `and` binds tighter than
+`or`, `a or b and c` is `a or (b and c)`. Comparison operators share one level and
+evaluate left to right, so `1 < 2 < 3` compares `1 < 2` with `3` and fails rather than
+chaining.
+
+`in` tests membership. For a list, map, set, range or text it reports whether the right
+side contains the left side; text uses substring membership. It is not a `for` loop.
+
+```
+print 3 in [1, 2, 3]        # true
+print "ell" in "hello"      # true
+print "a" in {"a": 1}       # true
+print 3 in (1 to 5)         # true
+```
+
+The parentheses in the last line are required. `in` binds tighter than `to`, so
+`3 in 1 to 5` is read as `(3 in 1) to 5` and fails. Write `3 in (1 to 5)`.
+
+### Assignment and compound assignment
+
+```
+count = 0
+count += 1                  # count = count + 1
+count -= 1
+count *= 4
+count /= 2
+```
+
+`=`, `+=`, `-=`, `*=` and `/=` are statements, not expressions. They return `nothing`
+and cannot be nested inside an expression. The left side of a compound assignment must
+be a plain variable; `xs[0] += 1` is rejected with "compound assignment needs a variable
+on the left". Unlike `x = x + 1`, a compound assignment evaluates its target once.
 
 Truthiness: `nothing`, `false`, `0`, `0.0`, `""`, empty collections and empty ranges
 are falsy. Everything else is truthy.
@@ -197,7 +246,7 @@ List methods: `.length()`, `.push(x)`, `.pop()`, `.first()`, `.last()`, `.get(i)
 `.insert(i, x)`, `.remove(i)`, `.map(f)`, `.filter(f)`, `.each(f)`, `.any(f)`,
 `.all(f)`, `.find(f)`, `.find_index(f)`, `.reduce(f, start)`, `.sort()`,
 `.sort(key)`, `.reverse()`, `.join(sep)`, `.contains(x)`, `.unique()`, `.flatten()`,
-`.take(n)`, `.skip(n)`, `.sum()`, `.min()`, `.max()`, `.clone()`.
+`.take(n)`, `.skip(n)`, `.subList(from, to)`, `.sum()`, `.min()`, `.max()`, `.clone()`.
 
 Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallback)`,
 `.set(k, v)`, `.has(k)`, `.has_value(v)`, `.remove(k)`, `.clear()`, `.each(f)`,
@@ -205,6 +254,81 @@ Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallbac
 
 Set methods: `.length()`, `.add(x)`, `.remove(x)`, `.has(x)`, `.items()`,
 `.union(other)`, `.intersection(other)`, `.difference(other)`.
+
+## Tuples
+
+A tuple is a fixed-length, ordered, immutable group of values. It is not a list: a list
+can grow and shrink, a tuple cannot, and `type_of` tells them apart.
+
+```
+point = (3, 4)
+print point[0]        # 3
+print point[1]        # 4
+print type_of(point)  # tuple
+print point           # (3, 4)
+```
+
+Syntax rules, exactly:
+
+| You write | You get |
+|---|---|
+| `(a)` | grouping, not a tuple; `(1)` is the number `1` |
+| `(a,)` | one-item tuple; the trailing comma is required |
+| `(a, b)` | two-item tuple |
+| `(a, b,)` | same tuple; a trailing comma is allowed |
+| `()` | an error: an empty tuple is not a value |
+| `((a, b), c)` | nested tuple |
+| `(a, b) -> ...` | a lambda, not a tuple |
+
+One comma makes a tuple; two or more values make a tuple. `(1)` is grouping because a
+one-item tuple would otherwise be indistinguishable from a parenthesised expression, and
+`()` is an error because there is nothing to hold.
+
+Tuples support:
+
+```
+t = (1, 2, 3)
+print t.length()          # 3
+print t[0]                # 1
+print t[-1]               # 3
+print 2 in t              # true
+print (1, 2) == (1, 2)    # true
+print (1, 2) == (2, 1)    # false
+print (1, 2) < (1, 3)     # true, compared left to right
+for v in (1, 2)
+  print v
+end
+```
+
+Equality is structural and order sensitive. Comparison is lexicographic, item by item.
+A tuple never equals a list, even with the same items and order, so `(1, 2) == [1, 2]`
+is `false`. `for` iterates over a tuple in order. A function may take and return tuples:
+
+```
+fun swap(pair)
+  return (pair[1], pair[0])
+end
+
+print swap((1, 2))        # (2, 1)
+```
+
+Mutation is refused; tuples are immutable. Every mutator raises `a tuple is immutable`, and
+`t[0] = 9` is rejected. That includes a mutator called on a *slice* of a tuple: `t.subList(0, 2)` yields another tuple,
+so changing one is refused with the same error rather than a Java exception. `take` and `skip`
+are the exception among the readers — they always return a list, even on a tuple, so the result
+is mutable. To change a tuple, build a new one.
+
+`subList(from, to)` and its one-argument form `subList(from)` return a **new** list or tuple,
+never a live view. Mutating the result leaves the original untouched. Indices are clamped to
+the sequence, so `l.subList(0, 99)` is the whole list rather than an error. `slice` is an
+alias. `take(n)` and `skip(n)` are the prefix and suffix forms.
+
+A tuple satisfies Java's `List` interface for reading. Mutating it from Java throws
+`UnsupportedOperationException`; reaching a tuple's `List` methods through Oqthara reports
+`a tuple is immutable` instead.
+
+**Deferred.** Tuple destructuring (`a, b = pair`), named or typed tuple fields, and tuple
+arithmetic (`+`, `*`) are not part of Alpha 3. See `docs/governance/roadmap-alpha-3.md`.
 
 ## Data types
 
@@ -279,6 +403,20 @@ Raise your own with `error("message")`. Guard with `assert(condition, "message")
 Text: `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `regex`,
 `matches`, `format`.
 
+`format(value)` takes exactly one argument and returns the same text `print` would show,
+without a newline. It is the display form, not a template language: there are no format
+specifiers and no placeholders. Use string interpolation for that.
+
+Output: `print` writes its arguments separated by single spaces and ends the line.
+`write` writes its arguments with no separator and no newline. Both accept any number
+of arguments and return `nothing`.
+
+```
+print "a", "b"     # a b
+write "a", "b"     # ab, cursor stays on the line
+write_text "x"     # same as write
+```
+
 Files: `read`, `read_lines`, `save`, `append`, `exists`, `list_files`, `delete`,
 `make_dir`, `file_size`, `path_join`, `path_name`, `path_parent`, `cwd`.
 
@@ -289,10 +427,114 @@ Time: `now()`, `today()`, `datetime()`, `timestamp()`, `sleep(seconds)`.
 HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
 `.body` and `.ok`.
 
-Processes: `run_command(line)` returns `.code` and `.output`. `env(name)`,
+Processes: `run_command(path)` returns `.code` and `.output`. `env(name)`,
 `cpu_count()`, `memory_mb()`.
 
 Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
+
+### Host calls are bounded
+
+The language restricts the host calls that can consume unbounded time or memory, so a
+program cannot exhaust the machine by accident. These limits are part of the contract:
+
+| Call | Limit | On breach |
+| ---- | ----- | --------- |
+| `print`, `write`, `write_text` | 16 MiB of output, total | `the program wrote too much output` |
+| `read`, `read_lines` | 16 MiB per file | `the file is too large to read: <path>` |
+| `input()` | 16,777,216 characters per line | `input line is too large` |
+| `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
+| `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large: <url>` |
+| `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call` |
+| `sleep` | 10 seconds per call, 60 seconds total | `cannot sleep for more than 10 seconds`, `the program waited for too long` |
+| `list_files` | 100,000 entries | `directory has too many entries: <path>` |
+
+A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allowed and one
+byte more is refused. `input` is the exception: its 16,777,216 ceiling counts characters, so
+that sentence reads "character" for `input` and "byte" everywhere else. Output is refused
+**before** it is written, so a program that exceeds the limit prints nothing from the call that
+crossed it. The newline `print` adds counts towards the total, as do the bytes of an
+`input` prompt: a prompt is written output and is billed like one, so a multibyte prompt costs
+its UTF-8 size and not its character count.
+
+Output has its own 16 MiB counter rather than draining the step budget. Charging output as
+steps made the documented ceiling unreachable: at 256 steps per byte a program could print
+only 50,000,000 / 256 = 195,312 bytes before the budget stopped it. That counter covers output
+only. Reading a file does not draw on it, because reading is not writing output.
+
+Every host transfer other than output also bills the step budget, on top of its own per-call
+size limit. Output is the exception: `print`, `write` and `write_text` draw on the output
+counter only and charge no steps at all, because that counter already bounds them. For the
+calls that do bill steps, the per-call limit is what binds; the step charge only stops a
+program from moving data for free. Where a step charge exists it is always the same figure the
+size check used, never a re-derived one:
+
+| Call | Step charge | Unit |
+| ---- | ----------- | ---- |
+| `read`, `read_lines` | bytes read | UTF-8 bytes |
+| `save`, `append` | bytes written | UTF-8 bytes |
+| `http_get`, `http_post` | body length | UTF-8 bytes |
+| `run_command` | output length | UTF-8 bytes |
+| `input()` | line length | Java `String` characters |
+| `list_files` | entry count | directory entries |
+| `print`, `write`, `write_text` | none | — |
+
+The blank row is deliberate: those three calls are bounded by the output counter and are never
+charged against the step budget, so they have no billing unit to state.
+
+`input` is the one call that bills characters rather than bytes, because it accumulates into a
+`StringBuilder` and charges `sb.length()`. Its 16 MiB ceiling is also counted in characters, so
+a line of astral characters is billed and refused by character count, not byte count.
+`list_files` bills one unit per directory entry, so its 100,000-entry cap and its step charge
+are the same number.
+
+The per-byte rate is not itself a bound. At one step per byte the 50,000,000-step budget would
+allow 50,000,000 bytes — about 47.68 MiB, or 2.98 calls of 16,777,216 bytes — so two full
+per-call transfers fit and a third does not. No single transfer can approach that total,
+because the per-call limit refuses it first. Billing at 256 steps per byte failed the other
+way and made the per-call figure unreachable, since `read` refused any file past 195,312 bytes
+with `program ran for too long`, whatever the table said.
+
+`sleep` is bounded separately again. The 10-second per-call cap alone would let a program drip
+ten seconds at a time forever, so a program may wait 60 seconds in total and is refused with
+`the program waited for too long`.
+
+`run_command(path)` runs **one executable path** with no arguments and no shell. There is no
+command-line splitting and no interpolation, so `run_command("/bin/ls -l")` is a program
+error rather than a directory listing. To pass arguments, write a script and run the script:
+
+```
+result = run_command("/bin/ls")
+print result.code, result.output
+```
+
+A non-zero exit status is an ordinary result, not an error; the caller inspects `.code`. A
+missing executable, a timeout, or excessive output raises a program error.
+
+These bounds are enforced by the interpreter, so they always apply to `oq run`. A jar produced
+by `oq build` takes one of two shapes, and `oq build` prints which:
+
+```
+codepath: compiled bytecode
+codepath: interpreter launcher (call to 'read' with 1 argument(s) is not compiled yet)
+```
+
+A jar built as an **interpreter launcher** runs the program in the embedded interpreter, so
+every limit in the table applies to it exactly as it does to `oq run`. That is what happens
+whenever the program calls a builtin the compiler cannot lower, such as `read` or
+`run_command`.
+
+A jar built as **compiled bytecode** is real bytecode, not an embedded interpreter, so it has
+no step budget and no host-call deadlines: only its output is capped, at the same shared
+16 MiB. A compiled program that loops runs until something outside stops it, and runaway
+allocation is stopped only by the JVM heap. When that happens the jar reports
+`the program ran out of memory`, the same wording `oq run` uses, instead of dumping a stack
+trace — but it is still the heap that stops it, not a budget. Run untrusted programs through
+`oq run`, or use a jar built as an interpreter launcher. See [backend.md](backend.md).
+
+Oqthara is **not** a sandbox. A program that is allowed to run can read the files the user can
+read, start the processes the user can start, and reach the network the user can reach. The
+limits above prevent accidental exhaustion; they do not contain hostile code. See
+[SECURITY.md](../../SECURITY.md).
 
 ## Concurrency
 
@@ -327,18 +569,23 @@ oq build hello.oq            # lower to the intermediate representation
 oq build hello.oq --emit-ir  # print the IR
 ```
 
-`oq build` writes an executable jar next to the program:
+`oq build` writes an executable jar next to the program. This output was captured from the
+current build:
 
 ```
 $ oq build hello.oq
-compiled hello.oq (0 functions, 3 main instructions)
+compiled hello.oq (0 functions, 5 main instructions)
 backend=classfile (self-contained writer, JDK 21)
-wrote hello.jar (89 classes, 0 skipped)
+codepath: compiled bytecode
+wrote hello.jar (103 classes, 0 skipped)
 run it with: java -jar hello.jar
 
 $ java -jar hello.jar
 Hello, World!
 ```
+
+The instruction and class counts move as the compiler and runtime grow; the shape of the
+transcript — the five lines, in that order — is what the contract fixes, not those numbers.
 
 The jar contains a real class file with a real `main`, the Oqthara runtime, the program
 source and its original file name. The class file is written by Oqthara itself, so it works

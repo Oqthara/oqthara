@@ -79,25 +79,89 @@ public final class EmbeddedMain {
         } catch (OqError error) {
             renderUncaught(err, error, source);
             System.exit(1);
+        } catch (Throwable failure) {
+            // Bytecode hands every escaping throwable here, including the JVM failures the
+            // interpreter's own catch chain reports. Wording lives in one place so the two
+            // backends cannot drift.
+            if (!renderFailure(err, failure)) throw new IllegalStateException(failure);
+            System.exit(exitCodeFor(failure));
         }
     }
 
     /**
-     * Renders an {@code OqError} that escaped compiled bytecode and terminates with exit 1.
+     * Renders a throwable that escaped the program as the interpreter would, and returns
+     * whether it was recognised. Unrecognised failures belong to Oqthara itself, so the caller
+     * rethrows them rather than blaming the program.
+     */
+    static boolean renderFailure(java.io.PrintStream err, Throwable failure) {
+        if (failure instanceof OutOfMemoryError) {
+            // A compiled jar has no step budget, so runaway allocation is only stopped by the
+            // heap. Report it as the interpreter does instead of dumping a stack trace.
+            err.println();
+            err.println("error: the program ran out of memory");
+            err.println("  help: it asked for more data than this machine can hold. "
+                    + "Work on smaller pieces, or read the file in another language.");
+            err.println();
+            err.flush();
+            return true;
+        }
+        if (failure instanceof StackOverflowError) {
+            err.println();
+            err.println("error: the program recursed too deeply");
+            err.println("  help: check that a recursive function has a stopping condition.");
+            err.println();
+            err.flush();
+            return true;
+        }
+        // OqError is a RuntimeException, so it must be excluded here: it is the program's own
+        // failure and has a dedicated renderer that draws the message, location and hint.
+        if (failure instanceof RuntimeException && !(failure instanceof OqError)) {
+            // Not the program's fault: a RuntimeException that is not an OqError escaped from
+            // Oqthara itself. `oq run` has always said so; a compiled jar printed a stack trace
+            // instead, so the same program blamed different things depending on how it was run.
+            err.println();
+            err.println("internal error: " + failure.getClass().getSimpleName() + ": "
+                    + failure.getMessage());
+            err.println("  This is a bug in Oqthara. Please report it.");
+            err.println();
+            err.flush();
+            return true;
+        }
+        return false;
+    }
+
+    /** The exit status for a failure {@link #renderFailure} recognised. */
+    static int exitCodeFor(Throwable failure) {
+        // 70 is the interpreter's "Oqthara itself failed" status; keep one number for both.
+        // An OqError is the program's failure, so it must stay at 1 like every other OqError.
+        return failure instanceof RuntimeException && !(failure instanceof OqError) ? 70 : 1;
+    }
+
+    /**
+     * Renders a throwable that escaped compiled bytecode and terminates with the same status
+     * {@code oq run} would use.
      *
      * <p>A compiled jar embeds no source, so the caret block cannot be drawn. Everything that
      * does not need the source is still shown: the message, the {@code file:line:column}
      * location, the hint, and the interpreter's exact spacing. That is deliberately the same
      * renderer {@code oq run} uses, called with no source lines, so the two can never drift
      * in wording, colouring or layout.
+     *
+     * <p>The status goes through {@link #exitCodeFor} rather than a constant, because a jar
+     * that failed inside Oqthara itself must report 70 exactly as the interpreter does. A
+     * hardcoded 1 here made the same internal error exit 70 under {@code oq run} and 1 from
+     * the jar, so a script could not tell an Oqthara bug from a program error.
      */
     public static void renderUncaught(Object error, String source) {
         java.io.PrintStream err = utf8(System.err);
+        if (error instanceof Throwable failure && renderFailure(err, failure)) {
+            System.exit(exitCodeFor(failure));
+        }
         OqError oqError = error instanceof OqError typed
                 ? typed
                 : new OqError(String.valueOf(error), Span.synthetic());
         renderUncaught(err, oqError, source);
-        System.exit(1);
+        System.exit(exitCodeFor(oqError));
     }
 
     private static void renderUncaught(java.io.PrintStream err, OqError error, String source) {

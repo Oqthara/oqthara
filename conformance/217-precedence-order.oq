@@ -1,0 +1,7 @@
+print 1 + 2 * 3
+print 2 + 3 == 5
+print true or false and false
+print not true and false
+print 1 < 2 == true
+print 100 / 10 / 2
+print 10 - 2 - 3

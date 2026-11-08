@@ -7,6 +7,7 @@ import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
+import dev.oqthara.runtime.OutputBudget;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
@@ -22,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -33,6 +35,26 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class Stdlib {
+    /**
+     * The largest file {@code read} will load, and the largest command output {@code run_command}
+     * will keep. Both are charged against the interpreter's step budget as well, so a large
+     * transfer costs proportionally rather than counting as a single step.
+     */
+    static final int MAX_TEXT_BYTES = 16 * 1024 * 1024;
+
+    /** How many steps one byte of transferred text costs. */
+
+    /** How long {@code run_command} waits before it gives up on the child process. */
+    static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
+
+    /** The longest single {@code sleep} call, so one statement cannot block the program for hours. */
+    static final long MAX_SLEEP_MILLIS = 10_000;
+
+
+
+    /** The most names {@code list_files} will return from one directory. */
+    static final int MAX_LIST_ENTRIES = 100_000;
+
     private Stdlib() {
     }
 
@@ -56,39 +78,38 @@ public final class Stdlib {
                 if (i > 0) sb.append(' ');
                 sb.append(Values.display(args.get(i)));
             }
+            // The newline is output too: charging only the text let a loop of empty prints
+            // stream without ever moving the counter.
+            chargeOutput(host, sb);
+            chargeOutput(host, System.lineSeparator());
             host.out().println(sb);
             return null;
         }));
         interpreter.defineBuiltin(NativeFunction.variadic("write_text", 0, (host, args, span) -> {
             StringBuilder sb = new StringBuilder();
             for (Object arg : args) sb.append(Values.display(arg));
+            chargeOutput(host, sb);
             host.out().print(sb);
             return null;
         }));
         interpreter.defineBuiltin(NativeFunction.variadic("write", 0, (host, args, span) -> {
             StringBuilder sb = new StringBuilder();
             for (Object arg : args) sb.append(Values.display(arg));
+            chargeOutput(host, sb);
             host.out().print(sb);
             return null;
         }));
         interpreter.defineBuiltin(NativeFunction.of("input", 0, (host, args, span) -> {
             host.out().flush();
-            try {
-                String line = host.in().readLine();
-                return line == null ? null : line;
-            } catch (IOException e) {
-                throw new OqError("cannot read input: " + e.getMessage(), span);
-            }
+            return readLineBounded(host, span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("input", 1, (host, args, span) -> {
-            host.out().print(Values.display(args.get(0)));
+            String prompt = Values.display(args.get(0));
+            // A prompt is written output, and it is caller-controlled, so it is billed too.
+            chargeOutput(host, prompt);
+            host.out().print(prompt);
             host.out().flush();
-            try {
-                String line = host.in().readLine();
-                return line == null ? null : line;
-            } catch (IOException e) {
-                throw new OqError("cannot read input: " + e.getMessage(), span);
-            }
+            return readLineBounded(host, span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("text", 1, (host, args, span) -> Values.display(args.get(0))));
         interpreter.defineBuiltin(NativeFunction.of("repr", 1, (host, args, span) -> Values.repr(args.get(0))));
@@ -322,26 +343,27 @@ public final class Stdlib {
     private static void installFiles(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("read", 1, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
-            try {
-                return Files.readString(path, StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                throw new OqError("cannot read file '" + path + "'", span,
-                        "Check that the file exists and is readable. (" + e.getMessage() + ")");
-            }
+            return readBounded(host, path, span, "the file");
         }));
         interpreter.defineBuiltin(NativeFunction.of("read_lines", 1, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
-            try {
-                return new ArrayList<Object>(Files.readAllLines(path, StandardCharsets.UTF_8));
-            } catch (IOException e) {
-                throw new OqError("cannot read file '" + path + "'", span, e.getMessage());
-            }
+            // Same cap and same charge as `read`, so splitting a file into lines is not a way
+            // around the limit.
+            String text = readBounded(host, path, span, "the file");
+            // `String.lines()` splits on \n, \r\n and \r without inventing a trailing empty
+            // line, which is what `Files.readAllLines` did before this became bounded.
+            List<Object> lines = new ArrayList<>();
+            text.lines().forEach(lines::add);
+            return lines;
         }));
         interpreter.defineBuiltin(NativeFunction.of("save", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
+            String text = Values.display(args.get(1));
+            int written = chargeWrittenText(text, "save", span);
+            chargeTransfer(host, written);
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
-                Files.writeString(path, Values.display(args.get(1)), StandardCharsets.UTF_8);
+                Files.writeString(path, text, StandardCharsets.UTF_8);
                 return null;
             } catch (IOException e) {
                 throw new OqError("cannot write file '" + path + "'", span, e.getMessage());
@@ -349,9 +371,12 @@ public final class Stdlib {
         }));
         interpreter.defineBuiltin(NativeFunction.of("append", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
+            String text = Values.display(args.get(1));
+            int written = chargeWrittenText(text, "append", span);
+            chargeTransfer(host, written);
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
-                Files.writeString(path, Values.display(args.get(1)), StandardCharsets.UTF_8,
+                Files.writeString(path, text, StandardCharsets.UTF_8,
                         java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
                 return null;
             } catch (IOException e) {
@@ -363,8 +388,23 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("list_files", 1, (host, args, span) -> {
             Path dir = resolve(host, args.get(0));
             try (var stream = Files.list(dir)) {
+                Iterator<Path> entries = stream.sorted().iterator();
                 List<Object> names = new ArrayList<>();
-                stream.sorted().forEach(p -> names.add(p.getFileName().toString()));
+                // The names list now holds at most the cap plus one, where it used to hold the
+                // whole directory. java.util.stream.Stream.sorted() is a stateful operation and
+                // still buffers every Path internally before yielding the first one, so this
+                // bounds Oqthara's own list, not the sort. Removing that buffer would mean
+                // dropping sorted() and changing the returned order, which the spec fixes; the
+                // residual is recorded as debt rather than fixed by an ordering change here.
+                while (names.size() <= MAX_LIST_ENTRIES && entries.hasNext()) {
+                    names.add(entries.next().getFileName().toString());
+                }
+                if (names.size() > MAX_LIST_ENTRIES) {
+                    throw new OqError("directory has too many entries: " + dir, span,
+                            "It has more than " + MAX_LIST_ENTRIES + " entries; the limit is "
+                                    + MAX_LIST_ENTRIES + ". List it in another language.");
+                }
+                chargeTransfer(host, names.size());
                 return names;
             } catch (IOException e) {
                 throw new OqError("cannot list directory '" + dir + "'", span, e.getMessage());
@@ -426,6 +466,15 @@ public final class Stdlib {
                 System.currentTimeMillis()));
         interpreter.defineBuiltin(NativeFunction.of("sleep", 1, (host, args, span) -> {
             long millis = (long) (Values.asDouble(args.get(0)) * 1000);
+            if (millis > MAX_SLEEP_MILLIS) {
+                throw new OqError("cannot sleep for more than "
+                        + MAX_SLEEP_MILLIS / 1000 + " seconds", span,
+                        "A long wait would block the program; the limit is "
+                                + MAX_SLEEP_MILLIS / 1000 + " seconds per call.");
+            }
+            // Time is not a transfer: billing a millisecond as one step let a program wait
+            // 50,000,000 ms (about 13.9 hours). Waiting has its own aggregate budget.
+            dev.oqthara.runtime.WaitedBudget.charge(millis, span);
             try {
                 Thread.sleep(Math.max(0, millis));
             } catch (InterruptedException e) {
@@ -437,12 +486,12 @@ public final class Stdlib {
 
     private static void installHttp(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("http_get", 1, (host, args, span) ->
-                http("GET", Values.display(args.get(0)), null, span)));
+                http(host, "GET", Values.display(args.get(0)), null, span)));
         interpreter.defineBuiltin(NativeFunction.of("http_post", 2, (host, args, span) ->
-                http("POST", Values.display(args.get(0)), Values.display(args.get(1)), span)));
+                http(host, "POST", Values.display(args.get(0)), Values.display(args.get(1)), span)));
     }
 
-    private static Object http(String method, String url, String body, Span span) {
+    private static Object http(OqHost host, String method, String url, String body, Span span) {
         try {
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(15))
@@ -457,14 +506,29 @@ public final class Stdlib {
             } else {
                 builder.GET();
             }
-            HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<java.io.InputStream> response =
+                    client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
+            // Stream the body and stop at the cap. `ofByteArray` would buffer an unlimited
+            // response in memory before the size check could run, which is the very thing the
+            // check exists to prevent.
+            // The request timeout only bounds the wait for headers. A server that sends headers
+            // and then stalls the body would hang the program forever, so bound the body too.
+            byte[] bytes = readCappedWithinDeadline(response.body(), span);
+            if (bytes.length > MAX_TEXT_BYTES) {
+                throw new OqError("response is too large: " + url, span,
+                        "It exceeded " + MAX_TEXT_BYTES + " bytes.");
+            }
+            chargeTransfer(host, bytes.length);
             LinkedHashMap<String, Object> result = new LinkedHashMap<>();
             result.put("status", (long) response.statusCode());
-            result.put("body", response.body());
+            result.put("body", new String(bytes, StandardCharsets.UTF_8));
             result.put("ok", response.statusCode() >= 200 && response.statusCode() < 300);
             return new OqData("Response", result);
         } catch (IllegalArgumentException e) {
             throw new OqError("invalid URL '" + url + "'", span, e.getMessage());
+        } catch (java.io.UncheckedIOException e) {
+            throw new OqError("HTTP request failed: " + e.getMessage(), span,
+                    "Check the URL and your network connection.");
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             throw new OqError("HTTP request failed: " + e.getMessage(), span,
@@ -526,22 +590,55 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("env", 1, (host, args, span) ->
                 System.getenv(Values.display(args.get(0)))));
         interpreter.defineBuiltin(NativeFunction.of("run_command", 1, (host, args, span) -> {
+            String command = Values.display(args.get(0));
             try {
-                ProcessBuilder builder = new ProcessBuilder(List.of(Values.display(args.get(0))));
+                ProcessBuilder builder = new ProcessBuilder(List.of(command));
                 builder.directory(host.workingDirectory().toFile());
                 builder.redirectErrorStream(true);
                 Process process = builder.start();
-                String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                int code = process.waitFor();
+                // Read on a separate thread so a command that never exits cannot block the
+                // timeout, and so output that overflows the cap is never fully in memory.
+                java.util.concurrent.CompletableFuture<byte[]> output =
+                        java.util.concurrent.CompletableFuture.supplyAsync(
+                                () -> readCapped(process.getInputStream()));
+                // One deadline covers both waits. Giving the output read a full timeout and then
+                // the exit wait another would let a slow child run for twice the documented time.
+                long deadline = System.nanoTime() + COMMAND_TIMEOUT.toNanos();
+                byte[] bytes;
+                try {
+                    bytes = output.get(remaining(deadline), java.util.concurrent.TimeUnit.NANOSECONDS);
+                } catch (java.util.concurrent.TimeoutException e) {
+                    destroyTree(process);
+                    throw timeoutError(command, span);
+                }
+                if (bytes.length > MAX_TEXT_BYTES) {
+                    destroyTree(process);
+                    throw new OqError("command output is too large: " + command, span,
+                            "It exceeded " + MAX_TEXT_BYTES + " bytes.");
+                }
+                // The reader stops at end of output, so reaching here means the child closed its
+                // output. It may still be running, so spend what is left of the same deadline.
+                if (!process.waitFor(remaining(deadline), java.util.concurrent.TimeUnit.NANOSECONDS)) {
+                    destroyTree(process);
+                    throw timeoutError(command, span);
+                }
+                String text = new String(bytes, StandardCharsets.UTF_8);
+                chargeTransfer(host, bytes.length);
                 LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-                result.put("code", (long) code);
-                result.put("output", output);
+                result.put("code", (long) process.exitValue());
+                result.put("output", text);
                 return new OqData("Result", result);
+            } catch (OqError error) {
+                throw error;
             } catch (IOException e) {
-                throw new OqError("cannot run command: " + e.getMessage(), span);
+                throw new OqError("cannot run command: " + e.getMessage(), span,
+                        "run_command() takes one executable path and no arguments, and never goes "
+                                + "through a shell. To pass arguments, write a script and run it.");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new OqError("command interrupted", span);
+            } catch (java.util.concurrent.ExecutionException e) {
+                throw new OqError("cannot read command output: " + command, span, e.getMessage());
             }
         }));
         interpreter.defineBuiltin(NativeFunction.of("cpu_count", 0, (host, args, span) ->
@@ -558,6 +655,179 @@ public final class Stdlib {
         Path base = host.workingDirectory();
         if (base == null) base = Path.of("").toAbsolutePath();
         return base.toAbsolutePath().resolve(path).normalize();
+    }
+
+    /**
+     * Bills the program one step per unit it moved.
+     *
+     * <p>The unit is whatever the caller measured: bytes for the file, HTTP and process
+     * transfers, characters for {@code input}, directory entries for {@code list_files}.
+     *
+     * <p>Builtins run as a single interpreter step, so a loop that prints a large string would
+     * otherwise cost one step per iteration no matter how many bytes moved. The per-unit charge
+     * makes a program pay for what it transfers. It is <em>not</em> the bound itself: each call
+     * has its own size limit in the table above, and the charge only ensures a loop of small
+     * transfers cannot be free. {@code host} is an {@link Interpreter} for every path that runs
+     * user code; a compiled program and a bare method resolver have no counter to charge.
+     */
+    private static void chargeTransfer(OqHost host, long bytes) {
+        if (bytes <= 0) return;
+        // A per-byte step multiplier made the documented per-call ceiling unreachable: at 256
+        // steps per byte the 50,000,000 budget ran out at 195,312 bytes, so `read` refused a
+        // 1 MiB file with "program ran for too long" no matter what the table said. Transfers
+        // are now bounded by their own size checks and billed one step per unit moved. That
+        // unit is not always a byte: `input` passes characters and `list_files` passes
+        // entries. Output never reaches here at all — see chargeOutput.
+        if (host instanceof Interpreter interpreter) interpreter.chargeSteps(bytes);
+    }
+
+    private static void chargeOutput(OqHost host, CharSequence text) {
+        // Charge the UTF-8 size, not the character count: the docs say bytes, and a multi-byte
+        // character really does move more of them. Billing unconditionally matters because the
+        // budget is shared with compiled bytecode, which reaches it through Arithmetic.
+        chargeOutputBytes(text.toString().getBytes(StandardCharsets.UTF_8).length);
+    }
+
+    private static void chargeOutputBytes(long bytes) {
+        if (bytes > 0) OutputBudget.charge(bytes);
+    }
+
+    /**
+     * Refuses a single {@code save}/{@code append} larger than the documented transfer ceiling.
+     *
+     * <p>These do not print, so they must not draw on the output budget; without this check the
+     * only limit on one call was the step budget.
+     */
+    private static int chargeWrittenText(String text, String verb, Span span) {
+        // bytes, not characters: the limit is stated and enforced in bytes everywhere else, and
+        // one astral character is four of them. The count is returned so the caller bills the
+        // transfer at the same figure it checked.
+        int bytes = text.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > MAX_TEXT_BYTES) {
+            throw new OqError("cannot " + verb + " " + bytes + " bytes in one call", span,
+                    "A single write is limited to " + MAX_TEXT_BYTES
+                            + " bytes. Write it in pieces, or use append.");
+        }
+        return bytes;
+    }
+
+    /** What is left of a deadline, never negative, for a timed wait. */
+    private static long remaining(long deadlineNanos) {
+        return Math.max(0, deadlineNanos - System.nanoTime());
+    }
+
+    private static OqError timeoutError(String command, Span span) {
+        return new OqError("command timed out after " + COMMAND_TIMEOUT.toSeconds()
+                + " seconds: " + command, span,
+                "A command that never exits would block the program forever. "
+                        + "Run it in the background yourself if it is expected to be slow.");
+    }
+
+    /**
+     * Kills the child and everything it started. Destroying only the child leaves its own
+     * children running, which is how a timed-out script leaks the process it spawned.
+     */
+    private static void destroyTree(Process process) {
+        process.descendants().forEach(ProcessHandle::destroyForcibly);
+        process.destroyForcibly();
+        try {
+            process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Reads one line of input, capped and billed like every other transfer.
+     *
+     * <p>A plain {@code readLine()} would happily build an 80 MB string from a hostile writer and
+     * would block forever on a pipe that never closes. This reads at most
+     * {@link #MAX_TEXT_BYTES}, so an oversized line is refused instead of loaded.
+     */
+    private static String readLineBounded(OqHost host, Span span) {
+        StringBuilder sb = new StringBuilder();
+        boolean sawEnd = false;
+        try {
+            int code = host.in().read();
+            while (code != -1 && code != '\n') {
+                if (sb.length() >= MAX_TEXT_BYTES) {
+                    throw new OqError("input line is too large", span,
+                            "It is more than the " + MAX_TEXT_BYTES + " character limit. "
+                                    + "Read it in another language, or feed smaller lines.");
+                }
+                sb.append((char) code);
+                code = host.in().read();
+            }
+            sawEnd = code == -1;
+        } catch (IOException e) {
+            throw new OqError("cannot read input: " + e.getMessage(), span);
+        }
+        chargeTransfer(host, sb.length());
+        // End of input with nothing read is `nothing`, matching a Reader that returns null.
+        return sawEnd && sb.isEmpty() ? null : sb.toString();
+    }
+
+    /** Drains a stream, keeping the first {@link #MAX_TEXT_BYTES} and stopping the child there. */
+    private static byte[] readCapped(java.io.InputStream stream) {
+        try (stream) {
+            return stream.readNBytes(MAX_TEXT_BYTES + 1);
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Drains a response body on its own thread and gives up at {@link #COMMAND_TIMEOUT}.
+     *
+     * <p>{@link java.net.http.HttpRequest#timeout} stops at the headers, so it does not cover a
+     * body that trickles or stops arriving. The reader thread is abandoned rather than joined:
+     * a blocking socket read cannot be cancelled, and it ends when the connection is closed.
+     */
+    private static byte[] readCappedWithinDeadline(java.io.InputStream body, Span span) {
+        var reader = java.util.concurrent.CompletableFuture.supplyAsync(() -> readCapped(body));
+        try {
+            return reader.get(COMMAND_TIMEOUT.toMillis(),
+                    java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            reader.cancel(true);
+            throw new OqError("the response body did not finish in "
+                    + COMMAND_TIMEOUT.toSeconds() + " seconds", span,
+                    "The server sent headers but stalled the body. A response that never "
+                            + "finishes would block the program forever.");
+        } catch (java.util.concurrent.ExecutionException e) {
+            if (e.getCause() instanceof java.io.UncheckedIOException io) {
+                throw new OqError("cannot read the response body", span, io.getMessage());
+            }
+            throw new OqError("cannot read the response body", span, String.valueOf(e.getCause()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OqError("interrupted while reading the response body", span);
+        }
+    }
+
+    /**
+     * Reads at most {@link #MAX_TEXT_BYTES}, refusing anything larger instead of loading it.
+     *
+     * <p>The read is capped by how much it actually returns, not by {@link Files#size}. Size is
+     * advisory for anything that is not a regular file: a FIFO and {@code /dev/zero} both report
+     * 0 while yielding unbounded data, so trusting the reported size lets them through.
+     */
+    private static String readBounded(OqHost host, Path path, Span span, String what) {
+        try (java.io.InputStream stream = Files.newInputStream(path)) {
+            byte[] bytes = stream.readNBytes(MAX_TEXT_BYTES + 1);
+            if (bytes.length > MAX_TEXT_BYTES) {
+                throw new OqError(what + " is too large to read: " + path, span,
+                        "It is more than the " + MAX_TEXT_BYTES + " byte limit. "
+                                + "Read it in another language, or split it into smaller files.");
+            }
+            chargeTransfer(host, bytes.length);
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (OqError error) {
+            throw error;
+        } catch (IOException e) {
+            throw new OqError("cannot read file '" + path + "'", span,
+                    "Check that the file exists and is readable. (" + e.getMessage() + ")");
+        }
     }
 
     private static Pattern compilePattern(Object value, Span span) {
