@@ -1,10 +1,13 @@
 package dev.oqthara.cli;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -60,5 +63,37 @@ class BuildCommandTest {
         Run run = build("definitely-not-here.oq");
         assertEquals(2, run.exit());
         assertTrue(run.err().contains("Cannot read"), run.err());
+    }
+
+    /**
+     * {@code oq build} picks one of two jar shapes, and the docs tell people to read the
+     * {@code codepath:} line to know which. A line that says neither, or says both, would make
+     * the documented advice unusable.
+     */
+    @Test
+    void buildSaysWhichJarShapeItChose(@TempDir Path dir) throws Exception {
+        Path plain = dir.resolve("plain.oq");
+        Files.writeString(plain, "print \"hi\"");
+        Run compiled = build(plain.toString());
+        assertEquals(0, compiled.exit(), compiled.err());
+        assertTrue(compiled.out().contains("codepath: compiled bytecode"), compiled.out());
+
+        Path interactive = dir.resolve("interactive.oq");
+        Files.writeString(interactive, "x = read()\nprint x");
+        Run launcher = build(interactive.toString());
+        assertEquals(0, launcher.exit(), launcher.err());
+        assertTrue(launcher.out().contains("codepath: interpreter launcher"), launcher.out());
+        assertTrue(launcher.out().contains("is not compiled yet"), launcher.out());
+    }
+
+    /** Exactly one codepath line, so the documented "read this line" recipe has one answer. */
+    @Test
+    void buildPrintsOnlyOneCodepathLine(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("one.oq");
+        Files.writeString(source, "print 1");
+        Run run = build(source.toString());
+        assertEquals(0, run.exit(), run.err());
+        assertEquals(1, run.out().lines().filter(line -> line.startsWith("codepath:")).count(),
+                run.out());
     }
 }

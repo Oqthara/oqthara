@@ -358,8 +358,8 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("save", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             String text = Values.display(args.get(1));
-            chargeWrittenText(text, span);
-            chargeTransfer(host, text.length());
+            int written = chargeWrittenText(text, "save", span);
+            chargeTransfer(host, written);
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
                 Files.writeString(path, text, StandardCharsets.UTF_8);
@@ -371,8 +371,8 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("append", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             String text = Values.display(args.get(1));
-            chargeWrittenText(text, span);
-            chargeTransfer(host, text.length());
+            int written = chargeWrittenText(text, "append", span);
+            chargeTransfer(host, written);
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
                 Files.writeString(path, text, StandardCharsets.UTF_8,
@@ -684,13 +684,17 @@ public final class Stdlib {
      * <p>These do not print, so they must not draw on the output budget; without this check the
      * only limit on one call was the step budget.
      */
-    private static void chargeWrittenText(String text, Span span) {
+    private static int chargeWrittenText(String text, String verb, Span span) {
+        // bytes, not characters: the limit is stated and enforced in bytes everywhere else, and
+        // one astral character is four of them. The count is returned so the caller bills the
+        // transfer at the same figure it checked.
         int bytes = text.getBytes(StandardCharsets.UTF_8).length;
         if (bytes > MAX_TEXT_BYTES) {
-            throw new OqError("cannot save " + bytes + " bytes in one call", span,
+            throw new OqError("cannot " + verb + " " + bytes + " bytes in one call", span,
                     "A single write is limited to " + MAX_TEXT_BYTES
                             + " bytes. Write it in pieces, or use append.");
         }
+        return bytes;
     }
 
     /** What is left of a deadline, never negative, for a timed wait. */

@@ -383,6 +383,49 @@ class HostBuiltinLimitsTest {
         assertTrue(error.getMessage().contains("HTTP request failed"), error.getMessage());
     }
 
+    @Test
+    void appendNamesItselfRatherThanSayingSave() throws IOException {
+        // `append` used to report `cannot save`, which sent the reader looking for a save call
+        // that was not in their program.
+        String big = "x".repeat(Stdlib.MAX_TEXT_BYTES + 1);
+        Path file = dir.resolve("appended.txt");
+        OqError error = assertThrows(OqError.class,
+                () -> call("append", file.toString(), big));
+        assertEquals("cannot append " + big.length() + " bytes in one call", error.getMessage());
+        assertFalse(Files.exists(file), "the refused append must not create the file");
+    }
+
+    @Test
+    void saveNamesItself() {
+        String big = "x".repeat(Stdlib.MAX_TEXT_BYTES + 1);
+        OqError error = assertThrows(OqError.class,
+                () -> call("save", dir.resolve("saved.txt").toString(), big));
+        assertEquals("cannot save " + big.length() + " bytes in one call", error.getMessage());
+    }
+
+    @Test
+    void theWriteLimitCountsBytesNotCharacters() {
+        // A non-ASCII character is one character but several bytes. Counting characters would
+        // let a program write four times the documented limit with astral characters.
+        String emoji = "\uD83D\uDE00".repeat(Stdlib.MAX_TEXT_BYTES / 4 + 1);
+        OqError error = assertThrows(OqError.class,
+                () -> call("save", dir.resolve("emoji.txt").toString(), emoji));
+        assertTrue(error.getMessage().startsWith("cannot save " + emoji.getBytes(
+                StandardCharsets.UTF_8).length + " bytes"), error.getMessage());
+    }
+
+    @Test
+    void theWriteLimitIsPerCallSoSaveThenAppendCanBuildALargerFile() throws IOException {
+        // The limit is stated as "in one call", so a program that writes in pieces must be able
+        // to pass it. A cumulative check would refuse the second call and make `append` useless
+        // for exactly the case its help text recommends it for.
+        Path file = dir.resolve("pieces.txt");
+        String chunk = "y".repeat(Stdlib.MAX_TEXT_BYTES - 1);
+        call("save", file.toString(), chunk);
+        call("append", file.toString(), chunk);
+        assertEquals((Stdlib.MAX_TEXT_BYTES - 1) * 2L, Files.size(file));
+    }
+
     private static HttpServer serve(int status, String body) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {

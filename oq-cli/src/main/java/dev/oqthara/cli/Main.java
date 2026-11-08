@@ -165,11 +165,10 @@ public final class Main {
                 EmbeddedMain.renderFailure(err, notEnough);
                 return 1;
             } catch (RuntimeException e) {
-                err.println();
-                err.println("internal error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
-                err.println("  This is a bug in Oqthara. Please report it.");
-                err.println();
-                return 70;
+                // One renderer for both backends, so a jar and `oq run` never disagree about
+                // who is to blame for the same failure.
+                EmbeddedMain.renderFailure(err, e);
+                return EmbeddedMain.exitCodeFor(e);
             }
         }
 

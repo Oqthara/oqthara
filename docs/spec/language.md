@@ -443,7 +443,7 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | `input()` | 16 MiB per line | `input line is too large` |
 | `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
 | `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large: <url>` |
-| `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call` |
+| `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call` |
 | `sleep` | 10 seconds per call, 60 seconds total | `cannot sleep for more than 10 seconds`, `the program waited for too long` |
 | `list_files` | 100,000 entries | `directory has too many entries: <path>` |
 

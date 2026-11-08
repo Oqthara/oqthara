@@ -84,7 +84,7 @@ public final class EmbeddedMain {
             // interpreter's own catch chain reports. Wording lives in one place so the two
             // backends cannot drift.
             if (!renderFailure(err, failure)) throw new IllegalStateException(failure);
-            System.exit(1);
+            System.exit(exitCodeFor(failure));
         }
     }
 
@@ -113,7 +113,28 @@ public final class EmbeddedMain {
             err.flush();
             return true;
         }
+        // OqError is a RuntimeException, so it must be excluded here: it is the program's own
+        // failure and has a dedicated renderer that draws the message, location and hint.
+        if (failure instanceof RuntimeException && !(failure instanceof OqError)) {
+            // Not the program's fault: a RuntimeException that is not an OqError escaped from
+            // Oqthara itself. `oq run` has always said so; a compiled jar printed a stack trace
+            // instead, so the same program blamed different things depending on how it was run.
+            err.println();
+            err.println("internal error: " + failure.getClass().getSimpleName() + ": "
+                    + failure.getMessage());
+            err.println("  This is a bug in Oqthara. Please report it.");
+            err.println();
+            err.flush();
+            return true;
+        }
         return false;
+    }
+
+    /** The exit status for a failure {@link #renderFailure} recognised. */
+    static int exitCodeFor(Throwable failure) {
+        // 70 is the interpreter's "Oqthara itself failed" status; keep one number for both.
+        // An OqError is the program's failure, so it must stay at 1 like every other OqError.
+        return failure instanceof RuntimeException && !(failure instanceof OqError) ? 70 : 1;
     }
 
     /**
