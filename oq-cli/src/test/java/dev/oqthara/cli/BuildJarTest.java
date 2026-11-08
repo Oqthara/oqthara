@@ -227,6 +227,64 @@ class BuildJarTest {
                 result.stderr());
     }
 
+    /**
+     * An error raised inside Oqthara itself must not look like a program error once compiled.
+     *
+     * <p>{@code oq run} classifies a {@code RuntimeException} that is not an {@code OqError} as
+     * "Oqthara itself failed" and exits 70. The compiled entry point hardcoded 1, so the same
+     * source exited 70 interpreted and 1 from the jar, with byte-identical text. A script
+     * could not tell an Oqthara bug from a program that legitimately failed.
+     *
+     * <p>{@code 1 to true} is used because it is the smallest program that both reaches real
+     * bytecode and raises a non-{@code OqError}: the compiler emits the range loop and the
+     * bound check throws {@code IllegalArgumentException}. The assertion that the build chose
+     * bytecode keeps the test honest — it would otherwise pass vacuously against a launcher jar
+     * that never runs the compiled entry point.
+     */
+    @Test
+    void aCompiledJarReportsAnInternalErrorWithExitCode70(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("internal.oq");
+        Files.writeString(source, "print 1 to true");
+        Path jar = dir.resolve("internal.jar");
+        assertEquals(0, build(source, jar));
+
+        ProcessResult result = runJar(jar, dir);
+        assertEquals(70, result.exit(),
+                "a jar must report an Oqthara bug as 70, not as a program error; stderr was:\n"
+                        + result.stderr());
+        assertTrue(result.stderr().contains("internal error"), result.stderr());
+        assertTrue(result.stderr().contains("This is a bug in Oqthara"), result.stderr());
+        // The 70 path must not be reached by mislabelling an ordinary program error.
+        assertFalse(result.stderr().contains("error: division by zero"), result.stderr());
+        assertFalse(result.stderr().contains("Exception in thread"), result.stderr());
+    }
+
+    /**
+     * The ordinary program-error path is unchanged by the classification fix: an {@code OqError}
+     * that escapes compiled bytecode still exits 1 and keeps its source location.
+     */
+    @Test
+    void aCompiledJarStillReportsAProgramErrorWithExitCode1(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("program.oq");
+        Files.writeString(source, """
+                fun boom(n)
+                  return n / 0
+                end
+                print boom(1)
+                """);
+        Path jar = dir.resolve("program.jar");
+        assertEquals(0, build(source, jar));
+
+        ProcessResult result = runJar(jar, dir);
+        assertEquals(1, result.exit(), "an OqError must stay a program error; stderr was:\n"
+                + result.stderr());
+        assertTrue(result.stderr().contains("error: division by zero"), result.stderr());
+        // The location line proves the OqError was not rerouted through the internal path,
+        // which renders a message but no span.
+        assertTrue(result.stderr().contains("--> program.oq:2"), result.stderr());
+        assertFalse(result.stderr().contains("internal error"), result.stderr());
+    }
+
     /** A program that ends normally must still do so once the handler catches Throwable. */
     @Test
     void aCatchAllHandlerDoesNotDisturbNormalPrograms(@TempDir Path dir) throws Exception {

@@ -138,22 +138,30 @@ public final class EmbeddedMain {
     }
 
     /**
-     * Renders an {@code OqError} that escaped compiled bytecode and terminates with exit 1.
+     * Renders a throwable that escaped compiled bytecode and terminates with the same status
+     * {@code oq run} would use.
      *
      * <p>A compiled jar embeds no source, so the caret block cannot be drawn. Everything that
      * does not need the source is still shown: the message, the {@code file:line:column}
      * location, the hint, and the interpreter's exact spacing. That is deliberately the same
      * renderer {@code oq run} uses, called with no source lines, so the two can never drift
      * in wording, colouring or layout.
+     *
+     * <p>The status goes through {@link #exitCodeFor} rather than a constant, because a jar
+     * that failed inside Oqthara itself must report 70 exactly as the interpreter does. A
+     * hardcoded 1 here made the same internal error exit 70 under {@code oq run} and 1 from
+     * the jar, so a script could not tell an Oqthara bug from a program error.
      */
     public static void renderUncaught(Object error, String source) {
         java.io.PrintStream err = utf8(System.err);
-        if (error instanceof Throwable failure && renderFailure(err, failure)) System.exit(1);
+        if (error instanceof Throwable failure && renderFailure(err, failure)) {
+            System.exit(exitCodeFor(failure));
+        }
         OqError oqError = error instanceof OqError typed
                 ? typed
                 : new OqError(String.valueOf(error), Span.synthetic());
         renderUncaught(err, oqError, source);
-        System.exit(1);
+        System.exit(exitCodeFor(oqError));
     }
 
     private static void renderUncaught(java.io.PrintStream err, OqError error, String source) {
