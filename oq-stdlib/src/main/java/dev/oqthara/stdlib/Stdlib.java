@@ -658,10 +658,13 @@ public final class Stdlib {
     }
 
     /**
-     * Bills the program one step per byte it moved.
+     * Bills the program one step per unit it moved.
+     *
+     * <p>The unit is whatever the caller measured: bytes for the file, HTTP and process
+     * transfers, characters for {@code input}, directory entries for {@code list_files}.
      *
      * <p>Builtins run as a single interpreter step, so a loop that prints a large string would
-     * otherwise cost one step per iteration no matter how many bytes moved. The per-byte charge
+     * otherwise cost one step per iteration no matter how many bytes moved. The per-unit charge
      * makes a program pay for what it transfers. It is <em>not</em> the bound itself: each call
      * has its own size limit in the table above, and the charge only ensures a loop of small
      * transfers cannot be free. {@code host} is an {@link Interpreter} for every path that runs
@@ -672,8 +675,9 @@ public final class Stdlib {
         // A per-byte step multiplier made the documented per-call ceiling unreachable: at 256
         // steps per byte the 50,000,000 budget ran out at 195,312 bytes, so `read` refused a
         // 1 MiB file with "program ran for too long" no matter what the table said. Transfers
-        // are now bounded by their own size checks and billed one step per byte, which still
-        // makes a program pay for what it moves.
+        // are now bounded by their own size checks and billed one step per unit moved. That
+        // unit is not always a byte: `input` passes characters and `list_files` passes
+        // entries. Output never reaches here at all — see chargeOutput.
         if (host instanceof Interpreter interpreter) interpreter.chargeSteps(bytes);
     }
 

@@ -44,10 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time. Output has its own 16 MiB counter, and the newline `print` adds and the prompt `input`
   writes count against it, so neither is a way to emit unbounded bytes. That counter covers
   output only — reading a file does not draw on it, because reading is not writing output.
-  Transfers are billed one step per byte against the step budget on top of their per-call
-  limits; the older 256-steps-per-byte rate made the documented 16 MiB unreachable, because
-  `read` tripped the 50,000,000-step budget at 195,312 bytes and reported
-  `program ran for too long` instead of the size error.
+  The transfers that do bill the step budget are charged on top of their per-call limits, in
+  the unit each one actually moves: bytes for `read`, `save`, `append`, HTTP and `run_command`,
+  characters for `input`, directory entries for `list_files`. Output is the exception — `print`,
+  `write` and `write_text` are bounded by the output counter and charge no steps. The older
+  256-steps-per-byte rate made the documented 16 MiB unreachable, because `read` tripped the
+  50,000,000-step budget at 195,312 bytes and reported `program ran for too long` instead of
+  the size error.
   The specification states these limits and states plainly that they are resource controls,
   not a sandbox — and that a jar built as pure compiled bytecode has no step budget or
   deadlines, only the 16 MiB output cap, while a jar built as an interpreter launcher

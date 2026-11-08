@@ -313,9 +313,10 @@ print swap((1, 2))        # (2, 1)
 ```
 
 Mutation is refused; tuples are immutable. Every mutator raises `a tuple is immutable`, and
-`t[0] = 9` is rejected. That includes a mutator called on a *view* of a tuple, such as
-`t.subList(0, 2)` or `t.reverse()`: slicing a tuple yields another tuple, so changing one is
-refused with the same error rather than a Java exception. To change a tuple, build a new one.
+`t[0] = 9` is rejected. That includes a mutator called on a *slice* of a tuple: `t.subList(0, 2)` yields another tuple,
+so changing one is refused with the same error rather than a Java exception. `take` and `skip`
+are the exception among the readers — they always return a list, even on a tuple, so the result
+is mutable. To change a tuple, build a new one.
 
 `subList(from, to)` and its one-argument form `subList(from)` return a **new** list or tuple,
 never a live view. Mutating the result leaves the original untouched. Indices are clamped to
@@ -451,28 +452,34 @@ A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allo
 byte more is refused. `input` is the exception: its 16,777,216 ceiling counts characters, so
 that sentence reads "character" for `input` and "byte" everywhere else. Output is refused
 **before** it is written, so a program that exceeds the limit prints nothing from the call that
-crossed it. The newline `print` adds counts towards the total, as do the characters of an
-`input` prompt.
+crossed it. The newline `print` adds counts towards the total, as do the bytes of an
+`input` prompt: a prompt is written output and is billed like one, so a multibyte prompt costs
+its UTF-8 size and not its character count.
 
 Output has its own 16 MiB counter rather than draining the step budget. Charging output as
 steps made the documented ceiling unreachable: at 256 steps per byte a program could print
 only 50,000,000 / 256 = 195,312 bytes before the budget stopped it. That counter covers output
 only. Reading a file does not draw on it, because reading is not writing output.
 
-Every host transfer also bills the step budget, on top of its own per-call size limit. The
-per-call limits are what bind; the step charge only stops a program from moving data for free.
-The billing unit differs per call, and the step charge is always the same figure the size check
-used, never a re-derived one:
+Every host transfer other than output also bills the step budget, on top of its own per-call
+size limit. Output is the exception: `print`, `write` and `write_text` draw on the output
+counter only and charge no steps at all, because that counter already bounds them. For the
+calls that do bill steps, the per-call limit is what binds; the step charge only stops a
+program from moving data for free. Where a step charge exists it is always the same figure the
+size check used, never a re-derived one:
 
-| Call | Billed | Unit |
-| ---- | ------ | ---- |
+| Call | Step charge | Unit |
+| ---- | ----------- | ---- |
 | `read`, `read_lines` | bytes read | UTF-8 bytes |
 | `save`, `append` | bytes written | UTF-8 bytes |
-| `write`, `write_text` | bytes written | UTF-8 bytes |
 | `http_get`, `http_post` | body length | UTF-8 bytes |
 | `run_command` | output length | UTF-8 bytes |
 | `input()` | line length | Java `String` characters |
 | `list_files` | entry count | directory entries |
+| `print`, `write`, `write_text` | none | — |
+
+The blank row is deliberate: those three calls are bounded by the output counter and are never
+charged against the step budget, so they have no billing unit to state.
 
 `input` is the one call that bills characters rather than bytes, because it accumulates into a
 `StringBuilder` and charges `sb.length()`. Its 16 MiB ceiling is also counted in characters, so
