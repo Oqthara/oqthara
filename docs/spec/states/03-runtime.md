@@ -186,7 +186,7 @@ is ever compiled, this reasoning expires and the slot must become a `ThreadLocal
 | `M10` | The output, waiting and step budgets are separate, reset per program, and shared by both backends. |
 | `M11` | Only an `OqError` exits 1 with a source position; only a non-`OqError` `RuntimeException` exits 70. |
 | `M12` | `StackOverflowError` and `OutOfMemoryError` are reported as program failures and exit 1. |
-| `M13` | No budget counts work done inside a spawned task against the parent's counters. |
+| `M13` | The step and output budgets are shared by every thread a program runs, but the recursion depth counter is not thread-safe: concurrent tasks corrupt it. |
 
 ## 7.3.3 Invalid transitions
 
@@ -242,7 +242,7 @@ shallow enough to parse and still be too deep to print.
 | `M8`, `M9` | `ImmutableRefusalTest.aJdkRefusalBecomesAProgramErrorNotABug`, `.aRefusalWithNoMessageStillReadsAsASentence` |
 | `M10` | `StepBudgetTest.printLoopStopsAtTheOutputCeiling`, `.oversizedReadIsRefused`; `WaitedBudgetTest.theLimitIsOnTheTotalNotOneCall`; `HostBuiltinLimitsTest.exactlySixteenMebibytesIsAllowed`, `.oneBytePastSixteenMebibytesIsRefused` |
 | `M11`, `M12` | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
-| `M13` | `ConcurrencyTest.twoTasksBothComplete`, `.parMapPreservesOrder` |
+| `M13` | `ConcurrencyTest.twoTasksBothComplete`, `.parMapPreservesOrder`; the shared-counter half is exercised there, the depth half is not |
 | `E38`, `E39` | `HostBuiltinLimitsTest.runCommandTimeoutKillsTheWholeProcessTree`, `.runCommandTimeoutsACommandThatNeverClosesItsOutput`, `.runCommandOutputIsBounded`, `.runCommandDoesNotGoThroughAShell` |
 | `E35`, `E36` | `WaitedBudgetTest.waitingPastTheLimitIsRefused`, `.waitingUpToTheLimitIsAllowed`, `.theLimitIsOnTheTotalNotOneCall` |
 | `E40` | `StepBudgetTest.unboundedRecursionStopsWithADiagnostic` |
@@ -285,3 +285,22 @@ real lifecycle.
 task to stop, cannot learn that it was abandoned, and cannot wait for all tasks. `M7` states this
 as an invariant so that it is a decision rather than an omission — but it is a decision real
 concurrent work will eventually want reversed, and reversing it is a language change, not a fix.
+
+**The recursion depth counter is a plain `int` shared by every thread.** `Interpreter.depth` is
+incremented and decremented around every block on whatever virtual thread is running, with no
+synchronisation. `spawn` hands the *same* `Interpreter` to the task, so two concurrent tasks
+interleave their increments and see a depth that belongs to neither of them. Measured, with two
+tasks each looping thirty million times:
+
+```
+run 1: error: program ran for too long     (the shared step budget, correctly)
+run 2: error: call stack is too deep       (a stack of depth 2 reported as overflow)
+```
+
+The same program reports a different failure on different runs, and the second message names a
+source line that is not recursing at all. This is not cosmetic: `call stack is too deep` tells a
+programmer to look for infinite recursion in a program that has none. The step counter next to it
+is an `AtomicLong` and carries a comment explaining why it must be; `depth` did not get the same
+treatment because the interpreter was single-threaded when it was written and `spawn` arrived
+later. Making it per-thread is a small change, but it is a change to failure behaviour under
+concurrency and belongs with the other task work rather than in a documentation branch.

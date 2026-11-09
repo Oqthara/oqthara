@@ -60,13 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   states a program can reach, the moves between them, the properties that hold in every state, and
   the invalid transitions with the exact diagnostic each produces. Every diagnostic quoted in any
   of them was measured against a running build, not inferred from source.
-- `03-runtime.md` records four defects the model exposed, none of them fixed here. Container
+- `03-runtime.md` records five defects the model exposed, none of them fixed here. Container
   equality does not widen numeric element types, so `[1] == [1.0]` is false while `1.0 in [1]` is
   true and `set([1, 1.0])` holds two elements that both report as members. Objects from the
   standard library that are not Oq values pass through the bridge unwrapped, so `LocalDate.now()`
   reports its type as `java LocalDate` rather than as an Oq type. `spawn` allocates an executor per
   call and never closes it. And there is no way to cancel a task or to join one: an unawaited task
-  is silently abandoned when the program exits.
+  is silently abandoned when the program exits. And `Interpreter.depth` is a plain `int` shared by
+  every virtual thread, so two concurrent tasks interleave their increments and can report a stack
+  of depth two as `call stack is too deep` — a false diagnosis that tells the programmer to look
+  for infinite recursion that is not there.
 - **`docs/spec/design.md` was stale in four ways.** It listed 20 keywords when the lexer defines
   21; it pointed at `STATUS.md`, a file that does not exist; it claimed the keyword list "is
   checked by a test in `oq-core`", when no such test exists — the check lives in
