@@ -6,9 +6,9 @@ Every entry below is read from the implementation, so this page cannot list a fu
 
 ## Keywords
 
-`and`, `break`, `catch`, `continue`, `data`, `else`, `end`, `false`, `for`, `fun`, `if`, `in`, `not`, `nothing`, `or`, `return`, `true`, `try`, `use`, `while`
+`and`, `break`, `catch`, `const`, `continue`, `data`, `else`, `end`, `false`, `for`, `fun`, `if`, `in`, `not`, `nothing`, `or`, `return`, `true`, `try`, `use`, `while`
 
-20 keywords (budget: 30).
+21 keywords (budget: 30).
 
 ## Global functions
 

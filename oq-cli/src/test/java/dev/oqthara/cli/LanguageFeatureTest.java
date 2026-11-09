@@ -334,4 +334,128 @@ class LanguageFeatureTest {
                 java.util.List.of("a", "b"), "", java.nio.file.Path.of("."));
         assertEquals("a,b\n", result.stdout());
     }
+
+    @Test
+    void constBindsOnceAndKeepsItsValue() {
+        assertEquals("100\n101\n", ok("""
+                const MAX = 100
+                print MAX
+                print MAX + 1
+                """));
+    }
+
+    @Test
+    void constRejectsReassignment() {
+        fails("""
+                const MAX = 100
+                MAX = 200
+                """, "cannot change 'MAX'");
+    }
+
+    @Test
+    void constDiagnosticNamesTheConstantAndNotSomethingElse() {
+        fails("""
+                const LIMIT = 3
+                LIMIT = 4
+                """, "A constant keeps its first value");
+    }
+
+    @Test
+    void constRequiresAnInitializer() {
+        fails("""
+                const NAME
+                print NAME
+                """, "a constant needs a value");
+    }
+
+    @Test
+    void constBindsTheNameNotTheObject() {
+        // `const` fixes the binding, not the value behind it. A list it points at can still
+        // be mutated, exactly as any other binding would allow.
+        assertEquals("[1, 2, 3]\n", ok("""
+                const C = [1, 2]
+                C.push(3)
+                print C
+                """));
+    }
+
+    @Test
+    void constIsScopedToItsBlock() {
+        // The inner `const` is a fresh binding; the outer one is untouched and still
+        // rejects assignment afterwards.
+        assertEquals("1\n2\n", ok("""
+                const OUTER = 1
+                print OUTER
+                if true
+                  const INNER = 2
+                  print INNER
+                end
+                """));
+        fails("""
+                const N = 1
+                if true
+                  N = 2
+                end
+                """, "cannot change 'N'");
+    }
+
+    @Test
+    void constRejectsCompoundAssignment() {
+        fails("""
+                const N = 1
+                N += 1
+                """, "cannot change 'N'");
+    }
+
+    @Test
+    void loopVariableExplainsWhyItCannotBeChanged() {
+        fails("""
+                for i in [1, 2]
+                  i = 5
+                end
+                """, "the loop variable");
+    }
+
+    @Test
+    void constIsReadableFromAFunctionBody() {
+        assertEquals("6\n", ok("""
+                const K = 5
+                fun bumped()
+                  return K + 1
+                end
+                print bumped()
+                """));
+    }
+
+    @Test
+    void constRejectsReassignmentFromAFunctionBody() {
+        // The refusal has to follow the binding into a closure, not just the block that
+        // declared it, or a function could defeat `const` by assigning through the parent scope.
+        fails("""
+                const K = 5
+                fun clobber()
+                  K = 6
+                end
+                clobber()
+                """, "cannot change 'K'");
+    }
+
+    @Test
+    void lambdaCapturesConstByReference() {
+        assertEquals("7\n", ok("""
+                const K = 3
+                f = x -> x + K
+                print f(4)
+                """));
+    }
+
+    @Test
+    void plainAssignmentStillCreatesAndUpdatesVariables() {
+        assertEquals("1\n2\n", ok("""
+                x = 1
+                print x
+                x = 2
+                print x
+                """));
+    }
 }

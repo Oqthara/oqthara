@@ -203,7 +203,16 @@ public final class Interpreter implements OqHost {
     public void execute(Ast.Stmt stmt, Env env) {
         tick(stmt.span());
         switch (stmt) {
-            case Ast.VarDecl decl -> env.define(decl.name(), evaluate(decl.value(), env), decl.mutable());
+            case Ast.VarDecl decl -> {
+                Object value = evaluate(decl.value(), env);
+                if (decl.mutable()) {
+                    env.define(decl.name(), value, true);
+                } else {
+                    env.defineFixed(decl.name(), value, "a 'const' binding",
+                            "A constant keeps its first value; use a different name,"
+                                    + " or declare it with an ordinary assignment.");
+                }
+            }
             case Ast.Assign assign -> env.assignOrDefine(assign.name(), evaluate(assign.value(), env), assign.span());
             case Ast.CompoundAssign assign -> {
                 Object current = env.get(assign.name(), assign.span());
@@ -243,7 +252,8 @@ public final class Interpreter implements OqHost {
                 for (Object item : Values.iterable(iterable, loop.span())) {
                     tick(loop.span());
                     Env local = new Env(env);
-                    local.defineConst(loop.name(), item);
+                    local.defineFixed(loop.name(), item, "the loop variable of this 'for'",
+                            "Use a different name if you need to modify it.");
                     try {
                         executeBlock(loop.body(), local);
                     } catch (BreakSignal ignored) {
@@ -261,7 +271,8 @@ public final class Interpreter implements OqHost {
                 for (long i = from; step > 0 ? i <= end : i >= end; i += step) {
                     tick(loop.span());
                     Env local = new Env(env);
-                    local.defineConst(loop.name(), i);
+                    local.defineFixed(loop.name(), i, "the loop variable of this 'for'",
+                            "Use a different name if you need to modify it.");
                     try {
                         executeBlock(loop.body(), local);
                     } catch (BreakSignal ignored) {
@@ -326,7 +337,9 @@ public final class Interpreter implements OqHost {
                     executeBlock(attempt.body(), new Env(env));
                 } catch (OqError error) {
                     Env local = new Env(env);
-                    local.defineConst(attempt.errorName(), error.toValue());
+                    local.defineFixed(attempt.errorName(), error.toValue(),
+                            "the caught error of this 'try'",
+                            "Use a different name if you need to modify it.");
                     executeBlock(attempt.handler(), local);
                 }
             }

@@ -1071,6 +1071,30 @@ class BytecodeCompilerTest {
         assertTrue(reason.contains("fixed"), reason);
     }
 
+    @Test
+    void constCompilesAndMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        String source = """
+                const MAX = 100
+                print MAX
+                print MAX + 1
+                """;
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(),
+                compileAndRun(source, dir));
+    }
+
+    @Test
+    void reassigningAConstDoesNotCompile() {
+        // The interpreter refuses this at run time by throwing; compiled code must refuse it at
+        // build time rather than quietly permitting the write.
+        dev.oqthara.compiler.Ir.Program program = ir("""
+                const MAX = 100
+                MAX = 200
+                """);
+        String reason = BytecodeCompiler.whyNot(program);
+        assertNotNull(reason, "assigning to a const must not compile");
+        assertTrue(reason.contains("MAX"), reason);
+    }
+
     private record ProcessResult(int exit, String stdout, String stderr) {
     }
 

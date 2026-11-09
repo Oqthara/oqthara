@@ -7,7 +7,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class Env {
-    private record Binding(Object value, boolean mutable, boolean shadowable) {
+    private record Binding(Object value, boolean mutable, boolean shadowable, String fixedBy,
+            String hint) {
     }
 
     private final Env parent;
@@ -26,15 +27,21 @@ public final class Env {
     }
 
     public void define(String name, Object value, boolean mutable) {
-        values.put(name, new Binding(value, mutable, false));
+        values.put(name, new Binding(value, mutable, false, null, null));
     }
 
-    public void defineConst(String name, Object value) {
-        define(name, value, false);
+    /**
+     * Declares a binding that cannot be reassigned. Loop variables, caught errors and
+     * {@code const} all fix a name, but for different reasons, so the reason and the recovery
+     * advice are supplied by the caller that knows which one applies.
+     */
+    public void defineFixed(String name, Object value, String fixedBy, String hint) {
+        values.put(name, new Binding(value, false, false, fixedBy, hint));
     }
 
     public void defineBuiltin(String name, Object value) {
-        values.put(name, new Binding(value, false, true));
+        values.put(name, new Binding(value, false, true, "a built-in",
+                "Use a different name."));
     }
 
     public boolean hasLocal(String name) {
@@ -66,10 +73,13 @@ public final class Env {
         Binding binding = values.get(name);
         if (binding != null) {
             if (!binding.mutable()) {
-                throw new OqError("'" + name + "' cannot be changed", span,
-                        "It is a fixed value in this scope.");
+                String reason = binding.fixedBy() != null
+                        ? "It is " + binding.fixedBy() + "."
+                        : "It is read-only here.";
+                throw new OqError("cannot change '" + name + "'", span,
+                        binding.hint() == null ? reason : reason + " " + binding.hint());
             }
-            values.put(name, new Binding(value, true, false));
+            values.put(name, new Binding(value, true, false, null, null));
             return;
         }
         if (parent != null) {
@@ -88,13 +98,13 @@ public final class Env {
     public void assignOrDefine(String name, Object value, Span span) {
         Binding existing = find(name);
         if (existing == null || existing.shadowable()) {
-            values.put(name, new Binding(value, true, false));
+            values.put(name, new Binding(value, true, false, null, null));
             return;
         }
         set(name, value, span);
     }
 
     public void assignLocal(String name, Object value) {
-        values.put(name, new Binding(value, true, false));
+        values.put(name, new Binding(value, true, false, null, null));
     }
 }
