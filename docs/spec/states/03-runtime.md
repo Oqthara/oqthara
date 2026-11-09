@@ -183,7 +183,7 @@ is ever compiled, this reasoning expires and the slot must become a `ThreadLocal
 | `M7` | An unawaited task does not delay or affect process exit. |
 | `M8` | A Java value's Oq type is decided by `instanceof`, not by a conversion pass. |
 | `M9` | A JDK refusal surfaces as an `OqError`, never as an internal error. |
-| `M10` | The output, waiting and step budgets are separate, reset per program, and shared by both backends. |
+| `M10` | The output and waiting budgets are separate, reset per program, and shared by both backends. The step budget and the recursion depth ceiling exist only in the interpreter; a compiled jar has neither (`U6`, `U7`). |
 | `M11` | Only an `OqError` exits 1 with a source position; only a non-`OqError` `RuntimeException` exits 70. |
 | `M12` | `StackOverflowError` and `OutOfMemoryError` are reported as program failures and exit 1. |
 | `M13` | The step and output budgets are shared by every thread a program runs, but the recursion depth counter is not thread-safe: concurrent tasks corrupt it. |

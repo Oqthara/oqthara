@@ -212,6 +212,12 @@
       "slug": "docs/spec/states/03-runtime"
     },
     {
+      "path": "docs/spec/states/04-unified.md",
+      "title": "7.4 Unified model and cross-backend contract",
+      "section": "spec",
+      "slug": "docs/spec/states/04-unified"
+    },
+    {
       "path": "docs/stdlib/reference.md",
       "title": "Standard library reference",
       "section": "stdlib",

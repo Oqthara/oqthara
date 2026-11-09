@@ -124,7 +124,7 @@ it is a defect, not a state.
 | `L9` | Block depth never exceeds 800, so recursion fails with a diagnostic instead of a `StackOverflowError`. | `T16` |
 | `L10` | A failed task's error is catchable at `await` and the task is still reported done. | `T34`, `T36` |
 | `L11` | The value of a block is the value of its final expression statement, or `nothing`. | `T22`, spec §Blocks |
-| `L12` | Both backends produce identical values, stdout and diagnostics for the same program. | §7.4 |
+| `L12` | Both backends agree on values, stdout, message text, hint and exit status. The compiled jar omits the source excerpt, which it does not carry (`U4`). | §7.4, `U4` |
 
 ## Invalid transitions
 

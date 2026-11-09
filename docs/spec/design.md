@@ -104,15 +104,18 @@ to a launcher that interprets the embedded source when the compiler refuses a co
 (the reason is printed as `codepath: interpreter launcher (<reason>)`). Both paths must
 pass the same conformance suite: `conformance/` is the contract between them.
 
-The state models for each path are in `docs/spec/states/`. `01-language.md` covers the
-interpreter's language states and `02-compiler.md` covers the build pipeline.
+The state models are in `docs/spec/states/`. `01-language.md` covers the interpreter's language
+states, `02-compiler.md` covers the build pipeline, `03-runtime.md` covers a running program and
+`04-unified.md` states the contract between the two execution paths, including the four places
+where they are allowed to differ.
 
 ## Error philosophy
 
 An error message is a product surface. It must answer three questions:
 
 1. **What went wrong?** `index 5 is out of range for a list of length 3`
-2. **Where?** file, line, column, source line, caret.
+2. **Where?** file, line, column, source line, caret. A compiled jar carries no program text,
+   so it gives the position without the quoted line (`04-unified.md`, `U4`).
 3. **What do I do now?** `Valid indexes are 0 to 2, or negative from the end.`
 
 Internal errors are prefixed with `internal error:` and say that it is a bug in
