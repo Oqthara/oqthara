@@ -119,7 +119,7 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("is_number", 1, (host, args, span) -> Values.isNumber(args.get(0))));
         interpreter.defineBuiltin(NativeFunction.of("is_text", 1, (host, args, span) -> args.get(0) instanceof String));
         interpreter.defineBuiltin(NativeFunction.of("length", 1, (host, args, span) ->
-                (long) Values.size(args.get(0), span)));
+                Values.length(args.get(0), span)));
         interpreter.defineBuiltin(NativeFunction.of("range", 1, (host, args, span) -> {
             long n = wholeNumber(args.get(0), "range", span);
             return new OqRange(0, Math.max(0, n), false);

@@ -210,4 +210,25 @@ class ValuesTest {
         assertEquals("\"x\"", Values.repr("x"));
         assertEquals("nothing", Values.repr(null));
     }
+
+    @Test
+    void arangeLongerThanIntStillCountsCorrectly() {
+        // Every number in Oqthara is 64-bit, so length() of a three-billion-element range must
+        // report three billion. size() narrowed the range count to int and wrapped: length(0 to
+        // 3000000000) printed -1294967295. length() now counts a range in long.
+        assertEquals(3_000_000_001L, Values.length(new OqRange(0, 3_000_000_000L, true), span));
+        assertEquals(3_000_000_000L, Values.length(new OqRange(0, 3_000_000_000L, false), span));
+        // The shapes that were already correct keep their answer.
+        assertEquals(5L, Values.length("hello", span));
+        assertEquals(3L, Values.length(List.of(1L, 2L, 3L), span));
+        assertEquals(1L, Values.length(new OqRange(1, 1, true), span));
+        // size() keeps its int signature for compatibility, and stays exact for a range that fits.
+        assertEquals(11, Values.size(new OqRange(0, 10, true), span));
+    }
+
+    @Test
+    void lengthOfAnUnsupportedShapeStillFails() {
+        OqError error = assertThrows(OqError.class, () -> Values.length(5L, span));
+        assertTrue(error.getMessage().contains("length() needs"), error.getMessage());
+    }
 }
