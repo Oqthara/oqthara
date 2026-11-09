@@ -352,8 +352,10 @@ def contract_register_is_complete() -> None:
     missing: list[str] = []
     undocumented: list[str] = []
     for number, _, _, enforced in rows:
-        for target in re.findall(r"\]\(([a-z0-9/._-]+\.md)\)", register.split(f"| {number} |", 1)[1].split("\n", 1)[0]):
-            if not (ROOT / "docs" / "spec" / target).exists() and not (ROOT / "docs" / target).exists():
+        row = register.split(f"| {number} |", 1)[1].split("\n", 1)[0]
+        for target in re.findall(r"\]\(([a-z0-9/._-]+\.md)\)", row):
+            # Links are relative to the register's own directory, as markdown requires.
+            if not (ROOT / "docs" / "spec" / target).resolve().exists():
                 missing.append(target)
         if enforced.strip() == "nothing":
             undocumented.append(number)

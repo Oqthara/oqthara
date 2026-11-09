@@ -17,21 +17,21 @@ implemented, `0.x` means implemented but not yet reconciled against the other co
 
 | # | Area | Contract | Version | Enforced by |
 |---|---|---|---|---|
-| 1 | Type and value representation | [ADR-0007](adr/0007-boxed-values.md), [ADR-0015](adr/0015-type-families.md), §7.3 `M1`, `M2`, `M8` | `1` | `ValuesTest`, `ImmutableRefusalTest` |
-| 2 | Bindings, scopes, `const`, assignment | [ADR-0013](adr/0013-destructuring.md), §7.3 `E7`–`E11`, `language.md` §Variables | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
-| 3 | Function signatures and overload selection | [ADR-0012](adr/0012-overload-resolution.md) | `1` | `LanguageFeatureTest` overload cases |
-| 4 | Collection protocols and iteration | [ADR-0016](adr/0016-iteration-snapshots.md), §7.3 `M4` | `0.5` | `ValuesTest`, `ConcurrencyTest` |
-| 5 | Destructuring and unpacking | [ADR-0013](adr/0013-destructuring.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
-| 6 | Expression-oriented `try` | [ADR-0014](adr/0014-try-as-an-expression.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
+| 1 | Type and value representation | [ADR-0007](../adr/0007-boxed-values.md), [ADR-0015](../adr/0015-type-families.md), §7.3 `M1`, `M2`, `M8` | `1` | `ValuesTest`, `ImmutableRefusalTest` |
+| 2 | Bindings, scopes, `const`, assignment | [ADR-0013](../adr/0013-destructuring.md), §7.3 `E7`–`E11`, `language.md` §Variables | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
+| 3 | Function signatures and overload selection | [ADR-0012](../adr/0012-overload-resolution.md) | `1` | `LanguageFeatureTest` overload cases |
+| 4 | Collection protocols and iteration | [ADR-0016](../adr/0016-iteration-snapshots.md), §7.3 `M4` | `0.5` | `ValuesTest`, `ConcurrencyTest` |
+| 5 | Destructuring and unpacking | [ADR-0013](../adr/0013-destructuring.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
+| 6 | Expression-oriented `try` | [ADR-0014](../adr/0014-try-as-an-expression.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 7 | `class`, interface and `data` behaviour | `language.md` §Data types only | `0.5` | `LanguageFeatureTest` |
 | 8 | Modules, imports and initialization | — | `—` | nothing |
-| 9 | JavaBridge and host conversion | [ADR-0007](adr/0007-boxed-values.md) partly, §7.3 `M8`, `M9` | `0.5` | `ImmutableRefusalTest` |
-| 10 | Exception taxonomy and error messages | [ADR-0005](adr/0005-errors.md), §7.3 `M11`, `M12`, §7.4 `U2`, `U3` | `1` | `ErrorMessageContractTest`, `BuildJarTest` |
+| 9 | JavaBridge and host conversion | [ADR-0007](../adr/0007-boxed-values.md) partly, §7.3 `M8`, `M9` | `0.5` | `ImmutableRefusalTest` |
+| 10 | Exception taxonomy and error messages | [ADR-0005](../adr/0005-errors.md), §7.3 `M11`, `M12`, §7.4 `U2`, `U3` | `1` | `ErrorMessageContractTest`, `BuildJarTest` |
 | 11 | Concurrency, task lifecycle, cancellation | §7.3 `M5`–`M7`, `M13`, §7.4 `U9` | `0.5` | `ConcurrencyTest` |
-| 12 | Interpreter/bytecode semantic equivalence | §7.4 `U1`–`U9`, [ADR-0003](adr/0003-bytecode.md) | `1` | `verify-conformance.py`, `BuildJarTest` |
+| 12 | Interpreter/bytecode semantic equivalence | §7.4 `U1`–`U9`, [ADR-0003](../adr/0003-bytecode.md) | `1` | `verify-conformance.py`, `BuildJarTest` |
 | 13 | Docstring metadata and generated documentation | — | `—` | nothing |
 | 14 | Stdlib API registration and documentation | `oq doc`, `docs/stdlib/reference.md` | `1` | `check-docs-sync.py` |
-| 15 | Runtime packaging and classloader behaviour | [ADR-0006](adr/0006-classfile-writer.md), `backend.md` | `1` | `BuildJarTest` |
+| 15 | Runtime packaging and classloader behaviour | [ADR-0006](../adr/0006-classfile-writer.md), `backend.md` | `1` | `BuildJarTest` |
 
 `check-docs-sync.py` asserts that every document named in this table exists, so a contract cannot
 be deleted without this page noticing.
