@@ -470,12 +470,12 @@ public final class Values {
         throw new OqError("index must be a number, got " + typeName(key), span);
     }
 
-    public static int size(Object value, Span span) {
+    public static long size(Object value, Span span) {
         if (value instanceof String s) return s.length();
         if (value instanceof List<?> l) return l.size();
         if (value instanceof Map<?, ?> m) return m.size();
         if (value instanceof Set<?> s) return s.size();
-        if (value instanceof OqRange r) return (int) r.size();
+        if (value instanceof OqRange r) return r.size();
         throw new OqError("length() needs text, list, map, set or range, got " + typeName(value), span);
     }
 
