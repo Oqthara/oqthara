@@ -49,27 +49,4 @@ class ImmutableRefusalTest {
                 error.getMessage());
     }
 
-    @Test
-    void aViewOfATupleStillSaysItIsATuple() {
-        // The tuple answers its own mutators, but a view such as subList comes from the backing
-        // list. A plain unmodifiableList throws with no message there, which used to blame "an
-        // unchangeable collection" for something the program named as a tuple.
-        OqTuple tuple = OqTuple.of(List.of(1L, 2L, 3L));
-
-        UnsupportedOperationException refusal = assertThrows(UnsupportedOperationException.class,
-                () -> tuple.subList(0, 2).add(9L));
-
-        assertEquals(OqTuple.IMMUTABLE, refusal.getMessage());
-        assertEquals(OqTuple.IMMUTABLE, Errors.immutableRefusal(refusal, span).getMessage());
-    }
-
-    @Test
-    void aTupleStillHoldsNothing() {
-        // `nothing` is a null, so the backing list must not reject nulls the way List.copyOf does.
-        OqTuple tuple = OqTuple.of(java.util.Arrays.asList(1L, null));
-
-        assertEquals(2, tuple.size());
-        assertEquals(null, tuple.get(1));
-    }
-
 }

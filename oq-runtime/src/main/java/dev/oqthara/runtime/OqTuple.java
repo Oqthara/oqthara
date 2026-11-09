@@ -20,49 +20,7 @@ public final class OqTuple extends AbstractList<Object> implements RandomAccess 
     public OqTuple(List<Object> items) {
         // Deliberately not `List.copyOf`: it rejects nulls, and `nothing` is represented as
         // null, so a tuple holding `nothing` would crash instead of printing `(nothing,)`.
-        this.items = new ImmutableItems(items);
-    }
-
-    /**
-     * The backing list, refusing writes with the tuple wording.
-     *
-     * <p>A plain {@code unmodifiableList} throws with a null message, so a view of the tuple —
-     * {@code OqTuple} itself answers its own mutators, but {@code subList} and other views come
-     * from this list — blamed "an unchangeable collection" instead of naming the tuple. Keeping
-     * the wording here means every view reports the same thing the tuple does.
-     */
-    private static final class ImmutableItems extends java.util.AbstractList<Object> {
-        private final List<Object> source;
-
-        ImmutableItems(List<Object> source) {
-            // Not `List.copyOf` here: it rejects nulls and `nothing` is a null.
-            this.source = java.util.Collections.unmodifiableList(new java.util.ArrayList<>(source));
-        }
-
-        @Override
-        public Object get(int index) {
-            return source.get(index);
-        }
-
-        @Override
-        public int size() {
-            return source.size();
-        }
-
-        @Override
-        public Object set(int index, Object element) {
-            throw new UnsupportedOperationException(IMMUTABLE);
-        }
-
-        @Override
-        public void add(int index, Object element) {
-            throw new UnsupportedOperationException(IMMUTABLE);
-        }
-
-        @Override
-        public Object remove(int index) {
-            throw new UnsupportedOperationException(IMMUTABLE);
-        }
+        this.items = java.util.Collections.unmodifiableList(new java.util.ArrayList<>(items));
     }
 
     public static OqTuple of(List<Object> items) {
