@@ -47,6 +47,7 @@ permissions:
 # release both get announced; cancelling the older run would drop an announcement entirely.
 concurrency:
   group: site-content-dispatch
+  queue: max
   cancel-in-progress: false
 
 jobs:
