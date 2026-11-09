@@ -62,7 +62,7 @@ public final class Collections {
     }
 
     public static Object length(Object value) {
-        return (long) Values.size(value, Errors.current());
+        return Values.size(value, Errors.current());
     }
 
     /**
