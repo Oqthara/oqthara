@@ -99,12 +99,12 @@ jobs:
       # Releases created with GITHUB_TOKEN do not trigger a second release-event workflow.
       # Notify the website directly with the PAT scoped to the destination repository.
       - name: Set up Node for website notification
-        if: contains(github.ref_name, '-alpha')
+        if: contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc')
         uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Announce the published Alpha release to the website
-        if: contains(github.ref_name, '-alpha')
+        if: contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc')
         env:
           SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
           OQ_DISPATCH_EVENT_NAME: release

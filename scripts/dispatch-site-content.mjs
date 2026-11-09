@@ -20,6 +20,7 @@ const EVENT_TYPE_CONTENT = "content-updated";
 const EVENT_TYPE_RELEASE = "alpha-release-published";
 
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 /** The token, or an error that names the exact missing configuration. */
 function readToken(env) {
@@ -249,17 +250,15 @@ function readReleaseFromEvent() {
 }
 
 // Importable for tests; runs as a script otherwise.
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
-  // `--self-test` runs the decision matrix and exits, so the workflow can verify the logic that
-  // decides whether to announce anything before a token is ever read.
-  if (process.argv.includes("--self-test")) {
-    process.exit(selfTest());
-  }
-  main().then(
-    (code) => process.exit(code),
-    (error) => {
-      console.error(`::error::${error.message}`);
-      process.exit(1);
-    },
-  );
-}
+pathToFileURL(process.argv[1] ?? "").href === import.meta.url
+  && (process.argv.includes("--self-test")
+    // `--self-test` runs the decision matrix and exits, so the workflow can verify the logic that
+    // decides whether to announce anything before a token is ever read.
+    ? process.exit(selfTest())
+    : main().then(
+      (code) => process.exit(code),
+      (error) => {
+        console.error(`::error::${error.message}`);
+        process.exit(1);
+      },
+    ));
