@@ -89,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a copy, clamped to the sequence and keeping their type, so `t.subList(0, 2)` is a tuple and
   every mutator on it refuses with `a tuple is immutable`.
 
+- Mutating an immutable Java list returned by factories such as `List.of(...)` now reports
+  `cannot modify this list` with a language-level diagnostic instead of escaping as an
+  unhandled `UnsupportedOperationException`.
+
 ### Documentation
 
 - `run_command` is documented as taking one executable path with no arguments and no shell,
