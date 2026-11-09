@@ -86,6 +86,12 @@
       "slug": "docs/adr/0013-destructuring"
     },
     {
+      "path": "docs/adr/0014-try-as-an-expression.md",
+      "title": "0014 — `try` produces a value",
+      "section": "adr",
+      "slug": "docs/adr/0014-try-as-an-expression"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

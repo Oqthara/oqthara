@@ -424,6 +424,57 @@ public final class Interpreter implements OqHost {
                 "Check the package name, for example: use java.time.LocalDate");
     }
 
+    /**
+     * The value of a {@code try} expression: the value of the last statement of the branch that
+     * ran, when that statement is an expression; {@code nothing} otherwise (ADR-0014).
+     *
+     * <p>Only the final statement's value is taken. An assignment or declaration is a statement,
+     * not an expression, so a branch ending in one produces {@code nothing} rather than leaking
+     * its right-hand side.
+     */
+    private Object evaluateTryExpr(Ast.TryExpr attempt, Env env) {
+        try {
+            return blockValue(attempt.body(), new Env(env));
+        } catch (OqError error) {
+            Env local = new Env(env);
+            local.defineFixed(attempt.errorName(), error.toValue(), "the caught error of this 'try'",
+                    "Use a different name if you need to modify it.");
+            return blockValue(attempt.handler(), local);
+        }
+    }
+
+    /**
+     * Runs a block and returns the value of its final expression statement, or {@code null}.
+     *
+     * <p>Unlike a split into "everything but the last" plus "the last", the whole block is
+     * hoisted first, so a function declared at the end is still visible to the statements
+     * before it and a recursive function can call itself.
+     */
+    private Object blockValue(List<Ast.Stmt> statements, Env env) {
+        depth++;
+        if (depth > maxDepth) {
+            depth--;
+            throw new OqError("call stack is too deep", Span.synthetic(),
+                    "This usually means an infinite recursion. Check that the function eventually stops calling itself.");
+        }
+        try {
+            hoist(statements, env);
+            int last = statements.size() - 1;
+            for (int i = 0; i < last; i++) {
+                execute(statements.get(i), env);
+            }
+            if (last < 0) return null;
+            Ast.Stmt finalStatement = statements.get(last);
+            if (finalStatement instanceof Ast.ExprStmt exprStmt) {
+                return evaluate(exprStmt.expr(), env);
+            }
+            execute(finalStatement, env);
+            return null;
+        } finally {
+            depth--;
+        }
+    }
+
     public Object evaluate(Ast.Expr expr, Env env) {
         tick(expr.span());
         return switch (expr) {
@@ -494,6 +545,7 @@ public final class Interpreter implements OqHost {
                     lambda.body() != null
                             ? List.of(new Ast.Return(lambda.body(), lambda.span()))
                             : lambda.blockBody(), env);
+            case Ast.TryExpr attempt -> evaluateTryExpr(attempt, env);
             case Ast.InExpr in -> Values.contains(evaluate(in.container(), env),
                     evaluate(in.item(), env), in.span());
             case Ast.RangeExpr range -> {

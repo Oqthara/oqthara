@@ -685,4 +685,96 @@ class LanguageFeatureTest {
                 print x
                 """));
     }
+
+    @Test
+    void aTryExpressionTakesTheValueOfTheBranchThatRan() {
+        assertEquals("2\ncaught\n", ok("""
+                items = [1]
+                a = try
+                  1 + 1
+                catch e
+                  0
+                end
+                print a
+                b = try
+                  items[9]
+                catch e
+                  "caught"
+                end
+                print b
+                """));
+    }
+
+    @Test
+    void aTryExpressionWhoseBranchDoesNotEndInAnExpressionIsNothing() {
+        // ADR-0014: the value is the branch's final expression statement, not any
+        // earlier one. A branch ending in a declaration has no value.
+        assertEquals("nothing\nnothing\n", ok("""
+                a = try
+                  x = 1
+                catch e
+                  0
+                end
+                print a
+                b = try
+                  y = 1
+                catch e
+                  z = 2
+                end
+                print b
+                """));
+    }
+
+    @Test
+    void aTryExpressionIsUsableWhereverAnExpressionIs() {
+        assertEquals("14\n", ok("""
+                print (try
+                  7
+                catch e
+                  8
+                end) * 2
+                """));
+    }
+
+    @Test
+    void aTryExpressionNests() {
+        // A `try` at the start of a statement is the statement form, exactly as a bare
+        // `if` is; the nested one needs parentheses to be an expression.
+        assertEquals("inner\ndeep\n", ok("""
+                items = [1]
+                n = try
+                  items[9]
+                catch outer
+                  (try
+                    items[8]
+                  catch inner
+                    "inner"
+                  end)
+                end
+                print n
+                m = try
+                  items[9]
+                catch outer
+                  v = try
+                    items[8]
+                  catch inner
+                    "deep"
+                  end
+                  v
+                end
+                print m
+                """));
+    }
+
+    @Test
+    void aTryExpressionBindsTheCaughtError() {
+        assertEquals("'nope' is not defined\n", ok("""
+                n = try
+                  nope
+                catch err
+                  err["message"]
+                end
+                print n
+                """).strip() + "\n");
+    }
 }

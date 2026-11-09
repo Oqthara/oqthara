@@ -269,6 +269,117 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void aTryExpressionProducesTheSameValueInBothCodepaths(@TempDir Path dir) throws Exception {
+        String source = """
+                items = [1, 2]
+                a = try
+                  1 + 1
+                catch e
+                  0
+                end
+                print a
+                b = try
+                  items[9]
+                catch e
+                  "caught"
+                end
+                print b
+                c = try
+                  "fine"
+                catch e
+                  "unused"
+                end
+                print c
+                """;
+        assertEquals("2\ncaught\nfine\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void aTryExpressionBranchWithoutAValueIsNothingInBothCodepaths(@TempDir Path dir)
+            throws Exception {
+        // The declared temporary starts as `nothing`, and a branch whose final statement is
+        // not an expression leaves it that way (ADR-0014).
+        String source = """
+                items = [1]
+                a = try
+                  x = 1
+                catch e
+                  0
+                end
+                print a
+                b = try
+                  items[9]
+                catch e
+                  y = 2
+                end
+                print b
+                """;
+        assertEquals("nothing\nnothing\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void aTryExpressionInsideAnotherExpressionIsStillCompiled(@TempDir Path dir) throws Exception {
+        // Ir.TryStart requires an empty operand stack. A `try` nested in a composite
+        // expression would otherwise find the earlier operand on the stack, so the lowerer
+        // spools operands into locals first; the program must compile, not fall back.
+        String source = """
+                items = [1]
+                total = 0
+                for n in [1, 2, 3]
+                  total = total + (try
+                    items[9]
+                  catch e
+                    n
+                  end)
+                end
+                print total
+                print [(try
+                  items[9]
+                catch e
+                  "a"
+                end), (try
+                  items[9]
+                catch e
+                  "b"
+                end)]
+                print "x" + (try
+                  items[9]
+                catch e
+                  "c"
+                end)
+                print -(try
+                  items[9]
+                catch e
+                  4
+                end)
+                """;
+        assertEquals("6\n[\"a\", \"b\"]\nxc\n-4\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void spoolingDoesNotReorderOrDuplicateOperands(@TempDir Path dir) throws Exception {
+        // Each operand is evaluated once, in source order, even when the spool path runs.
+        String source = """
+                items = [1]
+                print 1 + 2 * 3
+                print (1 + 2) * 3
+                print [1, 2, 3]
+                print {1, 2}
+                print {"a": 1, "b": 2}
+                print (1, "a", true)
+                print 3 in [1, 2, 3]
+                print "abc".length()
+                print (try
+                  items[9]
+                catch e
+                  5
+                end) + 6
+                """;
+        assertEquals("7\n9\n[1, 2, 3]\n{1, 2}\n{\"a\": 1, \"b\": 2}\n(1, \"a\", true)\n"
+                + "true\n3\n11\n", compileAndRun(source, dir));
+    }
+
+    @Test
     void onlyOqErrorsAreCaughtByCompiledHandlers(@TempDir Path dir) throws Exception {
         // The interpreter's `try` catches OqError and nothing else, so the generated
         // exception table names that class alone instead of RuntimeException.
