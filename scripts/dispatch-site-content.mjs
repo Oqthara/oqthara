@@ -61,10 +61,11 @@ export function chooseDispatch({ eventName, ref, release }) {
   }
 
   if (eventName === "release") {
-    // A draft or prerelease is not a published manual, and the site's channel selector reads
-    // published releases only. Announcing one would make the site re-read and find nothing new.
+    // A draft is not published, so the site cannot see it and announcing one would make it
+    // re-read and find nothing new. A prerelease is different: the site's channel selector skips
+    // drafts only and mirrors prereleases by design, which is why every Oqthara alpha release is
+    // published as a prerelease and still has to be announced.
     if (release?.draft) return { send: false, reason: "the release is a draft" };
-    if (release?.prerelease) return { send: false, reason: "the release is a prerelease" };
     const tag = String(release?.tag_name ?? "").trim();
     if (!tag) return { send: false, reason: "the release has no tag" };
     return {
@@ -93,7 +94,7 @@ export function selfTest() {
     [{ eventName: "push", ref: "refs/tags/v1.0.0" }, false, "a tag push is not a main update"],
     [{ eventName: "release", release: { tag_name: "v1.0.0" } }, true, "a published release announces a channel"],
     [{ eventName: "release", release: { tag_name: "v1.0.0", draft: true } }, false, "a draft is not published"],
-    [{ eventName: "release", release: { tag_name: "v1.0.0", prerelease: true } }, false, "a prerelease is not a manual"],
+    [{ eventName: "release", release: { tag_name: "v1.0.0", prerelease: true } }, true, "a prerelease is announced because the site mirrors prereleases"],
     [{ eventName: "release", release: {} }, false, "a release without a tag announces nothing"],
     [{ eventName: "workflow_dispatch" }, false, "a manual run announces nothing"],
     [{}, false, "an unknown event announces nothing"],

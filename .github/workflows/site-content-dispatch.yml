@@ -35,8 +35,9 @@ on:
     branches: [main]
   release:
     # `published` fires for a release that was just published, which is the event the site's
-    # channel selector cares about. Drafts and prereleases reach this workflow too, and the
-    # script filters them out.
+    # channel selector cares about. Drafts reach this workflow too and the script filters them
+    # out, because a draft is not public. Prereleases are announced: every Oqthara alpha is
+    # published as a prerelease and the site mirrors them.
     types: [published]
 
 permissions:
