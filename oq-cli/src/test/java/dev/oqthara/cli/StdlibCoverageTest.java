@@ -350,6 +350,7 @@ class StdlibCoverageTest {
         assertEquals("0\n", ok("print (5 until 5).size()"));
         assertEquals("1\n", ok("print (5 to 5).size()"));
         assertEquals("[1, 2, 3]\n", ok("print (1 to 3).toList()"));
+        assertEquals("3000000001\n", ok("print length(0 to 3000000000)"));
     }
 
     @Test
