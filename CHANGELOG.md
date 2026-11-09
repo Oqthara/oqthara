@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Changing a collection while looping over it is well defined.** A loop now walks a snapshot
+  of the collection taken when it started, so the body may `add`, `remove` or `remove_value` on
+  the very collection it is visiting. This used to be a fatal bug: `for x in xs` followed by
+  `xs.add(9)` reached `java.util`'s fail-fast check and died on exit code 70 with
+  `internal error: ConcurrentModificationException ... This is a bug in Oqthara`, which no `try`
+  could catch. The collection methods that take a callback (`map`, `filter`, `each`, `any`,
+  `all`, `find`, `find_index`, `reduce`, `flatten`, and the map versions of `each` and `map`)
+  snapshot the receiver too. Ranges and text behaved this way already.
+  See [ADR-0016](docs/adr/0016-iteration-snapshots.md).
+
 
 - **`try` as an expression.** `try ... catch ... end` may now be used wherever a value is
   expected, not only as a statement: `n = try / number(text) / catch err / 0 / end`. The value is
@@ -37,8 +47,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tuple literal on the left and is rejected. The rule is specified in
   [ADR-0013](docs/adr/0013-destructuring.md).
 
+### Documentation
+
+- **Three formal state-machine models of the language, the compiler and the runtime, and the
+  contract that binds them**, under `docs/spec/states/`. `01-language.md` models execution — states `S0`–`SX`, transitions
+  `T1`–`T38`, invariants `L1`–`L12` — covering evaluation, binding and scope, control flow, error
+  propagation and termination. `02-compiler.md` models `oq build` — states `S0 Accept`–`SX
+  Rejected`, transitions `C1`–`C39` across the front end, middle end, back end and artifact
+  stages, invariants `K1`–`K13`. `03-runtime.md` models a running program — states `R0 Cold`–`R10
+  Shutdown` plus `RX Failed`, transitions `E1`–`E47` across values, collections, task lifecycle,
+  the host boundary, resource budgets and shutdown, invariants `M1`–`M13`. All three document the
+  states a program can reach, the moves between them, the properties that hold in every state, and
+  the invalid transitions with the exact diagnostic each produces. `04-unified.md` states the
+  cross-backend contract as `U1`–`U9` and the four measured divergences as `D1`–`D4`: which models
+  a compiled jar actually satisfies, and where the two execution paths are allowed to differ.
+  Every diagnostic quoted in any of them was measured against a running build, not inferred from
+  source.
+- `03-runtime.md` records five defects the model exposed, none of them fixed here. Container
+  equality does not widen numeric element types, so `[1] == [1.0]` is false while `1.0 in [1]` is
+  true and `set([1, 1.0])` holds two elements that both report as members. Objects from the
+  standard library that are not Oq values pass through the bridge unwrapped, so `LocalDate.now()`
+  reports its type as `java LocalDate` rather than as an Oq type. `spawn` allocates an executor per
+  call and never closes it. There is no way to cancel a task or to join one: an unawaited task is
+  silently abandoned when the program exits. And `Interpreter.depth` is a plain `int` shared by
+  every virtual thread, so two concurrent tasks interleave their increments and can report a stack
+  of depth two as `call stack is too deep` — a false diagnosis that tells the programmer to look
+  for infinite recursion that is not there.
+- **`04-unified.md` documents four divergences between the two execution paths** that the
+  specification previously denied by omission. A compiled jar cannot quote the offending source
+  line, because it does not carry the program text. It has no step budget and no recursion depth
+  ceiling, so `while true` compiled runs until the machine stops it. A task that fails and is
+  never awaited is discarded without a word. And no task can be cancelled or joined. `L12` and
+  `M10` in the other two documents were corrected to say what is true rather than what was
+  assumed.
+- **A register of the fifteen semantic and runtime contracts** the directive asks for, in
+  `docs/spec/contracts.md`, with the version each is at and the test that enforces it. Three areas
+  have no contract at all — modules and imports, docstring metadata, and `class` — and the
+  register says so rather than implying coverage that does not exist. `check-docs-sync.py` now
+  fails if the register loses a row or names a document that has been deleted.
+- **`docs/spec/design.md` was stale in four ways.** It listed 20 keywords when the lexer defines
+  21; it pointed at `STATUS.md`, a file that does not exist; it claimed the keyword list "is
+  checked by a test in `oq-core`", when no such test exists — the check lives in
+  `scripts/check-docs-sync.py`; and its architecture diagram described the bytecode backend as
+  future work that "will consume the same AST", when that backend has shipped and consumes the
+  intermediate representation instead. The diagram now shows both execution paths. A third
+  keyword check was added to `check-docs-sync.py` so `design.md`'s own count cannot drift again.
+- **`oq check` was documented as more than it does.** `docs/reference/cli.md` said it "parses and
+  checks a program", but `Main.check` only parses: `break` outside a loop, an undefined name and a
+  read of an undefined variable all print `OK` and exit 0. The page now says it is a syntax check
+  only and points at `oq run` for the rest. The gap itself is recorded as a defect in
+  `docs/spec/states/02-compiler.md` rather than papered over.
+- `docs/adr/0002-ci-split.md` no longer points at the removed `STATUS.md` and `RESUME.md`.
+
 ### Fixed
 
+- **A `const` can no longer be defeated by redeclaring it.** `const x = 1` followed by
+  `const x = 2` in the same scope used to replace the binding, so `x` printed `2` while any
+  further `x = ...` was still refused: the constant looked enforced and was not. Declaring a
+  name twice in one scope is now refused, on both backends, with
+  `'x' is already declared in this scope`. The same rule covers `const a, b = ...`, which
+  declares names too and used to bypass it; a refused destructuring still writes nothing.
+- **Three collection builtins no longer crash on a set.** `zip({1, 2}, {3, 4})`,
+  `random_item({1})` and `par_map({1, 2}, f)` cast the result of `Values.iterable` straight to
+  `List`, so any set argument threw `ClassCastException` and exited 70 with
+  `internal error ... This is a bug in Oqthara`. A list, a range and text happened to satisfy the
+  cast, which is why the defect survived: only the set path was ever wrong.
+- **A callback argument of the wrong type is now the program's error.** `[1, 2].reduce(0, f)` —
+  the arguments reversed, since the shape is `reduce(fn, start)` — cast `0` to `OqCallable` and
+  reported an internal error. It now says `'reduce' needs a function as argument 1` and suggests
+  `reduce(fn, start)`. The same applies to `sort`.
 - **The conformance verifier now gates CI and tells the truth.** `scripts/verify-conformance.py`
   pinned a stale corpus size (197 executable programs) and a floor (182 compiled) that sat ten
   programs below reality, so it failed on a healthy tree while a ten-program bytecode

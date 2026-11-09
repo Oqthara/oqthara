@@ -98,6 +98,12 @@
       "slug": "docs/adr/0015-type-families"
     },
     {
+      "path": "docs/adr/0016-iteration-snapshots.md",
+      "title": "0016 — Iteration walks a snapshot",
+      "section": "adr",
+      "slug": "docs/adr/0016-iteration-snapshots"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
@@ -170,6 +176,12 @@
       "slug": "docs/spec/backend"
     },
     {
+      "path": "docs/spec/contracts.md",
+      "title": "8 Semantic and runtime contracts",
+      "section": "spec",
+      "slug": "docs/spec/contracts"
+    },
+    {
       "path": "docs/spec/design.md",
       "title": "Oqthara design",
       "section": "spec",
@@ -186,6 +198,30 @@
       "title": "Oqthara language reference",
       "section": "spec",
       "slug": "docs/spec/language"
+    },
+    {
+      "path": "docs/spec/states/01-language.md",
+      "title": "7.1 Language state machine",
+      "section": "spec",
+      "slug": "docs/spec/states/01-language"
+    },
+    {
+      "path": "docs/spec/states/02-compiler.md",
+      "title": "7.2 Compiler state machine",
+      "section": "spec",
+      "slug": "docs/spec/states/02-compiler"
+    },
+    {
+      "path": "docs/spec/states/03-runtime.md",
+      "title": "7.3 Runtime state machine",
+      "section": "spec",
+      "slug": "docs/spec/states/03-runtime"
+    },
+    {
+      "path": "docs/spec/states/04-unified.md",
+      "title": "7.4 Unified model and cross-backend contract",
+      "section": "spec",
+      "slug": "docs/spec/states/04-unified"
     },
     {
       "path": "docs/stdlib/reference.md",

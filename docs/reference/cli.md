@@ -9,7 +9,12 @@ Runs a program.
 
 ## `oq check`
 
-Parses and checks a program without running it.
+Parses a program and reports syntax errors without running it.
+
+`oq check` is a **syntax** check only. It does not resolve names, bind variables, or
+verify that a program can run. A file containing `break` outside any loop, or a reference
+to a name that is never defined, prints `OK` and exits 0. Use `oq run` to find those
+errors.
 
 ## `oq repl`
 

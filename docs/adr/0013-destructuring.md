@@ -71,6 +71,10 @@ iteration is observable cannot interleave with the writes.
 - **`const`:** each target becomes an immutable binding, with the same diagnostic as a
   single `const` (`cannot change 'x'`, reason "a 'const' binding"). Mutability is per
   statement, not per target.
+- **Redeclaration:** a `const` target declares a name, so it obeys the rule a single
+  `const` obeys: the name must not already exist in the current scope. Every target is
+  checked before any is written, so `const a, b = (1, 2)` with `b` already declared
+  refuses and leaves `a` unbound.
 - **Assignment vs declaration:** `a, b = ...` follows the rule already used by `a = ...`:
   an existing mutable binding is updated; a name that is absent, or present only as a
   shadowable built-in, is defined. A `const` target therefore refuses with its own message

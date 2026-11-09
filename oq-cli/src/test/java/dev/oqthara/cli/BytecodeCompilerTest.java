@@ -564,6 +564,48 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {
+        for (String source : List.of(
+                "const x = 1\nconst x = 2\nprint x",
+                "x = 1\nconst x = 2\nprint x",
+                "const a = 1\nconst a, b = (2, 3)\nprint a",
+                "fun h(a)\n  const a = 2\n  return a\nend\nprint h(1)")) {
+            OqRunner.Result interpreted = OqRunner.run("<t>", source, List.of(), "", dir);
+            assertEquals(1, interpreted.code(), source);
+            // The duplicate declaration is refused by name, so the program is not compiled and
+            // runs on the interpreter instead of overwriting silently.
+            Path jar = dir.resolve("dup.jar");
+            JarBuilder.build(jar, "oq.generated.Program", source, "<t>");
+            ProcessResult compiled = runJarProcess(jar, dir);
+            assertEquals(1, compiled.exit(), source);
+            // The two runners frame a diagnostic differently, so compare the wording and the
+            // position rather than the surrounding layout.
+            String fragment = "already declared in this scope";
+            assertTrue(interpreted.stderr().contains(fragment), interpreted.stderr());
+            assertTrue(compiled.stderr().contains(fragment), compiled.stderr());
+            assertTrue(compiled.stderr().contains("<t>:2:"), compiled.stderr());
+        }
+    }
+
+    /**
+     * Both backends reach iteration through {@code Values.iterable}, so a loop that changes the
+     * collection it is walking has to behave identically whether or not the program compiled.
+     */
+    @Test
+    void mutationDuringIterationMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        List<String> programs = List.of(
+                "xs = [1, 2, 3]\nfor x in xs\n  xs.add(x * 10)\nend\nprint xs",
+                "s = set([1, 2, 3])\nfor v in s\n  s.add(v + 10)\nend\nprint length(s)",
+                "m = {\"a\": 1, \"b\": 2}\nfor k in m\n  m.remove(k)\nend\nprint length(m)",
+                "xs = [1, 2]\nfor x in xs\n  xs.insert(0, x)\nend\nprint xs");
+        for (String source : programs) {
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stdout();
+            assertEquals(expected, compileAndRun(source, dir), "mismatch for: " + source);
+            assertFalse(expected.isBlank(), "the probe produced nothing: " + source);
+        }
+    }
+
+    @Test
     void compilesWriteWithoutStackUnderflow(@TempDir Path dir) throws Exception {
         assertEquals("ab\n", compileAndRun("write \"a\"\nwrite \"b\"\nprint \"\"", dir));
     }

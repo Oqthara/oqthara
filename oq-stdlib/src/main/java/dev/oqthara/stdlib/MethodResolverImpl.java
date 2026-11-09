@@ -47,6 +47,19 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         return null;
     }
 
+    /**
+     * The argument at a callback position, or a diagnostic naming it.
+     *
+     * @param position the 1-based position the caller should hear about
+     * @param call     the call shape to quote, so the reader sees the expected order
+     */
+    private static OqCallable callableArgument(
+            String name, Object value, int position, String call, Span span) {
+        if (value instanceof OqCallable callable) return callable;
+        throw new OqError("'" + name + "' needs a function as argument " + position, span,
+                "It got " + Values.typeName(value) + ". Write " + call + ".");
+    }
+
     private OqCallable listMethod(List<?> list, String name, Span span) {
         return switch (name) {
             case "length", "size" -> fixed(name, 0, (host, args) -> (long) list.size());
@@ -83,14 +96,14 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             });
             case "map" -> fixed(name, 1, (host, args) -> {
                 List<Object> result = new ArrayList<>();
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     result.add(host.call(args.get(0), List.of(item), span));
                 }
                 return result;
             });
             case "filter" -> fixed(name, 1, (host, args) -> {
                 List<Object> result = new ArrayList<>();
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     if (Values.truthy(host.call(args.get(0), List.of(item), span))) {
                         result.add(item);
                     }
@@ -98,37 +111,38 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 return result;
             });
             case "each" -> fixed(name, 1, (host, args) -> {
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     host.call(args.get(0), List.of(item), span);
                 }
                 return null;
             });
             case "any" -> fixed(name, 1, (host, args) -> {
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     if (Values.truthy(host.call(args.get(0), List.of(item), span))) return true;
                 }
                 return false;
             });
             case "all" -> fixed(name, 1, (host, args) -> {
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     if (!Values.truthy(host.call(args.get(0), List.of(item), span))) return false;
                 }
                 return true;
             });
             case "find" -> fixed(name, 1, (host, args) -> {
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     if (Values.truthy(host.call(args.get(0), List.of(item), span))) return item;
                 }
                 return null;
             });
             case "find_index" -> fixed(name, 1, (host, args) -> {
-                for (int i = 0; i < list.size(); i++) {
-                    if (Values.truthy(host.call(args.get(0), List.of(list.get(i)), span))) return (long) i;
+                List<?> items = Values.iterableList(list, span);
+                for (int i = 0; i < items.size(); i++) {
+                    if (Values.truthy(host.call(args.get(0), List.of(items.get(i)), span))) return (long) i;
                 }
                 return -1L;
             });
             case "reduce" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2, (host, args, callSpan) -> {
-                OqCallable fn = (OqCallable) args.get(0);
+                OqCallable fn = callableArgument(name, args.get(0), 1, "reduce(fn, start)", callSpan);
                 int start = 0;
                 Object acc;
                 if (args.size() == 2) {
@@ -138,8 +152,9 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                     acc = list.get(0);
                     start = 1;
                 }
-                for (int i = start; i < list.size(); i++) {
-                    acc = host.call(fn, List.of(acc, list.get(i)), callSpan);
+                List<?> items = Values.iterableList(list, callSpan);
+                for (int i = start; i < items.size(); i++) {
+                    acc = host.call(fn, List.of(acc, items.get(i)), callSpan);
                 }
                 return acc;
             });
@@ -149,7 +164,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 if (args.isEmpty()) {
                     comparator = (a, b) -> Values.compare(a, b, callSpan);
                 } else {
-                    OqCallable fn = (OqCallable) args.get(0);
+                    OqCallable fn = callableArgument(name, args.get(0), 1, "sort(fn)", callSpan);
                     comparator = (a, b) -> {
                         Object keyA = host.call(fn, List.of(a), callSpan);
                         Object keyB = host.call(fn, List.of(b), callSpan);
@@ -191,7 +206,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             });
             case "flatten" -> fixed(name, 0, (host, args) -> {
                 List<Object> result = new ArrayList<>();
-                for (Object item : list) {
+                for (Object item : Values.iterable(list, span)) {
                     if (item instanceof List<?> inner) result.addAll(inner);
                     else result.add(item);
                 }
@@ -261,14 +276,14 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 return null;
             });
             case "each" -> fixed(name, 1, (host, args) -> {
-                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                for (Map.Entry<?, ?> entry : new LinkedHashMap<>(map).entrySet()) {
                     host.call(args.get(0), List.of(entry.getKey(), entry.getValue()), span);
                 }
                 return null;
             });
             case "map" -> fixed(name, 1, (host, args) -> {
                 List<Object> result = new ArrayList<>();
-                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                for (Map.Entry<?, ?> entry : new LinkedHashMap<>(map).entrySet()) {
                     result.add(host.call(args.get(0), List.of(entry.getKey(), entry.getValue()), span));
                 }
                 return result;

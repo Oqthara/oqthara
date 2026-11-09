@@ -122,6 +122,23 @@ def keyword_budget_is_honest() -> None:
         problems.append(f"CONTRIBUTING.md is over its own budget: {claimed_count} > {claimed_budget}")
     note(f"CONTRIBUTING.md keyword count ({claimed_count}) matches the lexer")
 
+    # design.md states the same count in its simplicity table. It is a third copy, and it
+    # was the one that drifted to 20 while the lexer had 21, so it is checked explicitly.
+    design = read("docs/spec/design.md")
+    design_count = re.search(r"\| Keywords \| ≤ (\d+) \| (\d+) \|", design)
+    if not design_count:
+        problems.append("design.md does not state the keyword budget and count")
+        return
+    design_budget, design_current = int(design_count.group(1)), int(design_count.group(2))
+    if design_current != len(keywords):
+        problems.append(
+            f"design.md claims {design_current} keywords but the lexer defines "
+            f"{len(keywords)}")
+    if design_budget != budget:
+        problems.append(
+            f"design.md states a budget of {design_budget} but the reference says {budget}")
+    note(f"design.md keyword count ({design_current}) matches the lexer")
+
 
 # 3. Every CLI command in the help text must be documented in docs/reference/cli.md.
 def documented_commands_exist() -> None:
@@ -320,6 +337,35 @@ def cited_builtins_exist() -> None:
     note(f"{len(cited)} snake_case builtin names cited in the spec and stdlib reference all exist")
 
 
+# 8. Every contract in the register must name a document that exists, and an enforced contract
+#    must name a test. A register is only worth keeping if it cannot silently rot.
+def contract_register_is_complete() -> None:
+    register = read("docs/spec/contracts.md")
+    rows = re.findall(r"^\| (\d+) \| .*? \| (.*?) \| `([^`]*)` \| (.*?) \|$", register, re.M)
+    if len(rows) != 15:
+        problems.append(
+            f"docs/spec/contracts.md lists {len(rows)} contract rows, expected 15 "
+            "(one per area the directive names)"
+        )
+        return
+
+    missing: list[str] = []
+    undocumented: list[str] = []
+    for number, _, _, enforced in rows:
+        row = register.split(f"| {number} |", 1)[1].split("\n", 1)[0]
+        for target in re.findall(r"\]\(([a-z0-9/._-]+\.md)\)", row):
+            # Links are relative to the register's own directory, as markdown requires.
+            if not (ROOT / "docs" / "spec" / target).resolve().exists():
+                missing.append(target)
+        if enforced.strip() == "nothing":
+            undocumented.append(number)
+    if missing:
+        problems.append("contract register names documents that do not exist: " + ", ".join(sorted(set(missing))))
+        return
+    note(f"{len(rows)} contracts registered, every referenced document exists "
+         f"({len(undocumented)} deliberately absent)")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -328,6 +374,7 @@ CHECKS = (
     backend_counts_are_measured,
     version_is_consistent,
     cited_builtins_exist,
+    contract_register_is_complete,
 )
 
 

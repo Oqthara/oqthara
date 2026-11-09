@@ -593,6 +593,13 @@ public final class BytecodeCompiler {
             if (nextSlot > 255) {
                 throw new NotSupportedException("too many variables for one method");
             }
+            if (scopes.peek().containsKey(name)) {
+                // Declaring the same name twice in one scope is refused by the interpreter, so
+                // this program is not compiled rather than compiled with a silent overwrite.
+                throw new NotSupportedException(
+                        "'" + name + "' is declared twice in the same scope, which the"
+                                + " interpreter refuses, so this is not compiled");
+            }
             scopes.peek().put(name, new Binding(nextSlot, fixed));
             return nextSlot;
         }
