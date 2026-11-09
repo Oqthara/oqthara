@@ -50,6 +50,17 @@ public final class Methods {
             throw new OqError("cannot call method '" + name + "' on nothing", span,
                     "Check that the value is not nothing before calling a method on it.");
         }
+        try {
+            return dispatch(receiver, name, args, span);
+        } catch (UnsupportedOperationException e) {
+            // A collection that refuses to change is a program-visible condition, never an
+            // Oqthara defect, so a compiled jar reports it exactly as the interpreter does
+            // instead of blaming Oqthara and exiting 70.
+            throw Errors.immutableRefusal(e, span);
+        }
+    }
+
+    private static Object dispatch(Object receiver, String name, Object[] args, Span span) {
         if (!(receiver instanceof Class<?>)) {
             OqCallable method = resolver().resolve(receiver, name, span);
             if (method != null) {

@@ -81,6 +81,21 @@ class ErrorMessageContractTest {
     }
 
     @Test
+    void anUnchangeableCollectionIsAUserErrorNotAnOqtharaBug() {
+        // List.of(...) is a normal Java API a program can reach through `use`, and its mutators
+        // throw UnsupportedOperationException with a null message. That used to escape the
+        // interpreter's tuple-only check and surface as `internal error:
+        // UnsupportedOperationException: null` with exit 70, telling the program it had found an
+        // Oqthara defect when it had simply tried to change an unchangeable value.
+        goodError("use java.util.List\nl = List.of(1, 2, 3)\nl.add(4)",
+                "cannot change an unchangeable collection");
+        goodError("use java.util.List\nl = List.of(1, 2, 3)\nprint l.length()\nl.remove(0)",
+                "cannot change an unchangeable collection");
+        // A tuple still keeps its own wording: it is a language value, not a JDK one.
+        goodError("t = (1, 2, 3)\nt.add(4)", "a tuple is immutable");
+    }
+
+    @Test
     void everyErrorHasAPositionOrAnExplicitReason() {
         String[] programs = {
                 "print nope", "print 1 / 0", "if true", "print \"abc", "data D(a)\nD()",

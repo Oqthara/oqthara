@@ -1,0 +1,84 @@
+name: Site content dispatch
+
+# Tells the website that this repository has new content to mirror.
+#
+# The website (`Oqthara/Oqthara.github.io`) mirrors documentation, examples and releases into
+# Cloud Firestore. It cannot watch this repository, so before this workflow existed the mirror
+# learned about a change on a timer, and a release waited for the next 15-minute poll.
+#
+# Two events are announced:
+#
+#   push to main        -> content-updated          (documentation, examples, the tree)
+#   release published   -> alpha-release-published  (a new channel in the selector)
+#
+# What this workflow does NOT do
+# ------------------------------
+# It does not describe the content and it does not decide anything. The payload names the commit
+# or the tag; the website then re-reads this repository itself. That asymmetry is the security
+# property: a dispatch can be forged, replayed or stale, and the only safe response to one is to
+# go and look. If this workflow were to say "mirror tag v1.2.3", a token leak would become a way
+# to publish an arbitrary manual.
+#
+# Least privilege
+# ---------------
+# `contents: read` for the job token. The dispatch itself needs a token with write access to the
+# *other* repository, which `GITHUB_TOKEN` cannot have; `SITE_DISPATCH_TOKEN` supplies it. It is
+# a fine-grained PAT scoped to `Oqthara/Oqthara.github.io` with `Contents: read and write`, and
+# it is never printed.
+#
+# A missing token fails this run loudly instead of passing quietly. A workflow that reports
+# success while announcing nothing is worse than a red one: the site silently stops updating and
+# every dashboard stays green.
+
+on:
+  push:
+    branches: [main]
+  release:
+    # `published` fires for a release that was just published, which is the event the site's
+    # channel selector cares about. Drafts reach this workflow too and the script filters them
+    # out, because a draft is not public. Prereleases are announced: every Oqthara alpha is
+    # published as a prerelease and the site mirrors them.
+    types: [published]
+
+permissions:
+  contents: read
+
+# One dispatch per commit is enough. Queue rather than cancel, so a push followed quickly by a
+# release both get announced; cancelling the older run would drop an announcement entirely.
+concurrency:
+  group: site-content-dispatch
+  queue: max
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Announce new content to the website
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Nothing here pushes, so there is no reason for the job token to stay in .git/config.
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The decision and the request both live in the script, so the conditions are unit tested
+      # rather than re-derived in YAML. The token reaches it through `env:`, never through a
+      # `run:` interpolation, because an expression inside a shell body becomes shell source.
+      #
+      # The self-test runs first and without the token, so a change that would announce the wrong
+      # thing fails before anything is sent. This repository has no JavaScript test runner, so the
+      # workflow is where that check lives.
+      - name: Verify the dispatch decision matrix
+        run: node scripts/dispatch-site-content.mjs --self-test
+
+      - name: Dispatch the change
+        env:
+          SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+        run: node scripts/dispatch-site-content.mjs

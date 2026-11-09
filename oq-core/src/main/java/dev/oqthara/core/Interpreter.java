@@ -479,15 +479,11 @@ public final class Interpreter implements OqHost {
             try {
                 return callable.call(this, args, span);
             } catch (UnsupportedOperationException e) {
-                // A tuple reached through a view, such as subList or a reversal, is a plain
-                // java.util.List, so the resolver's guard never sees it and the JDK's own refusal
-                // arrives here. Report it as a program error instead of an internal one.
-                if (OqTuple.IMMUTABLE.equals(e.getMessage())) {
-                    throw new OqError(OqTuple.IMMUTABLE, span,
-                            "Tuples cannot change after they are made. Build a new tuple with the"
-                                    + " items you want, or use a list when the items must change.");
-                }
-                throw e;
+                // A collection that refuses to change is a program-visible condition, never an
+                // Oqthara defect: a tuple reached through a view, or a JDK value the program made
+                // unchangeable itself, such as List.of(...). Report it as a program error instead
+                // of letting it escape as `internal error`.
+                throw JavaBridge.immutableRefusal(e, span);
             } finally {
                 stack.remove(stack.size() - 1);
             }

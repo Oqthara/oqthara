@@ -255,16 +255,18 @@ public final class JavaBridge {
         return signatures.isEmpty() ? "(none)" : String.join("; ", signatures);
     }
 
+    /**
+     * Delegates to the runtime's shared classifier, so a host-interop refusal and a compiled
+     * method call report the same thing. See {@link dev.oqthara.runtime.Errors#immutableRefusal}.
+     */
+    static OqError immutableRefusal(UnsupportedOperationException error, Span span) {
+        return dev.oqthara.runtime.Errors.immutableRefusal(error, span);
+    }
+
     private static OqError wrap(Throwable error, Span span) {
         if (error instanceof OqError oq) return oq;
-        // A tuple reached through a view, such as subList or a reversal, is a plain java.util.List,
-        // so the resolver's tuple guard never sees it and the JDK's own refusal arrives here.
-        // Report it as the program error it is, not as `UnsupportedOperationException: ...`.
-        if (error instanceof UnsupportedOperationException
-                && OqTuple.IMMUTABLE.equals(error.getMessage())) {
-            return new OqError(OqTuple.IMMUTABLE, span,
-                    "Tuples cannot change after they are made. Build a new tuple with the items"
-                            + " you want, or use a list when the items must change.");
+        if (error instanceof UnsupportedOperationException refusal) {
+            return immutableRefusal(refusal, span);
         }
         return new OqError(error.getClass().getSimpleName() + ": " + error.getMessage(), span);
     }

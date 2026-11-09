@@ -65,4 +65,27 @@ public final class Errors {
     public static Object catchValue(Object error) {
         return ((OqError) error).toValue();
     }
+
+    /**
+     * Turns a JDK refusal to change an unchangeable collection into the program error it is.
+     *
+     * <p>Both backends share this so a program gets one verdict whichever way it is run: a
+     * compiled jar used to report {@code internal error} and exit 70 for a failure the
+     * interpreter reported as a program error and exit 1. A tuple keeps its own wording, because
+     * the value really is a tuple; anything else is a JDK collection the program built itself,
+     * such as {@code List.of(1, 2, 3)}, and blaming Oqthara for that would be wrong.
+     */
+    public static OqError immutableRefusal(UnsupportedOperationException error, Span span) {
+        if (OqTuple.IMMUTABLE.equals(error.getMessage())) {
+            return new OqError(OqTuple.IMMUTABLE, span,
+                    "Tuples cannot change after they are made. Build a new tuple with the items"
+                            + " you want, or use a list when the items must change.");
+        }
+        String message = error.getMessage();
+        return new OqError("cannot change an unchangeable collection: "
+                + (message == null || message.isBlank() ? "the operation is not supported" : message),
+                span,
+                "This value was built unchangeable, for example by List.of(...). Build a list"
+                        + " when the items must change.");
+    }
 }

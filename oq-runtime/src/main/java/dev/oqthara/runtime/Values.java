@@ -479,6 +479,21 @@ public final class Values {
         throw new OqError("length() needs text, list, map, set or range, got " + typeName(value), span);
     }
 
+    /**
+     * The count behind {@code length()}, which must be a 64-bit number like every other number.
+     *
+     * <p>{@link #size} narrows a range's size to {@code int}, so a range longer than
+     * {@code Integer.MAX_VALUE} came back negative: {@code length(0 to 3000000000)} printed
+     * {@code -1294967295}. A range is counted in {@code long} here and every other shape still
+     * goes through {@link #size}. {@code size} keeps its {@code int} signature because this class
+     * is published as {@code dev.oqthara:oq-runtime}; widening the return type would break
+     * callers outside this repository.
+     */
+    public static long length(Object value, Span span) {
+        if (value instanceof OqRange r) return r.size();
+        return size(value, span);
+    }
+
     public static Iterable<?> iterable(Object value, Span span) {
         if (value instanceof List<?> l) return l;
         if (value instanceof Set<?> s) return s;

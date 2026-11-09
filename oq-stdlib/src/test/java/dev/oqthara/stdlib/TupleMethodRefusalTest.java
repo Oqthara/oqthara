@@ -1,5 +1,6 @@
 package dev.oqthara.stdlib;
 
+import dev.oqthara.runtime.Methods;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.OqTuple;
@@ -94,5 +95,26 @@ class TupleMethodRefusalTest {
         Object result = unique.call(null, List.of(), span);
         assertTrue(result instanceof OqTuple, "unique() returned " + result.getClass().getName());
         assertEquals(2, ((OqTuple) result).size());
+    }
+
+    @Test
+    void theCompiledCallPathRefusesAnUnchangeableListTheSameWay() {
+        // A compiled program calls methods through Methods.invoke1, not through the
+        // interpreter, so this is the path a jar takes. It had no UnsupportedOperationException
+        // handler: a JDK list reached through `use` would have exited 70 with `internal error`
+        // while `oq run` exited 1. Both now classify through Errors.immutableRefusal.
+        OqError error = assertThrows(OqError.class,
+                () -> Methods.invoke1(List.of(1L, 2L), 3L, "add"));
+
+        assertEquals("cannot change an unchangeable collection: the operation is not supported",
+                error.getMessage());
+    }
+
+    @Test
+    void theCompiledCallPathKeepsTheTupleWording() {
+        OqError error = assertThrows(OqError.class,
+                () -> Methods.invoke1(tuple, 9L, "set"));
+
+        assertEquals(OqTuple.IMMUTABLE, error.getMessage());
     }
 }
