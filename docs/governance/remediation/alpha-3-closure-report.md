@@ -17,8 +17,28 @@ ask.
 
 Baseline before remediation: `a104629e6adef727b31f2c6f06a28a0045cd7835`.
 
-Remediation commit: `REMEDIATION_SHA` on branch `alpha3-remediation-verification`, merged by
-pull request `REMEDIATION_PR`.
+Remediation commit: `e32215f59d74a04af4327587459bf0cb4518b884`, merged by
+[#40](https://github.com/Oqthara/oqthara/pull/40) from branch `alpha3-remediation-verification`.
+The branch's own commit is `63bb1bcadcb08e85740aa1f34e27c270241c180f`; GitHub squash-merged it,
+so the branch SHA is not an ancestor of `main` and the merge SHA is the durable reference.
+
+Pre-merge baseline: `a104629e6adef727b31f2c6f06a28a0045cd7835`.
+
+| Ref | Value |
+| --- | --- |
+| `a104629e` | baseline before remediation |
+| `63bb1bc` | remediation branch commit |
+| `e32215f5` | **squash merge on `main`** |
+
+**Evidence for the sequencing of §2.4.** The `pull_request` rule was applied *after* `e32215f5`
+landed, not before, and this was deliberate. Applying it first would have left the repository
+with a rule its only collaborator is forbidden to bypass and no second approver to satisfy —
+the change would have been permanently unmergeable. Applying it after is not a bypass:
+at the moment `#40` merged, the rule did not exist, so nothing was overridden. From
+`e32215f5` onward, every change is bound by it, including future changes by the maintainer.
+
+`bypass_actors` was empty before and remains empty, and `current_user_can_bypass` reports
+`never`, so the maintainer cannot override the rule either.
 
 | File | Change |
 | --- | --- |
@@ -80,9 +100,35 @@ direct push was permitted and zero approvals were required.
 approval, stale approvals dismissed on push, and review-thread resolution required.
 `bypass_actors` remains empty, so the protection binds the maintainer too.
 
-The change was applied **after** the remediation artifacts were committed, which is the
-sequencing the order requires: the protections must not be bypassed, so they are tightened
-only once the work they would block is already landed.
+**Applied state, read back from the API on ruleset `26650412`:**
+
+```
+rules: deletion, non_fast_forward, required_status_checks, pull_request
+pull_request:
+  required_approving_review_count: 1
+  dismiss_stale_reviews_on_push:   true
+  required_review_thread_resolution: true
+  allowed_merge_methods:           ["squash"]
+bypass_actors:            []
+current_user_can_bypass:  never
+```
+
+**Enforcement was tested, not assumed.** A direct commit to `main` was attempted and rejected:
+
+```
+$ git push origin main
+remote: - Changes must be made through a pull request.
+ ! [remote rejected] main -> main (push declined due to repository rule violations)
+error: failed to push some refs to 'https://github.com/Oqthara/oqthara.git'
+```
+
+The probe commit was then discarded with `git reset --hard origin/main`, so nothing was left
+behind in the tree.
+
+The change was applied **after** `e32215f5` landed, and §1 records why that ordering is correct
+rather than convenient: the rule did not yet exist when `#40` merged, so nothing was bypassed.
+The alternative — apply the rule, then override it as an administrator — would have been a real
+bypass, and is precisely what the order forbids.
 
 ### 2.5 Conformance counts reconciled, verifier non-weakening — **MET**
 
@@ -157,8 +203,18 @@ are in `docs/governance/remediation/`, in the canonical repository, describing f
 
 ### 2.11 Remediation PRs have independent review and resolved conversations — **BLOCKED**
 
-Same blocker as §2.2. The remediation pull request has passing checks and resolved
-conversations; it does not have independent approval, because there is no second approver.
+Same blocker as §2.2, and it now applies literally.
+
+[#40](https://github.com/Oqthara/oqthara/pull/40) passed all 15 required checks — Ubuntu and
+Windows on JDK 21 and 25, CircleCI macOS on JDK 21 and 25, the bytecode backend, the standalone
+jar, installer tests on both platforms, CodeQL, `analyze`, and `jazzer-fuzz`. It has no review
+threads to resolve. It merged with **zero approvals**, because at merge time no rule required
+any.
+
+From `e32215f5` onward that is impossible: `required_approving_review_count: 1` is active and
+`current_user_can_bypass` is `never`. The next pull request cannot merge without an approval
+that does not exist in this repository. That is the honest end state — the mechanism is now
+correct, and the missing reviewer is a personnel gap, not a configuration gap.
 
 ### 2.12 No unresolved Critical finding — **MET**
 
@@ -228,3 +284,20 @@ So Alpha 3 is closed on technical and evidentiary grounds, with the review gate 
 open, named blocker. **To clear it:** add one collaborator with write access who did not author
 the release, have them review [#37's retrospective](pr-37-retrospective.md) and this pull
 request, and record their approval. No code changes are required.
+
+One consequence deserves to be stated plainly, because it will be the first thing the next
+contributor encounters: **as of `e32215f5`, nobody can merge a pull request to this repository.**
+The `pull_request` rule requires one approval, there is exactly one collaborator, GitHub does not
+count a self-approval, and `bypass_actors` is empty with `current_user_can_bypass: never`. This
+is not a regression introduced by accident — it is the correct configuration for a repository
+that is supposed to require review, applied to a repository that cannot currently supply one.
+
+The maintainer has two legitimate options, and both are recorded rather than chosen silently:
+
+1. **Add a second collaborator.** The rule then works as designed, and every gate in this
+   report closes. This is the option the order's criteria describe.
+2. **Lower `required_approving_review_count` to 0 and rely on required checks alone.** This
+   restores a single-maintainer merge path, and it is *exactly* the configuration that let PR
+   #37 merge unreviewed. Doing this would reopen finding H2.
+
+This report recommends option 1 and does not weaken the rule to unblock itself.
