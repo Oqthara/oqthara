@@ -243,6 +243,16 @@ public final class Interpreter implements OqHost {
                 if (decl.mutable()) {
                     env.define(decl.name(), value, true);
                 } else {
+                    // A second `const x` in one scope used to replace the first binding with a
+                    // fresh one, so the value changed while assignments to the name were still
+                    // refused: the constant looked enforced and was not. Declaring a name twice
+                    // is refused here, where the source span is available.
+                    if (env.hasLocal(decl.name())) {
+                        throw new OqError("'" + decl.name() + "' is already declared in this scope",
+                                decl.span(),
+                                "A name can be declared once per scope. Use a different name, "
+                                        + "or assign to '" + decl.name() + "' instead.");
+                    }
                     env.defineFixed(decl.name(), value, "a 'const' binding",
                             "A constant keeps its first value; use a different name,"
                                     + " or declare it with an ordinary assignment.");
@@ -255,6 +265,18 @@ public final class Interpreter implements OqHost {
                 Object source = evaluate(destructure.value(), env);
                 List<Object> parts = Values.destructuringParts(
                         source, destructure.names().size(), destructure.span());
+                if (!destructure.mutable()) {
+                    // The same rule as a plain `const`, checked for every name before any is
+                    // written so a refused destructuring leaves all targets unchanged.
+                    for (String name : destructure.names()) {
+                        if (env.hasLocal(name)) {
+                            throw new OqError("'" + name + "' is already declared in this scope",
+                                    destructure.span(),
+                                    "A name can be declared once per scope. Use a different name, "
+                                            + "or assign to '" + name + "' instead.");
+                        }
+                    }
+                }
                 for (int i = 0; i < parts.size(); i++) {
                     String name = destructure.names().get(i);
                     if (destructure.mutable()) {

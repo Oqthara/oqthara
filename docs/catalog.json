@@ -194,6 +194,12 @@
       "slug": "docs/spec/language"
     },
     {
+      "path": "docs/spec/states/01-language.md",
+      "title": "7.1 Language state machine",
+      "section": "spec",
+      "slug": "docs/spec/states/01-language"
+    },
+    {
       "path": "docs/stdlib/reference.md",
       "title": "Standard library reference",
       "section": "stdlib",

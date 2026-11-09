@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `const` can no longer be defeated by redeclaring it.** `const x = 1` followed by
+  `const x = 2` in the same scope used to replace the binding, so `x` printed `2` while any
+  further `x = ...` was still refused: the constant looked enforced and was not. Declaring a
+  name twice in one scope is now refused, on both backends, with
+  `'x' is already declared in this scope`. The same rule covers `const a, b = ...`, which
+  declares names too and used to bypass it; a refused destructuring still writes nothing.
 - **Three collection builtins no longer crash on a set.** `zip({1, 2}, {3, 4})`,
   `random_item({1})` and `par_map({1, 2}, f)` cast the result of `Values.iterable` straight to
   `List`, so any set argument threw `ClassCastException` and exited 70 with
@@ -58,9 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the arguments reversed, since the shape is `reduce(fn, start)` — cast `0` to `OqCallable` and
   reported an internal error. It now says `'reduce' needs a function as argument 1` and suggests
   `reduce(fn, start)`. The same applies to `sort`.
-
-### Fixed
-
 - **The conformance verifier now gates CI and tells the truth.** `scripts/verify-conformance.py`
   pinned a stale corpus size (197 executable programs) and a floor (182 compiled) that sat ten
   programs below reality, so it failed on a healthy tree while a ten-program bytecode

@@ -119,6 +119,28 @@ class ErrorMessageContractTest {
     }
 
     /**
+     * A second `const x` in one scope used to replace the first binding with a fresh one, so the
+     * value changed while assignments to the name were still refused: the constant looked
+     * enforced and was not. Both backends now refuse the redeclaration.
+     */
+    @Test
+    void redeclaringAConstantIsRefusedNotSilentlyOverwritten() {
+        goodError("const x = 1\nconst x = 2\nprint x", "already declared in this scope");
+        goodError("x = 1\nconst x = 2\nprint x", "already declared in this scope");
+        goodError("fun f()\n  return 1\nend\nconst f = 2", "already declared in this scope");
+        goodError("const g = 1\nfun g()\n  return 2\nend", "already declared in this scope");
+        goodError("fun h(a)\n  const a = 2\n  return a\nend\nprint(h(1))",
+                "already declared in this scope");
+        // A `const` destructuring declares names too, so it obeys the same rule.
+        goodError("const a = 1\nconst a, b = (2, 3)", "already declared in this scope");
+        goodError("a = 1\nconst a, b = (2, 3)", "already declared in this scope");
+        assertEquals("1\n", ok("const x = 1\nprint x"));
+        assertEquals("1 2\n", ok("const a, b = (1, 2)\nprint(a, b)"));
+        // A refused destructuring writes nothing, so no target is left half-updated.
+        goodError("b = 9\nconst a, b = (1, 2)", "already declared in this scope");
+    }
+
+    /**
      * Changing a collection while a loop walks it used to reach {@code java.util}'s own
      * fail-fast check, which threw {@code ConcurrentModificationException} from a place with
      * no Oqthara diagnostic available. The program then died on exit code 70 with

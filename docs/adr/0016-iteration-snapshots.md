@@ -86,6 +86,12 @@ because they share the root cause: an unchecked cast where a real check belonged
   `reduce(fn, start)` — cast `0` to `OqCallable`. It now reports
   `'reduce' needs a function as argument 1` with the help
   `It got number. Write reduce(fn, start).`
+- `const x = 1` followed by `const x = 2` in one scope silently replaced the binding. Both
+  `const` declarations, plain re-declarations, and `const a, b = ...` — which declares names
+  too — are now refused with `'x' is already declared in this scope`, on both backends. This
+  was not found by probing iteration; it surfaced while the language state machine was being
+  checked against the real implementation, which is the reason that model cites diagnostics
+  rather than paraphrasing them.
 
 ## Tests
 
