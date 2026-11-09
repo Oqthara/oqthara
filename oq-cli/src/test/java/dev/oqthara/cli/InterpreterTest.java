@@ -139,4 +139,16 @@ class InterpreterTest {
     void printSeparatesWithSpace() {
         assertEquals("a 1 true\n", run("print \"a\", 1, true"));
     }
+
+    @Test
+    void immutableJavaListMutationIsReportedAsProgramError() {
+        OqRunner.Result result = OqRunner.run("""
+                use java.util.List
+                items = List.of(1, 2, 3)
+                items.add(4)
+                """);
+        assertEquals(1, result.code());
+        assertTrue(result.stderr().contains("cannot modify this list"), result.stderr());
+        assertTrue(!result.stderr().contains("This is a bug in Oqthara"), result.stderr());
+    }
 }
