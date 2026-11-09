@@ -22,6 +22,7 @@ than editing it, exactly as in [`docs/adr/`](../adr/).
 | OQ-DEC-2026-007 | Operator precedence is normative and documented from the parser | APPROVED |
 | OQ-DEC-2026-008 | Conformance baselines are measured, never inherited from release notes | APPROVED |
 | OQ-DEC-2026-009 | The keyword budget has one source of truth in `Lexer.KEYWORDS` | APPROVED |
+| OQ-DEC-2026-010 | The approval count is 0 under a documented solo-maintainer exception | APPROVED |
 
 ## OQ-DEC-2026-001 — Agent architecture uses the native custom agent format
 
@@ -423,7 +424,9 @@ lexer exits 1.
 
 ```
 $ python3 scripts/check-docs-sync.py
-ok: all 7 checks passed
+Documentation is synchronized with the implementation:
+  - ...
+exit 0
 
 $ sed -i '' 's/we are at 20/we are at 18/' CONTRIBUTING.md && python3 scripts/check-docs-sync.py; echo "exit $?"
 ...
@@ -433,3 +436,48 @@ exit 1
 **Related.** `docs/governance/remediation/alpha-3-release-provenance.md` records the
 release-note origin of the stale conformance constants, which is the same class of defect:
 a number written once, quoted into a second place, and never re-derived.
+
+## OQ-DEC-2026-010 — The approval count is 0 under a documented solo-maintainer exception
+
+**State:** APPROVED
+
+**Context.** The Alpha 3 remediation added a `pull_request` rule to `main-protection`, and with
+it a requirement for one approving review. Oqthara has one human maintainer. The GitHub account
+`JoaoGaValentim` belongs to that same person and is not an independent reviewer, so the required
+approval could only be produced by the author approving their own change from a second account.
+
+**Decision.** Set `required_approving_review_count` to `0` while the project has a single human
+maintainer, and record the exception explicitly rather than leaving it implicit. Every other
+control remains enforced: pull requests are mandatory, direct pushes are rejected, all 12
+required CI contexts must pass, review threads must be resolved, merges are squash-only,
+`bypass_actors` is empty, and administrative bypass is unavailable. The parameter is
+`REQUIRED_APPROVALS` in `scripts/apply-branch-protection.sh`, defaulting to `0`.
+
+**Alternatives rejected.**
+
+- *Keep the count at 1.* Rejected: it either blocks every change permanently, including security
+  fixes, or it produces a self-approval that the audit trail reads as a second opinion. The second
+  outcome is fabricated review, which this project forbids.
+- *Make the exception a GitHub UI setting only.* Rejected: a ruleset change made in the UI leaves
+  no trace in the repository, so the exception would be invisible to anyone reading the history.
+- *Define a second maintainer account as a reviewer.* Rejected outright: the two accounts have one
+  human behind them, and treating that as independent review would misrepresent the audit trail.
+
+**Consequences.** Changes merge on required CI plus resolved threads rather than on an approval
+that cannot honestly exist. This decision is a narrowed review requirement, not an absent one, and
+must be revisited when a second genuine human maintainer joins.
+
+**Restoration.**
+
+```
+REQUIRED_APPROVALS=1 scripts/apply-branch-protection.sh
+```
+
+**Evidence.** Read back from ruleset `26650412` after applying the change: `deletion`,
+`non_fast_forward`, `pull_request`, `required_status_checks` active; count `0`; `bypass_actors`
+empty; `current_user_can_bypass: never`. A direct push to `refs/heads/main` was refused with
+"Changes must be made through a pull request."
+
+**Related.** `docs/governance/remediation/solo-maintainer-exception.md` is the full argument;
+`docs/governance/remediation/alpha-3-closure-report.md` records the closure verdict that depends
+on it.
