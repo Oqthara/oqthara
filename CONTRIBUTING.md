@@ -6,7 +6,7 @@ must make it smaller or clearer, not just bigger.
 ## Ground rules
 
 1. **Simplicity is the feature.** Before adding a keyword, ask whether an existing
-   construct already solves it. The keyword budget is 30; we are at 20.
+   construct already solves it. The keyword budget is 30; we are at 21.
 2. **No Rust.** No lifetimes, ownership, `&`, `Option`/`Result` wrappers, `impl`,
    `trait`, macros with `!`, or `=>` in matches. If it looks like Rust, redesign it.
 3. **Every user-visible change needs**: code, a test, documentation, and a
