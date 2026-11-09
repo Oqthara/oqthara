@@ -50,37 +50,42 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     private OqCallable listMethod(List<?> list, String name, Span span) {
         return switch (name) {
             case "length", "size" -> fixed(name, 0, (host, args) -> (long) list.size());
-            case "push", "add" -> fixed(name, 1, (host, args) -> {
-                asMutable(list).add(args.get(0));
-                return null;
-            });
-            case "pop" -> fixed(name, 0, (host, args) -> {
-                List<Object> mutable = asMutable(list);
-                if (mutable.isEmpty()) throw new OqError("cannot pop from an empty list", span);
-                return mutable.remove(mutable.size() - 1);
-            });
+            case "push", "add" -> fixed(name, 1, (host, args) ->
+                    mutateList(list, span, () -> {
+                        asMutable(list).add(args.get(0));
+                        return null;
+                    }));
+            case "pop" -> fixed(name, 0, (host, args) ->
+                    mutateList(list, span, () -> {
+                        List<Object> mutable = asMutable(list);
+                        if (mutable.isEmpty()) throw new OqError("cannot pop from an empty list", span);
+                        return mutable.remove(mutable.size() - 1);
+                    }));
             case "first" -> fixed(name, 0, (host, args) -> list.isEmpty() ? null : list.get(0));
             case "last" -> fixed(name, 0, (host, args) -> list.isEmpty() ? null : list.get(list.size() - 1));
             case "get" -> fixed(name, 1, (host, args) ->
                     Values.index(list, args.get(0), span));
-            case "insert" -> fixed(name, 2, (host, args) -> {
-                asMutable(list).add(((Number) args.get(0)).intValue(), args.get(1));
-                return null;
-            });
-            case "remove" -> fixed(name, 1, (host, args) -> {
-                List<Object> mutable = asMutable(list);
-                int index = args.get(0) instanceof Number n
-                        ? n.intValue()
-                        : indexOfValue(mutable, args.get(0));
-                if (index < 0 || index >= mutable.size()) return null;
-                return mutable.remove(index);
-            });
-            case "remove_value" -> fixed(name, 1, (host, args) -> {
-                List<Object> mutable = asMutable(list);
-                int index = indexOfValue(mutable, args.get(0));
-                if (index < 0) return null;
-                return mutable.remove(index);
-            });
+            case "insert" -> fixed(name, 2, (host, args) ->
+                    mutateList(list, span, () -> {
+                        asMutable(list).add(((Number) args.get(0)).intValue(), args.get(1));
+                        return null;
+                    }));
+            case "remove" -> fixed(name, 1, (host, args) ->
+                    mutateList(list, span, () -> {
+                        List<Object> mutable = asMutable(list);
+                        int index = args.get(0) instanceof Number n
+                                ? n.intValue()
+                                : indexOfValue(mutable, args.get(0));
+                        if (index < 0 || index >= mutable.size()) return null;
+                        return mutable.remove(index);
+                    }));
+            case "remove_value" -> fixed(name, 1, (host, args) ->
+                    mutateList(list, span, () -> {
+                        List<Object> mutable = asMutable(list);
+                        int index = indexOfValue(mutable, args.get(0));
+                        if (index < 0) return null;
+                        return mutable.remove(index);
+                    }));
             case "map" -> fixed(name, 1, (host, args) -> {
                 List<Object> result = new ArrayList<>();
                 for (Object item : list) {
@@ -452,6 +457,24 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             if (Values.equal(list.get(i), value)) return i;
         }
         return -1;
+    }
+
+    /**
+     * Turns a host collection's refusal to mutate into a language-level error.
+     *
+     * <p>Java factories such as {@code List.of(...)} return read-only lists. They still
+     * implement {@link List}, so normal list method resolution reaches the mutator above.
+     * Letting their {@link UnsupportedOperationException} escape would crash the interpreter
+     * instead of reporting an ordinary program error.
+     */
+    private static <T> T mutateList(List<?> list, Span span,
+                                    java.util.function.Supplier<T> mutation) {
+        try {
+            return mutation.get();
+        } catch (UnsupportedOperationException unsupported) {
+            throw new OqError("cannot modify this list", span,
+                    "The underlying Java list does not support mutation. Use a mutable list or make a copy first.");
+        }
     }
 
     @SuppressWarnings("unchecked")
