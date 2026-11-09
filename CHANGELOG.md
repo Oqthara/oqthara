@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The conformance verifier now gates CI and tells the truth.** `scripts/verify-conformance.py`
+  pinned a stale corpus size (197 executable programs) and a floor (182 compiled) that sat ten
+  programs below reality, so it failed on a healthy tree while a ten-program bytecode
+  regression would have passed. It pins the measured baseline (207 executable, 192 compiled)
+  and now runs as a required CI step, which also covers the interpreter-against-jar comparison
+  that previously ran nowhere. Its decision rules have regression tests in
+  `scripts/tests/test_verify_conformance.py`.
+- **`CONTRIBUTING.md` no longer understates the keyword count.** It claimed 18 keywords when
+  the lexer defines 20; `try` and `catch` landed without the count being updated.
+  `scripts/check-docs-sync.py` now reads `Lexer.KEYWORDS` directly instead of restating the
+  names, and fails when `CONTRIBUTING.md` disagrees with the lexer in either direction.
+- A range's length is documented as 64-bit. `docs/spec/language.md` now states that
+  `length(r)` does not narrow through a 32-bit integer, and `StdlibCoverageTest` asserts
+  `length(0 to 3000000000)` at the language level. Both were missing; the behavior itself was
+  already correct.
+
 ## [0.1.0-alpha.3] - 2026-11-06
 
 ### Added
