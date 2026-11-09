@@ -457,7 +457,7 @@ itself raises, the new error propagates; `try` does not swallow silently. There 
 
 ```
 n = try
-  int_of(text)
+  number(text)
 catch err
   0
 end

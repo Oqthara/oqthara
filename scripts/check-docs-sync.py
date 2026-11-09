@@ -271,6 +271,55 @@ def version_is_consistent() -> None:
     )
 
 
+# 7. Every builtin the specification tells a reader to call must exist.
+def cited_builtins_exist() -> None:
+    # `int_of(...)` was documented in three places while no such builtin existed; a reader
+    # following the spec got "Check the spelling". Docs are language-owned, so a cited
+    # name is a claim and must be checked against the registration sites.
+    #
+    # Extraction covers both registration helpers: most builtins use `NativeFunction.of`
+    # and the printing family uses `NativeFunction.variadic`. Matching only `of(` made the
+    # first version of this check report `write_text` as missing when it exists.
+    stdlib_dir = ROOT / "oq-stdlib" / "src" / "main" / "java" / "dev" / "oqthara" / "stdlib"
+    natives: set[str] = set()
+    for source in stdlib_dir.glob("*.java"):
+        natives |= set(
+            re.findall(
+                r'NativeFunction\.(?:of|variadic)\(\s*"([a-z_][a-z_0-9]*)"',
+                source.read_text(encoding="utf-8"),
+            )
+        )
+
+    methods = read("oq-stdlib/src/main/java/dev/oqthara/stdlib/MethodResolverImpl.java")
+    # Method names are often aliased on one `case "trim_end", "strip_end" ->` arm, so every
+    # quoted name before the arrow is a real name; reading only the first under-reports.
+    method_names: set[str] = set()
+    for arm in re.findall(r"^\s*case ((?:\s*\"[a-z_0-9]+\"\s*,?)+)\s*->", methods, re.M):
+        method_names |= set(re.findall(r'"([a-z_0-9]+)"', arm))
+
+    # Constructors and iteration helpers the parser or interpreter define directly.
+    core_names = {"print", "write", "list", "map", "set", "tuple", "range", "in", "for", "fun"}
+
+    known = natives | method_names | core_names
+
+    # Only snake_case names are checked. Builtin naming style is snake_case throughout, and
+    # restricting to it avoids flagging the prose metavariables and user functions that also
+    # appear in examples (`f`, `risky`, `add`).
+    cited: dict[str, str] = {}
+    for page in ("docs/spec/language.md", "docs/stdlib/reference.md"):
+        for name in re.findall(r"\b([a-z][a-z_0-9]*_[a-z_0-9]+)\b", read(page)):
+            cited.setdefault(name, page)
+    # Paths such as `tests/test_math.oq` contain snake_case file stems, not builtin names.
+    cited = {name: page for name, page in cited.items() if not re.search(rf"{name}\.[a-z]+", read(page))}
+
+    unknown = sorted(name for name in cited if name not in known)
+    if unknown:
+        details = ", ".join(f"`{name}` in {cited[name]}" for name in unknown)
+        problems.append(f"documentation cites builtins that do not exist: {details}")
+        return
+    note(f"{len(cited)} snake_case builtin names cited in the spec and stdlib reference all exist")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -278,6 +327,7 @@ CHECKS = (
     catalog_is_current,
     backend_counts_are_measured,
     version_is_consistent,
+    cited_builtins_exist,
 )
 
 

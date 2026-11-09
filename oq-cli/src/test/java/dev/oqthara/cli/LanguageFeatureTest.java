@@ -346,6 +346,52 @@ class LanguageFeatureTest {
     }
 
     @Test
+    void numericEqualityDoesNotReachInsideCollections() {
+        // ADR-0015 records this as an open defect rather than a design choice. `Values.equal`
+        // widens Long and Double at the top level, then delegates to `Object.equals` for
+        // collection contents, where Java's Long.equals(Double) is false. These assertions
+        // pin the current behaviour so a future fix has to change them deliberately.
+        assertEquals("true\nfalse\nfalse\nfalse\nfalse\n", ok("""
+                print 1 == 1.0
+                print [1] == [1.0]
+                print (1, 2) == (1.0, 2)
+                print {1: "a"} == {1.0: "a"}
+                print set([1]) == set([1.0])
+                """));
+    }
+
+    @Test
+    void equalNumbersHashDifferently() {
+        // The second half of the same defect: `1 == 1.0` is true, but Long and Double hash
+        // differently, so a set can hold both and `in` uses hashing rather than `Values.equal`.
+        assertEquals("true\n2\nfalse\n2\n", ok("""
+                print 1 == 1.0
+                print length(set([1, 1.0]))
+                print 1 in set([1.0])
+                m = {}
+                m[1] = "a"
+                m[1.0] = "b"
+                print length(keys(m))
+                """));
+    }
+
+    @Test
+    void mutatingADataKeyMakesItUnreachable() {
+        // `OqData.hashCode()` is derived from mutable fields, so changing a field after the
+        // value is used as a map key leaves the entry present but unfindable. Recorded in
+        // ADR-0015 as a reason hashability is currently unenforced.
+        assertEquals("nothing\n1\n", ok("""
+                data P(x)
+                p = P(1)
+                m = {}
+                m[p] = "a"
+                p.x = 2
+                print m[p]
+                print length(keys(m))
+                """));
+    }
+
+    @Test
     void exitWithZero() {
         OqRunner.Result result = OqRunner.run("print \"a\"\nexit(0)\nprint \"b\"");
         assertEquals(0, result.code());
