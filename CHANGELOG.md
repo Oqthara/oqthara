@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discriminator; the rule is specified in [ADR-0012](docs/adr/0012-overload-resolution.md).
 - `arity()` on `OqCallable`, with `VARIADIC` for callables that accept no single parameter count,
   so a variadic built-in can never silently win an exact-arity resolution.
+- **Destructuring assignment and binding.** `a, b = (1, 2)` binds or updates several names from
+  one value, and `const c, d = ...` binds them read-only. The value may be a tuple, a list, a
+  map (yielding keys), or text (yielding characters); the number of values must match the number
+  of names exactly. All names are checked before any is written, so a failed destructuring leaves
+  every target unchanged rather than half-updated. Destructuring is a binding operation, not
+  pattern matching: there is no rest target, `_` is not a discard, and `(a, b) = x` remains a
+  tuple literal on the left and is rejected. The rule is specified in
+  [ADR-0013](docs/adr/0013-destructuring.md).
 
 ### Fixed
 

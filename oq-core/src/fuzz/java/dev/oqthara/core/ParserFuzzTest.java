@@ -121,6 +121,7 @@ class ParserFuzzTest {
             }
             case Ast.ExprStmt x -> work.add(x.expr());
             case Ast.Assign x -> work.add(x.value());
+            case Ast.Destructure x -> work.add(x.value());
             case Ast.CompoundAssign x -> work.add(x.value());
             case Ast.IndexAssign x -> {
                 work.add(x.target());

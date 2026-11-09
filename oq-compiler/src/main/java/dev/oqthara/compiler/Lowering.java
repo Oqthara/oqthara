@@ -101,6 +101,11 @@ public final class Lowering {
                 }
                 case Ast.VarDecl decl -> others.add(decl.name());
                 case Ast.Assign assign -> others.add(assign.name());
+                case Ast.Destructure destructure -> {
+                    others.addAll(destructure.names());
+                    collectNames(List.of(new Ast.ExprStmt(destructure.value(),
+                            destructure.value().span())), types, others);
+                }
                 case Ast.CompoundAssign assign -> others.add(assign.name());
                 case Ast.ForRange loop -> {
                     others.add(loop.name());
@@ -166,6 +171,7 @@ public final class Lowering {
                 else callableNames.remove(assign.name());
                 code.add(new Ir.Store(assign.name()));
             }
+            case Ast.Destructure destructure -> destructure(destructure);
             case Ast.CompoundAssign assign -> {
                 code.add(new Ir.Load(assign.name()));
                 expression(assign.value());
@@ -439,6 +445,34 @@ public final class Lowering {
         code.add(new Ir.JumpLabel(head));
         loops.remove(loops.size() - 1);
         code.add(new Ir.Label(exitLabel));
+    }
+
+    /**
+     * Lowers a target list into one call that returns every part, then one index per target.
+     *
+     * <p>The helper measures the value and throws before returning anything when the counts
+     * disagree, so no {@code Declare}/{@code Store} runs on a mismatch. That keeps compiled
+     * code atomic for the same reason the interpreter is: nothing is written until the whole
+     * shape has been checked.
+     */
+    private void destructure(Ast.Destructure destructure) {
+        String parts = temp("parts");
+        expression(destructure.value());
+        mark(destructure.span());
+        code.add(new Ir.DestructureParts(destructure.names().size()));
+        code.add(new Ir.Declare(parts, true));
+        for (int i = 0; i < destructure.names().size(); i++) {
+            String name = destructure.names().get(i);
+            code.add(new Ir.Load(parts));
+            code.add(new Ir.Const((long) i));
+            code.add(new Ir.Index());
+            callableNames.remove(name);
+            if (destructure.mutable()) {
+                code.add(new Ir.Store(name));
+            } else {
+                code.add(new Ir.Declare(name, true));
+            }
+        }
     }
 
     private void forEach(Ast.ForEach loop) {

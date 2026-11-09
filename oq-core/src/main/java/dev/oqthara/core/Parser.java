@@ -72,6 +72,9 @@ public final class Parser {
                 && !(checkNext(Token.Kind.LPAREN) && isAdjacent(peek(), tokens.get(current + 1)))) {
             return commandStatement();
         }
+        if (looksLikeDestructuring()) {
+            return destructuringStatement(null, null);
+        }
         return expressionStatement();
     }
 
@@ -254,6 +257,9 @@ public final class Parser {
 
     private Ast.Stmt constStatement(Token keyword) {
         Token name = expect(Token.Kind.IDENT, "a constant name");
+        if (check(Token.Kind.COMMA)) {
+            return destructuringStatement(keyword, name);
+        }
         if (!match(Token.Kind.ASSIGN)) {
             throw error(peek(), "a constant needs a value",
                     "Write it as: const " + name.lexeme() + " = value");
@@ -261,6 +267,58 @@ public final class Parser {
         Ast.Expr value = expression();
         endStatement();
         return new Ast.VarDecl(name.lexeme(), false, value, keyword.span());
+    }
+
+    /**
+     * True when the tokens ahead are a bare target list, {@code a, b, c = ...}.
+     *
+     * <p>Oqthara has no comma operator, so an identifier followed by a comma cannot begin any
+     * other statement. The scan stops at the first token that is neither an identifier nor a
+     * comma, and requires the list to end at '=', so {@code a, b} alone is not mistaken for a
+     * destructuring statement and keeps its existing "statements end at the end of the line"
+     * diagnostic.
+     */
+    private boolean looksLikeDestructuring() {
+        if (!check(Token.Kind.IDENT)) return false;
+        int index = current;
+        boolean sawComma = false;
+        while (index < tokens.size()) {
+            Token.Kind kind = tokens.get(index).kind();
+            if (kind == Token.Kind.IDENT) {
+                index++;
+            } else if (kind == Token.Kind.COMMA) {
+                sawComma = true;
+                index++;
+            } else {
+                break;
+            }
+        }
+        return sawComma && index < tokens.size() && tokens.get(index).kind() == Token.Kind.ASSIGN;
+    }
+
+    /**
+     * Parses {@code name, name, ... = expression}. {@code keyword} is the {@code const} token
+     * when the list is immutable, and null for a plain destructuring statement.
+     */
+    private Ast.Stmt destructuringStatement(Token keyword, Token firstName) {
+        List<String> names = new ArrayList<>();
+        Span span = keyword != null ? keyword.span() : peek().span();
+        if (firstName == null) {
+            firstName = expect(Token.Kind.IDENT, "a variable name");
+        }
+        names.add(firstName.lexeme());
+        while (match(Token.Kind.COMMA)) {
+            Token target = expect(Token.Kind.IDENT, "a variable name");
+            if (names.contains(target.lexeme())) {
+                throw error(target, "'" + target.lexeme() + "' appears twice in this destructuring",
+                        "Give each target its own name.");
+            }
+            names.add(target.lexeme());
+        }
+        expect(Token.Kind.ASSIGN, "after a destructuring target list");
+        Ast.Expr value = expression();
+        endStatement();
+        return new Ast.Destructure(names, keyword == null, value, span);
     }
 
     private Ast.Stmt tryStatement(Token keyword) {

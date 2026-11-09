@@ -13,7 +13,8 @@ public final class Ir {
             Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeTuple, MakeMap, MakeSet, Index,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
             GetField, SetField, Range, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
-            JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda {
+            JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda,
+            DestructureParts {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -95,6 +96,14 @@ public final class Ir {
     }
 
     public record Index() implements Instr {
+    }
+
+    /**
+     * Replaces a value on the stack with its destructuring parts, throwing when the value has
+     * no such shape or does not hold exactly {@code count} of them. The operand is the number
+     * of targets, which is both the expected count and the size of the result.
+     */
+    public record DestructureParts(int count) implements Instr {
     }
 
     public record SetIndex() implements Instr {
@@ -270,6 +279,7 @@ public final class Ir {
             case MakeMap m -> "make_map " + m.count();
             case MakeSet m -> "make_set " + m.count();
             case Index i -> "index";
+            case DestructureParts d -> "destructure_parts " + d.count();
             case SetIndex s -> "set_index";
             case IterNew i -> "iter_new";
             case IterHasNext i -> "iter_has_next";

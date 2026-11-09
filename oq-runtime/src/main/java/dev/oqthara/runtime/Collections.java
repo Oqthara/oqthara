@@ -66,6 +66,14 @@ public final class Collections {
     }
 
     /**
+     * The destructuring parts of a value, checked against the target count in one place so
+     * compiled code and the interpreter reject the same programs with the same words.
+     */
+    public static Object destructure(Object value, int count) {
+        return Values.destructuringParts(value, count, Errors.current());
+    }
+
+    /**
      * Membership, in the lowering's stack order: the item is pushed first, then the
      * container. The interpreter calls {@code Values.contains(container, item)}.
      */

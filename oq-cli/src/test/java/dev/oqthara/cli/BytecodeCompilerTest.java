@@ -17,6 +17,7 @@ import java.util.jar.JarFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -1145,6 +1146,48 @@ class BytecodeCompilerTest {
                 """));
         assertNotNull(reason, "a duplicate parameter count must not compile");
         assertTrue(reason.contains("f"), reason);
+    }
+
+    @Test
+    void destructuringCompilesAndMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        String source = """
+                a, b = (1, 2)
+                print a + b
+                const c, d = [10, 20]
+                print c * d
+                """;
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(),
+                compileAndRun(source, dir));
+    }
+
+    @Test
+    void aFailedDestructuringIsAtomicInCompiledCode(@TempDir Path dir) throws Exception {
+        String source = """
+                a = 100
+                b = 200
+                try
+                  a, b = (1, 2, 3)
+                catch
+                end
+                print a
+                print b
+                """;
+        assertEquals("100\n200\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void aCountMismatchFailsAtRunTimeInCompiledCode(@TempDir Path dir) throws Exception {
+        // The count is only knowable once the value exists, so this stays a run-time error
+        // rather than becoming a compile-time one; what matters is that compiled code raises
+        // it with the same words the interpreter uses.
+        byte[] compiled = BytecodeCompiler.compile(
+                ir("a, b = (1, 2, 3)\nprint a"), "oq.generated.Program");
+        Path jar = dir.resolve("prog.jar");
+        JarBuilder.build(jar, "oq.generated.Program", "a, b = (1, 2, 3)\nprint a\n",
+                "prog.oq", compiled);
+        ProcessResult result = runJarProcess(jar, dir);
+        assertNotEquals(0, result.exit(), "a count mismatch must fail, not print");
+        assertTrue(result.stderr().contains("3 items into 2 names"), result.stderr());
     }
 
     private record ProcessResult(int exit, String stdout, String stderr) {

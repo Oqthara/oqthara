@@ -494,6 +494,46 @@ public final class Values {
         return size(value, span);
     }
 
+    /**
+     * The ordered elements of a value a destructuring target list can take apart, or
+     * {@code null} when the value has no such shape. Maps yield their keys and text yields
+     * its characters, matching what {@code for ... in} iterates.
+     */
+    public static List<Object> destructuringParts(Object value) {
+        if (value instanceof OqData) return null;
+        if (value instanceof List<?> list) return new ArrayList<>(list);
+        if (value instanceof Set<?> set) return new ArrayList<>(set);
+        if (value instanceof OqRange range) return range.toList();
+        if (value instanceof Map<?, ?> map) return new ArrayList<>(map.keySet());
+        if (value instanceof String text) {
+            List<Object> chars = new ArrayList<>();
+            for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+            return chars;
+        }
+        return null;
+    }
+
+    /**
+     * The parts of {@code value}, checked against {@code count} targets. This is the single
+     * implementation of the destructuring rule: the interpreter and compiled code both call
+     * it, so a program cannot be accepted by one and rejected by the other.
+     */
+    public static List<Object> destructuringParts(Object value, int count, Span span) {
+        List<Object> parts = destructuringParts(value);
+        if (parts == null) {
+            throw new OqError("cannot destructure " + typeName(value), span,
+                    "Destructuring works with tuples, lists, sets, maps (keys), "
+                            + "ranges and text.");
+        }
+        if (parts.size() != count) {
+            throw new OqError("cannot destructure " + parts.size() + " item"
+                    + (parts.size() == 1 ? "" : "s") + " into " + count + " names", span,
+                    "The number of names must match the number of items exactly; "
+                            + "there is no rest target.");
+        }
+        return parts;
+    }
+
     public static Iterable<?> iterable(Object value, Span span) {
         if (value instanceof List<?> l) return l;
         if (value instanceof Set<?> s) return s;

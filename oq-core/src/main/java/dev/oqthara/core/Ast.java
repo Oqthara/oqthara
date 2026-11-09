@@ -15,7 +15,7 @@ public final class Ast {
     public sealed interface Stmt extends Node permits
             VarDecl, Assign, CompoundAssign, If, While, ForEach, ForRange,
             FuncDecl, Return, Break, Continue, DataDecl, ExprStmt, IndexAssign, FieldAssign,
-            UseStmt, ImportStmt, Command, TryStmt {
+            UseStmt, ImportStmt, Command, TryStmt, Destructure {
     }
 
     public sealed interface Expr extends Node permits
@@ -31,6 +31,14 @@ public final class Ast {
     }
 
     public record Assign(String name, Expr value, Span span) implements Stmt {
+    }
+
+    /**
+     * A comma-separated target list bound from one value. {@code mutable} is per statement,
+     * so {@code const a, b = pair} fixes both names; there is no per-target modifier.
+     */
+    public record Destructure(List<String> names, boolean mutable, Expr value, Span span)
+            implements Stmt {
     }
 
     public record CompoundAssign(String name, Token.Kind op, Expr value, Span span) implements Stmt {
