@@ -39,6 +39,11 @@ public final class OqFunction implements OqCallable {
     }
 
     @Override
+    public int arity() {
+        return params.size();
+    }
+
+    @Override
     public Object call(OqHost host, List<Object> args, Span span) {
         if (args.size() != params.size()) {
             throw new OqError(

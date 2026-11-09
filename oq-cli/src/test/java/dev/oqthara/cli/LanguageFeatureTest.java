@@ -450,6 +450,108 @@ class LanguageFeatureTest {
     }
 
     @Test
+    void overloadsResolveByParameterCount() {
+        assertEquals("9\n12\n", ok("""
+                fun area(side)
+                  return side * side
+                end
+                fun area(width, height)
+                  return width * height
+                end
+                print area(3)
+                print area(3, 4)
+                """));
+    }
+
+    @Test
+    void overloadResolutionIgnoresDeclarationOrder() {
+        String forward = """
+                fun area(side)
+                  return side * side
+                end
+                fun area(width, height)
+                  return width * height
+                end
+                print area(2, 5)
+                print area(2)
+                """;
+        String reversed = """
+                fun area(width, height)
+                  return width * height
+                end
+                fun area(side)
+                  return side * side
+                end
+                print area(2, 5)
+                print area(2)
+                """;
+        assertEquals(ok(forward), ok(reversed));
+        assertEquals("10\n4\n", ok(forward));
+    }
+
+    @Test
+    void callingAnOverloadWithAnUnknownArityNamesTheAcceptedCounts() {
+        fails("""
+                fun area(side)
+                  return side
+                end
+                fun area(width, height)
+                  return width + height
+                end
+                print area(1, 2, 3)
+                """, "2 arguments");
+    }
+
+    @Test
+    void duplicateParameterCountIsRejectedAtTheSecondDeclaration() {
+        fails("""
+                fun f(a)
+                  return a
+                end
+                fun f(b)
+                  return b
+                end
+                """, "is already defined with 1 parameter");
+    }
+
+    @Test
+    void overloadsRecurseAcrossArities() {
+        assertEquals("24\n", ok("""
+                fun fact(n)
+                  return 1
+                end
+                fun fact(n, acc)
+                  if n <= 1
+                    return acc
+                  end
+                  return fact(n - 1, acc * n)
+                end
+                print fact(4, 1)
+                """));
+    }
+
+    @Test
+    void aUserFunctionReplacesABuiltinOfTheSameName() {
+        assertEquals("mine\nmine2\n", ok("""
+                fun length(a)
+                  return "mine"
+                end
+                fun length(a, b)
+                  return "mine2"
+                end
+                print length([1, 2, 3])
+                print length(1, 2)
+                """));
+    }
+
+    @Test
+    void theBuiltinIsUnchangedWhenNoUserDefinitionExists() {
+        assertEquals("3\n", ok("""
+                print length([1, 2, 3])
+                """));
+    }
+
+    @Test
     void plainAssignmentStillCreatesAndUpdatesVariables() {
         assertEquals("1\n2\n", ok("""
                 x = 1

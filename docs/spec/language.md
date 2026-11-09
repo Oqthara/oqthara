@@ -236,6 +236,32 @@ fun counter()
 end
 ```
 
+### Overloading
+
+A name may carry several definitions as long as they differ in the number of
+parameters. Oqthara has no parameter type annotations, so arity is the only
+discriminator; resolution never inspects argument values.
+
+```
+fun area(side)
+  return side * side
+end
+
+fun area(width, height)
+  return width * height
+end
+
+print area(3)      # 9
+print area(3, 4)   # 12
+```
+
+A call selects the definition whose parameter count equals the number of
+arguments, and the result is the same in the interpreter and in compiled
+bytecode. Two definitions with the same arity are rejected where the second is
+declared. A user definition replaces a built-in of the same name rather than
+clashing with it. Defaults, named arguments, variadic parameters and generics do
+not participate in resolution. See [ADR-0012](../adr/0012-overload-resolution.md).
+
 ## Collections
 
 ```

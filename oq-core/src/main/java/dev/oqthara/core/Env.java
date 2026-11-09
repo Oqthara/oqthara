@@ -48,6 +48,22 @@ public final class Env {
         return values.containsKey(name);
     }
 
+    /** The value bound directly in this scope, or {@code null} when the name is not here. */
+    public Object getLocal(String name) {
+        Binding binding = values.get(name);
+        return binding == null ? null : binding.value();
+    }
+
+    /**
+     * True when this scope's binding for a name may be replaced by a user definition. Built-ins
+     * are shadowable so that a program's own function wins, as the interpreter has always
+     * documented; a user definition is not, because redefining it is a duplicate signature.
+     */
+    public boolean isShadowableLocal(String name) {
+        Binding binding = values.get(name);
+        return binding != null && binding.shadowable();
+    }
+
     public Object get(String name, Span span) {
         Binding binding = values.get(name);
         if (binding != null) return binding.value();
