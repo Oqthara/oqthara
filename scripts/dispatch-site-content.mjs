@@ -79,6 +79,17 @@ export function chooseDispatch({ eventName, ref, release }) {
 }
 
 /**
+ * Resolves release metadata from a webhook payload or an explicit release tag.
+ * The release pipeline uses an explicit tag because its GITHUB_TOKEN cannot trigger
+ * a separate release-event workflow.
+ */
+export function resolveRelease(eventRelease, explicitTag) {
+  if (eventRelease) return eventRelease;
+  const tag = String(explicitTag ?? "").trim();
+  return tag ? { tag_name: tag, draft: false } : null;
+}
+
+/**
  * Checks the decision matrix.
  *
  * This repository has no JavaScript test runner and no package manifest, and adding one for a
@@ -113,16 +124,29 @@ export function selfTest() {
     console.error(`${failed} decision case(s) failed.`);
     return 1;
   }
-  console.log(`Decision matrix verified: ${cases.length} cases.`);
+  const releaseCases = [
+    [null, "v0.1.0-alpha.3", "v0.1.0-alpha.3", "an explicit tag supplies release metadata"],
+    [{ tag_name: "v0.1.0-alpha.2", draft: false }, "v0.1.0-alpha.3", "v0.1.0-alpha.2", "webhook metadata takes precedence over an explicit tag"],
+    [null, "  ", null, "an empty explicit tag is ignored"],
+  ];
+  for (const [eventRelease, explicitTag, expectedTag, label] of releaseCases) {
+    const actualTag = resolveRelease(eventRelease, explicitTag)?.tag_name ?? null;
+    if (actualTag !== expectedTag) {
+      console.error(`FAIL ${label}: expected tag=${expectedTag}, got tag=${actualTag}`);
+      failed += 1;
+    }
+  }
+
+  console.log(`Decision matrix verified: ${cases.length + releaseCases.length} cases.`);
   return 0;
 }
 
 async function main() {
-  const eventName = process.env.GITHUB_EVENT_NAME ?? "";
+  const eventName = process.env.OQ_DISPATCH_EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? "";
   const decision = chooseDispatch({
     eventName,
     ref: process.env.GITHUB_REF ?? "",
-    release: readReleaseFromEvent(),
+    release: resolveRelease(readReleaseFromEvent(), process.env.OQ_RELEASE_TAG),
   });
 
   if (!decision.send) {
