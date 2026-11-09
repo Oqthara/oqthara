@@ -552,6 +552,131 @@ class LanguageFeatureTest {
     }
 
     @Test
+    void destructuringBindsEveryTarget() {
+        assertEquals("1\n2\n", ok("""
+                a, b = (1, 2)
+                print a
+                print b
+                """));
+    }
+
+    @Test
+    void destructuringReadsEverySequenceShape() {
+        assertEquals("30\n", ok("""
+                a, b = [10, 20]
+                print a + b
+                """));
+        assertEquals("x\ny\n", ok("""
+                first, second = {"x": 1, "y": 2}
+                print first
+                print second
+                """));
+        assertEquals("h\ni\n", ok("""
+                p, q = "hi"
+                print p
+                print q
+                """));
+        assertEquals("1\n2\n", ok("""
+                lo, hi = 1 to 2
+                print lo
+                print hi
+                """));
+    }
+
+    @Test
+    void destructuringUpdatesAnExistingBinding() {
+        assertEquals("9\n", ok("""
+                x = 0
+                y = 0
+                x, y = (9, 8)
+                print x
+                """));
+    }
+
+    @Test
+    void aCountMismatchWritesNothing() {
+        // The whole point of checking first: a failed destructuring must not leave the
+        // targets half-updated.
+        assertEquals("100\n200\n", ok("""
+                a = 100
+                b = 200
+                try
+                  a, b = (1, 2, 3)
+                catch
+                end
+                print a
+                print b
+                """));
+    }
+
+    @Test
+    void tooFewItemsIsReportedByName() {
+        fails("""
+                a, b, c = (1, 2)
+                """, "2 items into 3 names");
+    }
+
+    @Test
+    void tooManyItemsIsReportedByName() {
+        fails("""
+                a, b = (1, 2, 3)
+                """, "3 items into 2 names");
+    }
+
+    @Test
+    void aValueWithNoPartsCannotBeDestructured() {
+        fails("""
+                a, b = 5
+                """, "cannot destructure number");
+    }
+
+    @Test
+    void aDataValueIsNotDestructured() {
+        // Fields are named, so positional access would invent an ordering the declaration
+        // does not promise.
+        fails("""
+                data Point(x, y)
+                p = Point(1, 2)
+                a, b = p
+                """, "cannot destructure Point");
+    }
+
+    @Test
+    void destructuringIntoAConstRejectsReassignment() {
+        fails("""
+                const k, m = (1, 2)
+                k = 9
+                """, "cannot change 'k'");
+    }
+
+    @Test
+    void constDestructuringBindsBothNames() {
+        assertEquals("5\n6\n", ok("""
+                const c, d = (5, 6)
+                print c
+                print d
+                """));
+    }
+
+    @Test
+    void aRepeatedTargetIsRejected() {
+        fails("""
+                a, a = (1, 2)
+                """, "appears twice");
+    }
+
+    @Test
+    void destructuringWorksInsideANestedScope() {
+        assertEquals("3\n", ok("""
+                fun total()
+                  a, b = (1, 2)
+                  return a + b
+                end
+                print total()
+                """));
+    }
+
+    @Test
     void plainAssignmentStillCreatesAndUpdatesVariables() {
         assertEquals("1\n2\n", ok("""
                 x = 1

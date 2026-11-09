@@ -56,6 +56,36 @@ Values are snapshotted on assignment: assigning a list to another variable does 
 it for math purposes; both names still refer to the same list, and methods that mutate a
 list (`.push`, index assignment) are visible through both.
 
+### Destructuring
+
+```
+a, b = (1, 2)
+print a + b                 # 3
+
+const c, d = [10, 20]
+x, y = "hi"                 # x is "h", y is "i"
+first, second = {"a": 1, "b": 2}   # keys, in the map's own order
+```
+
+One value supplies several names. The number of values must equal the number of
+names; a mismatch is an error, never a partial binding. The source may be a tuple, a
+list, a set, a range, a map (which yields its keys, like iterating it) or text (which
+yields its characters, one per code point). `data` instances and every number, boolean
+or `nothing` value are rejected.
+
+Destructuring is a *binding* operation, not pattern matching. The left side is a plain
+list of names; there are no nested patterns, no rest target and no discard. `_` is an
+ordinary identifier, so `_ , b = v` binds `_` rather than discarding the first element.
+`(a, b) = v` is not destructuring either: parentheses on the left make a tuple literal,
+which cannot be assigned to.
+
+Names that already exist are updated; names that do not are created by the assignment,
+exactly as in single assignment. `const` makes all of the names read-only. Every name is
+resolved and the source is measured before any name is written, so a destructuring that
+fails on a count mismatch or on an immutable target leaves every target untouched. The
+source expression is evaluated exactly once. This is specified normatively in
+[ADR-0013](../adr/0013-destructuring.md).
+
 ## Text
 
 ```

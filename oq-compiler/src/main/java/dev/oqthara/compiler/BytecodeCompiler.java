@@ -54,6 +54,8 @@ public final class BytecodeCompiler {
     private static final int ACC_STATIC = 0x0008;
 
     private static final int ACONST_NULL = 0x01;
+    private static final int BIPUSH = 0x10;
+    private static final int SIPUSH = 0x11;
     private static final int ICONST_0 = 0x03;
     private static final int ICONST_1 = 0x04;
     private static final int LDC_W = 0x13;
@@ -894,6 +896,13 @@ public final class BytecodeCompiler {
                                 "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
                     }
                 }
+                case Ir.DestructureParts parts -> {
+                    if (reachable) {
+                        pushInt(parts.count());
+                        call(COLLECTIONS, "destructure",
+                                "(Ljava/lang/Object;I)Ljava/lang/Object;");
+                    }
+                }
                 case Ir.Range range -> {
                     if (reachable) {
                         call(COLLECTIONS, range.inclusive() ? "rangeInclusive" : "rangeExclusive",
@@ -1081,6 +1090,21 @@ public final class BytecodeCompiler {
             }
             throw new NotSupportedException("constant of type "
                     + value.getClass().getSimpleName() + " is not compiled yet");
+        }
+
+        /** Pushes the smallest int encoding for a small non-negative count. */
+        private void pushInt(int value) {
+            if (value >= 0 && value <= 5) {
+                bytes.write(ICONST_0 + value);
+            } else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) {
+                bytes.write(BIPUSH);
+                bytes.write(value & 0xFF);
+            } else {
+                bytes.write(SIPUSH);
+                bytes.write((value >> 8) & 0xFF);
+                bytes.write(value & 0xFF);
+            }
+            push();
         }
 
         private void ldc2(int index) {

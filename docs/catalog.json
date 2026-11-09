@@ -80,6 +80,12 @@
       "slug": "docs/adr/0012-overload-resolution"
     },
     {
+      "path": "docs/adr/0013-destructuring.md",
+      "title": "0013 — Destructuring binds and assigns, it does not pattern match",
+      "section": "adr",
+      "slug": "docs/adr/0013-destructuring"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

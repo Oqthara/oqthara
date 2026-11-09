@@ -249,6 +249,23 @@ public final class Interpreter implements OqHost {
                 }
             }
             case Ast.Assign assign -> env.assignOrDefine(assign.name(), evaluate(assign.value(), env), assign.span());
+            case Ast.Destructure destructure -> {
+                // The value is measured before any target is written, so a count mismatch
+                // leaves every target untouched rather than half-updated.
+                Object source = evaluate(destructure.value(), env);
+                List<Object> parts = Values.destructuringParts(
+                        source, destructure.names().size(), destructure.span());
+                for (int i = 0; i < parts.size(); i++) {
+                    String name = destructure.names().get(i);
+                    if (destructure.mutable()) {
+                        env.assignOrDefine(name, parts.get(i), destructure.span());
+                    } else {
+                        env.defineFixed(name, parts.get(i), "a 'const' binding",
+                                "A constant keeps its first value; use a different name,"
+                                        + " or declare it with an ordinary assignment.");
+                    }
+                }
+            }
             case Ast.CompoundAssign assign -> {
                 Object current = env.get(assign.name(), assign.span());
                 Object value = evaluate(assign.value(), env);
