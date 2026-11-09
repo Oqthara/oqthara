@@ -67,6 +67,7 @@ public final class Values {
         if (value instanceof Set<?>) return "set";
         if (value instanceof OqRange) return "range";
         if (value instanceof OqData d) return d.typeName();
+        if (value instanceof OqTask) return "task";
         if (value instanceof OqCallable c) return "function " + c.name();
         return "java " + value.getClass().getSimpleName();
     }

@@ -310,6 +310,42 @@ class LanguageFeatureTest {
     }
 
     @Test
+    void everyValueReportsALanguageLevelTypeName() {
+        // `typeName` is the single place a value becomes text for `type_of`, diagnostics and
+        // `repr`. A value missing from it leaks a host class name, which breaks the
+        // abstraction and can differ between interpreter and compiled code.
+        assertEquals("number\ndecimal\ntext\nboolean\nnothing\nlist\nset\nmap\ntuple\n"
+                + "range\nfunction f\ntask\n", ok("""
+                fun f()
+                  return 1
+                end
+                print type_of(1)
+                print type_of(1.5)
+                print type_of("x")
+                print type_of(true)
+                print type_of(nothing)
+                print type_of([1])
+                print type_of({1})
+                print type_of({"a": 1})
+                print type_of((1, 2))
+                print type_of(range(1, 3))
+                print type_of(f)
+                print type_of(spawn(f))
+                """));
+    }
+
+    @Test
+    void aTaskReportsItselfAsATask() {
+        // Before this was fixed, `type_of(spawn(f))` printed the host class name `java OqTask`.
+        assertEquals("task\n", ok("""
+                fun f()
+                  return 1
+                end
+                print type_of(spawn(f))
+                """));
+    }
+
+    @Test
     void exitWithZero() {
         OqRunner.Result result = OqRunner.run("print \"a\"\nexit(0)\nprint \"b\"");
         assertEquals(0, result.code());
