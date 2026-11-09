@@ -213,6 +213,34 @@ end
 `to` includes the end value. `until` excludes it. Loop variables are local to the
 loop body. `break` and `continue` work inside all loops.
 
+### Changing a collection while looping over it
+
+A loop walks a **snapshot** taken when it starts, so the body may change the
+collection it is looping over. The loop still visits exactly the items that were
+present when it began:
+
+```
+xs = [1, 2, 3]
+for x in xs
+  xs.add(x * 10)
+end
+print xs
+```
+
+```
+[1, 2, 3, 10, 20, 30]
+```
+
+The same applies to sets, to a map's keys, and to the collection methods that take
+a callback — `map`, `filter`, `each`, `any`, `all`, `find`, `find_index`, `reduce`
+and `flatten` all walk a snapshot too. Ranges and text were already unaffected
+because both are converted to a list before the loop starts.
+
+Mutation is neither forbidden nor dangerous, and it is not an error, so a program
+that removes items in the loop simply finishes with those items removed. Writing to
+a collection from two tasks at once is still a data race: a snapshot fixes what a
+loop visits, not concurrent access.
+
 `to` and `until` are **contextual**: they only act as range operators between two
 expressions, so they are still valid variable and parameter names.
 

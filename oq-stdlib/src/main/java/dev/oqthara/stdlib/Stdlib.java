@@ -255,8 +255,8 @@ public final class Stdlib {
             return result;
         }));
         interpreter.defineBuiltin(NativeFunction.of("zip", 2, (host, args, span) -> {
-            List<?> a = (List<?>) Values.iterable(args.get(0), span);
-            List<?> b = (List<?>) Values.iterable(args.get(1), span);
+            List<?> a = Values.iterableList(args.get(0), span);
+            List<?> b = Values.iterableList(args.get(1), span);
             List<Object> result = new ArrayList<>();
             int n = Math.min(a.size(), b.size());
             for (int i = 0; i < n; i++) {
@@ -334,7 +334,7 @@ public final class Stdlib {
             return ThreadLocalRandom.current().nextLong(from, to);
         }));
         interpreter.defineBuiltin(NativeFunction.of("random_item", 1, (host, args, span) -> {
-            List<?> items = (List<?>) Values.iterable(args.get(0), span);
+            List<?> items = Values.iterableList(args.get(0), span);
             if (items.isEmpty()) return null;
             return items.get(ThreadLocalRandom.current().nextInt(items.size()));
         }));
@@ -560,7 +560,7 @@ public final class Stdlib {
             return task.isDone();
         }));
         interpreter.defineBuiltin(NativeFunction.of("par_map", 2, (host, args, span) -> {
-            List<?> items = (List<?>) Values.iterable(args.get(0), span);
+            List<?> items = Values.iterableList(args.get(0), span);
             Object callback = args.get(1);
             List<java.util.concurrent.CompletableFuture<Object>> futures = new ArrayList<>();
             try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {

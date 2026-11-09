@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Changing a collection while looping over it is well defined.** A loop now walks a snapshot
+  of the collection taken when it started, so the body may `add`, `remove` or `remove_value` on
+  the very collection it is visiting. This used to be a fatal bug: `for x in xs` followed by
+  `xs.add(9)` reached `java.util`'s fail-fast check and died on exit code 70 with
+  `internal error: ConcurrentModificationException ... This is a bug in Oqthara`, which no `try`
+  could catch. The collection methods that take a callback (`map`, `filter`, `each`, `any`,
+  `all`, `find`, `find_index`, `reduce`, `flatten`, and the map versions of `each` and `map`)
+  snapshot the receiver too. Ranges and text behaved this way already.
+  See [ADR-0016](docs/adr/0016-iteration-snapshots.md).
+
 
 - **`try` as an expression.** `try ... catch ... end` may now be used wherever a value is
   expected, not only as a statement: `n = try / number(text) / catch err / 0 / end`. The value is
@@ -36,6 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pattern matching: there is no rest target, `_` is not a discard, and `(a, b) = x` remains a
   tuple literal on the left and is rejected. The rule is specified in
   [ADR-0013](docs/adr/0013-destructuring.md).
+
+### Fixed
+
+- **Three collection builtins no longer crash on a set.** `zip({1, 2}, {3, 4})`,
+  `random_item({1})` and `par_map({1, 2}, f)` cast the result of `Values.iterable` straight to
+  `List`, so any set argument threw `ClassCastException` and exited 70 with
+  `internal error ... This is a bug in Oqthara`. A list, a range and text happened to satisfy the
+  cast, which is why the defect survived: only the set path was ever wrong.
+- **A callback argument of the wrong type is now the program's error.** `[1, 2].reduce(0, f)` —
+  the arguments reversed, since the shape is `reduce(fn, start)` — cast `0` to `OqCallable` and
+  reported an internal error. It now says `'reduce' needs a function as argument 1` and suggests
+  `reduce(fn, start)`. The same applies to `sort`.
 
 ### Fixed
 

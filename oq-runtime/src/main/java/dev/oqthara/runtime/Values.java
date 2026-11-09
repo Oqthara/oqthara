@@ -535,11 +535,46 @@ public final class Values {
         return parts;
     }
 
+    /**
+     * The items a loop or a collection function walks, captured when iteration starts.
+     *
+     * <p>The result is always a <em>snapshot</em>: {@link List#copyOf}
+     * (or its mutable equivalent) rather than the caller's own collection. Returning the live
+     * collection let the loop body reach back into it, and {@code java.util} then threw
+     * {@code ConcurrentModificationException} from a place that had no Oqthara diagnostic to
+     * give, so a program that appended to a list while looping over it died with
+     * {@code internal error: ... This is a bug in Oqthara}. Snapshotting makes that program
+     * well defined instead: it visits exactly the items present when the loop began. The
+     * alternative — refusing the mutation — cannot work, because the loop cannot know which
+     * of its own operations are the ones mutating, and the runtime has no way to attribute a
+     * mutation to a particular loop.
+     *
+     * <p>Both backends share this one function, so the interpreter and compiled bytecode
+     * necessarily agree on which items are visited.
+     */
+    /**
+     * The snapshot from {@link #iterable} as a list, for code that needs indexing or a size.
+     *
+     * <p>{@code iterable} has to return {@link Iterable} because that is all a loop needs, but
+     * its result is always a list in practice. Callers used to write
+     * {@code (List<?>) iterable(...)} and were right by accident: the cast compiled, then
+     * {@code zip({1, 2}, {3, 4})} threw {@code ClassCastException} because a set went straight
+     * through. Going through this method makes the list-ness a fact of the API rather than an
+     * assumption at each call site.
+     */
+    public static List<?> iterableList(Object value, Span span) {
+        Iterable<?> items = iterable(value, span);
+        if (items instanceof List<?> list) return list;
+        List<Object> copy = new ArrayList<>();
+        for (Object item : items) copy.add(item);
+        return copy;
+    }
+
     public static Iterable<?> iterable(Object value, Span span) {
-        if (value instanceof List<?> l) return l;
-        if (value instanceof Set<?> s) return s;
+        if (value instanceof List<?> l) return new ArrayList<>(l);
+        if (value instanceof Set<?> s) return new ArrayList<>(s);
         if (value instanceof OqRange r) return r.toList();
-        if (value instanceof Map<?, ?> m) return m.keySet();
+        if (value instanceof Map<?, ?> m) return new ArrayList<>(m.keySet());
         if (value instanceof String s) {
             List<Object> chars = new ArrayList<>();
             for (int i = 0; i < s.length(); i++) chars.add(String.valueOf(s.charAt(i)));

@@ -15,6 +15,12 @@ class ErrorMessageContractTest {
         return OqRunner.run("<test>", source, java.util.List.of(), "", java.nio.file.Path.of("."));
     }
 
+    private String ok(String source) {
+        OqRunner.Result result = run(source);
+        assertEquals(0, result.code(), "program failed: " + result.stderr());
+        return result.stdout();
+    }
+
     private void goodError(String source, String expectedFragment) {
         OqRunner.Result result = run(source);
         assertEquals(1, result.code(), "expected a user error for: " + source
@@ -110,5 +116,77 @@ class ErrorMessageContractTest {
             boolean hasPosition = stderr.contains("-->") || stderr.contains("line");
             assertTrue(hasPosition, "no position or line for " + source + ":\n" + stderr);
         }
+    }
+
+    /**
+     * Changing a collection while a loop walks it used to reach {@code java.util}'s own
+     * fail-fast check, which threw {@code ConcurrentModificationException} from a place with
+     * no Oqthara diagnostic available. The program then died on exit code 70 with
+     * "internal error ... This is a bug in Oqthara". Iteration now walks a snapshot, so both
+     * backends visit exactly the items that were present when the loop started.
+     */
+    @Test
+    void changingACollectionDuringIterationIsWellDefined() {
+        assertEquals("[1, 2, 3, 10, 20, 30]\n", ok("""
+                xs = [1, 2, 3]
+                for x in xs
+                  xs.add(x * 10)
+                end
+                print xs
+                """));
+        assertEquals("{1, 2, 3, 11, 12, 13}\n", ok("""
+                s = set([1, 2, 3])
+                for v in s
+                  s.add(v + 10)
+                end
+                print s
+                """));
+        // Removing the key being visited must not disturb the walk, which is over the keys
+        // that existed at the start.
+        assertEquals("{}\n", ok("""
+                m = {"a": 1, "b": 2}
+                for k in m
+                  m.remove(k)
+                end
+                print m
+                """));
+    }
+
+    @Test
+    void changingACollectionInsideACallbackIsWellDefined() {
+        assertEquals("[nothing, nothing, nothing]\n", ok("""
+                xs = [1, 2, 3]
+                print xs.map((x) -> xs.add(9))
+                """));
+        assertEquals("[1, 2, 3]\n", ok("""
+                xs = [1, 2, 3]
+                print xs.filter((x) -> xs.remove_value(x))
+                """));
+        assertEquals("{}\n", ok("""
+                m = {"a": 1}
+                m.each((k, v) -> m.remove(k))
+                print m
+                """));
+    }
+
+    /**
+     * The four builtins that accepted any collection used to cast it to {@code List}, so a set
+     * crashed with {@code ClassCastException}. They now take what iteration gives them.
+     */
+    @Test
+    void collectionBuiltinsAcceptSets() {
+        assertEquals("[[1, 3], [2, 4]]\n", ok("print zip({1, 2}, {3, 4})"));
+        assertEquals("7\n", ok("print random_item({7})"));
+        assertEquals("[2, 4]\n", ok("print par_map({1, 2}, (x) -> x * 2)"));
+    }
+
+    /**
+     * A callback argument of the wrong type is the program's mistake, so it has to read as one.
+     * It used to be an unchecked cast, which surfaced as {@code ClassCastException} on exit 70.
+     */
+    @Test
+    void aCallbackArgumentOfTheWrongTypeNamesTheArgument() {
+        goodError("[1, 2].reduce(0, (a, x) -> a + x)", "needs a function as argument 1");
+        goodError("[1, 2].sort(0)", "needs a function as argument 1");
     }
 }
