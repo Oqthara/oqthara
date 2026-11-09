@@ -1,6 +1,24 @@
 # Alpha 4 Phase 0 — First-Session Report (Directive §66, A–G)
 
-**Verdict: the Phase 0 gate is NOT satisfied. Alpha 4 remains BLOCKED.**
+**Verdict at time of writing: the Phase 0 gate was NOT satisfied. Alpha 4 was BLOCKED.**
+
+> **This is a historical audit record, preserved as written.** It was produced during the
+> read-only Alpha 3 audit, before remediation was authorized. Its findings describe the state at
+> `a104629e` and are kept unedited so the delta is visible.
+>
+> **Current Phase 0 status is assessed separately in
+> [`../../alpha-4-phase-0-assessment.md`](../../alpha-4-phase-0-assessment.md)**, written after
+> remediation completed at `e32215f5`. Several of the blockers recorded below were subsequently
+> fixed; others changed form. Read that document for the current gate, not this one.
+>
+> Two findings below were later overturned by evidence:
+>
+> - **§A "tag misdirected"** — the released `oq.jar` is byte-reproducible from `a104629e` and not
+>   from `5b33f18`, so the tag names the commit the artifact came from. See
+>   [`alpha-3-release-provenance.md`](alpha-3-release-provenance.md).
+> - **§B's "no review requirement"** — the `pull_request` rule now exists and is enforced, under
+>   the documented solo-maintainer exception recorded in
+>   [`solo-maintainer-exception.md`](solo-maintainer-exception.md).
 
 Read-only audit. No repository files created, modified, or deleted. Every fact below was
 re-verified against `origin/main` via `git show origin/main:<path>` — **not** from the local
@@ -8,6 +26,26 @@ worktree, which is two commits stale. Corrections to the earlier verbal report a
 in §B.1 and are authoritative where they conflict with anything said before.
 
 Baseline: `Oqthara/oqthara` @ `a104629e6adef727b31f2c6f06a28a0045cd7835`.
+
+## Solo-maintainer governance exception — recorded against this report
+
+This report's review-related findings assume a project that can supply an independent reviewer.
+It cannot.
+
+- There is currently **one human maintainer** of Oqthara.
+- The GitHub account `JoaoGaValentim` belongs to **that same person**. It is not a second human
+  and is not an independent reviewer. An approval from it is a self-approval.
+- **Independent human review was not performed** for Alpha 3 or for the Phase 0 assessment.
+- The maintainer **explicitly authorized and accepted** this bounded governance exception, as
+  recorded in [`solo-maintainer-exception.md`](solo-maintainer-exception.md).
+- **Required CI, pull requests and protected-branch enforcement remain active.** The
+  `pull_request` rule is enforced, direct pushes are rejected, all 12 required CI contexts are
+  mandatory, and review-thread resolution is required.
+- **Independent review requirements must be reconsidered when another genuine human maintainer
+  joins.** The restoration command is recorded in the exception document.
+- Any review slot in this report that names an agent — such as `oq-hive-review-escalation` — is
+  **tool separation, not model independence**. All Hive agents pin the same model endpoint, so
+  their review is correlated with the author's. AI review here is supplemental assurance only.
 
 ---
 

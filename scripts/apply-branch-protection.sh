@@ -7,14 +7,35 @@
 # The ruleset enforces four things on refs/heads/main:
 #
 #   deletion / non_fast_forward  the branch cannot be deleted or force-pushed;
-#   pull_request                 a change must arrive as a pull request and carry
-#                                at least one approval. This rule was absent until
-#                                the Alpha 3 remediation, which is exactly how PR #37
-#                                merged runtime changes with zero reviews while its
-#                                body claimed it touched no Java;
+#   pull_request                 a change must arrive as a pull request, carry a
+#                                review, resolve its conversations, and be squashed.
+#                                This rule was absent until the Alpha 3 remediation,
+#                                which is exactly how PR #37 merged runtime changes
+#                                with zero reviews while its body claimed it touched
+#                                no Java;
 #   required_status_checks       the CI contexts below must pass.
 #
 # bypass_actors is empty on purpose: the maintainer is bound by these rules too.
+#
+# REQUIRED_APPROVALS defaults to 0 under a documented solo-maintainer exception.
+#
+# Oqthara has one human maintainer. The GitHub account JoaoGaValentim belongs to the
+# same person and is not an independent reviewer, so a nonzero approval count would
+# either block every change permanently or invite a self-approval dressed up as a
+# second opinion. Setting it to 0 keeps every mechanical control - pull requests,
+# required checks, thread resolution, squash-only, no bypass, no force-push, no
+# deletion - while removing the one control a single maintainer cannot honestly
+# satisfy.
+#
+# This is a narrowed review requirement, not an absent one, and it is recorded as
+# such in docs/governance/remediation/solo-maintainer-exception.md. The pull_request
+# rule remains active with required_review_thread_resolution and
+# dismiss_stale_reviews_on_push, so review threads are still enforced even though
+# the approval count is zero.
+#
+# Raise this back to 1 the moment a second genuine human maintainer joins:
+#
+#   REQUIRED_APPROVALS=1 scripts/apply-branch-protection.sh
 #
 # Only checks that run on every push are required. The Docker job is filtered by
 # `paths:` in docker.yml, so requiring it would leave a documentation-only pull
@@ -26,10 +47,23 @@ set -euo pipefail
 REPO="${REPO:-Oqthara/oqthara}"
 RULESET_NAME="main-protection"
 DRY_RUN=false
+# See the solo-maintainer exception note above before changing this.
+REQUIRED_APPROVALS="${REQUIRED_APPROVALS:-0}"
+
+case "$REQUIRED_APPROVALS" in
+  ''|*[!0-9]*)
+    echo "error: REQUIRED_APPROVALS must be a non-negative integer, got '${REQUIRED_APPROVALS}'" >&2
+    exit 2
+    ;;
+esac
 
 usage() {
   echo "usage: $0 [--dry-run] [--repo OWNER/NAME]" >&2
   echo "  --dry-run  print the ruleset payload and exit without calling the API" >&2
+  echo "environment:" >&2
+  echo "  REPO               repository to protect (default: Oqthara/oqthara)" >&2
+  echo "  REQUIRED_APPROVALS approvals required (default: 0 under the solo-maintainer" >&2
+  echo "                     exception; set to 1 once a second human maintainer joins)" >&2
 }
 
 while [ "$#" -gt 0 ]; do
@@ -60,11 +94,13 @@ payload=$(cat <<JSON
     {
       "type": "pull_request",
       "parameters": {
-        "required_approving_review_count": 1,
+        "required_approving_review_count": ${REQUIRED_APPROVALS},
         "dismiss_stale_reviews_on_push": true,
         "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": true,
+        "require_extra_approval_for_unattributed_changes": true,
+        "required_reviewers": [],
         "allowed_merge_methods": ["squash"]
       }
     },
@@ -111,6 +147,9 @@ ruleset_id=$(gh api "repos/${REPO}/rulesets" --paginate \
 
 if [ -n "$ruleset_id" ]; then
   echo "updating ruleset ${RULESET_NAME} (${ruleset_id})" >&2
+  # PUT replaces the whole ruleset. The payload above is therefore a complete snapshot:
+  # every field this repository relies on must be spelled out here, because anything
+  # omitted is reset to the API default rather than left alone.
   gh api --method PUT "repos/${REPO}/rulesets/${ruleset_id}" --input - <<<"$payload" >/dev/null
 else
   echo "creating ruleset ${RULESET_NAME}" >&2
