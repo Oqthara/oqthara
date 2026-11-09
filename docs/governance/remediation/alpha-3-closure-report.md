@@ -373,3 +373,62 @@ exception document records the command so it is not forgotten.
 - Independent review must be reconsidered when another genuine human maintainer joins. The exact
   command to restore it is recorded in
   [`solo-maintainer-exception.md`](solo-maintainer-exception.md) and in OQ-DEC-2026-010.
+
+## 7. Closure record — merge and final state
+
+This verdict was published by merging the finalization pull request through the protected
+workflow. No bypass was used, no administrative override, and no approval was fabricated.
+
+| Item | Value |
+| --- | --- |
+| Initial `main` (remediation baseline) | `a104629e6adef727b31f2c6f06a28a0045cd7835` |
+| Remediation merge (#40) | `e32215f59d74a04af4327587459bf0cb4518b884` |
+| Finalization PR | [#41](https://github.com/Oqthara/oqthara/pull/41) |
+| Finalization branch head | `fdcd833291d2f5351f19437b7b66b1ed5aa45671` |
+| **Final merge commit on `main`** | **`4f82fe98e0308d11a0cea8e2489eaf8c68bbfb06`** |
+| Merge method | squash, through the protected pull-request workflow |
+
+### Effective ruleset at closure
+
+Read back from ruleset `26650412` after the merge, not before:
+
+```
+enforcement:      active
+target:           branch   refs/heads/main
+rules:            deletion, non_fast_forward, pull_request, required_status_checks
+required_approving_review_count:   0        # the exception
+required_review_thread_resolution: true
+dismiss_stale_reviews_on_push:     true
+allowed_merge_methods:             ["squash"]
+required_status_checks:            12 contexts, strict_required_status_checks_policy: true
+bypass_actors:                     []
+current_user_can_bypass:           never
+```
+
+The only value that differs from a conventional protected branch is the approval count. A
+direct push to `refs/heads/main` was attempted again after the merge and refused with
+`GH013: Repository rule violations found for refs/heads/main`.
+
+### Post-merge verification on `main`
+
+| Workflow | Result |
+| --- | --- |
+| CI | success |
+| CodeQL | success |
+| Site content dispatch | success |
+| Firebase sync (`Oqthara/Oqthara.github.io`) | success — read 70 source records from `Oqthara/oqthara@main` at `4f82fe9` |
+
+### Checks on the finalization pull request
+
+All 14 reported checks passed, including all 12 required contexts. Zero review threads, so
+`required_review_thread_resolution` had nothing to block. `mergeStateStatus` reached `CLEAN`
+before the merge.
+
+### What an auditor will find if they check
+
+- The `JoaoGaValentim` approval on #41 is present in the review history as `DISMISSED`. It was a
+  self-approval, dismissed by `dismiss_stale_reviews_on_push`. It is not counted as review.
+- No human other than the maintainer reviewed any of this work, and no document claims otherwise.
+- The agent review that found the Critical defect is recorded as correlated, not independent.
+- The review did find a real Critical defect — documents claiming an applied policy change that
+  had not been applied — and it was fixed before merge rather than merged over.

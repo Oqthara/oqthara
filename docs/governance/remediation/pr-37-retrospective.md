@@ -83,8 +83,11 @@ this retrospective and for the governance changes that follow.
 
 **That requirement is not met, and cannot be met in this repository as configured:**
 
-- `repos/Oqthara/oqthara/collaborators` returns exactly one account: `Oqthara` (admin).
-- `repos/Oqthara/Oqthara.github.io/collaborators` returns the same single account.
+- `repos/Oqthara/oqthara/collaborators` returns two accounts: `Oqthara` (admin) and
+  `JoaoGaValentim` (write). Both belong to the same human maintainer. The second account has
+  write access and can submit an approving review, but an approval from it is a self-approval,
+  not a second opinion.
+- `repos/Oqthara/Oqthara.github.io/collaborators` has no independent reviewer either.
 - Every agent in `.github/agents/` pins the same model endpoint, so agent-level review is
   the same model reviewing its own family's output. The order explicitly states that is
   not sufficient for high-impact governance and release changes.
@@ -93,10 +96,31 @@ This review was therefore performed by the same maintainer account, assisted by 
 It is an honest technical reconstruction, and it is **not** independent sign-off. Recording
 it as independent would be fabrication.
 
-**What would clear it:** add at least one collaborator with write access who is not the
-release author, require their approval on the closure pull request, and have them review
-this document. Until then, the PR #37 sign-off gate is **BLOCKED**, and Alpha 3 closure is
-conditional on that gate, as recorded in the closure report.
+### Resolution: an explicit, accepted exception
+
+The gate is not cleared by review. It is closed by a recorded maintainer decision, which is a
+different thing and is labelled as such.
+
+The maintainer explicitly authorized a bounded governance exception for the duration of the
+single-maintainer condition, and it is recorded in
+[`solo-maintainer-exception.md`](solo-maintainer-exception.md) and OQ-DEC-2026-010. Under it,
+`required_approving_review_count` is `0`, because with one human maintainer the only alternatives
+are "nothing merges" and "the second account approves and the audit trail lies".
+
+Consequences for this document:
+
+- **This retrospective is complete in content** and remains **unsigned by an independent
+  reviewer**. Neither of those facts has changed.
+- **Alpha 3 closure is no longer conditional on this sign-off.** It closed under the exception,
+  with the verdict recorded in the closure report.
+- The exception does not convert this review into independent sign-off, and nothing here should
+  be read that way.
+
+**What would close the independence gap for real:** a second genuine human maintainer joins,
+reviews this document, and the approval count is restored with
+`REQUIRED_APPROVALS=1 scripts/apply-branch-protection.sh`. Independent review of this
+retrospective must be obtained at that point; the document is deliberately left where it is so
+that the gap is visible rather than closed by rewriting.
 
 ## Verdict
 
