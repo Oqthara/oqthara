@@ -137,6 +137,10 @@ export function selfTest() {
     }
   }
 
+  if (failed) {
+    console.error(`${failed} release metadata case(s) failed.`);
+    return 1;
+  }
   console.log(`Decision matrix verified: ${cases.length + releaseCases.length} cases.`);
   return 0;
 }
