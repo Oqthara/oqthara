@@ -269,14 +269,7 @@ class HostBuiltinLimitsTest {
         Path marker = dir.resolve("child.pid");
         Path script = script(
                 "sleep 60 & echo $! > " + marker + "; wait",
-                // The child chain is moved out of the test's temp directory and the grandchild is
-                // started there too. Windows refuses to delete a directory that any live process
-                // still has as its current directory, so a child that was killed but not yet fully
-                // torn down would fail @TempDir cleanup rather than the assertion below, which is
-                // what actually guards the contract. run_command makes its own child's working
-                // directory the interpreter's, and that one is the process destroyTree waits for.
-                "cd /d \"%TEMP%\"\n"
-                        + powershell("$i = New-Object System.Diagnostics.ProcessStartInfo; "
+                powershell("$i = New-Object System.Diagnostics.ProcessStartInfo; "
                         + "$i.FileName = 'powershell.exe'; "
                         + "$i.Arguments = '-NoProfile -Command Start-Sleep -Seconds 60'; "
                         + "$i.UseShellExecute = $false; "
@@ -318,7 +311,15 @@ class HostBuiltinLimitsTest {
         if (WINDOWS) {
             // cmd.exe wants CRLF and can misread a final line with no terminator.
             Path file = dir.resolve("fixture.bat");
+            // Leave the test's temp directory before doing anything else. run_command makes the
+            // interpreter's directory the child's working directory, and that directory is
+            // `dir`, which @TempDir owns. Windows refuses to delete a directory that a live
+            // process still holds as its current directory, and a child killed for exceeding a
+            // limit is not necessarily torn down by the time @TempDir cleanup runs, so the
+            // teardown failed instead of the assertion that actually guards the contract.
+            // Doing this at the source means no fixture can reintroduce it.
             Files.writeString(file, "@echo off\r\n"
+                    + "cd /d \"%TEMP%\"\r\n"
                     + windowsBody.replace("\n", "\r\n") + "\r\n");
             return file;
         }
