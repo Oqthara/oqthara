@@ -45,10 +45,10 @@ small open-source project and keep GitHub minutes for the Linux/Windows matrix.
 - The macOS leg is no longer part of the required GitHub status checks. The release gate
   (section 9.4 of the master prompt) still requires every OS to be green, so the release
   procedure must read CircleCI status as well as GitHub status.
-- A human must enable the CircleCI project once. Until then, macOS is untested in CI and
-  that is recorded in `NEEDS_HUMAN.md` and in `STATUS.md` as `macOS: pending`.
-- Two CI dashboards exist. `RESUME.md` and `STATUS.md` list both URLs so a new session
-  does not assume GitHub is the only source of truth.
+- A human must enable the CircleCI project once. Until then, macOS is untested in CI.
+- Two CI dashboards exist. `.circleci/config.yml` carries the macOS leg and
+  `.github/workflows/ci.yml` names it in a comment, so a new session does not assume GitHub
+  is the only source of truth.
 - If CircleCI becomes unavailable, the fallback is to re-add `macos-latest` to the GitHub
   matrix; the workflow is a single-line change and the ADR documents the tradeoff.
 - The release gate is automated: `release.yml` runs `scripts/check-circleci.py` before

@@ -57,21 +57,22 @@ end
 
 ## Simplicity metrics
 
-Tracked in `STATUS.md` on every cycle:
-
 | Metric | Target | Current |
 |---|---|---|
-| Keywords | ≤ 30 | 20 |
+| Keywords | ≤ 30 | 21 |
 | Hello world | 1 line | 1 line (`print "Hello, World!"`) |
 | Tutorial concepts before first useful program | ≤ 3 | 2 (`print`, text) |
-| Ways to declare a variable | 1 | 1 |
+| Ways to declare a variable | 2 (`x = ...`, `const x = ...`) | 2 |
 | Ways to write a function | 2 (`fun` declaration, `->` lambda) | 2 |
 
-The keyword list is checked by a test in `oq-core`. Adding a keyword requires an ADR
-and a line in the "Simplicity" table of `STATUS.md`, so the count cannot drift
-silently.
+The keyword count is enforced by `scripts/check-docs-sync.py`, which reads
+`Lexer.KEYWORDS` and `CONTRIBUTING.md` together and fails CI when either the count or
+the documented list drifts. Adding a keyword requires an ADR and an edit to both, so the
+count cannot change silently.
 
 ## Architecture
+
+There are two execution paths, built from one front end.
 
 ```
 source (.oq)
@@ -82,16 +83,29 @@ source (.oq)
    v
  Parser -> AST
    |
-   v
- Interpreter (tree-walking, todays backend)
-   |
-   +-> Runtime values (List, Map, Set, OqData, OqRange, Java objects)
-   +-> Stdlib (text, files, JSON, time, HTTP, processes)
-   +-> JavaBridge (reflection for `use`, constructors, methods, static calls)
+   +---------------------------+
+   |                           |
+   v                           v
+ Interpreter                 Lowering -> IR (flat instructions)
+ (tree-walking)                 |
+   |                            v
+   |                         BytecodeCompiler -> class file
+   |                            |
+   +-------------+--------------+
+                 |
+                 v
+       Runtime values (List, Map, Set, OqData, OqRange, Java objects)
+       Stdlib (text, files, JSON, time, HTTP, processes)
+       JavaBridge (reflection for `use`, constructors, methods, static calls)
 ```
 
-The bytecode backend (`oq-compiler`) will consume the same AST and must pass the same
-conformance suite. `conformance/` is the contract between backends.
+`oq run` uses the interpreter. `oq build` lowers to IR and compiles it, and falls back
+to a launcher that interprets the embedded source when the compiler refuses a construct
+(the reason is printed as `codepath: interpreter launcher (<reason>)`). Both paths must
+pass the same conformance suite: `conformance/` is the contract between them.
+
+The state models for each path are in `docs/spec/states/`. `01-language.md` covers the
+interpreter's language states and `02-compiler.md` covers the build pipeline.
 
 ## Error philosophy
 

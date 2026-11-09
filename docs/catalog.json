@@ -200,6 +200,12 @@
       "slug": "docs/spec/states/01-language"
     },
     {
+      "path": "docs/spec/states/02-compiler.md",
+      "title": "7.2 Compiler state machine",
+      "section": "spec",
+      "slug": "docs/spec/states/02-compiler"
+    },
+    {
       "path": "docs/stdlib/reference.md",
       "title": "Standard library reference",
       "section": "stdlib",

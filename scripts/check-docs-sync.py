@@ -122,6 +122,23 @@ def keyword_budget_is_honest() -> None:
         problems.append(f"CONTRIBUTING.md is over its own budget: {claimed_count} > {claimed_budget}")
     note(f"CONTRIBUTING.md keyword count ({claimed_count}) matches the lexer")
 
+    # design.md states the same count in its simplicity table. It is a third copy, and it
+    # was the one that drifted to 20 while the lexer had 21, so it is checked explicitly.
+    design = read("docs/spec/design.md")
+    design_count = re.search(r"\| Keywords \| ≤ (\d+) \| (\d+) \|", design)
+    if not design_count:
+        problems.append("design.md does not state the keyword budget and count")
+        return
+    design_budget, design_current = int(design_count.group(1)), int(design_count.group(2))
+    if design_current != len(keywords):
+        problems.append(
+            f"design.md claims {design_current} keywords but the lexer defines "
+            f"{len(keywords)}")
+    if design_budget != budget:
+        problems.append(
+            f"design.md states a budget of {design_budget} but the reference says {budget}")
+    note(f"design.md keyword count ({design_current}) matches the lexer")
+
 
 # 3. Every CLI command in the help text must be documented in docs/reference/cli.md.
 def documented_commands_exist() -> None:

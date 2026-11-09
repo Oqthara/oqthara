@@ -47,6 +47,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tuple literal on the left and is rejected. The rule is specified in
   [ADR-0013](docs/adr/0013-destructuring.md).
 
+### Documentation
+
+- **Two formal state-machine models of the language and the compiler** under `docs/spec/states/`.
+  `01-language.md` models execution — states `S0`–`SX`, transitions `T1`–`T38`, invariants
+  `L1`–`L12` — covering evaluation, binding and scope, control flow, error propagation and
+  termination. `02-compiler.md` models `oq build` — states `S0 Accept`–`SX Rejected`, transitions
+  `C1`–`C39` across the front end, middle end, back end and artifact stages, invariants `K1`–`K13`.
+  Both document the states a program can reach, the moves between them, the properties that hold
+  in every state, and the invalid transitions with the exact diagnostic each produces. Every
+  diagnostic quoted in either document was measured against a running build, not inferred from
+  source.
+- **`docs/spec/design.md` was stale in four ways.** It listed 20 keywords when the lexer defines
+  21; it pointed at `STATUS.md`, a file that does not exist; it claimed the keyword list "is
+  checked by a test in `oq-core`", when no such test exists — the check lives in
+  `scripts/check-docs-sync.py`; and its architecture diagram described the bytecode backend as
+  future work that "will consume the same AST", when that backend has shipped and consumes the
+  intermediate representation instead. The diagram now shows both execution paths. A third
+  keyword check was added to `check-docs-sync.py` so `design.md`'s own count cannot drift again.
+- **`oq check` was documented as more than it does.** `docs/reference/cli.md` said it "parses and
+  checks a program", but `Main.check` only parses: `break` outside a loop, an undefined name and a
+  read of an undefined variable all print `OK` and exit 0. The page now says it is a syntax check
+  only and points at `oq run` for the rest. The gap itself is recorded as a defect in
+  `docs/spec/states/02-compiler.md` rather than papered over.
+- `docs/adr/0002-ci-split.md` no longer points at the removed `STATUS.md` and `RESUME.md`.
+
 ### Fixed
 
 - **A `const` can no longer be defeated by redeclaring it.** `const x = 1` followed by
