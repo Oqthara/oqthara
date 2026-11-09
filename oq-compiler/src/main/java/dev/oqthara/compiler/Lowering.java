@@ -158,7 +158,7 @@ public final class Lowering {
                 // as assignment: assignment updates an existing binding instead of shadowing.
                 expression(decl.value());
                 if (decl.value() instanceof Ast.Lambda) callableNames.add(decl.name());
-                code.add(new Ir.Declare(decl.name(), false));
+                code.add(new Ir.Declare(decl.name(), !decl.mutable()));
             }
             case Ast.Assign assign -> {
                 expression(assign.value());

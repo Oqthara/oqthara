@@ -108,7 +108,7 @@
       "patterns": [
         {
           "name": "keyword.control.oq",
-          "match": "\\b(if|else|while|for|in|end|fun|return|break|continue|use|try|catch|data)\\b"
+          "match": "\\b(if|else|while|for|in|end|fun|return|break|continue|use|try|catch|data|const)\\b"
         }
       ]
     },

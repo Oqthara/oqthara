@@ -40,10 +40,21 @@ count = 0
 count = count + 1
 ```
 
-Assignment creates the variable if it does not exist yet. There is no `let`, no `var`,
-no `const`. Values are snapshotted on assignment: assigning a list to another variable
-does not alias it for math purposes; both names still refer to the same list, and
-methods that mutate a list (`.push`, index assignment) are visible through both.
+Assignment creates the variable if it does not exist yet. There is no `let` and no `var`.
+
+```
+const MAX = 100
+MAX = 200        # error: cannot change 'MAX'
+```
+
+`const` declares a name that is bound once and cannot be reassigned. It needs a value at
+the point of declaration. A `const` fixes the *name*, not the object it refers to: a list
+held by a `const` can still be mutated through methods such as `.push`, because rebinding
+and mutation are separate operations.
+
+Values are snapshotted on assignment: assigning a list to another variable does not alias
+it for math purposes; both names still refer to the same list, and methods that mutate a
+list (`.push`, index assignment) are visible through both.
 
 ## Text
 

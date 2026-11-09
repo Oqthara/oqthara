@@ -94,6 +94,7 @@ public final class Parser {
             }
             case "use" -> useStatement(token);
             case "try" -> tryStatement(token);
+            case "const" -> constStatement(token);
             default -> throw error(token, "unexpected keyword '" + token.lexeme() + "'",
                     "This keyword cannot start a statement.");
         };
@@ -249,6 +250,17 @@ public final class Parser {
         Ast.Expr value = expression();
         endStatement();
         return new Ast.Return(value, keyword.span());
+    }
+
+    private Ast.Stmt constStatement(Token keyword) {
+        Token name = expect(Token.Kind.IDENT, "a constant name");
+        if (!match(Token.Kind.ASSIGN)) {
+            throw error(peek(), "a constant needs a value",
+                    "Write it as: const " + name.lexeme() + " = value");
+        }
+        Ast.Expr value = expression();
+        endStatement();
+        return new Ast.VarDecl(name.lexeme(), false, value, keyword.span());
     }
 
     private Ast.Stmt tryStatement(Token keyword) {
