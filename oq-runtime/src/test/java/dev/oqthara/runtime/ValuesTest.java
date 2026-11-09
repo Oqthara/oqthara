@@ -198,6 +198,12 @@ class ValuesTest {
     }
 
     @Test
+    void rangeSizeDoesNotNarrowToInt() {
+        assertEquals(3_000_000_001L,
+                Values.size(new OqRange(0L, 3_000_000_000L, true), span));
+    }
+
+    @Test
     void tupleSupportsMembership() {
         OqTuple tuple = new OqTuple(List.of(1L, 2L));
         assertTrue(Values.contains(tuple, 2L, span));
