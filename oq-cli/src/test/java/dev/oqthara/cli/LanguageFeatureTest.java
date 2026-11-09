@@ -417,6 +417,39 @@ class LanguageFeatureTest {
     }
 
     @Test
+    void constIsReadableFromAFunctionBody() {
+        assertEquals("6\n", ok("""
+                const K = 5
+                fun bumped()
+                  return K + 1
+                end
+                print bumped()
+                """));
+    }
+
+    @Test
+    void constRejectsReassignmentFromAFunctionBody() {
+        // The refusal has to follow the binding into a closure, not just the block that
+        // declared it, or a function could defeat `const` by assigning through the parent scope.
+        fails("""
+                const K = 5
+                fun clobber()
+                  K = 6
+                end
+                clobber()
+                """, "cannot change 'K'");
+    }
+
+    @Test
+    void lambdaCapturesConstByReference() {
+        assertEquals("7\n", ok("""
+                const K = 3
+                f = x -> x + K
+                print f(4)
+                """));
+    }
+
+    @Test
     void plainAssignmentStillCreatesAndUpdatesVariables() {
         assertEquals("1\n2\n", ok("""
                 x = 1
