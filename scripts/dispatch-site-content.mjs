@@ -20,7 +20,8 @@ const EVENT_TYPE_CONTENT = "content-updated";
 const EVENT_TYPE_RELEASE = "alpha-release-published";
 
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { basename } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The token, or an error that names the exact missing configuration. */
 function readToken(env) {
@@ -250,15 +251,26 @@ function readReleaseFromEvent() {
 }
 
 // Importable for tests; runs as a script otherwise.
-pathToFileURL(process.argv[1] ?? "").href === import.meta.url
-  && (process.argv.includes("--self-test")
-    // `--self-test` runs the decision matrix and exits, so the workflow can verify the logic that
-    // decides whether to announce anything before a token is ever read.
-    ? process.exit(selfTest())
-    : main().then(
-      (code) => process.exit(code),
-      (error) => {
-        console.error(`::error::${error.message}`);
-        process.exit(1);
-      },
-    ));
+const invoked = pathToFileURL(process.argv[1] ?? "").href;
+const selfPath = fileURLToPath(import.meta.url);
+if (invoked === import.meta.url) {
+  // `--self-test` runs the decision matrix and exits, so the workflow can verify the logic that
+  // decides whether to announce anything before a token is ever read.
+  if (process.argv.includes("--self-test")) {
+    process.exit(selfTest());
+  }
+  main().then(
+    (code) => process.exit(code),
+    (error) => {
+      console.error(`::error::${error.message}`);
+      process.exit(1);
+    },
+  );
+} else if (basename(process.argv[1] ?? "") === basename(selfPath)) {
+  // Reached by the same file under a different URL, which is what a symlinked or otherwise
+  // unrecognised entry point looks like. Reporting success here would be exactly the silent
+  // no-op the workflow is meant to prevent, so say so instead.
+  console.error("::error::this script was launched as "
+    + `${process.argv[1]} but resolved to ${selfPath}, so the entry guard did not match.`);
+  process.exit(1);
+}
