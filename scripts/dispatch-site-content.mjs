@@ -48,7 +48,7 @@ function readToken(env) {
 }
 
 /** Which dispatch this run should send, from the event that triggered it. */
-export function chooseDispatch({ eventName, ref, release }) {
+export function chooseDispatch({ eventName, ref, release, payloadError }) {
   if (eventName === "push") {
     if (ref !== "refs/heads/main") {
       return { send: false, reason: `push to ${ref || "an unknown ref"} is not a publishable change` };
@@ -61,6 +61,11 @@ export function chooseDispatch({ eventName, ref, release }) {
   }
 
   if (eventName === "release") {
+    // An unreadable payload must not look like "nothing to announce": a release run would finish
+    // green while announcing nothing, which is the failure this workflow exists to prevent.
+    if (payloadError) {
+      return { send: false, reason: `the release payload could not be read: ${payloadError}` };
+    }
     // A draft is not published, so the site cannot see it and announcing one would make it
     // re-read and find nothing new. A prerelease is different: the site's channel selector skips
     // drafts only and mirrors prereleases by design, which is why every Oqthara alpha release is
@@ -90,6 +95,20 @@ export function resolveRelease(eventRelease, explicitTag) {
 }
 
 /**
+ * True when a payload only says what changed, never what it now contains.
+ *
+ * The website reads GitHub itself, so a payload carrying catalogue, file or release content
+ * would be a second source of truth that can silently disagree with the first.
+ */
+function isNotificationOnly(payload) {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const allowed = new Set(["reason", "ref", "tag"]);
+  const values = Object.entries(payload);
+  if (values.length === 0) return false;
+  return values.every(([key, value]) => allowed.has(key) && typeof value === "string" && value.length > 0);
+}
+
+/**
  * Checks the decision matrix.
  *
  * This repository has no JavaScript test runner and no package manifest, and adding one for a
@@ -100,23 +119,36 @@ export function resolveRelease(eventRelease, explicitTag) {
  */
 export function selfTest() {
   const cases = [
-    [{ eventName: "push", ref: "refs/heads/main" }, true, "a push to main announces content"],
+    [{ eventName: "push", ref: "refs/heads/main" }, true, "a push to main announces content", EVENT_TYPE_CONTENT],
     [{ eventName: "push", ref: "refs/heads/feature" }, false, "a push to another branch announces nothing"],
     [{ eventName: "push", ref: "refs/tags/v1.0.0" }, false, "a tag push is not a main update"],
-    [{ eventName: "release", release: { tag_name: "v1.0.0" } }, true, "a published release announces a channel"],
+    [{ eventName: "release", release: { tag_name: "v1.0.0" } }, true, "a published release announces a channel", EVENT_TYPE_RELEASE],
     [{ eventName: "release", release: { tag_name: "v1.0.0", draft: true } }, false, "a draft is not published"],
-    [{ eventName: "release", release: { tag_name: "v1.0.0", prerelease: true } }, true, "a prerelease is announced because the site mirrors prereleases"],
+    [{ eventName: "release", release: { tag_name: "v1.0.0", prerelease: true } }, true, "a prerelease is announced because the site mirrors prereleases", EVENT_TYPE_RELEASE],
     [{ eventName: "release", release: {} }, false, "a release without a tag announces nothing"],
+    [{ eventName: "release", release: null, payloadError: "Unexpected token" }, false, "an unreadable release payload announces nothing"],
     [{ eventName: "workflow_dispatch" }, false, "a manual run announces nothing"],
     [{}, false, "an unknown event announces nothing"],
   ];
 
   let failed = 0;
-  for (const [input, expected, label] of cases) {
-    const actual = chooseDispatch(input).send;
-    if (actual !== expected) {
-      console.error(`FAIL ${label}: expected send=${expected}, got send=${actual}`);
+  for (const [input, expected, label, eventType] of cases) {
+    const decision = chooseDispatch(input);
+    if (decision.send !== expected) {
+      console.error(`FAIL ${label}: expected send=${expected}, got send=${decision.send}`);
       failed += 1;
+      continue;
+    }
+    // A send must name the right event and must stay notification-only: the site re-reads GitHub
+    // itself, so a payload carrying mirrored content would create a second source of truth.
+    if (decision.send) {
+      if (decision.eventType !== eventType) {
+        console.error(`FAIL ${label}: expected event ${eventType}, got ${decision.eventType}`);
+        failed += 1;
+      } else if (!isNotificationOnly(decision.payload)) {
+        console.error(`FAIL ${label}: payload must carry no mirrored content, got ${JSON.stringify(decision.payload)}`);
+        failed += 1;
+      }
     }
   }
 
@@ -147,13 +179,25 @@ export function selfTest() {
 
 async function main() {
   const eventName = process.env.OQ_DISPATCH_EVENT_NAME ?? process.env.GITHUB_EVENT_NAME ?? "";
+  const event = readReleaseFromEvent();
+  // An explicit tag is supplied by the release pipeline, whose own GITHUB_TOKEN cannot fire a
+  // release event. When it resolves a release, an unreadable webhook payload is irrelevant.
+  const release = resolveRelease(event.release, process.env.OQ_RELEASE_TAG);
   const decision = chooseDispatch({
     eventName,
     ref: process.env.GITHUB_REF ?? "",
-    release: resolveRelease(readReleaseFromEvent(), process.env.OQ_RELEASE_TAG),
+    release,
+    payloadError: release ? null : event.error,
   });
 
   if (!decision.send) {
+    // A release payload that could not be read leaves us unable to announce a real release, so
+    // the run fails rather than reporting that there was nothing to do. Only a release event
+    // reads that payload; a push ignores it entirely.
+    if (eventName === "release" && event.error && !release) {
+      console.error(`::error::${decision.reason}`);
+      return 1;
+    }
     console.log(`No dispatch: ${decision.reason}.`);
     return 0;
   }
@@ -193,14 +237,14 @@ async function main() {
   return 0;
 }
 
-/** The release object from `GITHUB_EVENT_PATH`, or null when this is not a release event. */
+/** The release object from `GITHUB_EVENT_PATH`, with the reason when it cannot be read. */
 function readReleaseFromEvent() {
   const path = process.env.GITHUB_EVENT_PATH;
-  if (!path) return null;
+  if (!path) return { release: null, error: "GITHUB_EVENT_PATH is not set" };
   try {
-    return JSON.parse(readFileSync(path, "utf8"))?.release ?? null;
-  } catch {
-    return null;
+    return { release: JSON.parse(readFileSync(path, "utf8"))?.release ?? null, error: null };
+  } catch (error) {
+    return { release: null, error: error.message };
   }
 }
 
