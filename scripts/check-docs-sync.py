@@ -337,6 +337,33 @@ def cited_builtins_exist() -> None:
     note(f"{len(cited)} snake_case builtin names cited in the spec and stdlib reference all exist")
 
 
+# 8. Every contract in the register must name a document that exists, and an enforced contract
+#    must name a test. A register is only worth keeping if it cannot silently rot.
+def contract_register_is_complete() -> None:
+    register = read("docs/spec/contracts.md")
+    rows = re.findall(r"^\| (\d+) \| .*? \| (.*?) \| `([^`]*)` \| (.*?) \|$", register, re.M)
+    if len(rows) != 15:
+        problems.append(
+            f"docs/spec/contracts.md lists {len(rows)} contract rows, expected 15 "
+            "(one per area the directive names)"
+        )
+        return
+
+    missing: list[str] = []
+    undocumented: list[str] = []
+    for number, _, _, enforced in rows:
+        for target in re.findall(r"\]\(([a-z0-9/._-]+\.md)\)", register.split(f"| {number} |", 1)[1].split("\n", 1)[0]):
+            if not (ROOT / "docs" / "spec" / target).exists() and not (ROOT / "docs" / target).exists():
+                missing.append(target)
+        if enforced.strip() == "nothing":
+            undocumented.append(number)
+    if missing:
+        problems.append("contract register names documents that do not exist: " + ", ".join(sorted(set(missing))))
+        return
+    note(f"{len(rows)} contracts registered, every referenced document exists "
+         f"({len(undocumented)} deliberately absent)")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -345,6 +372,7 @@ CHECKS = (
     backend_counts_are_measured,
     version_is_consistent,
     cited_builtins_exist,
+    contract_register_is_complete,
 )
 
 

@@ -80,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never awaited is discarded without a word. And no task can be cancelled or joined. `L12` and
   `M10` in the other two documents were corrected to say what is true rather than what was
   assumed.
+- **A register of the fifteen semantic and runtime contracts** the directive asks for, in
+  `docs/spec/contracts.md`, with the version each is at and the test that enforces it. Three areas
+  have no contract at all — modules and imports, docstring metadata, and `class` — and the
+  register says so rather than implying coverage that does not exist. `check-docs-sync.py` now
+  fails if the register loses a row or names a document that has been deleted.
 - **`docs/spec/design.md` was stale in four ways.** It listed 20 keywords when the lexer defines
   21; it pointed at `STATUS.md`, a file that does not exist; it claimed the keyword list "is
   checked by a test in `oq-core`", when no such test exists — the check lives in

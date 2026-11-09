@@ -176,6 +176,12 @@
       "slug": "docs/spec/backend"
     },
     {
+      "path": "docs/spec/contracts.md",
+      "title": "8 Semantic and runtime contracts",
+      "section": "spec",
+      "slug": "docs/spec/contracts"
+    },
+    {
       "path": "docs/spec/design.md",
       "title": "Oqthara design",
       "section": "spec",
