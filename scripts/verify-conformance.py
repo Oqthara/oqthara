@@ -22,8 +22,13 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CASES = ROOT / "conformance"
 JAR = ROOT / "oq-cli" / "build" / "libs" / "oq.jar"
-FLOOR_COMPILED = 182
-EXPECTED_EXECUTABLE = 197
+
+# Measured from a clean build. Neither number is aspirational: `executable` pins the size of
+# the corpus so a case cannot quietly join or leave it, and `compiled` pins how many of those
+# cases the bytecode backend handles, matching BytecodeCompilerTest. A regressing number means
+# a real capability was lost; a growing number means the corpus changed and the pin is stale.
+# Update both only from a fresh measurement, and say so in the commit message.
+BASELINE = {"executable": 207, "compiled": 192}
 
 FIXTURES = ["readme-fixture.txt"]
 
@@ -36,13 +41,38 @@ def normalize(text):
     return text.replace("\r\n", "\n")
 
 
+def measure_corpus(cases):
+    """Return every conformance program and the subset that is expected to run cleanly.
+
+    A program with a sibling `.err` file is a case that must fail, so it is not part of the
+    executable set even though it still takes part in the backend comparison.
+    """
+    programs = sorted(cases.glob("*.oq"))
+    executable = [p for p in programs if not (cases / (p.stem + ".err")).exists()]
+    return programs, executable
+
+
+def evaluate(observed, divergences):
+    """Compare a measurement against BASELINE and return human-readable failures."""
+    problems = []
+    if observed["executable"] != BASELINE["executable"]:
+        problems.append(
+            f"executable corpus changed: {observed['executable']} != {BASELINE['executable']}"
+            " (a case gained or lost a .err sibling; update BASELINE from a fresh measurement)")
+    if observed["compiled"] < BASELINE["compiled"]:
+        problems.append(
+            f"compiled conformance regressed: {observed['compiled']} < {BASELINE['compiled']}")
+    if divergences:
+        problems.append(f"{len(divergences)} divergence(s)")
+    return problems
+
+
 def main():
     if not JAR.exists():
         print(f"error: {JAR} is missing; run ./gradlew :oq-cli:standaloneJar")
         return 2
 
-    programs = sorted(CASES.glob("*.oq"))
-    executable = [p for p in programs if not (CASES / (p.stem + ".err")).exists()]
+    programs, executable = measure_corpus(CASES)
     divergences = []
     compiled = 0
     fallback = 0
@@ -132,18 +162,14 @@ def main():
         "compiled": compiled,
         "fallback": fallback,
         "divergenceCount": len(divergences),
-        "floor": FLOOR_COMPILED,
+        "baseline": BASELINE,
         "divergences": divergences[:20],
     }
     print(json.dumps(summary, indent=2))
-    if len(executable) != EXPECTED_EXECUTABLE:
-        print(f"error: executable corpus changed: {len(executable)} != {EXPECTED_EXECUTABLE}")
-        return 1
-    if compiled < FLOOR_COMPILED:
-        print(f"error: compiled conformance regressed: {compiled} < {FLOOR_COMPILED}")
-        return 1
-    if divergences:
-        print(f"error: {len(divergences)} divergence(s)")
+    problems = evaluate(summary, divergences)
+    if problems:
+        for problem in problems:
+            print(f"error: {problem}")
         return 1
     print(f"ok: {compiled} compiled, {fallback} fallback, 0 divergences "
           f"across {len(programs)} programs ({len(executable)} executable)")

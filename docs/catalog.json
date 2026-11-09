@@ -86,6 +86,36 @@
       "slug": "docs/governance/audit/baseline-2026-11"
     },
     {
+      "path": "docs/governance/remediation/alpha-3-audit-report-2026-11-09.md",
+      "title": "Alpha 3 Closure Report (Directive §3.3)",
+      "section": "governance",
+      "slug": "docs/governance/remediation/alpha-3-audit-report-2026-11-09"
+    },
+    {
+      "path": "docs/governance/remediation/alpha-3-closure-report.md",
+      "title": "Alpha 3 closure report",
+      "section": "governance",
+      "slug": "docs/governance/remediation/alpha-3-closure-report"
+    },
+    {
+      "path": "docs/governance/remediation/alpha-3-release-provenance.md",
+      "title": "Alpha 3 release provenance",
+      "section": "governance",
+      "slug": "docs/governance/remediation/alpha-3-release-provenance"
+    },
+    {
+      "path": "docs/governance/remediation/alpha-4-phase-0-first-session-report.md",
+      "title": "Alpha 4 Phase 0 — First-Session Report (Directive §66, A–G)",
+      "section": "governance",
+      "slug": "docs/governance/remediation/alpha-4-phase-0-first-session-report"
+    },
+    {
+      "path": "docs/governance/remediation/pr-37-retrospective.md",
+      "title": "PR #37 retrospective review",
+      "section": "governance",
+      "slug": "docs/governance/remediation/pr-37-retrospective"
+    },
+    {
       "path": "docs/governance/roadmap-alpha-3.md",
       "title": "Alpha 3 engineering roadmap",
       "section": "governance",

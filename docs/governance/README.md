@@ -20,6 +20,8 @@ than editing it, exactly as in [`docs/adr/`](../adr/).
 | OQ-DEC-2026-005 | Hive agents pin the DeepSeek custom endpoint model | IMPLEMENTED |
 | OQ-DEC-2026-006 | Tuples are immutable, comma-delimited and distinct from lists | APPROVED |
 | OQ-DEC-2026-007 | Operator precedence is normative and documented from the parser | APPROVED |
+| OQ-DEC-2026-008 | Conformance baselines are measured, never inherited from release notes | APPROVED |
+| OQ-DEC-2026-009 | The keyword budget has one source of truth in `Lexer.KEYWORDS` | APPROVED |
 
 ## OQ-DEC-2026-001 — Agent architecture uses the native custom agent format
 
@@ -329,3 +331,105 @@ Each line pins one level: `-2 ** 2` = `4`, `2 ** 3 ** 2` = `512` (right associat
 `10 - 2 - 3` = `5` (left associative), `100 / 10 / 2` = `5` (left associative),
 `true or false and false` = `true` (`and` first), `not true and false` = `false`,
 `1 + 2 * 3` = `7`, `7 % 3` = `1`, `2 + 3 == 5` = `true`, `1 < 2 == true` = `true`.
+
+## OQ-DEC-2026-008 — Conformance baselines are measured, never inherited from release notes
+
+**State:** APPROVED
+
+**Context.** `scripts/verify-conformance.py` carried two constants, `FLOOR_COMPILED = 182`
+and `EXPECTED_EXECUTABLE = 197`, and the CI job that runs it failed on `main`. Both numbers
+trace back to the annotated tag message of `v0.1.0-alpha.2`, which states "182 of 197
+executable conformance programs compile to bytecode with zero measured divergences from the
+interpreter." They were accurate when alpha.2 was cut. They were then copied into the
+verifier as invariants and never re-measured while the corpus grew to 223 programs, 207 of
+them executable, with 192 compiled and 19 falling back to the interpreter.
+
+The two constants also enforced different things, which was not obvious from reading them:
+
+- `EXPECTED_EXECUTABLE` was an **exact-match** assertion, so it failed the moment the
+  corpus grew past 197.
+- `FLOOR_COMPILED` was a **lower bound**, so the drifted value 182 silently passed against
+  a real 192. The check had been ten programs weaker than measured and no one noticed,
+  because the other constant failed first and masked it.
+
+**Decision.** The verifier pins one measured baseline in a single `BASELINE` dictionary,
+and a comment records where the numbers came from and that they must be re-measured after a
+corpus change, not copied from a release note. `evaluate()` keeps exact-match semantics for
+the executable count, because the executable set is a property of the corpus and should not
+move without a deliberate update. The compiled count is a floor, so an improvement in the
+compiler does not fail the gate; the executable pin still catches accidental corpus drift.
+
+`measure_corpus()` and `evaluate()` are extracted as pure functions and covered by
+`scripts/tests/test_verify_conformance.py` (8 tests), which runs in CI. The verifier is
+required CI from this change onward.
+
+**Alternatives rejected.**
+
+- *Update the constants by hand to 192/207.* Rejected on its own: it fixes today's values
+  and leaves the same trap for the next corpus change. The numbers are now one dictionary
+  with a provenance comment and a test that fails if the corpus and the pin disagree.
+- *Make both checks exact-match.* Rejected: it would fail whenever the compiler improves,
+  turning a success into a red build.
+- *Make both checks floors.* Rejected: then nothing detects a corpus that silently shrank.
+- *Delete the verifier.* Rejected: it is the only check that compares two execution engines
+  against each other, and it found real divergences during development.
+
+**Consequences.** The gate now fails for exactly one reason — the corpus moved and no one
+updated the recorded baseline — which is actionable. Adding a conformance program requires
+updating `BASELINE` in the same commit, which is a deliberate act rather than a silent drift.
+
+**Evidence.**
+
+```
+$ python3 scripts/verify-conformance.py
+ok: 192 compiled, 19 fallback, 0 divergences across 223 programs (207 executable)
+
+$ python3 -m unittest discover -s scripts/tests -v
+Ran 8 tests in 0.31s
+OK
+```
+
+## OQ-DEC-2026-009 — The keyword budget has one source of truth in `Lexer.KEYWORDS`
+
+**State:** APPROVED
+
+**Context.** `CONTRIBUTING.md` stated the language has 18 reserved keywords. It has 20.
+`scripts/check-docs-sync.py` was supposed to catch that, and did not, because it validated
+the documented count against a **hardcoded list of twenty names held inside the checker
+itself**. The checker's copy of the truth was correct; the document it was checking was
+wrong; and nothing compared either one to the lexer. The drift detector had its own
+private copy of the thing it was detecting drift in.
+
+**Decision.** `oq-core/src/main/java/dev/oqthara/core/Lexer.java` remains the only
+definition. `check-docs-sync.py` parses `Lexer.KEYWORDS` out of the source, and cross-checks
+both the count stated in `CONTRIBUTING.md` and the budget stated in that document against
+the parsed set. A change to the lexer without a matching documentation change now fails, and
+so does a documentation change the lexer does not support.
+
+**Alternatives rejected.**
+
+- *Correct 18 to 20 and stop.* Rejected: the checker would still be validating a copy.
+- *Have the checker invoke the JVM to read the keyword set.* Rejected as disproportionate:
+  the check runs in a Python step that should not need a built jar, and the constant is a
+  simple literal list.
+- *Generate `CONTRIBUTING.md` from the lexer.* Rejected: prose does not generate cleanly,
+  and the surrounding sentences carry meaning a generator would lose.
+
+**Consequences.** Two independent drift directions are now caught, and both were verified by
+mutation: restoring `18` in `CONTRIBUTING.md` exits 1, and adding a bogus `"when"` to the
+lexer exits 1.
+
+**Evidence.**
+
+```
+$ python3 scripts/check-docs-sync.py
+ok: all 7 checks passed
+
+$ sed -i '' 's/we are at 20/we are at 18/' CONTRIBUTING.md && python3 scripts/check-docs-sync.py; echo "exit $?"
+...
+exit 1
+```
+
+**Related.** `docs/governance/remediation/alpha-3-release-provenance.md` records the
+release-note origin of the stale conformance constants, which is the same class of defect:
+a number written once, quoted into a second place, and never re-derived.

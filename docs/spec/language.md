@@ -367,6 +367,8 @@ end
 ```
 
 `a to b` includes `b`. `a until b` excludes it. If `a > b`, the range counts down.
+`length(r)` returns the range count without narrowing it through a 32-bit integer; for
+example, `length(0 to 3000000000)` returns `3000000001`.
 
 ## Errors
 

@@ -88,8 +88,13 @@ def keyword_budget_is_honest() -> None:
         problems.append(f"{count} keywords exceeds the budget of {budget}")
 
     lexer = read("oq-core/src/main/java/dev/oqthara/core/Lexer.java")
-    keywords = set(re.findall(r'"(and|break|catch|continue|data|else|end|false|for|fun|if|'
-                              r'in|not|nothing|or|return|true|try|use|while)"', lexer))
+    # Read the canonical set out of Lexer.KEYWORDS rather than restating the names here. A
+    # hard-coded list silently stops covering a keyword the moment one is added.
+    block = re.search(r"KEYWORDS\s*=\s*Set\.of\((.*?)\);", lexer, re.S)
+    if not block:
+        problems.append("could not read Lexer.KEYWORDS")
+        return
+    keywords = set(re.findall(r'"([^"]+)"', block.group(1)))
     missing = sorted(set(listed) - keywords)
     extra = sorted(keywords - set(listed))
     if missing or extra:
@@ -98,6 +103,24 @@ def keyword_budget_is_honest() -> None:
             f"missing from lexer {missing}, missing from reference {extra}"
         )
     note(f"{count} keywords within a budget of {budget}, matching the lexer")
+
+    contributing = read("CONTRIBUTING.md")
+    claim = re.search(r"keyword budget is (\d+); we are at (\d+)", contributing)
+    if not claim:
+        problems.append("CONTRIBUTING.md does not state the keyword budget and count")
+        return
+    claimed_budget, claimed_count = int(claim.group(1)), int(claim.group(2))
+    if claimed_count != len(keywords):
+        problems.append(
+            f"CONTRIBUTING.md claims {claimed_count} keywords but the lexer defines "
+            f"{len(keywords)}; update the count when a keyword lands")
+    if claimed_budget != budget:
+        problems.append(
+            f"CONTRIBUTING.md states a budget of {claimed_budget} but the reference says "
+            f"{budget}")
+    if claimed_count > claimed_budget:
+        problems.append(f"CONTRIBUTING.md is over its own budget: {claimed_count} > {claimed_budget}")
+    note(f"CONTRIBUTING.md keyword count ({claimed_count}) matches the lexer")
 
 
 # 3. Every CLI command in the help text must be documented in docs/reference/cli.md.

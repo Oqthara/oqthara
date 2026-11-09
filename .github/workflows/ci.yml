@@ -44,6 +44,16 @@ jobs:
         run: |
           python3 scripts/check-links.py
           python3 scripts/check-docs-sync.py
+      - name: Unit-test the verification scripts themselves
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        run: |
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+          python3 scripts/test_watchdog.py
+      - name: Independent backend conformance (interpreter vs compiled jar)
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        run: |
+          ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
+          python3 scripts/verify-conformance.py
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7
