@@ -206,6 +206,12 @@
       "slug": "docs/spec/states/02-compiler"
     },
     {
+      "path": "docs/spec/states/03-runtime.md",
+      "title": "7.3 Runtime state machine",
+      "section": "spec",
+      "slug": "docs/spec/states/03-runtime"
+    },
+    {
       "path": "docs/stdlib/reference.md",
       "title": "Standard library reference",
       "section": "stdlib",

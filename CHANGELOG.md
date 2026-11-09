@@ -49,15 +49,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **Two formal state-machine models of the language and the compiler** under `docs/spec/states/`.
-  `01-language.md` models execution — states `S0`–`SX`, transitions `T1`–`T38`, invariants
-  `L1`–`L12` — covering evaluation, binding and scope, control flow, error propagation and
-  termination. `02-compiler.md` models `oq build` — states `S0 Accept`–`SX Rejected`, transitions
-  `C1`–`C39` across the front end, middle end, back end and artifact stages, invariants `K1`–`K13`.
-  Both document the states a program can reach, the moves between them, the properties that hold
-  in every state, and the invalid transitions with the exact diagnostic each produces. Every
-  diagnostic quoted in either document was measured against a running build, not inferred from
-  source.
+- **Three formal state-machine models of the language, the compiler and the runtime** under
+  `docs/spec/states/`. `01-language.md` models execution — states `S0`–`SX`, transitions
+  `T1`–`T38`, invariants `L1`–`L12` — covering evaluation, binding and scope, control flow, error
+  propagation and termination. `02-compiler.md` models `oq build` — states `S0 Accept`–`SX
+  Rejected`, transitions `C1`–`C39` across the front end, middle end, back end and artifact
+  stages, invariants `K1`–`K13`. `03-runtime.md` models a running program — states `R0 Cold`–`R10
+  Shutdown` plus `RX Failed`, transitions `E1`–`E47` across values, collections, task lifecycle,
+  the host boundary, resource budgets and shutdown, invariants `M1`–`M13`. All three document the
+  states a program can reach, the moves between them, the properties that hold in every state, and
+  the invalid transitions with the exact diagnostic each produces. Every diagnostic quoted in any
+  of them was measured against a running build, not inferred from source.
+- `03-runtime.md` records four defects the model exposed, none of them fixed here. Container
+  equality does not widen numeric element types, so `[1] == [1.0]` is false while `1.0 in [1]` is
+  true and `set([1, 1.0])` holds two elements that both report as members. Objects from the
+  standard library that are not Oq values pass through the bridge unwrapped, so `LocalDate.now()`
+  reports its type as `java LocalDate` rather than as an Oq type. `spawn` allocates an executor per
+  call and never closes it. And there is no way to cancel a task or to join one: an unawaited task
+  is silently abandoned when the program exits.
 - **`docs/spec/design.md` was stale in four ways.** It listed 20 keywords when the lexer defines
   21; it pointed at `STATUS.md`, a file that does not exist; it claimed the keyword list "is
   checked by a test in `oq-core`", when no such test exists — the check lives in
