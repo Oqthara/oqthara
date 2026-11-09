@@ -453,6 +453,36 @@ end
 itself raises, the new error propagates; `try` does not swallow silently. There is no
 `finally` and no typed catch: one handler per `try` keeps the surface small.
 
+`try` is also an expression, so it can produce a value where it is used:
+
+```
+n = try
+  int_of(text)
+catch err
+  0
+end
+```
+
+The value is the value of the branch that ran, taken from that branch's **final
+statement** when the final statement is an expression; otherwise the value is `nothing`.
+A branch that ends in a declaration, a loop or an `if` therefore produces `nothing`
+rather than the last value computed inside it:
+
+```
+a = try
+  x = 1        # a declaration, so the branch has no value
+catch err
+  0
+end
+print a        # nothing
+```
+
+This differs from `fun`, where a value must be named with `return`. `return` inside a `try`
+expression still returns from the enclosing function, so it does not select the `try`'s
+value — use the final expression instead. A `try` at the start of a statement is the
+statement form and produces no value; parenthesize it to use it as an expression in that
+position.
+
 Uncaught errors stop the program with status 1 and a diagnostic like this:
 
 ```

@@ -127,6 +127,13 @@ public final class Lowering {
                     collectNames(attempt.body(), types, others);
                     collectNames(attempt.handler(), types, others);
                 }
+                case Ast.ExprStmt exprStmt -> {
+                    for (Ast.TryExpr attempt : tryExprsIn(exprStmt.expr())) {
+                        others.add(attempt.errorName());
+                        collectNames(attempt.body(), types, others);
+                        collectNames(attempt.handler(), types, others);
+                    }
+                }
                 default -> {
                 }
             }
@@ -244,6 +251,230 @@ public final class Lowering {
             case Ast.ImportStmt ignored -> {
                 code.add(new Ir.Refuse("module imports are not compiled yet"));
             }
+        }
+    }
+
+    /**
+     * Lowers a {@code try} expression: the statement shape plus a temporary local that holds
+     * the value of the branch that ran (ADR-0014).
+     *
+     * <p>Each branch stores its final expression's value, or {@code null} when it has none, so
+     * the local always has exactly one value once the expression completes. {@code Ir.TryStart}
+     * requires an empty operand stack, and the final expression statement's value is stored
+     * rather than left on the stack, so that requirement still holds.
+     */
+    private void tryExpression(Ast.TryExpr attempt) {
+        String result = temp("try");
+        String handler = label("catch");
+        String done = label("catch_end");
+        // `Declare` takes its initial value from the stack, so the temporary starts as
+        // `nothing` and each branch overwrites it. It must be mutable: a fixed binding would
+        // make the stores below a fixed-value violation.
+        code.add(new Ir.Const(null));
+        code.add(new Ir.Declare(result, false));
+        code.add(new Ir.TryStart(handler));
+        code.add(new Ir.ScopeEnter());
+        branchValue(attempt.body(), result);
+        code.add(new Ir.ScopeExit());
+        code.add(new Ir.TryEnd(handler));
+        code.add(new Ir.JumpLabel(done));
+        code.add(new Ir.HandlerLabel(handler));
+        code.add(new Ir.CatchValue());
+        code.add(new Ir.ScopeEnter());
+        code.add(new Ir.Declare(attempt.errorName(), true));
+        branchValue(attempt.handler(), result);
+        code.add(new Ir.ScopeExit());
+        code.add(new Ir.Label(done));
+        code.add(new Ir.Load(result));
+    }
+
+    /** Emits a block whose final expression statement's value is stored into {@code target}. */
+    private void branchValue(List<Ast.Stmt> statements, String target) {
+        int last = statements.size() - 1;
+        List<Ast.Stmt> head = last < 0 ? List.of() : statements.subList(0, last);
+        for (Ast.Stmt stmt : head) {
+            statement(stmt);
+        }
+        if (last < 0) {
+            code.add(new Ir.Const(null));
+            code.add(new Ir.Store(target));
+            return;
+        }
+        Ast.Stmt finalStatement = statements.get(last);
+        if (finalStatement instanceof Ast.ExprStmt exprStmt) {
+            expression(exprStmt.expr());
+            code.add(new Ir.Store(target));
+            return;
+        }
+        statement(finalStatement);
+        code.add(new Ir.Const(null));
+        code.add(new Ir.Store(target));
+    }
+
+    /** Every {@code try} expression reachable inside an expression, for name collection. */
+    private static List<Ast.TryExpr> tryExprsIn(Ast.Expr expr) {
+        List<Ast.TryExpr> found = new ArrayList<>();
+        collectTryExprs(expr, found);
+        return found;
+    }
+
+    private static void collectTryExprs(Ast.Expr expr, List<Ast.TryExpr> found) {
+        if (expr instanceof Ast.TryExpr attempt) found.add(attempt);
+        for (Ast.Expr child : childrenOf(expr)) {
+            collectTryExprs(child, found);
+        }
+        for (List<Ast.Stmt> block : blocksOf(expr)) {
+            collectTryExprsIn(block, found);
+        }
+    }
+
+    private static void collectTryExprsIn(List<Ast.Stmt> statements, List<Ast.TryExpr> found) {
+        for (Ast.Stmt stmt : statements) {
+            for (Ast.Expr expr : exprsOf(stmt)) {
+                collectTryExprs(expr, found);
+            }
+            for (List<Ast.Stmt> block : blocksOf(stmt)) {
+                collectTryExprsIn(block, found);
+            }
+        }
+    }
+
+    /** The immediate sub-expressions of an expression. */
+    private static List<Ast.Expr> childrenOf(Ast.Expr expr) {
+        return switch (expr) {
+            case Ast.NumberLit ignored -> List.of();
+            case Ast.StringLit ignored -> List.of();
+            case Ast.BoolLit ignored -> List.of();
+            case Ast.NothingLit ignored -> List.of();
+            case Ast.Var ignored -> List.of();
+            case Ast.ListLit list -> list.items();
+            case Ast.TupleLit tuple -> tuple.items();
+            case Ast.SetLit set -> set.items();
+            case Ast.MapLit map -> {
+                List<Ast.Expr> out = new ArrayList<>();
+                for (Ast.Entry entry : map.entries()) {
+                    out.add(entry.key());
+                    out.add(entry.value());
+                }
+                yield out;
+            }
+            case Ast.Unary unary -> List.of(unary.operand());
+            case Ast.Binary binary -> List.of(binary.left(), binary.right());
+            case Ast.Logical logical -> List.of(logical.left(), logical.right());
+            case Ast.Call call -> {
+                List<Ast.Expr> out = new ArrayList<>();
+                out.add(call.callee());
+                out.addAll(call.args());
+                yield out;
+            }
+            case Ast.MethodCall call -> {
+                List<Ast.Expr> out = new ArrayList<>();
+                out.add(call.receiver());
+                out.addAll(call.args());
+                yield out;
+            }
+            case Ast.Index index -> List.of(index.target(), index.index());
+            case Ast.Field field -> List.of(field.target());
+            case Ast.Lambda lambda -> lambda.body() == null ? List.of() : List.of(lambda.body());
+            case Ast.Grouping grouping -> List.of(grouping.expr());
+            case Ast.InExpr in -> List.of(in.item(), in.container());
+            case Ast.RangeExpr range -> List.of(range.from(), range.to());
+            case Ast.TryExpr ignored -> List.of();
+        };
+    }
+
+    /** The immediate nested blocks of an expression. */
+    private static List<List<Ast.Stmt>> blocksOf(Ast.Expr expr) {
+        if (expr instanceof Ast.TryExpr attempt) {
+            return List.of(attempt.body(), attempt.handler());
+        }
+        if (expr instanceof Ast.Lambda lambda && lambda.blockBody() != null) {
+            return List.of(lambda.blockBody());
+        }
+        return List.of();
+    }
+
+    /** The immediate sub-expressions of a statement. */
+    private static List<Ast.Expr> exprsOf(Ast.Stmt stmt) {
+        return switch (stmt) {
+            case Ast.VarDecl decl -> List.of(decl.value());
+            case Ast.Assign assign -> List.of(assign.value());
+            case Ast.CompoundAssign assign -> List.of(assign.value());
+            case Ast.ExprStmt exprStmt -> List.of(exprStmt.expr());
+            case Ast.Return ret -> ret.value() == null ? List.of() : List.of(ret.value());
+            case Ast.IndexAssign assign -> List.of(assign.target(), assign.index(), assign.value());
+            case Ast.FieldAssign assign -> List.of(assign.target(), assign.value());
+            case Ast.Destructure destructure -> List.of(destructure.value());
+            case Ast.If conditional -> {
+                List<Ast.Expr> out = new ArrayList<>();
+                for (Ast.Branch branch : conditional.branches()) out.add(branch.condition());
+                yield out;
+            }
+            case Ast.While loop -> List.of(loop.condition());
+            case Ast.ForRange loop -> List.of(loop.from(), loop.to());
+            case Ast.ForEach loop -> List.of(loop.iterable());
+            case Ast.Command command -> {
+                List<Ast.Expr> out = new ArrayList<>();
+                for (Ast.Expr arg : command.args()) out.add(arg);
+                yield out;
+            }
+            default -> List.of();
+        };
+    }
+
+    /** The immediate nested blocks of a statement. */
+    private static List<List<Ast.Stmt>> blocksOf(Ast.Stmt stmt) {
+        return switch (stmt) {
+            case Ast.FuncDecl function -> List.of(function.body());
+            case Ast.If conditional -> {
+                List<List<Ast.Stmt>> out = new ArrayList<>();
+                for (Ast.Branch branch : conditional.branches()) out.add(branch.body());
+                out.add(conditional.elseBranch());
+                yield out;
+            }
+            case Ast.While loop -> List.of(loop.body());
+            case Ast.ForRange loop -> List.of(loop.body());
+            case Ast.ForEach loop -> List.of(loop.body());
+            case Ast.TryStmt attempt -> List.of(attempt.body(), attempt.handler());
+            default -> List.of();
+        };
+    }
+
+    /** Whether a {@code try} expression occurs anywhere inside this expression. */
+    private static boolean mentionsTry(Ast.Expr expr) {
+        return !tryExprsIn(expr).isEmpty();
+    }
+
+    /**
+     * Evaluates an expression into a fresh local and returns its name.
+     *
+     * <p>Used to keep {@code Ir.TryStart}'s empty-operand-stack requirement true. A
+     * composite expression that mentions a {@code try} anywhere spools its operands instead
+     * of leaving the earlier ones on the stack, so the nested {@code try} starts from an
+     * empty stack. The spooled operand is itself evaluated from an empty stack, so the rule
+     * holds at every depth.
+     */
+    private String spool(Ast.Expr expr) {
+        String slot = temp("spill");
+        expression(expr);
+        code.add(new Ir.Declare(slot, true));
+        return slot;
+    }
+
+    /** Evaluates operands so that a nested {@code try} still starts from an empty stack. */
+    private void operands(List<Ast.Expr> operands) {
+        if (operands.stream().noneMatch(Lowering::mentionsTry)) {
+            for (Ast.Expr operand : operands) {
+                expression(operand);
+            }
+            return;
+        }
+        List<String> slots = new ArrayList<>();
+        for (Ast.Expr operand : operands) {
+            slots.add(spool(operand));
+        }
+        for (String slot : slots) {
+            code.add(new Ir.Load(slot));
         }
     }
 
@@ -514,33 +745,30 @@ public final class Lowering {
             case Ast.NothingLit ignored -> code.add(new Ir.Const(null));
             case Ast.StringLit text -> stringLiteral(text);
             case Ast.Var var -> code.add(new Ir.Load(var.name()));
+            case Ast.TryExpr attempt -> tryExpression(attempt);
             case Ast.ListLit list -> {
-                for (Ast.Expr item : list.items()) {
-                    expression(item);
-                }
+                operands(list.items());
                 code.add(new Ir.MakeList(list.items().size()));
             }
             case Ast.TupleLit tuple -> {
-                for (Ast.Expr item : tuple.items()) {
-                    expression(item);
-                }
+                operands(tuple.items());
                 code.add(new Ir.MakeTuple(tuple.items().size()));
             }
             case Ast.SetLit set -> {
-                for (Ast.Expr item : set.items()) {
-                    expression(item);
-                }
+                operands(set.items());
                 code.add(new Ir.MakeSet(set.items().size()));
             }
             case Ast.MapLit map -> {
+                List<Ast.Expr> flat = new ArrayList<>();
                 for (Ast.Entry entry : map.entries()) {
-                    expression(entry.key());
-                    expression(entry.value());
+                    flat.add(entry.key());
+                    flat.add(entry.value());
                 }
+                operands(flat);
                 code.add(new Ir.MakeMap(map.entries().size()));
             }
             case Ast.Unary unary -> {
-                expression(unary.operand());
+                operands(List.of(unary.operand()));
                 mark(unary.span());
                 code.add(new Ir.Unary(
                         unary.op() == Token.Kind.KEYWORD ? "not" : operatorName(unary.op())));
@@ -549,8 +777,7 @@ public final class Lowering {
                 }
             }
             case Ast.Binary binary -> {
-                expression(binary.left());
-                expression(binary.right());
+                operands(List.of(binary.left(), binary.right()));
                 mark(binary.span());
                 code.add(new Ir.Binary(operatorName(binary.op())));
             }
@@ -609,14 +836,12 @@ public final class Lowering {
                 }
             }
             case Ast.MethodCall call -> {
-                expression(call.receiver());
-                emitCallArguments(call.args());
+                operands(concat(List.of(call.receiver()), call.args()));
                 mark(call.span());
                 code.add(new Ir.MethodCall(call.method(), call.args().size() + 1));
             }
             case Ast.Index index -> {
-                expression(index.target());
-                expression(index.index());
+                operands(List.of(index.target(), index.index()));
                 mark(index.span());
                 code.add(new Ir.Index());
             }
@@ -628,14 +853,12 @@ public final class Lowering {
             case Ast.Lambda lambda -> lambda(lambda, 0);
             case Ast.Grouping group -> expression(group.expr());
             case Ast.InExpr in -> {
-                expression(in.item());
-                expression(in.container());
+                operands(List.of(in.item(), in.container()));
                 mark(in.span());
                 code.add(new Ir.Contains());
             }
             case Ast.RangeExpr range -> {
-                expression(range.from());
-                expression(range.to());
+                operands(List.of(range.from(), range.to()));
                 mark(range.span());
                 code.add(new Ir.Range(range.inclusive()));
             }
@@ -672,9 +895,13 @@ public final class Lowering {
     }
 
     private void emitCallArguments(List<Ast.Expr> args) {
-        for (Ast.Expr arg : args) {
-            expression(arg);
-        }
+        operands(args);
+    }
+
+    private static List<Ast.Expr> concat(List<Ast.Expr> first, List<Ast.Expr> second) {
+        List<Ast.Expr> out = new ArrayList<>(first);
+        out.addAll(second);
+        return out;
     }
 
     /**

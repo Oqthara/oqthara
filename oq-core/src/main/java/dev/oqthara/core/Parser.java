@@ -322,6 +322,17 @@ public final class Parser {
     }
 
     private Ast.Stmt tryStatement(Token keyword) {
+        Parts parts = tryParts(keyword.span());
+        endStatement();
+        return new Ast.TryStmt(parts.body(), parts.errorName(), parts.handler(), keyword.span());
+    }
+
+    /**
+     * Parses everything after the {@code try} keyword, so the statement and expression forms
+     * cannot drift apart. The caller finishes the line; an expression form is followed by
+     * whatever continues the surrounding statement.
+     */
+    private Parts tryParts(Span span) {
         endStatement();
         List<Ast.Stmt> body = block();
         expectKeyword("catch", "after the try block");
@@ -332,8 +343,10 @@ public final class Parser {
         endStatement();
         List<Ast.Stmt> handler = block();
         expectKeyword("end", "to close this 'try'");
-        endStatement();
-        return new Ast.TryStmt(body, errorName, handler, keyword.span());
+        return new Parts(body, errorName, handler);
+    }
+
+    private record Parts(List<Ast.Stmt> body, String errorName, List<Ast.Stmt> handler) {
     }
 
     private Ast.Stmt useStatement(Token keyword) {
@@ -635,6 +648,12 @@ public final class Parser {
             }
             expect(Token.Kind.RPAREN, "to close the expression");
             return new Ast.Grouping(inner, paren.span());
+        }
+        if (matchKeyword("try")) {
+            Token keyword = previous();
+            Parts parts = tryParts(keyword.span());
+            return new Ast.TryExpr(parts.body(), parts.errorName(), parts.handler(),
+                    keyword.span());
         }
         if (check(Token.Kind.IDENT)) {
             Token name = advance();

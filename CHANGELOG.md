@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`try` as an expression.** `try ... catch ... end` may now be used wherever a value is
+  expected, not only as a statement: `n = try / int_of(text) / catch err / 0 / end`. The value is
+  the value of the branch that ran, taken from that branch's final statement when it is an
+  expression, and `nothing` otherwise. Both the interpreter and the compiled backend produce the
+  same value; a `try` nested inside a larger expression compiles too, because the lowerer spools
+  operands into locals so `try_start` still begins from an empty operand stack. See
+  `docs/adr/0014-try-as-an-expression.md`.
+
 - **Function overloading by parameter count.** A name may now carry several definitions as long
   as they differ in arity, and a call selects the definition whose parameter count matches. This
   replaces a silent data-loss defect: the second `fun area(...)` used to overwrite the first, so

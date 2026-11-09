@@ -21,7 +21,7 @@ public final class Ast {
     public sealed interface Expr extends Node permits
             NumberLit, StringLit, BoolLit, NothingLit, Var, ListLit, TupleLit, MapLit, SetLit,
             Unary, Binary, Logical, Call, MethodCall, Index, Field, Lambda, Grouping,
-            InExpr, RangeExpr {
+            InExpr, RangeExpr, TryExpr {
     }
 
     public record Program(List<Stmt> statements, String sourceName) {
@@ -91,6 +91,13 @@ public final class Ast {
     }
 
     public record TryStmt(List<Stmt> body, String errorName, List<Stmt> handler, Span span) implements Stmt {
+    }
+
+    /**
+     * {@code try ... catch e ... end} in value position. The value is whatever the branch that
+     * runs returns, or {@code nothing} when it falls off the end; see ADR-0014.
+     */
+    public record TryExpr(List<Stmt> body, String errorName, List<Stmt> handler, Span span) implements Expr {
     }
 
     public record UseStmt(String path, Span span) implements Stmt {
