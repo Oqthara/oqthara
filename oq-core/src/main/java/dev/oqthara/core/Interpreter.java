@@ -175,8 +175,7 @@ public final class Interpreter implements OqHost {
     private void hoist(List<Ast.Stmt> statements, Env env) {
         for (Ast.Stmt stmt : statements) {
             if (stmt instanceof Ast.FuncDecl function) {
-                env.define(function.name(),
-                        new OqFunction(function.name(), function.params(), function.body(), env), true);
+                declareFunction(env, function, stmt.span());
             } else if (stmt instanceof Ast.DataDecl data) {
                 List<Ast.FieldDef> fields = data.fields();
                 List<java.util.function.Supplier<Object>> defaults = new ArrayList<>();
@@ -191,6 +190,42 @@ public final class Interpreter implements OqHost {
                 env.define(data.name(), new DataCtor(data.name(), fields, defaults), true);
             }
         }
+    }
+
+    /**
+     * Registers one {@code fun} under its name, extending an existing overload set instead of
+     * replacing it. Two declarations with the same name and the same parameter count are a
+     * duplicate signature, which is reported here rather than silently keeping the last one.
+     */
+    private void declareFunction(Env env, Ast.FuncDecl function, Span span) {
+        OqFunction candidate = new OqFunction(function.name(), function.params(),
+                function.body(), env);
+        // A built-in yields to a user definition of the same name, so the program's own
+        // function wins instead of being reported as a duplicate of something it never wrote.
+        if (!env.hasLocal(function.name()) || env.isShadowableLocal(function.name())) {
+            env.define(function.name(), candidate, true);
+            return;
+        }
+        Object existing = env.getLocal(function.name());
+        if (existing instanceof OqCallable callable) {
+            for (OqCallable other : candidatesOf(callable)) {
+                if (other.arity() == candidate.arity()) {
+                    throw new OqError("'" + function.name() + "' is already defined with "
+                            + candidate.arity() + " parameter"
+                            + (candidate.arity() == 1 ? "" : "s"), span,
+                            "Give the two definitions different numbers of parameters, "
+                                    + "or rename one of them.");
+                }
+            }
+            env.define(function.name(), OverloadedFunction.combine(callable, candidate), true);
+            return;
+        }
+        throw new OqError("'" + function.name() + "' is already used for a value", span,
+                "Pick a different function name.");
+    }
+
+    private static List<OqCallable> candidatesOf(OqCallable callable) {
+        return callable instanceof OverloadedFunction set ? set.candidates() : List.of(callable);
     }
 
     private void tick(Span span) {
@@ -284,8 +319,7 @@ public final class Interpreter implements OqHost {
             }
             case Ast.FuncDecl function -> {
                 if (!env.hasLocal(function.name())) {
-                    env.define(function.name(),
-                            new OqFunction(function.name(), function.params(), function.body(), env), true);
+                    declareFunction(env, function, function.span());
                 }
             }
             case Ast.Return ret -> throw new OqFunction.ReturnSignal(

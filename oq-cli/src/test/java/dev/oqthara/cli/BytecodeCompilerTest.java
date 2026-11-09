@@ -1095,6 +1095,58 @@ class BytecodeCompilerTest {
         assertTrue(reason.contains("MAX"), reason);
     }
 
+    @Test
+    void overloadsCompileAndMatchTheInterpreter(@TempDir Path dir) throws Exception {
+        String source = """
+                fun area(side)
+                  return side * side
+                end
+                fun area(width, height)
+                  return width * height
+                end
+                print area(3)
+                print area(3, 4)
+                """;
+        String compiled = compileAndRun(source, dir);
+        assertEquals("9\n12\n", compiled);
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(), compiled);
+    }
+
+    @Test
+    void aritySelectsTheDefinitionInCompiledCode(@TempDir Path dir) throws Exception {
+        // A wrong resolver would pick the one-argument body for every call, so the three outputs
+        // together prove the parameter count is what decides.
+        String source = """
+                fun tag(a)
+                  return "one"
+                end
+                fun tag(a, b)
+                  return "two"
+                end
+                fun tag(a, b, c)
+                  return "three"
+                end
+                print tag(1)
+                print tag(1, 2)
+                print tag(1, 2, 3)
+                """;
+        assertEquals("one\ntwo\nthree\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void duplicateArityDoesNotCompile() {
+        String reason = BytecodeCompiler.whyNot(ir("""
+                fun f(a)
+                  return a
+                end
+                fun f(b)
+                  return b
+                end
+                """));
+        assertNotNull(reason, "a duplicate parameter count must not compile");
+        assertTrue(reason.contains("f"), reason);
+    }
+
     private record ProcessResult(int exit, String stdout, String stderr) {
     }
 

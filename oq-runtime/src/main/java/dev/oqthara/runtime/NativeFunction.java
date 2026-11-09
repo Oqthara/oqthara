@@ -38,6 +38,11 @@ public final class NativeFunction implements OqCallable {
     }
 
     @Override
+    public int arity() {
+        return minArity == maxArity ? minArity : VARIADIC;
+    }
+
+    @Override
     public Object call(OqHost host, List<Object> args, Span span) {
         if (args.size() < minArity || args.size() > maxArity) {
             String expected = minArity == maxArity

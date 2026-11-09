@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Function overloading by parameter count.** A name may now carry several definitions as long
+  as they differ in arity, and a call selects the definition whose parameter count matches. This
+  replaces a silent data-loss defect: the second `fun area(...)` used to overwrite the first, so
+  `area(2, 3)` failed with "area() expects 1 argument, got 2" and the one-parameter body was
+  unrecoverable. Resolution is deterministic, independent of declaration order, and identical in
+  the interpreter and in compiled bytecode. Two definitions with the same arity are now rejected
+  where the second is declared, and a user definition replaces a built-in of the same name
+  instead of colliding with it. Oqthara has no parameter type annotations, so arity is the only
+  discriminator; the rule is specified in [ADR-0012](docs/adr/0012-overload-resolution.md).
+- `arity()` on `OqCallable`, with `VARIADIC` for callables that accept no single parameter count,
+  so a variadic built-in can never silently win an exact-arity resolution.
+
 ### Fixed
 
 - **The conformance verifier now gates CI and tells the truth.** `scripts/verify-conformance.py`

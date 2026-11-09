@@ -142,13 +142,21 @@ public final class BytecodeCompiler {
         // reference and the class's own entries share one index space.
         ConstantPool pool = new ConstantPool();
 
-        Map<String, Integer> functionArities = new LinkedHashMap<>();
+        // A name maps to every parameter count declared for it, so an overload set is
+        // compiled as one JVM method per arity rather than as an unresolvable single method.
+        Map<String, Set<Integer>> functionArities = new LinkedHashMap<>();
         for (Ir.Function function : program.functions()) {
             if (function.name().equals("print") || function.name().equals("write")) {
                 throw new NotSupportedException("function '" + function.name()
                         + "' collides with the built-in command '" + function.name() + "'");
             }
-            functionArities.put(function.name(), function.params().size());
+            Set<Integer> arities = functionArities.computeIfAbsent(
+                    function.name(), ignored -> new LinkedHashSet<>());
+            if (!arities.add(function.params().size())) {
+                throw new NotSupportedException("function '" + function.name()
+                        + "' is declared twice with " + function.params().size()
+                        + " parameter(s)");
+            }
         }
 
         // Main is planned first so its top-level variable names are known. A function that
@@ -356,7 +364,7 @@ public final class BytecodeCompiler {
         private final int paramCount;
         private final ConstantPool pool;
         private final String ownerInternalName;
-        private final Map<String, Integer> functionArities;
+        private final Map<String, Set<Integer>> functionArities;
         private final int startSlot;
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         private final Deque<Map<String, Binding>> scopes = new ArrayDeque<>();
@@ -385,7 +393,7 @@ public final class BytecodeCompiler {
         private Set<String> topLevelNames = Set.of();
 
         Method(List<Ir.Instr> body, int paramCount, ConstantPool pool, String ownerInternalName,
-                Map<String, Integer> functionArities) {
+                Map<String, Set<Integer>> functionArities) {
             this.body = body;
             this.paramCount = paramCount;
             this.pool = pool;
@@ -1140,14 +1148,16 @@ public final class BytecodeCompiler {
         private void emitCall(Ir.Call call, int slot) {
             // The interpreter hoists user functions over the builtins, so a user `fun length`
             // must win here too. Builtin resolution is only the fallback.
-            Integer arity = functionArities.get(call.name());
-            if (arity != null) {
-                if (call.argc() != arity) {
+            Set<Integer> arities = functionArities.get(call.name());
+            if (arities != null) {
+                if (!arities.contains(call.argc())) {
                     throw new NotSupportedException("call to '" + call.name() + "' with "
                             + call.argc() + " argument(s), but the function declares "
-                            + arity + " parameter(s)");
+                            + arities.stream().map(String::valueOf)
+                                    .collect(java.util.stream.Collectors.joining(" or "))
+                            + " parameter(s)");
                 }
-                call(ownerInternalName, call.name(), functionDescriptor(arity));
+                call(ownerInternalName, call.name(), functionDescriptor(call.argc()));
                 return;
             }
             switch (call.name()) {

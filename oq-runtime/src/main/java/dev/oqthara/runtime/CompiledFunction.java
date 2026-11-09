@@ -36,6 +36,11 @@ public final class CompiledFunction implements OqCallable {
     }
 
     @Override
+    public int arity() {
+        return arity;
+    }
+
+    @Override
     public Object call(OqHost host, List<Object> args, Span span) {
         if (args.size() != arity) {
             throw new OqError(LAMBDA_NAME + "() expects " + arity + " argument"
