@@ -1317,6 +1317,119 @@ oq test examples     # scan a specific directory
 Output is one `PASS`/`FAIL` line per file, a summary, and the full diagnostic for each
 failure. The command exits with `1` if anything failed, so it works in CI unchanged.
 
+## Modules
+
+A program can be split across files. `use "oq:name"` loads `name.oq` and makes its
+top-level functions and `data` types available:
+
+```
+# helper.oq
+fun twice(n)
+  return n * 2
+end
+
+data Point(x, y)
+```
+
+```
+# main.oq
+use "oq:helper"
+print twice(3)          # 6
+print Point(1, 2)       # Point(x: 1, y: 2)
+```
+
+`name.oq` is looked for next to the program, then in `modules/`, then in `lib/`. The
+`.oq` suffix is optional in the import.
+
+A module's top-level statements run before the importing program's, once, however many
+times it is imported. An import cycle terminates, because a file is loaded at most once:
+
+```
+# a.oq
+use "oq:b"
+fun af()
+  return 1
+end
+
+# b.oq
+use "oq:a"
+fun bf()
+  return 2
+end
+```
+
+Importing `a` gives a program with both `af` and `bf`. Nothing recurses forever.
+
+There is one flat namespace. A module contributes its functions and types and nothing
+else: its locals stay local, and there is no `private`, no export list and no qualified
+name such as `helper.twice`. A top-level name declared twice is an error where the
+importer sees it:
+
+```
+error: 'twice' is already defined with 1 parameter
+```
+
+A failure inside a module reports that module's file, line and column, not a position in
+the program that imported it.
+
+`oq build` splices modules into the built program, so the jar runs without the `.oq` files
+beside it. The trade-off is that a compiled jar reports a module failure against the
+spliced source's line numbers rather than the module's own; `oq run` reports the module's
+file and line.
+
+`use` with a bare name such as `use java.time.LocalDate` is a Java import, described under
+[Interoperability with Java](#interoperability-with-java). The `"oq:"` prefix is what
+selects a module.
+
+## Closures
+
+A `fun` declared inside a `fun` body captures the enclosing bindings, by reference:
+
+```
+fun make_adder(n)
+  fun add(x)
+    return x + n
+  end
+  return add
+end
+
+a = make_adder(10)
+print a(5)      # 15
+```
+
+Capturing by reference means the closure sees later writes, from either side:
+
+```
+n = 0
+fun bump()
+  n = n + 1
+end
+bump()
+bump()
+print n         # 2
+```
+
+A `const` can be captured too; it simply cannot be reassigned, so a closure over one
+cannot change it. A captured parameter outlives the call that created it, because the
+closure holds the binding rather than a copy:
+
+```
+fun box(v)
+  fun get()
+    return v
+  end
+  return get
+end
+
+print box("kept")()     # kept
+```
+
+Nested functions can be mutually recursive, because both names are hoisted inside the body
+that declares them.
+
+A closure keeps its captured bindings alive for as long as the closure itself is
+reachable. Nothing frees them early and there is no way to free them by hand.
+
 ## Interoperability with Java
 
 ```

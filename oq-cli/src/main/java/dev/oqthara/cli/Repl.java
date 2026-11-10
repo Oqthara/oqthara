@@ -67,7 +67,7 @@ final class Repl {
             } catch (ExitSignal exit) {
                 return exit.code();
             } catch (OqError error) {
-                Details.render(err, error, line, System.console() != null);
+                Details.render(err, error, line, "<repl>", System.console() != null);
             } catch (RuntimeException e) {
                 err.println("error: " + e.getMessage());
             }

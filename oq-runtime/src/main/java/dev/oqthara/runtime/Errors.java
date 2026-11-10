@@ -64,7 +64,7 @@ public final class Errors {
     }
 
     /** The last path segment of {@code source}, which is the name {@code oq run} reports. */
-    static String sourceName(String source) {
+    public static String sourceName(String source) {
         if (source == null || source.isEmpty()) return "unknown";
         int slash = Math.max(source.lastIndexOf('/'), source.lastIndexOf('\\'));
         return slash < 0 ? source : source.substring(slash + 1);

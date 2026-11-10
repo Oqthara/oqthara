@@ -322,12 +322,21 @@ def cited_builtins_exist() -> None:
     known = natives | method_names | core_names
 
     # Only snake_case names are checked. Builtin naming style is snake_case throughout, and
-    # restricting to it avoids flagging the prose metavariables and user functions that also
-    # appear in examples (`f`, `risky`, `add`).
+    # restricting to it avoids flagging the prose metavariables that also appear in examples
+    # (`f`, `risky`).
+    #
+    # It does not avoid user functions: user code is snake_case too (`make_adder`), and the
+    # first version of this scanning reported every such example as a missing builtin. A name
+    # the page declares with `fun name(` is demonstrated to exist by the example itself, so
+    # it is not a claim about the standard library.
     cited: dict[str, str] = {}
+    declared: set[str] = set()
     for page in ("docs/spec/language.md", "docs/stdlib/reference.md"):
-        for name in re.findall(r"\b([a-z][a-z_0-9]*_[a-z_0-9]+)\b", read(page)):
+        text = read(page)
+        declared |= set(re.findall(r"\bfun ([a-z][a-z_0-9]*)\s*\(", text))
+        for name in re.findall(r"\b([a-z][a-z_0-9]*_[a-z_0-9]+)\b", text):
             cited.setdefault(name, page)
+    cited = {name: page for name, page in cited.items() if name not in declared}
     # Paths such as `tests/test_math.oq` contain snake_case file stems, not builtin names.
     cited = {name: page for name, page in cited.items() if not re.search(rf"{name}\.[a-z]+", read(page))}
 

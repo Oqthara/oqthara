@@ -144,7 +144,7 @@ public final class Main {
                     program = Modules.resolve(file, program);
                 }
             } catch (OqError error) {
-                Details.render(err, error, source, color);
+                Details.render(err, error, source, name, color);
                 return 1;
             }
             Interpreter interpreter = new Interpreter(out, err, in, programArgs,
@@ -156,7 +156,7 @@ public final class Main {
             } catch (ExitSignal exit) {
                 return exit.code();
             } catch (OqError error) {
-                Details.render(err, error, source, color);
+                Details.render(err, error, source, name, color);
                 return 1;
             } catch (StackOverflowError overflow) {
                 EmbeddedMain.renderFailure(err, overflow);
@@ -188,7 +188,7 @@ public final class Main {
                 err.println("Cannot read '" + path + "': " + e.getMessage());
                 return 2;
             } catch (OqError error) {
-                Details.render(err, error, readSafeString(path), color);
+                Details.render(err, error, readSafeString(path), path, color);
                 return 1;
             }
         }
@@ -238,7 +238,7 @@ public final class Main {
             try {
                 program = Parser.parse(path, source);
             } catch (OqError error) {
-                Details.render(err, error, source, color);
+                Details.render(err, error, source, path, color);
                 return 1;
             }
             Lowering.Result lowered = Lowering.lowerWithReport(program);

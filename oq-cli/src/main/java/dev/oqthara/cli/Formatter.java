@@ -45,7 +45,7 @@ final class Formatter {
                 err.println("Cannot read '" + path + "': " + e.getMessage());
                 status = 2;
             } catch (OqError e) {
-                Details.render(err, e, null, false);
+                Details.render(err, e, null, path, false);
                 status = 1;
             }
         }
