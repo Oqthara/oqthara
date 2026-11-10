@@ -1,0 +1,48 @@
+package dev.oqthara.runtime;
+
+import java.util.LinkedHashMap;
+import java.util.Objects;
+
+/**
+ * One object built from a {@code class} declaration (ADR-0027). Unlike {@link OqData}, which is
+ * a value type compared by content, an instance is a reference type identified by its own
+ * identity: two instances of the same class with equal fields are never {@code ==}. Equality is
+ * therefore left as object identity here, and {@code Values.equal} does not reach inside.
+ *
+ * <p>Fields are kept in declaration order so {@code repr} and {@code type_of} read the same way
+ * they do for {@code data}.
+ */
+public final class OqInstance {
+    private final String className;
+    private final LinkedHashMap<String, Object> fields;
+
+    public OqInstance(String className, LinkedHashMap<String, Object> fields) {
+        this.className = Objects.requireNonNull(className, "className");
+        this.fields = new LinkedHashMap<>(Objects.requireNonNull(fields, "fields"));
+    }
+
+    public String className() {
+        return className;
+    }
+
+    public LinkedHashMap<String, Object> fields() {
+        return fields;
+    }
+
+    public boolean has(String name) {
+        return fields.containsKey(name);
+    }
+
+    public Object get(String name) {
+        return fields.get(name);
+    }
+
+    public void set(String name, Object value) {
+        fields.put(name, value);
+    }
+
+    @Override
+    public String toString() {
+        return Values.repr(this);
+    }
+}

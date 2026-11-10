@@ -777,6 +777,98 @@ a.items.push(1)
 print b.items      # [], not [1]
 ```
 
+## Classes and contracts
+
+`data` is for values. A `class` is for objects that have identity and behaviour:
+
+```
+class Counter(value = 0)
+  fun bump()
+    this.value = this.value + 1
+    return this.value
+  end
+end
+
+c = Counter()
+print c.bump()      # 1
+print c.bump()      # 2
+```
+
+Fields are listed in the header exactly as they are for `data`, including defaults, and
+defaults are evaluated per construction for the same reason. Methods are declared with `fun`
+inside the class body and reach the object as `this`. An optional `init` block runs once per
+construction, after every field is filled, so it can read and adjust any of them:
+
+```
+class Scaled(value)
+  init
+    this.value = this.value * 10
+  end
+end
+print Scaled(2).value     # 20
+```
+
+An instance is a **reference**, so equality is identity, not structure: two objects with
+equal fields are never `==`. `type_of` returns the class name. `init` cannot introduce a
+field; every name it writes must already be in the header.
+
+### Privacy
+
+A field whose name begins with `_` is private to its class. Reading or writing it from
+outside is an error that names the class:
+
+```
+class Account(_balance = 0)
+  fun deposit(n)
+    this._balance = this._balance + n
+    return this
+  end
+  fun balance()
+    return this._balance
+  end
+end
+
+print Account().deposit(50).balance()    # 50
+print Account()._balance                 # error: field '_balance' of Account is private
+```
+
+Privacy is per class, not per object: a method of `A` may read `other._v` when `other` is
+also an `A`, and may not when it is a `B`.
+
+### Contracts
+
+A `contract` lists the method names and arities a class promises to provide. It is checked
+when the class is declared, so a missing method is reported even if no object is ever
+built. A contract is a checked promise, not a type: it does not restrict what a variable may
+hold, and it does not enable dispatch to a method the object does not have.
+
+```
+contract Shape
+  fun area()
+  fun scale(factor)
+end
+
+class Square(side) implements Shape
+  fun area()
+    return this.side * this.side
+  end
+  fun scale(factor)
+    this.side = this.side * factor
+    return this
+  end
+end
+```
+
+A class cannot be declared twice with the same method name, with the same field twice, or
+with a field and a method sharing one name. `class`, `contract`, `implements`, `init` and
+`this` are contextual: each remains usable as an ordinary variable name, so no existing
+program changes meaning.
+
+There is no inheritance. Polymorphism comes from contracts and from values that carry their
+own methods, not from a class hierarchy. See [ADR-0027](../adr/0027-classes-and-contracts.md)
+for why, and for the note that classes currently run on the interpreter rather than the
+bytecode backend.
+
 ## Ranges
 
 ```

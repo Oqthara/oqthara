@@ -18,6 +18,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0024](docs/adr/0024-text-is-a-sequence-of-code-points.md).
 
 ### Added
+- **Classes and contracts.** A `class` declares fields with defaults, methods that reach the
+  object as `this`, and an optional `init` block that runs after the fields are filled.
+  Instances are reference values: equality is identity, `type_of` is the class name, and
+  printing names the object rather than its fields. A field starting with `_` is private to
+  its class. `contract` lists the method names and arities a class promises through
+  `implements`, checked when the class is declared, so a missing method fails where the
+  mistake is rather than at the first call. `class`, `contract`, `implements`, `init` and
+  `this` are contextual, so programs that use those names as variables keep working. There
+  is no inheritance; polymorphism comes from contracts. Classes run on the interpreter for
+  now: `oq build` reports `codepath: interpreter launcher (class 'C': classes are not
+  compiled yet)` instead of silently falling back. See
+  [ADR-0027](docs/adr/0027-classes-and-contracts.md).
+
 - **`frozenset`, the immutable and hashable set.** `frozenset([1, 2])` holds the same
   operations as `set` minus the mutators, and is accepted as a map key or a set member
   wherever a `set` is refused. Every operation that returns a collection returns a frozenset,

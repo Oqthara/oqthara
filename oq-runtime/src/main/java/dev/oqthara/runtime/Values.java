@@ -66,6 +66,7 @@ public final class Values {
         if (value instanceof Set<?>) return "set";
         if (value instanceof OqRange) return "range";
         if (value instanceof OqData d) return d.typeName();
+        if (value instanceof OqInstance instance) return instance.className();
         if (value instanceof OqIterator) return "iterator";
         if (value instanceof OqTask) return "task";
         if (value instanceof OqCallable c) return "function " + c.name();
@@ -134,6 +135,7 @@ public final class Values {
         }
         if (value instanceof OqRange r) return r.toString();
         if (value instanceof OqIterator it) return it.toString();
+        if (value instanceof OqInstance instance) return "<" + instance.className() + " object>";
         if (value instanceof OqData d) {
             StringBuilder sb = new StringBuilder(d.typeName()).append('(');
             boolean first = true;
@@ -222,6 +224,9 @@ public final class Values {
      */
     public static boolean equal(Object a, Object b) {
         if (a == null || b == null) return a == b;
+        // A class instance is a reference type (ADR-0027 D5): equality is identity, and the
+        // fields are never consulted. This must precede the container branches below.
+        if (a instanceof OqInstance || b instanceof OqInstance) return a == b;
         if (a instanceof OqData x && b instanceof OqData y) return x.equals(y);
         if (a instanceof OqTuple != b instanceof OqTuple) return false;
         if (a instanceof Long x && b instanceof Double y) return x.doubleValue() == y;
@@ -607,6 +612,17 @@ public final class Values {
             map.put(key, value);
             return;
         }
+        if (target instanceof OqInstance instance) {
+            if (key instanceof String name) {
+                if (!instance.has(name)) {
+                    throw new OqError("type " + instance.className()
+                            + " has no field named '" + name + "'", span);
+                }
+                instance.set(name, value);
+                return;
+            }
+            throw new OqError("field name must be text, got " + typeName(key), span);
+        }
         if (target instanceof OqData d) {
             if (key instanceof String name) {
                 if (!d.has(name)) {
@@ -749,6 +765,7 @@ public final class Values {
      */
     public static List<Object> destructuringParts(Object value) {
         if (value instanceof OqData) return null;
+        if (value instanceof OqInstance) return null;
         if (value instanceof List<?> list) return new ArrayList<>(list);
         if (value instanceof Set<?> set) return new ArrayList<>(set);
         if (value instanceof OqRange range) return range.toList();

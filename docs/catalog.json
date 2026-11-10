@@ -164,6 +164,12 @@
       "slug": "docs/adr/0026-range-membership-follows-the-walk"
     },
     {
+      "path": "docs/adr/0027-classes-and-contracts.md",
+      "title": "ADR-0027 — Classes and contracts: a nominal object model on top of `data`",
+      "section": "adr",
+      "slug": "docs/adr/0027-classes-and-contracts"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

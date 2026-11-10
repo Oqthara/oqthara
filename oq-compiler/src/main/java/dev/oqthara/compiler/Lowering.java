@@ -94,6 +94,8 @@ public final class Lowering {
         for (Ast.Stmt stmt : statements) {
             switch (stmt) {
                 case Ast.DataDecl data -> types.add(data.name());
+                case Ast.ClassDecl classDecl -> others.add(classDecl.name());
+                case Ast.ContractDecl contract -> others.add(contract.name());
                 case Ast.FuncDecl function -> {
                     others.add(function.name());
                     for (String param : function.params()) others.add(param);
@@ -223,6 +225,10 @@ public final class Lowering {
                 // Types are hoisted into the type scopes for this block; construction is
                 // lowered where a call names the type.
             }
+            case Ast.ClassDecl classDecl -> code.add(new Ir.Refuse("class '"
+                    + classDecl.name() + "': classes are not compiled yet"));
+            case Ast.ContractDecl contract -> code.add(new Ir.Refuse("contract '"
+                    + contract.name() + "': contracts are not compiled yet"));
             case Ast.ExprStmt expr -> {
                 expression(expr.expr());
                 code.add(new Ir.Pop());
