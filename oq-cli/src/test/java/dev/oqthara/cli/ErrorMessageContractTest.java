@@ -222,6 +222,41 @@ class ErrorMessageContractTest {
     }
 
     @Test
+    void anUnhashableMemberIsReportedAtTheCallThatBuiltIt() {
+        // ADR-0025. The literal forms are covered above; these reach the same refusal through
+        // the constructors and the set algebra, which the literals' repair did not cover. Each
+        // program puts the offending call on line 3, so a synthetic `<unknown>:1:1` is visibly
+        // the wrong line rather than a lucky match.
+        for (String stmt : new String[] {
+                "print(set([[1]]))",
+                "print(frozenset([[1]]))",
+                "print(unique([[1]]))",
+                "print([[1]].to_set())",
+                "print(set([1]).union([[1]]))",
+                "print(set([1]).add([[1]]))",
+                "print(frozenset([1]).union([[1]]))",
+                "print(frozenset([1]).difference([[1]]))",
+                "print([[1]].unique())",
+                "print(par_map([[1]], x -> set([x])))"}) {
+            String source = "a = 1\nb = 2\n" + stmt + "\n";
+            OqRunner.Result result = run(source);
+            assertEquals(1, result.code(), stmt + "\n" + result.stderr());
+            assertTrue(result.stderr().contains("cannot be used as a"),
+                    stmt + "\n" + result.stderr());
+            assertTrue(result.stderr().contains(":3:"),
+                    "expected the position on line 3, got:\n" + result.stderr());
+            assertFalse(result.stderr().contains("<unknown>"),
+                    "expected a real file position, got:\n" + result.stderr());
+            // A callback runs on another thread, so this also proves the marked position is
+            // per thread rather than one slot shared by concurrent callbacks.
+            if (stmt.contains("par_map")) {
+                assertTrue(result.stderr().contains(":3:30"),
+                        "expected the inner call, got:\n" + result.stderr());
+            }
+        }
+    }
+
+    @Test
     void changingACollectionInsideACallbackIsWellDefined() {
         assertEquals("[nothing, nothing, nothing]\n", ok("""
                 xs = [1, 2, 3]

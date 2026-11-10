@@ -11,13 +11,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * print {@code err.line} or {@code err.file}. Generated code calls {@link #mark} right before
  * every operation that can raise an {@code OqError}, and the runtime helpers used by compiled
  * code read that position through {@link #current} instead of reporting a synthetic one.
- * Compiled code is single-threaded and no user code runs between a mark and the helper it
- * describes, so one slot is enough.
+ * {@code oq run} marks the same way, in the interpreter's call funnel, so both backends
+ * report the same position.
+ *
+ * <p>The slot is per thread. Compiled code is single-threaded, but the interpreter runs user
+ * code on virtual threads for {@code spawn} and {@code par_map}, and two callbacks sharing
+ * one slot would report each other's positions (ADR-0025).
  */
 public final class Errors {
     private static final Map<String, Span> SPANS = new ConcurrentHashMap<>();
 
-    private static volatile Span current = Span.synthetic();
+    private static final ThreadLocal<Span> current = ThreadLocal.withInitial(Span::synthetic);
 
     private Errors() {
     }
@@ -31,12 +35,22 @@ public final class Errors {
      * {@code prog.oq}, not {@code dir/prog.oq}.
      */
     public static void mark(String source, Object line, Object column) {
-        current = span(source, line, column);
+        current.set(span(source, line, column));
+    }
+
+    /**
+     * Records a position the caller already holds as a {@link Span}.
+     *
+     * <p>The interpreter evaluates expressions to spans rather than to a source name, a line
+     * and a column, so this is how it marks.
+     */
+    public static void mark(Span span) {
+        current.set(span == null ? Span.synthetic() : span);
     }
 
     /** The position recorded by the last {@link #mark}, or a synthetic span when none was. */
     public static Span current() {
-        return current;
+        return current.get();
     }
 
     /** The span for one source position, interned so a loop does not allocate per step. */
