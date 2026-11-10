@@ -188,6 +188,12 @@
       "slug": "docs/governance/alpha-4-9-7-collection-evidence"
     },
     {
+      "path": "docs/governance/alpha-4-requirement-matrix.md",
+      "title": "Alpha 4 requirement traceability matrix",
+      "section": "governance",
+      "slug": "docs/governance/alpha-4-requirement-matrix"
+    },
+    {
       "path": "docs/governance/audit/baseline-2026-11.md",
       "title": "Baseline audit — November 2026",
       "section": "governance",
