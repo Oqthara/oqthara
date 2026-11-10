@@ -1035,15 +1035,51 @@ print base64_decode("YWJj")      # abc
 Hashing: `sha256(text)`, `sha1(text)`, `md5(text)`, `hmac_sha256(key, text)`. Each hashes the
 UTF-8 bytes of the text and returns lowercase hex, so the result matches what `sha256sum`
 prints for a UTF-8 file with the same content. `sha1` and `md5` exist because protocols and
-file formats still name them; they are not safe for a secret. Hashing is not password
-storage: there is no slow key-derivation function here, and `sha256` must not stand in for
-one. `secure_random_hex(n)` returns `n` bytes from the platform's `SecureRandom`, as hex, for
-a nonce or a token; `random()` remains the one for games and shuffling.
+file formats still name them; they are not safe for a secret. `secure_random_hex(n)` returns
+`n` bytes from the platform's `SecureRandom`, as hex, for a nonce or a token; `random()`
+remains the one for games and shuffling.
+
+None of the digests is constant-time, and none is claimed to be. Comparison is the one
+operation that is, because that is the one where a fast answer leaks where the inputs differ:
+
+```
+print secure_equal("aaaaaaab", "aaaaaaac")   # false
+```
+
+`secure_equal(a, b)` compares two texts through `MessageDigest.isEqual`, whose running time does
+not depend on where the inputs first differ, unlike a `==` that stops at the first mismatched
+character. Use it for a MAC or a token, not `==`. It is deliberately not what `==` does: most
+text comparisons are not secrets, and paying the cost everywhere to defend the few would be a
+poor trade. Non-text is refused, so `secure_equal(1, 2)` is an error rather than `false`.
+
+Password storage needs a slow, salted function, and `sha256` is the wrong tool for it:
+
+```
+print pbkdf2_sha256("password", "salt", 1)
+# 120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b
+```
+
+`pbkdf2_sha256(password, salt, iterations)` is `PBKDF2WithHmacSHA256` from the JVM, deriving
+32 bytes as lowercase hex. The salt and the iteration count are both required, and the count
+must be between 1 and 10,000,000. The salt is a parameter rather than generated, because a
+generated one would have to be returned with the count for the stored value to be verifiable;
+build the record yourself:
+
+```oq
+const salt = secure_random_hex(16)
+const stored = salt + ":" + pbkdf2_sha256(password, salt, 600000)
+```
 
 ```
 print sha256("abc")     # ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
 print secure_random_hex(8).length()   # 16
 ```
+
+There is no API for loading a private key or a custom trust store. Certificate validation is
+not declined — it happens on every `https` request with the JVM defaults and cannot be turned
+off. What is absent is a key *value*, because a key needs a lifetime and this language has no
+`close`: a key would live until the garbage collector decided otherwise, with no way to write
+"use it, then be sure it is gone".
 
 JSON: `json_parse(text)`, `json(value)`.
 

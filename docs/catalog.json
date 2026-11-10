@@ -230,6 +230,12 @@
       "slug": "docs/adr/0037-networking-and-urls"
     },
     {
+      "path": "docs/adr/0038-constant-time-and-password-hashing.md",
+      "title": "ADR-0038: Constant-time comparison and password hashing",
+      "section": "adr",
+      "slug": "docs/adr/0038-constant-time-and-password-hashing"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

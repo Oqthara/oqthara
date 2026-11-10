@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Constant-time comparison and password hashing.** `secure_equal(a, b)` compares two texts
+  through `MessageDigest.isEqual`, so the running time does not depend on where they first
+  differ; `==` is unchanged, because most text comparisons are not secrets and paying that cost
+  everywhere to defend the few would be a poor trade. `pbkdf2_sha256(password, salt, iterations)`
+  derives 32 bytes of `PBKDF2WithHmacSHA256` as hex, with both the salt and the count required
+  and the count bounded so a mistake in a variable cannot look like a hang. The output is
+  checked against an independent implementation (`hashlib.pbkdf2_hmac`) rather than against
+  itself, so it matches the standard vectors. Key and certificate APIs are deliberately not
+  added: a key needs a lifetime and the language has no `close`, so it could only be handed out
+  with no way to be sure it was discarded. Certificate validation itself is untouched and
+  cannot be turned off. Specified by
+  [ADR-0038](docs/adr/0038-constant-time-and-password-hashing.md).
 - **URLs, query strings, and honest HTTP failures.** `url_parse` splits a URL into `scheme`,
   `host`, `port`, `path`, `query` and `fragment`, leaving `port` as `nothing` rather than
   inventing the scheme default. `url_encode`/`url_decode` are form encoding, so a space is `+`
