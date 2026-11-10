@@ -158,6 +158,12 @@
       "slug": "docs/adr/0025-refusals-report-the-call-site"
     },
     {
+      "path": "docs/adr/0026-range-membership-follows-the-walk.md",
+      "title": "ADR-0026 — Range membership follows the walk, not the bounds",
+      "section": "adr",
+      "slug": "docs/adr/0026-range-membership-follows-the-walk"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

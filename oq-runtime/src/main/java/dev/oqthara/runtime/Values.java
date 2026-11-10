@@ -888,8 +888,7 @@ public final class Values {
             if (!isNumber(item)) return false;
             double d = asDouble(item);
             if (d != Math.rint(d)) return false;
-            long l = (long) d;
-            return l >= r.start() && (r.inclusive() ? l <= r.end() : l < r.end());
+            return r.contains((long) d);
         }
         throw new OqError("cannot check membership in " + typeName(container), span);
     }

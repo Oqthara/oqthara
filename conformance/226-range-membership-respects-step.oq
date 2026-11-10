@@ -1,0 +1,25 @@
+strided = range(0, 10, 3)
+print strided.to_list()
+print 1 in strided
+print 3 in strided
+print 9 in strided
+print 10 in strided
+
+backward = range(5, 1, -1)
+print backward.to_list()
+print 3 in backward
+print 9 in backward
+print backward.contains(3)
+print backward.contains(9)
+
+even = range(0, 10, 2)
+print 4 in even
+print 5 in even
+print even.contains(4)
+print even.contains(5)
+
+whole = range(0, 5)
+print whole.contains(3.0)
+print 3.0 in whole
+print whole.contains(3.5)
+print whole.contains("3")
