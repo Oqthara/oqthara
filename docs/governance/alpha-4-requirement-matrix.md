@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `c4a98fa` (PR #70 head), 2026-11-10.
+**Last verified:** `3ff0653` (PR #70 head), 2026-11-10.
 
 ## Language features (§14)
 
