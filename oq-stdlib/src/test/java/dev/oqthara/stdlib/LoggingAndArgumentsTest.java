@@ -83,7 +83,9 @@ class LoggingAndArgumentsTest {
     @Test
     void logInfoWritesTheLevelAndTheMessageToTheErrorStream() {
         assertNull(call("log_info", "starting"));
-        assertEquals("INFO  starting\n", errText());
+        // println ends the line with the platform separator, exactly as print does, so this
+        // asserts the same terminator the runtime produces rather than a Unix one.
+        assertEquals("INFO  starting" + System.lineSeparator(), errText());
         assertEquals("", outText(), "the output stream is the program's data and must stay clean");
     }
 
@@ -95,7 +97,8 @@ class LoggingAndArgumentsTest {
         assertFalse(errText().contains("\"done\""), "log_info must not quote a string");
 
         call("log_info", 42L);
-        assertTrue(errText().endsWith("INFO  42\n"));
+        assertTrue(errText().endsWith("INFO  42" + System.lineSeparator()),
+                "a non-text message is displayed, not quoted");
     }
 
     @Test
