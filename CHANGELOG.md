@@ -39,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0024](docs/adr/0024-text-is-a-sequence-of-code-points.md).
 
 ### Added
+- **Encoding and hashing.** Two §17 domains were absent, and the requirement asks for both:
+  `hex_encode`/`hex_decode` and `base64_encode`/`base64_decode` cover the "bytes, binary data,
+  encoding, base64" line, and `sha256`, `sha1`, `md5`, `hmac_sha256` and `secure_random_hex`
+  cover "cryptographic hashes; HMAC; secure random/secrets". There is no `bytes` type, so
+  binary data is spelled as text — lowercase hex or padded standard base64 — and every function
+  takes and returns text, hashing the UTF-8 bytes so the digest matches `sha256sum` for the
+  same content. Every primitive is a JVM provider; nothing implements a hash here. A decoder
+  reports the offset of a character outside its alphabet rather than raising an internal
+  error, and refuses unpadded base64, which the platform decoder would otherwise accept as a
+  truncated value. `secure_random_hex` uses `SecureRandom`, not `Random`. The reference states
+  that `md5`/`sha1` are not safe for a secret and that hashing is not password storage. See
+  [ADR-0033](docs/adr/0033-encoding-and-hashing.md).
 - **Documentation comments.** A multi-line text literal standing before a `fun`, `data`,
   `class` or `contract` documents it, with JavaDoc-style tags: `@param`, `@return`, `@throws`,
   `@since`, `@author`, `@deprecated` and `@see`. The tags are parsed into a `Docstring` rather

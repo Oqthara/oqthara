@@ -19,6 +19,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `args` | built-in |
 | `assert` | built-in |
 | `await` | built-in |
+| `base64_decode` | built-in |
+| `base64_encode` | built-in |
 | `ceil` | built-in |
 | `clamp` | built-in |
 | `clone` | built-in |
@@ -38,6 +40,9 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `floor` | built-in |
 | `format` | built-in |
 | `frozenset` | built-in |
+| `hex_decode` | built-in |
+| `hex_encode` | built-in |
+| `hmac_sha256` | built-in |
 | `http_get` | built-in |
 | `http_post` | built-in |
 | `input` | built-in |
@@ -58,6 +63,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `map` | built-in |
 | `matches` | built-in |
 | `max` | built-in |
+| `md5` | built-in |
 | `memory_mb` | built-in |
 | `min` | built-in |
 | `now` | built-in |
@@ -83,7 +89,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `round` | built-in |
 | `run_command` | built-in |
 | `save` | built-in |
+| `secure_random_hex` | built-in |
 | `set` | built-in |
+| `sha1` | built-in |
+| `sha256` | built-in |
 | `sleep` | built-in |
 | `sort` | built-in |
 | `sort_by` | built-in |
