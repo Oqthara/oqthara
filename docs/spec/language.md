@@ -1177,3 +1177,27 @@ print list.size()
 called with the same dot syntax used for Oqthara values. Common Java types are
 converted automatically: `int`, `long`, `double`, `boolean`, `char`, `String`,
 `List`, `Map`, `Path` and enums.
+
+The collection families need no conversion at all, because they are already Java
+collections: a `tuple` extends `AbstractList`, a `frozenset` extends `AbstractSet`, a
+`map` extends `AbstractMap`, and a `list` is an `ArrayList`. Passing one to a Java method
+that takes a `Collection` therefore hands over the real object rather than a copy, and
+mutating it through the Java side is visible to Oqthara. That is the same aliasing rule
+the language states elsewhere; it is not a new exception at the boundary.
+
+A `range` is the one family that does not cross. It is a computed interval rather than a
+stored collection, so it cannot satisfy a `Collection` parameter:
+
+```text
+error: cannot create ArrayList with 1 argument
+```
+
+Materialise it first if that is what you want, which also makes the allocation explicit:
+
+```text
+xs = []
+for i in 1 to 3
+  xs.push(i)
+end
+ArrayList(xs).size()   # 3
+```
