@@ -58,10 +58,65 @@ public final class Parser {
         List<Ast.Stmt> statements = new ArrayList<>();
         skipSeparators();
         while (!check(Token.Kind.EOF)) {
-            statements.add(statement());
+            statements.add(declaration());
             skipSeparators();
         }
         return new Ast.Program(statements, sourceName);
+    }
+
+    /**
+     * A statement, plus the documentation comment that may precede it.
+     *
+     * <p>A multi-line text literal standing on its own line before a declaration documents
+     * that declaration (ADR-0030). Anywhere else it stays an ordinary expression statement,
+     * which is what it was before docstrings existed, so no existing program changes meaning.
+     */
+    private Ast.Stmt declaration() {
+        if (!check(Token.Kind.MULTILINE) || !documentsADeclaration()) {
+            return statement();
+        }
+        Token docToken = advance();
+        skipSeparators();
+        String doc = (String) docToken.literal();
+        Ast.Stmt declared = statement();
+        if (declared instanceof Ast.FuncDecl f && f.doc() == null) {
+            return new Ast.FuncDecl(f.name(), f.params(), f.body(), doc, f.span());
+        }
+        if (declared instanceof Ast.DataDecl d && d.doc() == null) {
+            return new Ast.DataDecl(d.name(), d.fields(), d.immutable(), doc, d.span());
+        }
+        if (declared instanceof Ast.ClassDecl c && c.doc() == null) {
+            return new Ast.ClassDecl(c.name(), c.fields(), c.implementsName(), c.methods(),
+                    c.init(), doc, c.span());
+        }
+        if (declared instanceof Ast.ContractDecl k && k.doc() == null) {
+            return new Ast.ContractDecl(k.name(), k.methods(), doc, k.span());
+        }
+        throw error(docToken, "a documentation comment must be followed by a declaration",
+                "Move it above a fun, data, class or contract, or remove it.");
+    }
+
+    /**
+     * Whether the multi-line literal at the cursor is followed by something a documentation
+     * comment can attach to. Read without consuming, so a literal used as a value still parses
+     * as one.
+     */
+    private boolean documentsADeclaration() {
+        int ahead = current + 1;
+        while (ahead < tokens.size() && tokens.get(ahead).is(Token.Kind.NEWLINE)) {
+            ahead++;
+        }
+        if (ahead >= tokens.size()) {
+            return false;
+        }
+        Token next = tokens.get(ahead);
+        if (next.is(Token.Kind.KEYWORD)) {
+            return next.lexeme().equals("fun") || next.lexeme().equals("data");
+        }
+        if (next.is(Token.Kind.IDENT) && (next.lexeme().equals("class") || next.lexeme().equals("contract"))) {
+            return ahead + 1 < tokens.size() && tokens.get(ahead + 1).is(Token.Kind.IDENT);
+        }
+        return false;
     }
 
     private Ast.Stmt statement() {
@@ -541,7 +596,7 @@ public final class Parser {
         while (!check(Token.Kind.EOF) && !(check(Token.Kind.KEYWORD)
                 && (peek().lexeme().equals("end") || peek().lexeme().equals("else")
                 || peek().lexeme().equals("catch")))) {
-            statements.add(statement());
+            statements.add(declaration());
             skipSeparators();
         }
         return statements;
@@ -790,7 +845,7 @@ public final class Parser {
             Token token = previous();
             return new Ast.NumberLit(token.literal(), token.span());
         }
-        if (match(Token.Kind.STRING)) {
+        if (match(Token.Kind.STRING) || match(Token.Kind.MULTILINE)) {
             Token token = previous();
             return stringLiteral(token);
         }

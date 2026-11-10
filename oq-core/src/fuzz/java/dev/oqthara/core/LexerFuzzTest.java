@@ -29,6 +29,14 @@ class LexerFuzzTest {
             case 4 -> "\"" + "{".repeat(data.consumeInt(0, 2000))
                     + "1" + "}".repeat(data.consumeInt(0, 2000)) + "\"";
             case 5 -> "#".repeat(data.consumeInt(0, 20000)) + "\n";
+            // Multi-line strings are their own token kind (ADR-0030), so give the lexer
+            // unterminated, nested and escaped triple-quoted shapes rather than hoping
+            // random bytes happen to spell one.
+            case 6 -> "\"\"\"" + "x".repeat(data.consumeInt(0, 20000));
+            case 7 -> "\"\"\"" + "\n".repeat(data.consumeInt(0, 5000)) + "\"\"";
+            case 8 -> "\"\"\"" + "\\\"".repeat(data.consumeInt(0, 5000)) + "\"\"\"";
+            case 9 -> "\"\"\"" + "{".repeat(data.consumeInt(0, 2000))
+                    + "1" + "}".repeat(data.consumeInt(0, 2000)) + "\"\"\"";
             default -> data.consumeRemainingAsString();
         };
         lex(source);

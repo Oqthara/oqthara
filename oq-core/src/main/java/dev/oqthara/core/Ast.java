@@ -60,7 +60,11 @@ public final class Ast {
                            List<Stmt> body, Span span) implements Stmt {
     }
 
-    public record FuncDecl(String name, List<String> params, List<Stmt> body, Span span) implements Stmt {
+    public record FuncDecl(String name, List<String> params, List<Stmt> body, String doc,
+                           Span span) implements Stmt {
+        public FuncDecl(String name, List<String> params, List<Stmt> body, Span span) {
+            this(name, params, body, null, span);
+        }
     }
 
     public record Return(Expr value, Span span) implements Stmt {
@@ -77,7 +81,11 @@ public final class Ast {
      * declaration fixes its fields at construction and lets the value be used as a map key or
      * set member, where a mutable one is refused (ADR-0028).
      */
-    public record DataDecl(String name, List<FieldDef> fields, boolean immutable, Span span) implements Stmt {
+    public record DataDecl(String name, List<FieldDef> fields, boolean immutable, String doc,
+                           Span span) implements Stmt {
+        public DataDecl(String name, List<FieldDef> fields, boolean immutable, Span span) {
+            this(name, fields, immutable, null, span);
+        }
     }
 
     public record FieldDef(String name, Expr defaultValue, Span span) {
@@ -89,14 +97,23 @@ public final class Ast {
      * {@code init} is null when the class declares no initializer body.
      */
     public record ClassDecl(String name, List<FieldDef> fields, String implementsName,
-                            List<MethodDecl> methods, List<Stmt> init, Span span) implements Stmt {
+                            List<MethodDecl> methods, List<Stmt> init, String doc, Span span)
+            implements Stmt {
+        public ClassDecl(String name, List<FieldDef> fields, String implementsName,
+                         List<MethodDecl> methods, List<Stmt> init, Span span) {
+            this(name, fields, implementsName, methods, init, null, span);
+        }
     }
 
     public record MethodDecl(String name, List<String> params, List<Stmt> body, Span span) {
     }
 
     /** {@code contract Name} followed by method signatures and {@code end}. No bodies. */
-    public record ContractDecl(String name, List<Signature> methods, Span span) implements Stmt {
+    public record ContractDecl(String name, List<Signature> methods, String doc, Span span)
+            implements Stmt {
+        public ContractDecl(String name, List<Signature> methods, Span span) {
+            this(name, methods, null, span);
+        }
     }
 
     public record Signature(String name, int arity, Span span) {

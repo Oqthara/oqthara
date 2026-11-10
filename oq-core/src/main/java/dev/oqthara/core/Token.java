@@ -4,7 +4,7 @@ import dev.oqthara.runtime.Span;
 
 public record Token(Kind kind, String lexeme, Object literal, Span span) {
     public enum Kind {
-        NUMBER, STRING, IDENT, KEYWORD,
+        NUMBER, STRING, MULTILINE, IDENT, KEYWORD,
         NEWLINE, EOF,
         LPAREN, RPAREN, LBRACKET, RBRACKET, LBRACE, RBRACE,
         COMMA, COLON, DOT, PIPE, SEMICOLON,

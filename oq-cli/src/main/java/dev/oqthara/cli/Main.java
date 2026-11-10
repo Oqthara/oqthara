@@ -99,6 +99,7 @@ public final class Main {
                       oq build <file.oq>         compile a program to a runnable jar
                       oq new <name>              create a new project
                       oq doc [root]              generate the stdlib reference
+                      oq doc --source <path>     document your own declarations
                       oq version                 show the version
                       oq help                    show this help
 

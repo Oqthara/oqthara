@@ -292,7 +292,10 @@ public final class Lexer {
                     "Add a closing \"\"\" after the last line.");
         }
         Span span = new Span(sourceName, startLine, startCol, line, column);
-        tokens.add(new Token(Token.Kind.STRING, raw.toString(), raw.toString(), span));
+        // Multi-line text is its own kind so the parser can tell a documentation comment
+        // written as a bare string from an ordinary value (ADR-0030). It stays usable as a
+        // value everywhere a string is.
+        tokens.add(new Token(Token.Kind.MULTILINE, raw.toString(), raw.toString(), span));
     }
 
     private void number() {
