@@ -7,13 +7,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class StdlibCoverageTest {
     private String ok(String source) {
-        OqRunner.Result result = OqRunner.run(source);
+        OqRunner.Result result = run(source);
         assertEquals(0, result.code(), "program failed: " + result.stderr());
         return result.stdout();
+    }
+
+    private OqRunner.Result run(String source) {
+        return OqRunner.run(source);
     }
 
     @Test
@@ -186,6 +191,42 @@ class StdlibCoverageTest {
                 print number(true)
                 print number(false)
                 """));
+    }
+
+    @Test
+    void conversionsThatFailNameTheValueAndThePosition() {
+        // ADR-0015: a failed conversion is a program error with a position, not a silent
+        // nothing or a zero. `number` is the function; there is no `.to_int()` method.
+        for (String bad : new String[] {"\"\"", "\"0x10\"", "\"twelve\"", "\"1 2\""}) {
+            OqRunner.Result result = run("print number(" + bad + ")");
+            assertEquals(1, result.code(), bad + "\n" + result.stderr());
+            assertTrue(result.stderr().contains("cannot read " + bad + " as a number"),
+                    bad + "\n" + result.stderr());
+            assertTrue(result.stderr().contains(":1:13"),
+                    "expected the argument's position, got:\n" + result.stderr());
+            assertFalse(result.stderr().contains("<unknown>"), result.stderr());
+        }
+        // A hex literal looks like a number to a reader and is not one to `number`; the hint
+        // must say which spellings do work rather than leaving the reader to guess.
+        assertTrue(run("print number(\"0x10\")").stderr().contains("42 or 3.14"),
+                run("print number(\"0x10\")").stderr());
+    }
+
+    @Test
+    void integerArithmeticWrapsOnOverflowAsDocumented() {
+        // ADR-0015 "Overflow and numerics": integer arithmetic is Java long arithmetic and
+        // wraps. This is intended behaviour, not a bug, and the two backends must agree on it
+        // because both use the same JVM operations. Pinned here so a future switch to
+        // arbitrary precision is a deliberate decision rather than a silent change.
+        assertEquals("-9223372036854775808\n", ok("print 9223372036854775807 + 1"));
+        assertEquals("true\n", ok("print 9223372036854775807 + 1 == -9223372036854775807 - 1"));
+        // Long.MIN_VALUE has no literal of its own: the lexer reads the digits first, so
+        // `-9223372036854775808` is a unary minus applied to a literal that already overflowed.
+        // It is reachable by arithmetic, which is what the line above shows. Recorded here
+        // because the error names the literal and not the negation, which reads as a bug.
+        OqRunner.Result min = run("print -9223372036854775808");
+        assertEquals(1, min.code(), min.stderr());
+        assertTrue(min.stderr().contains("9223372036854775808 is too large"), min.stderr());
     }
 
     @Test
