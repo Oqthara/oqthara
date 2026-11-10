@@ -1551,10 +1551,49 @@ error: cannot create ArrayList with 1 argument
 
 Materialise it first if that is what you want, which also makes the allocation explicit:
 
-```text
+```
+use java.util.ArrayList
+
 xs = []
 for i in 1 to 3
   xs.push(i)
 end
-ArrayList(xs).size()   # 3
+print ArrayList(xs).size()   # 3
 ```
+
+### Static fields
+
+A static field is read with the same dot syntax as a static method, on the imported class:
+
+```
+use java.lang.Integer
+use java.lang.Math
+
+print Integer.MAX_VALUE   # 2147483647
+print Math.PI             # 3.14159265359
+```
+
+Only a field declared `static` is reachable this way. Naming an instance field on the class
+itself is an error, because there is no instance to read it from:
+
+```text
+error: cannot read field 'size' on java Class
+```
+
+### Varargs
+
+A Java method declared `Object...` — such as `String.format`, `String.join` or
+`Arrays.asList` — accepts any number of trailing arguments, including none, and the bridge
+packs them into the array the method actually declares:
+
+```
+use java.lang.String
+
+print String.format("%s-%s", "a", "b")   # a-b
+print String.format("no arguments")      # no arguments
+print String.join("-", "x", "y", "z")    # x-y-z
+```
+
+When several overloads match, the one whose parameter types fit the arguments most exactly is
+chosen, so `String.valueOf(5)` reaches the `int` overload rather than the `Object` one.
+Arguments are converted by the table above before the choice is made.
