@@ -9,6 +9,7 @@ import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
+import java.util.Collection;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -270,7 +271,15 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "sum" -> fixed(name, 0, (host, args) -> sum(list, span));
             case "min" -> fixed(name, 0, (host, args) -> extreme(list, span, true));
             case "max" -> fixed(name, 0, (host, args) -> extreme(list, span, false));
-            case "clone", "copy" -> fixed(name, 0, (host, args) -> new ArrayList<>(list));
+            case "clone", "copy" -> fixed(name, 0, (host, args) -> list instanceof dev.oqthara.runtime.OqTuple
+                    ? (Object) list
+                    : (Object) new ArrayList<>(list));
+            case "to_set", "set" -> fixed(name, 0, (host, args) -> new OqSet(list));
+            case "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> copy = new ArrayList<>(list);
+                copy.sort((a, b) -> Values.compare(a, b, span));
+                return copy;
+            });
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(list));
             default -> null;
         };
@@ -325,7 +334,45 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 }
                 return result;
             });
+            case "merge", "update" -> fixed(name, 1, (host, args) -> {
+                // `merge` is Python's `update`: the argument's entries win, and the receiver is
+                // changed in place. Two entry points because both words are what a reader
+                // reaches for, and silently picking one spelling would be worse than either.
+                Map<?, ?> other = asMap(args.get(0), name, span);
+                asMutableMap(map).putAll(other);
+                return map;
+            });
+            case "pop" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2, (host, args, callSpan) -> {
+                Object key = args.get(0);
+                if (map.containsKey(key)) return asMutableMap(map).remove(key);
+                if (args.size() > 1) return args.get(1);
+                throw new dev.oqthara.runtime.OqError(
+                        "this map has no key " + Values.repr(key), callSpan,
+                        "Check has(key) first, or pass a default: pop(key, default).");
+            });
+            case "items" -> fixed(name, 0, (host, args) -> {
+                // A list of [key, value] pairs, which is what `enumerate` produces and what a
+                // destructuring `for [k, v] in m.items()` consumes. `entries()` stays for the
+                // field-style access it already offered.
+                List<Object> pairs = new ArrayList<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    List<Object> pair = new ArrayList<>(2);
+                    pair.add(entry.getKey());
+                    pair.add(entry.getValue());
+                    pairs.add(pair);
+                }
+                return pairs;
+            });
             case "clone", "copy" -> fixed(name, 0, (host, args) -> new OqMap(map));
+            case "reverse", "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> keys = new ArrayList<>(map.keySet());
+                if (name.equals("sorted")) keys.sort((a, b) -> Values.compare(a, b, span));
+                else java.util.Collections.reverse(keys);
+                return keys;
+            });
+            case "to_list", "to_set" -> fixed(name, 0, (host, args) -> name.startsWith("to_set")
+                    ? (Object) new OqSet(map.keySet())
+                    : (Object) new ArrayList<>(map.keySet()));
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(map));
             default -> null;
         };
@@ -357,6 +404,51 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 result.removeAll(asCollection(args.get(0), span));
                 return result;
             });
+            case "symmetric_difference" -> fixed(name, 1, (host, args) -> {
+                Collection<?> other = asCollection(args.get(0), span);
+                Set<Object> result = new OqSet(set);
+                for (Object item : other) {
+                    if (result.contains(item)) result.remove(item);
+                    else result.add(item);
+                }
+                return result;
+            });
+            case "issubset" -> fixed(name, 1, (host, args) -> {
+                // Membership goes through Values.equal via OqSet, so 1 and 1.0 agree here as
+                // they do for `==` and for `in`, per ADR-0017.
+                Set<Object> other = new OqSet(asCollection(args.get(0), span));
+                return other.containsAll(set);
+            });
+            case "issuperset" -> fixed(name, 1, (host, args) -> {
+                Set<Object> other = new OqSet(asCollection(args.get(0), span));
+                return set.containsAll(other);
+            });
+            case "clone", "copy" -> fixed(name, 0, (host, args) -> new OqSet(set));
+            case "to_set", "set" -> fixed(name, 0, (host, args) -> new OqSet(set));
+            case "sum" -> fixed(name, 0, (host, args) -> {
+                Object total = 0L;
+                for (Object item : set) total = Values.add(total, item, span);
+                return total;
+            });
+            case "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> copy = new ArrayList<>(set);
+                copy.sort((a, b) -> Values.compare(a, b, span));
+                return copy;
+            });
+            case "reverse" -> fixed(name, 0, (host, args) -> {
+                List<Object> copy = new ArrayList<>(set);
+                java.util.Collections.reverse(copy);
+                return copy;
+            });
+            case "min", "max" -> fixed(name, 0, (host, args) -> {
+                if (set.isEmpty()) return null;
+                Object best = set.iterator().next();
+                for (Object item : set) {
+                    int c = Values.compare(item, best, span);
+                    if (name.equals("min") ? c < 0 : c > 0) best = item;
+                }
+                return best;
+            });
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(set));
             default -> null;
         };
@@ -372,6 +464,35 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "length", "size" -> fixed(name, 0, (host, args) -> range.size());
             case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(range, span));
             case "to_list", "list", "items" -> fixed(name, 0, (host, args) -> range.toList());
+            case "sum", "min", "max", "sorted", "reverse" -> fixed(name, 0, (host, args) -> {
+                List<Object> items = range.toList();
+                switch (name) {
+                    case "sum" -> {
+                        Object total = 0L;
+                        for (Object item : items) total = Values.add(total, item, span);
+                        return total;
+                    }
+                    case "sorted" -> {
+                        List<Object> copy = new ArrayList<>(items);
+                        copy.sort((a, b) -> Values.compare(a, b, span));
+                        return copy;
+                    }
+                    case "reverse" -> {
+                        List<Object> copy = new ArrayList<>(items);
+                        java.util.Collections.reverse(copy);
+                        return copy;
+                    }
+                    default -> {
+                        if (items.isEmpty()) return null;
+                        Object best = items.get(0);
+                        for (Object item : items) {
+                            int c = Values.compare(item, best, span);
+                            if (name.equals("min") ? c < 0 : c > 0) best = item;
+                        }
+                        return best;
+                    }
+                }
+            });
             case "to_set", "set" -> fixed(name, 0, (host, args) ->
                     new dev.oqthara.runtime.OqSet(range.toList()));
             case "contains" -> fixed(name, 1, (host, args) -> args.get(0) instanceof Long l
@@ -449,6 +570,24 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "characters" -> fixed(name, 0, (host, args) -> {
                 List<Object> chars = new ArrayList<>();
                 for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+                return chars;
+            });
+            case "to_list", "list" -> fixed(name, 0, (host, args) -> {
+                List<Object> chars = new ArrayList<>();
+                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+                return chars;
+            });
+            case "to_set", "set" -> fixed(name, 0, (host, args) -> {
+                Set<Object> chars = new OqSet();
+                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+                return chars;
+            });
+            case "reverse" -> fixed(name, 0, (host, args) ->
+                    new StringBuilder(text).reverse().toString());
+            case "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> chars = new ArrayList<>();
+                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+                chars.sort((a, b) -> Values.compare(a, b, span));
                 return chars;
             });
             case "text", "to_string" -> fixed(name, 0, (host, args) -> text);
@@ -590,6 +729,13 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     @SuppressWarnings("unchecked")
     private static Set<Object> asMutableSet(Set<?> set) {
         return (Set<Object>) set;
+    }
+
+    private static Map<?, ?> asMap(Object value, String method, Span span) {
+        if (value instanceof Map<?, ?> map) return map;
+        throw new OqError(
+                "expected a map, got " + Values.typeName(value), span,
+                "`" + method + "` takes another map, not a list of pairs.");
     }
 
     private static List<?> asCollection(Object value, Span span) {

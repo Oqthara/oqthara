@@ -86,6 +86,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `sleep` | built-in |
 | `sort` | built-in |
 | `sort_by` | built-in |
+| `sorted` | built-in |
 | `spawn` | built-in |
 | `split` | built-in |
 | `sqrt` | built-in |
@@ -110,23 +111,23 @@ Every entry below is read from the implementation, so this page cannot list a fu
 
 ### list
 
-`.add()`, `.all()`, `.any()`, `.clone()`, `.contains()`, `.copy()`, `.each()`, `.filter()`, `.find()`, `.find_index()`, `.first()`, `.flatten()`, `.get()`, `.insert()`, `.iter()`, `.join()`, `.last()`, `.length()`, `.map()`, `.max()`, `.min()`, `.pop()`, `.push()`, `.reduce()`, `.remove()`, `.remove_value()`, `.reverse()`, `.size()`, `.skip()`, `.sort()`, `.sorted_desc()`, `.sum()`, `.take()`, `.text()`, `.to_string()`, `.unique()`
+`.add()`, `.all()`, `.any()`, `.clone()`, `.contains()`, `.copy()`, `.each()`, `.filter()`, `.find()`, `.find_index()`, `.first()`, `.flatten()`, `.get()`, `.insert()`, `.iter()`, `.join()`, `.last()`, `.length()`, `.map()`, `.max()`, `.min()`, `.pop()`, `.push()`, `.reduce()`, `.remove()`, `.remove_value()`, `.reverse()`, `.set()`, `.size()`, `.skip()`, `.sort()`, `.sorted()`, `.sorted_desc()`, `.sum()`, `.take()`, `.text()`, `.to_set()`, `.to_string()`, `.unique()`
 
 ### map
 
-`.clear()`, `.clone()`, `.contains()`, `.contains_key()`, `.copy()`, `.each()`, `.entries()`, `.get()`, `.has()`, `.has_value()`, `.iter()`, `.keys()`, `.length()`, `.map()`, `.put()`, `.remove()`, `.set()`, `.size()`, `.text()`, `.to_string()`, `.values()`
+`.clear()`, `.clone()`, `.contains()`, `.contains_key()`, `.copy()`, `.each()`, `.entries()`, `.get()`, `.has()`, `.has_value()`, `.items()`, `.iter()`, `.keys()`, `.length()`, `.map()`, `.merge()`, `.pop()`, `.put()`, `.remove()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.update()`, `.values()`
 
 ### set
 
-`.add()`, `.contains()`, `.difference()`, `.has()`, `.intersection()`, `.items()`, `.iter()`, `.length()`, `.list()`, `.remove()`, `.size()`, `.text()`, `.to_list()`, `.to_string()`, `.union()`
+`.add()`, `.clone()`, `.contains()`, `.copy()`, `.difference()`, `.has()`, `.intersection()`, `.issubset()`, `.issuperset()`, `.items()`, `.iter()`, `.length()`, `.list()`, `.max()`, `.min()`, `.remove()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.sum()`, `.symmetric_difference()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.union()`
 
 ### rangeMethod
 
-`.contains()`, `.first()`, `.items()`, `.iter()`, `.last()`, `.length()`, `.list()`, `.set()`, `.size()`, `.to_list()`, `.to_set()`
+`.contains()`, `.first()`, `.items()`, `.iter()`, `.last()`, `.length()`, `.list()`, `.max()`, `.min()`, `.reverse()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.sorted()`, `.sum()`, `.sum()`, `.to_list()`, `.to_set()`
 
 ### text
 
-`.capitalize()`, `.characters()`, `.chars()`, `.contains()`, `.ends()`, `.ends_with()`, `.find()`, `.index_of()`, `.iter()`, `.length()`, `.lines()`, `.lower()`, `.lowercase()`, `.number()`, `.pad_end()`, `.pad_start()`, `.repeat()`, `.replace()`, `.replace_all()`, `.size()`, `.slice()`, `.split()`, `.starts()`, `.starts_with()`, `.strip()`, `.strip_end()`, `.strip_start()`, `.substring()`, `.text()`, `.to_number()`, `.to_string()`, `.trim()`, `.trim_end()`, `.trim_start()`, `.upper()`, `.uppercase()`, `.words()`
+`.capitalize()`, `.characters()`, `.chars()`, `.contains()`, `.ends()`, `.ends_with()`, `.find()`, `.index_of()`, `.iter()`, `.length()`, `.lines()`, `.list()`, `.lower()`, `.lowercase()`, `.number()`, `.pad_end()`, `.pad_start()`, `.repeat()`, `.replace()`, `.replace_all()`, `.reverse()`, `.set()`, `.size()`, `.slice()`, `.sorted()`, `.split()`, `.starts()`, `.starts_with()`, `.strip()`, `.strip_end()`, `.strip_start()`, `.substring()`, `.text()`, `.to_list()`, `.to_number()`, `.to_set()`, `.to_string()`, `.trim()`, `.trim_end()`, `.trim_start()`, `.upper()`, `.uppercase()`, `.words()`
 
 ### number
 
