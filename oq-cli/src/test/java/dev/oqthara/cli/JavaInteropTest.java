@@ -75,6 +75,41 @@ class JavaInteropTest {
     }
 
     @Test
+    void everyFamilyButRangeCrossesTheBoundaryOneWayOrAnother() {
+        // `range` is the only family that cannot cross, and the two tests above pin that.
+        // The rest either already are Java collections (`list`, `tuple`, `set`, `frozenset`)
+        // or reach one through a documented conversion (`text` to a list, `map` to a map).
+        assertEquals("""
+                2
+                2
+                2
+                2
+                3
+                1
+                """, ok("""
+                use java.util.ArrayList
+                use java.util.LinkedHashMap
+
+                print ArrayList([1, 2]).size()
+                print ArrayList((1, 2)).size()
+                print ArrayList(set([1, 1, 2])).size()
+                print ArrayList(frozenset([1, 2])).size()
+                print ArrayList("abc".to_list()).size()
+                print LinkedHashMap({"a": 1}).size()
+                """));
+    }
+
+    @Test
+    void aTextIsNotAJavaCollectionUntilItIsMaterialized() {
+        // A text is a Java String, which is not a Collection, so handing it straight to a
+        // Collection parameter is refused rather than silently coerced.
+        fails("""
+                use java.util.ArrayList
+                print ArrayList("abc").size()
+                """, "cannot create ArrayList with 1 argument");
+    }
+
+    @Test
     void javaStringsConvertToTextAndBack() {
         assertEquals("abc\n3\n", ok("""
                 use java.lang.String
