@@ -454,10 +454,47 @@ message says so. Lists, tuples, sets, maps (keys), ranges and text all have `.it
 `data` type joins the protocol by defining `iter`.
 
 `enumerate(xs)` pairs each item with its position, and `range(from, to, step)` counts with a
-step. Ranges also gained a method surface: `.to_list()`, `.to_set()`, `.first()`, `.last()`
-and `.contains(x)`.
+step. Ranges also gained a method surface: `.to_list()`, `.to_set()`, `.first()`, `.last()`,
+`.contains(x)`, `.sum()`, `.min()`, `.max()`, `.sorted()` and `.reverse()`.
 
 See [ADR-0020](../adr/0020-iterator-protocol.md).
+
+### Aggregation and conversion
+
+`sum`, `min`, `max` and `sorted` read **any** collection, not just a list:
+
+```
+print sum(set([1, 2, 3]))    # 6
+print sum(range(0, 4))       # 6
+print min([3, 1, 2])         # 1
+print sorted("cba")          # ["a", "b", "c"]
+```
+
+`min` and `max` also take several values: `min(3, 1, 2)` is `1`. The arity decides the
+reading, so `min(xs)` means the extreme of one collection and `min(a, b)` means the smaller
+of two values.
+
+`sorted` returns a **new list** and never reorders its argument.
+
+Every family that holds members converts to a list and to a set. A map converts to its
+**keys**, because that is what a map iterates as.
+
+```
+print [1, 1, 2].to_set()     # {1, 2}
+print "ab".to_list()         # ["a", "b"]
+print {"a": 1}.to_list()     # ["a"]
+```
+
+`.clone()` returns the same family as the receiver, so `type_of((1, 2).clone())` is `tuple`.
+
+Sets compare and combine without changing either operand: `.union`, `.intersection`,
+`.difference`, `.symmetric_difference`, `.issubset` and `.issuperset`.
+
+A map merges in place with `.merge(other)` or `.update(other)` — the argument's entries win
+and the receiver changes. `.items()` yields `[key, value]` pairs, and `.pop(key, default)`
+returns the default when the key is absent.
+
+See [ADR-0021](../adr/0021-collection-family-operations.md).
 
 ## Tuples
 

@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Collection operations now read every family.** `sum`, `min`, `max` and `sorted` accept any
+  collection rather than only a list, so `sum(set([1, 2, 3]))` and `sum(range(0, 4))` work
+  instead of reporting `set has no method 'sum'`. `min` and `max` take either one collection or
+  several values. `sorted` returns a new list and leaves its argument alone.
+  `[1, 1, 2].to_set()`, `"ab".to_list()`, `"aab".to_set()`, `(1, 2).to_set()` and
+  `{"a": 1}.to_list()` fill in the conversion gaps; a map converts to its keys, matching what it
+  iterates as. See [ADR-0021](docs/adr/0021-collection-family-operations.md).
+
+- **`sort_by` reads any iterable and is stable.** It delegated to a `sort` *method*, which only
+  a list has, so `sort_by(set([3, 1]), fn)` failed with `set has no method 'sort'` — naming a
+  method the caller never wrote. It now reads the collection directly and sorts stably:
+  `sort_by([(1, "a"), (1, "b"), (0, "c")], fn)` keeps `"a"` before `"b"`.
+
+- **Set algebra is complete.** `.symmetric_difference`, `.issubset`, `.issuperset`,
+  `.clone()` and `.copy()` join `.union`, `.intersection` and `.difference`. None of them change
+  either operand.
+
+- **Map `merge`, `update`, `items` and `pop`.** `m.merge(other)` and `m.update(other)` are the
+  same in-place merge under two spellings. `.items()` yields `[key, value]` pairs that an
+  indexing loop can consume, while `.entries()` keeps returning `Entry` values.
+  `m.pop(key, default)` returns the default when the key is absent.
+
 - **Iteration is a protocol.** Lists, tuples, sets, maps (keys), ranges and text now answer
   `.iter()`, which returns an `iterator` carrying a position. An iterator answers `has_next()`
   and `next()`; calling `next()` on a spent one is an error that says so, rather than returning
@@ -128,6 +150,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously failed to parse at all. See [ADR-0019](docs/adr/0019-slicing.md).
 
 ### Fixed
+- `clone()` no longer changes a value's family. `(1, 2).clone()` returned a **list**, so cloning
+  an immutable value produced something mutable; it now returns a tuple.
 
 - **`slice` and `subList` resolve negative bounds instead of ignoring them.** Both folded
   every negative bound to `0` through `clampIndex`, so `xs.slice(-2, 5)` returned the whole

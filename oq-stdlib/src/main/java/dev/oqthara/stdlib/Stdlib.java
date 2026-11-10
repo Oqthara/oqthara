@@ -161,8 +161,20 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("exit", 1, (host, args, span) -> {
             throw new ExitSignal((int) Values.asLong(args.get(0)));
         }));
-        interpreter.defineBuiltin(NativeFunction.of("sort_by", 2, (host, args, span) ->
-                invokeMethod(host, args.get(0), "sort", List.of(args.get(1)), span)));
+        // Read the collection directly rather than delegating to a `sort` method. Only a list
+        // has one, so `sort_by(set([3, 1]), fn)` used to fail with "set has no method 'sort'",
+        // which named a method the caller never wrote.
+        interpreter.defineBuiltin(NativeFunction.of("sort_by", 2, (host, args, span) -> {
+            List<Object> items = new ArrayList<>(Values.iterableList(args.get(0), span));
+            Object candidate = args.get(1);
+            if (!(candidate instanceof OqCallable key)) {
+                throw new OqError("sort_by() needs a key function", span,
+                        "Pass a function: sort_by(items, fun(x) return x.score end).");
+            }
+            items.sort((a, b) -> Values.compare(
+                    host.call(key, List.of(a), span), host.call(key, List.of(b), span), span));
+            return items;
+        }));
         interpreter.defineBuiltin(NativeFunction.of("map", 2, (host, args, span) ->
                 invokeMethod(host, args.get(0), "map", List.of(args.get(1)), span)));
         interpreter.defineBuiltin(NativeFunction.of("filter", 2, (host, args, span) ->
@@ -245,8 +257,11 @@ public final class Stdlib {
         }));
         interpreter.defineBuiltin(NativeFunction.of("pop", 1, (host, args, span) ->
                 invokeMethod(host, args.get(0), "pop", List.of(), span)));
+        // sum/min/max/sorted each need a collection, and every family already reports its own
+        // length and iterates, so they read through iterableList rather than a per-type method.
+        // `sum` on a set or range previously failed with "set has no method 'sum'".
         interpreter.defineBuiltin(NativeFunction.of("sum", 1, (host, args, span) ->
-                invokeMethod(host, args.get(0), "sum", List.of(), span)));
+                sumOf(Values.iterableList(args.get(0), span), span)));
         interpreter.defineBuiltin(NativeFunction.of("sort", 1, (host, args, span) ->
                 invokeMethod(host, args.get(0), "sort", List.of(), span)));
         interpreter.defineBuiltin(NativeFunction.of("reverse", 1, (host, args, span) ->
@@ -337,10 +352,14 @@ public final class Stdlib {
                 Math.sqrt(asNumber(args.get(0), "sqrt", span))));
         interpreter.defineBuiltin(NativeFunction.of("pow", 2, (host, args, span) ->
                 Values.power(args.get(0), args.get(1), span)));
-        interpreter.defineBuiltin(NativeFunction.of("min", 2, (host, args, span) ->
-                Values.compare(args.get(0), args.get(1), span) <= 0 ? args.get(0) : args.get(1)));
-        interpreter.defineBuiltin(NativeFunction.of("max", 2, (host, args, span) ->
-                Values.compare(args.get(0), args.get(1), span) >= 0 ? args.get(0) : args.get(1)));
+        // One argument means "the extreme of this collection"; two or more mean "among these
+        // values". The arity decides, so `min([3, 1])` is 1 and `min(3, 1)` is 1 as well.
+        interpreter.defineBuiltin(NativeFunction.variadic("min", 1, (host, args, span) ->
+                extremeOf(args, span, "min", -1)));
+        interpreter.defineBuiltin(NativeFunction.variadic("max", 1, (host, args, span) ->
+                extremeOf(args, span, "max", 1)));
+        interpreter.defineBuiltin(NativeFunction.of("sorted", 1, (host, args, span) ->
+                sortedCopy(Values.iterableList(args.get(0), span), span, 1)));
         interpreter.defineBuiltin(NativeFunction.of("clamp", 3, (host, args, span) -> {
             Object value = args.get(0);
             if (Values.compare(value, args.get(1), span) < 0) return args.get(1);
@@ -866,6 +885,37 @@ public final class Stdlib {
      * {@code IllegalArgumentException} for text, nothing or collections, which would reach the
      * CLI as an internal error; this reports the usual type diagnostic instead.
      */
+    private static Object sumOf(List<?> items, Span span) {
+        Object total = 0L;
+        for (Object item : items) total = Values.add(total, item, span);
+        return total;
+    }
+
+    /**
+     * {@code min}/{@code max} in both arities. Oqthara has no rest parameters, so the
+     * collection form and the value form are distinguished by how many arguments arrived
+     * rather than by a separate spelling.
+     */
+    private static Object extremeOf(List<Object> args, Span span, String builtin, int sign) {
+        List<?> items = args.size() == 1 ? Values.iterableList(args.get(0), span) : args;
+        if (items.isEmpty()) {
+            throw new OqError(builtin + "() needs at least one value", span,
+                    "Check the collection is not empty before taking its extreme.");
+        }
+        Object best = items.get(0);
+        for (int i = 1; i < items.size(); i++) {
+            if (Values.compare(items.get(i), best, span) * sign > 0) best = items.get(i);
+        }
+        return best;
+    }
+
+    /** A sorted copy, leaving the argument untouched, as {@code sorted()} must. */
+    private static List<Object> sortedCopy(List<?> items, Span span, int unused) {
+        List<Object> copy = new ArrayList<>(items);
+        copy.sort((a, b) -> Values.compare(a, b, span));
+        return copy;
+    }
+
     private static double asNumber(Object value, String builtin, Span span) {
         if (Values.isNumber(value)) return Values.asDouble(value);
         throw new OqError(builtin + "() needs a number, got " + Values.typeName(value), span);

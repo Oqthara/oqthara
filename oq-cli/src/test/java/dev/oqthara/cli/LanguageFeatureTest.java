@@ -1186,6 +1186,114 @@ class LanguageFeatureTest {
     }
 
     @Test
+    void aggregationReadsEveryCollectionFamily() {
+        // `sum` used to delegate to a per-type method, so a set or range answered
+        // "set has no method 'sum'" even though both are loopable and measurable.
+        assertEquals("6\n", ok("print sum(set([1, 2, 3]))"));
+        assertEquals("6\n", ok("print sum(range(0, 4))"));
+        assertEquals("1\n", ok("print min([3, 1, 2])"));
+        assertEquals("3\n", ok("print max([3, 1, 2])"));
+        assertEquals("1\n", ok("print min(set([3, 1, 2]))"));
+        fails("print min([])", "min() needs at least one value");
+    }
+
+    @Test
+    void minAndMaxAcceptEitherACollectionOrValues() {
+        // The arity decides the reading, so both spellings agree.
+        assertEquals("1\n", ok("print min(3, 1, 2)"));
+        assertEquals("1\n", ok("print min([3, 1, 2])"));
+        assertEquals("3\n", ok("print max(3, 1, 2)"));
+    }
+
+    @Test
+    void sortedReturnsACopyAndLeavesTheOriginalAlone() {
+        assertEquals("[1, 2, 3]\n[3, 1, 2]\n", ok("""
+                x = [3, 1, 2]
+                y = sorted(x)
+                print y
+                print x"""));
+        assertEquals("[\"a\", \"b\", \"c\"]\n", ok("print sorted(\"cba\")"));
+        assertEquals("[1, 2, 3]\n", ok("print (3, 1, 2).sorted()"));
+    }
+
+    @Test
+    void setAlgebraCoversDifferenceSubsetAndSuperset() {
+        assertEquals("{1, 3}\n", ok("print set([1, 2]).symmetric_difference(set([2, 3]))"));
+        assertEquals("true\nfalse\n",
+                ok("print set([1]).issubset(set([1, 2]))\n"
+                        + "print set([1, 9]).issubset(set([1, 2]))"));
+        assertEquals("true\nfalse\n",
+                ok("print set([1, 2]).issuperset(set([1]))\n"
+                        + "print set([1]).issuperset(set([1, 2]))"));
+    }
+
+    @Test
+    void aSetCloneIsIndependentOfItsSource() {
+        assertEquals("{1, 2}\n{1, 2, 3}\n", ok("""
+                s = set([1, 2])
+                c = s.clone()
+                c.add(3)
+                print s
+                print c"""));
+    }
+
+    @Test
+    void mapMergeChangesInPlaceAndItemsYieldsPairs() {
+        assertEquals("{\"a\": 1, \"b\": 2}\n{\"a\": 1, \"b\": 2}\n", ok("""
+                m = {"a": 1}
+                print m.merge({"b": 2})
+                print m"""));
+        assertEquals("[[\"a\", 1], [\"b\", 2]]\n", ok("print {\"a\": 1, \"b\": 2}.items()"));
+        assertEquals("a 1\n", ok("""
+                for kv in {"a": 1}.items()
+                  print kv[0], kv[1]
+                end"""));
+    }
+
+    @Test
+    void mapPopRemovesOrFallsBackToTheDefault() {
+        assertEquals("1\n{\"b\": 2}\n9\n", ok("""
+                m = {"a": 1, "b": 2}
+                print m.pop("a")
+                print m
+                print m.pop("z", 9)"""));
+        fails("print {\"a\": 1}.pop(\"z\")", "this map has no key");
+    }
+
+    @Test
+    void everyFamilyConvertsToEveryOtherFamily() {
+        assertEquals("{1, 2}\n", ok("print [1, 1, 2].to_set()"));
+        assertEquals("[\"a\", \"b\"]\n", ok("print \"ab\".to_list()"));
+        assertEquals("{\"a\", \"b\"}\n", ok("print \"aab\".to_set()"));
+        assertEquals("{1, 2}\n", ok("print (1, 1, 2).to_set()"));
+        assertEquals("[\"a\"]\n", ok("print {\"a\": 1}.to_list()"));
+    }
+
+    @Test
+    void keyedSortingReadsAnyFamilyAndIsStable() {
+        // sort_by delegated to a `sort` method, which only a list has, so this reported
+        // "set has no method 'sort'" while naming a method the caller never wrote.
+        assertEquals("[1, 3]\n", ok("""
+                print sort_by(set([3, 1]), fun(a)
+                  return a
+                end)"""));
+        assertEquals("[(0, \"c\"), (1, \"a\"), (1, \"b\")]\n", ok("""
+                print sort_by([(1, "a"), (1, "b"), (0, "c")], fun(t)
+                  return t[0]
+                end)"""));
+        fails("print sort_by([1], 5)", "sort_by() needs a key function");
+    }
+
+    @Test
+    void cloningATupleKeepsItATuple() {
+        // A clone that returned a list would hand back something mutable and quietly change
+        // what the value is, which is the one promise a tuple makes.
+        assertEquals("tuple\n", ok("print type_of((1, 2).clone())"));
+        fails("print (1, 2).push(3)", "a tuple is immutable");
+        fails("print (3, 1).sort()", "a tuple is immutable");
+    }
+
+    @Test
     void aRangeHasAMethodSurface() {
         assertEquals("[0, 1, 2]\n", ok("print (0 until 3).to_list()"));
         assertEquals("0\n2\n", ok("print (0 until 3).first()\nprint (0 until 3).last()"));

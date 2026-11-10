@@ -128,6 +128,12 @@
       "slug": "docs/adr/0020-iterator-protocol"
     },
     {
+      "path": "docs/adr/0021-collection-family-operations.md",
+      "title": "ADR-0021 — Collection-family operations: aggregation, conversion and set algebra",
+      "section": "adr",
+      "slug": "docs/adr/0021-collection-family-operations"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
