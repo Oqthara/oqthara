@@ -771,6 +771,7 @@ public final class Lowering {
             }
             case Ast.SetLit set -> {
                 operands(set.items());
+                mark(set.span());
                 code.add(new Ir.MakeSet(set.items().size()));
             }
             case Ast.MapLit map -> {
@@ -780,6 +781,7 @@ public final class Lowering {
                     flat.add(entry.value());
                 }
                 operands(flat);
+                mark(map.span());
                 code.add(new Ir.MakeMap(map.entries().size()));
             }
             case Ast.Unary unary -> {

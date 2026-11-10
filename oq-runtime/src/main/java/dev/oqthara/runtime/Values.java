@@ -564,6 +564,7 @@ public final class Values {
         if (target instanceof Map<?, ?> raw) {
             @SuppressWarnings("unchecked")
             Map<Object, Object> map = (Map<Object, Object>) raw;
+            Value.requireHashable(key, "a map key", span);
             map.put(key, value);
             return;
         }
