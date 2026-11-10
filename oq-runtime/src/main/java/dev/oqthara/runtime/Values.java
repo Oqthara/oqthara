@@ -464,22 +464,42 @@ public final class Values {
         throw new OqError("cannot raise " + typeName(a) + " to " + typeName(b), span);
     }
 
+    /**
+     * Resolves a position in a sequence, applying the one index rule the language has.
+     *
+     * <p>Negatives count from the end, so {@code -1} is the last element. A position that names
+     * nothing is refused here rather than at a JDK call, which is what turned {@code insert} past
+     * the end into an {@code IndexOutOfBoundsException} reported as a defect in the language.
+     *
+     * <p>{@code allowEnd} admits {@code size} as a position. Only {@code insert} passes true: at
+     * the end it appends, and every other consumer of this method reads or removes an element that
+     * must already be there. Callers wanting count semantics ({@code take}, {@code skip},
+     * {@code subList}) clamp instead and must not come here.
+     *
+     * @return a resolved index in {@code [0, size)} when {@code allowEnd} is false, or
+     *     {@code [0, size]} when it is true
+     */
+    public static int position(Object key, int size, String kind, boolean allowEnd, Span span) {
+        long i = integerIndex(key, span);
+        long position = i < 0 ? size + i : i;
+        long limit = allowEnd ? size : size - 1;
+        if (position < 0 || position > limit) {
+            throw new OqError(
+                    "index " + i + " is out of range for " + kind + " of length " + size,
+                    span,
+                    "Valid indexes are 0 to " + (size - 1) + (size == 0 ? " (the list is empty)" : "")
+                            + ", or negative from the end.");
+        }
+        return (int) position;
+    }
+
     public static Object index(Object target, Object key, Span span) {
         if (target == null) {
             throw new OqError("cannot index nothing", span, "The value is nothing; check for a missing result.");
         }
         if (target instanceof List<?> list) {
-            long i = integerIndex(key, span);
-            long index = i < 0 ? list.size() + i : i;
-            if (index < 0 || index >= list.size()) {
-                String kind = target instanceof OqTuple ? "a tuple" : "a list";
-                throw new OqError(
-                        "index " + i + " is out of range for " + kind + " of length " + list.size(),
-                        span,
-                        "Valid indexes are 0 to " + (list.size() - 1) + (list.isEmpty() ? " (the list is empty)" : "")
-                                + ", or negative from the end.");
-            }
-            return list.get((int) index);
+            String kind = target instanceof OqTuple ? "a tuple" : "a list";
+            return list.get(position(key, list.size(), kind, false, span));
         }
         if (target instanceof Map<?, ?> map) {
             return map.get(key);

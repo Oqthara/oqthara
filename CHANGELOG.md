@@ -101,6 +101,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Index operations share one rule, and an out-of-range `insert` no longer crashes.** `insert`
+  handed an unchecked index to `ArrayList.add`, so `l.insert(99, 0)` exited 70 with
+  `internal error: IndexOutOfBoundsException` and `This is a bug in Oqthara`: a user mistake
+  was reported as a defect in the language, and no `catch` could reach it. `remove(99)`
+  returned `nothing` and removed nothing, so a caller could not tell success from failure, and
+  `remove(-1)` did nothing although `l[-1]` works everywhere else. `remove` also accepted a
+  value as a second spelling of `remove_value`, making `l.remove(1)` ambiguous.
+  `l[i]`, `.get(i)`, `.insert(i, x)` and `.remove(i)` now all accept a negative index and all
+  refuse a position that does not exist with the same located error; `insert` additionally
+  accepts the length, because appending names a position. `take`, `skip` and `subList` still
+  clamp, since their argument is a count or a bound rather than a position. See
+  [ADR-0018](docs/adr/0018-index-semantics.md).
+- **`clone` and `copy` on a map return a map.** They returned the JDK `LinkedHashMap`, so the
+  copy lost the equality and hashing contract added in ADR-0017 and `m.clone()[1.0]` did not
+  find a key stored as `1`.
 - **`==` and hashing now agree at every depth.** `1 == 1.0` was `true`, but `[1] == [1.0]`,
   `(1,) == (1.0,)` and `{1: "a"} == {1.0: "a"}` were all `false`, while
   `length(set([1, 1.0]))` was `2` and `{1: "a"}[1.0]` raised. The numeric rule widened at the

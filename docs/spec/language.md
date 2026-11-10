@@ -341,7 +341,8 @@ List methods: `.length()`, `.push(x)`, `.pop()`, `.first()`, `.last()`, `.get(i)
 `.insert(i, x)`, `.remove(i)`, `.map(f)`, `.filter(f)`, `.each(f)`, `.any(f)`,
 `.all(f)`, `.find(f)`, `.find_index(f)`, `.reduce(f, start)`, `.sort()`,
 `.sort(key)`, `.reverse()`, `.join(sep)`, `.contains(x)`, `.unique()`, `.flatten()`,
-`.take(n)`, `.skip(n)`, `.subList(from, to)`, `.sum()`, `.min()`, `.max()`, `.clone()`.
+`.take(n)`, `.skip(n)`, `.subList(from, to)`, `.sum()`, `.min()`, `.max()`, `.clone()`,
+`.clear()`, `.remove_value(x)`.
 
 Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallback)`,
 `.set(k, v)`, `.has(k)`, `.has_value(v)`, `.remove(k)`, `.clear()`, `.each(f)`,
@@ -349,6 +350,36 @@ Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallbac
 
 Set methods: `.length()`, `.add(x)`, `.remove(x)`, `.has(x)`, `.items()`,
 `.union(other)`, `.intersection(other)`, `.difference(other)`.
+
+### An index is a position
+
+`l[i]`, `l.get(i)`, `l.insert(i, x)` and `l.remove(i)` take an index. All four agree on
+what it means, and they agree in two ways that a language can easily get wrong.
+
+**A negative index counts from the end.** `l[-1]` is the last element, and `-1` means the
+same thing to `insert` and `remove` as it does to a read. A rule that held for reads but
+not for mutations would make `l.remove(-1)` a silent no-op, which is worse than refusing
+it.
+
+**An index that names no position is an error.** `l[99]`, `l.get(99)`, `l.remove(99)` and
+`l.insert(99, x)` all raise, naming the index and the length. `insert` accepts `l.length()`
+because appending names the position after the last element; it does not accept
+`l.length() + 1`, and it does not clamp. Removal by value is `.remove_value(x)`, never
+`.remove(x)`, so `l.remove(1)` is unambiguously position `1`.
+
+The range-shaped methods are different on purpose. `take(n)`, `skip(n)` and
+`subList(from, to)` take a count or a bound rather than a position, so they clamp: asking
+for ten items from a three-item list is a meaningful request with an obvious answer, and
+has no position that could be wrong.
+
+```
+xs = [1, 2, 3]
+print xs.remove(-1)     # 3 -- the last element
+print xs.insert(-1, 9)  # [1, 2, 9, 3] -- before the last element
+xs.insert(3, 4)         # appending at length is allowed
+```
+
+See [ADR-0018](../adr/0018-index-semantics.md).
 
 ## Tuples
 
