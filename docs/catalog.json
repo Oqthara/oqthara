@@ -170,6 +170,12 @@
       "slug": "docs/adr/0027-classes-and-contracts"
     },
     {
+      "path": "docs/adr/0028-data-evolution.md",
+      "title": "0028 — Immutable `data` declarations",
+      "section": "adr",
+      "slug": "docs/adr/0028-data-evolution"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

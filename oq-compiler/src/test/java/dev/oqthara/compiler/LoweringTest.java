@@ -341,7 +341,7 @@ class LoweringTest {
     void lowersDataConstructionAndFieldAccess() {
         Ir.Program program = lower("data Point(x, y)\np = Point(1, 2)\nprint p.x\np.y = 3");
         List<Ir.Instr> body = program.main().body();
-        assertTrue(body.contains(new Ir.MakeData("Point", List.of("x", "y"))),
+        assertTrue(body.contains(new Ir.MakeData("Point", List.of("x", "y"), false)),
                 Ir.disassemble(program));
         assertTrue(body.contains(new Ir.GetField("x")), Ir.disassemble(program));
         assertTrue(body.contains(new Ir.SetField("y")), Ir.disassemble(program));
@@ -351,7 +351,7 @@ class LoweringTest {
     void dataDefaultsAreFilledInAtTheCallSite() {
         Ir.Program program = lower("data Person(name, age = 7)\nprint Person(\"Ada\")");
         List<Ir.Instr> body = program.main().body();
-        int make = body.indexOf(new Ir.MakeData("Person", List.of("name", "age")));
+        int make = body.indexOf(new Ir.MakeData("Person", List.of("name", "age"), false));
         assertTrue(make > 0, Ir.disassemble(program));
         assertTrue(body.subList(0, make).contains(new Ir.Const(7L)),
                 "the default must be evaluated as part of the construction");

@@ -200,7 +200,7 @@ public final class Interpreter implements OqHost {
                         defaults.add(() -> evaluate(defaultValue, env));
                     }
                 }
-                env.define(data.name(), new DataCtor(data.name(), fields, defaults), true);
+                env.define(data.name(), new DataCtor(data.name(), fields, defaults, data.immutable()), true);
             } else if (stmt instanceof Ast.ClassDecl classDecl) {
                 ClassCtor ctor = new ClassCtor(classDecl, env);
                 classes.put(classDecl.name(), ctor);
@@ -408,7 +408,7 @@ public final class Interpreter implements OqHost {
                             defaults.add(() -> evaluate(defaultValue, env));
                         }
                     }
-                    env.define(data.name(), new DataCtor(data.name(), fields, defaults), true);
+                    env.define(data.name(), new DataCtor(data.name(), fields, defaults, data.immutable()), true);
                 }
             }
             case Ast.ExprStmt ignored -> evaluate(((Ast.ExprStmt) stmt).expr(), env);
@@ -426,7 +426,7 @@ public final class Interpreter implements OqHost {
                         throw new OqError("type " + data.typeName() + " has no field named '" + assign.field() + "'",
                                 assign.span());
                     }
-                    data.set(assign.field(), value);
+                    data.set(assign.field(), value, assign.span());
                 } else if (target instanceof OqInstance instance) {
                     requireFieldAccess(instance, assign.field(), assign.span());
                     if (!instance.has(assign.field())) {
@@ -784,7 +784,8 @@ public final class Interpreter implements OqHost {
     }
 
     public record DataCtor(String name, List<Ast.FieldDef> fields,
-                           List<java.util.function.Supplier<Object>> defaults) implements OqCallable {
+                           List<java.util.function.Supplier<Object>> defaults,
+                           boolean immutable) implements OqCallable {
         @Override
         public Object call(OqHost host, List<Object> args, Span span) {
             if (args.size() > fields.size()) {
@@ -802,7 +803,7 @@ public final class Interpreter implements OqHost {
                 }
                 values.put(field.name(), value);
             }
-            return new OqData(name, values);
+            return new OqData(name, values, immutable);
         }
     }
 

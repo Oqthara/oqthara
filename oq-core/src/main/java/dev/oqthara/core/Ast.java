@@ -72,7 +72,12 @@ public final class Ast {
     public record Continue(Span span) implements Stmt {
     }
 
-    public record DataDecl(String name, List<FieldDef> fields, Span span) implements Stmt {
+    /**
+     * {@code data Name(field, ...)} with an optional trailing {@code immutable}. An immutable
+     * declaration fixes its fields at construction and lets the value be used as a map key or
+     * set member, where a mutable one is refused (ADR-0028).
+     */
+    public record DataDecl(String name, List<FieldDef> fields, boolean immutable, Span span) implements Stmt {
     }
 
     public record FieldDef(String name, Expr defaultValue, Span span) {

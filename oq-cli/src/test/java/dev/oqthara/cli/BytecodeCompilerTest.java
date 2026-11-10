@@ -1207,7 +1207,7 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(195, compiled,
+        assertEquals(196, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
     }
 

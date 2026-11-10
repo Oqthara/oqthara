@@ -51,3 +51,33 @@ end
 class\nend
 class C(\ncontract\nclass C(x)\
   fun\n  end\nend
+
+# T-0029: the immutable modifier on a data declaration (ADR-0028). Valid forms, the
+# contextual-word cases that must keep parsing as names, and malformed trailing tokens.
+data Point(x, y) immutable
+print Point(1, 2)
+data Bag(items = []) immutable
+print Bag()
+immutable = 7\
+print immutable
+immutable
+data P(x) immutable extra
+data P(x) immutable = 1
+data P() immutable
+
+# T-0030: an immutable data value is only as hashable as its contents, so the guard recurses
+data Box(items) immutable
+b = Box([1])
+m = {b: 1}
+print length(m)
+
+# T-0031: clone carries the modifier, so a copy cannot launder an immutable value
+data P(x) immutable
+q = clone(P(1))
+print q == P(1)
+print length(clone(set([P(1), P(2)])))
+
+# T-0032: the rebuild hint is positional, so the first field carries no label
+data Pair(a, b) immutable
+p = Pair("x", 1)
+p.b = 2

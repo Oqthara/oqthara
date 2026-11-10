@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0024](docs/adr/0024-text-is-a-sequence-of-code-points.md).
 
 ### Added
+- **Immutable `data` records.** `data Point(x, y) immutable` fixes the fields at construction
+  and makes the value usable as a map key or set member, where a mutable `data` value is
+  refused. Equality, hashing and rendering are unchanged — the modifier removes the guard
+  that stopped the existing structural hash from being reached, rather than adding a second
+  one. A refused write names the field and shows the rebuild that replaces it, in the
+  positional form the constructor accepts. A record is only as hashable as its contents, so
+  one holding a list is refused as a key exactly as a tuple holding one is. Both the
+  interpreter and compiled bytecode enforce it at the single write path, and `clone` carries
+  the modifier across, so neither backend nor a copy can launder the value into a mutable
+  one. `immutable` is contextual, so `immutable = 7` still names a variable. See
+  [ADR-0028](docs/adr/0028-data-evolution.md).
 - **Classes and contracts.** A `class` declares fields with defaults, methods that reach the
   object as `this`, and an optional `init` block that runs after the fields are filled.
   Instances are reference values: equality is identity, `type_of` is the class name, and
