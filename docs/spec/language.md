@@ -446,7 +446,16 @@ so a correct loop can always be written.
 
 `.iter()` is **lazy**: it reads the live collection rather than copying, which is the reason
 to use it instead of `for` on a large collection. The trade is that you must not change the
-collection while iterating it — `for` is the safe choice when you might.
+collection while iterating it — `for` is the safe choice when you might. Breaking the rule
+is an ordinary error that says so, not an internal failure:
+
+```
+xs = [1, 2]
+it = xs.iter()
+it.next()
+xs.add(3)
+it.next()     # error: the collection changed while this iterator was walking it
+```
 
 An iterator is a position, not a collection, so `length`, indexing, slicing and `in` all
 refuse it rather than consuming it. `xs.next()` is an error too; call `iter()` first, and the

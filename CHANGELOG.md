@@ -156,6 +156,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously failed to parse at all. See [ADR-0019](docs/adr/0019-slicing.md).
 
 ### Fixed
+- **Mutating a collection while a live iterator walks it is an ordinary error, not an internal
+  one.** `.iter()` reads the live collection (ADR-0020), so the mutation is genuinely invalid —
+  but `java.util`'s fail-fast check escaped as
+  `internal error: ConcurrentModificationException ... This is a bug in Oqthara`. That blames
+  the language for something the program did, and leaves nothing to act on. It now reports
+  `the collection changed while this iterator was walking it` with the source position and a
+  hint to use `for`, which walks a snapshot. `for` is unaffected.
+
 - **A mutable value can no longer be a map key or a set member.** Hashing is structural, so
   inserting a list and then mutating it left the entry present but unreachable: `length(m)`
   still counted it and `repr(m)` still printed it, but no lookup could find it again. The same

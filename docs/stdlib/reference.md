@@ -118,17 +118,17 @@ Every entry below is read from the implementation, so this page cannot list a fu
 
 `.clear()`, `.clone()`, `.contains()`, `.contains_key()`, `.copy()`, `.each()`, `.entries()`, `.get()`, `.has()`, `.has_value()`, `.items()`, `.iter()`, `.keys()`, `.length()`, `.map()`, `.merge()`, `.pop()`, `.put()`, `.remove()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.update()`, `.values()`
 
-### frozenset
+### frozenSetMethod
 
-`.clone()`, `.contains()`, `.copy()`, `.difference()`, `.frozenset()`, `.has()`, `.intersection()`, `.issubset()`, `.issuperset()`, `.items()`, `.iter()`, `.length()`, `.list()`, `.max()`, `.min()`, `.set()`, `.size()`, `.sorted()`, `.sum()`, `.symmetric_difference()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.union()`
+`.add()`, `.add_all()`, `.clear()`, `.clone()`, `.contains()`, `.copy()`, `.difference()`, `.discard()`, `.fill()`, `.frozenset()`, `.has()`, `.intersection()`, `.issubset()`, `.issuperset()`, `.items()`, `.iter()`, `.length()`, `.list()`, `.max()`, `.min()`, `.pop()`, `.remove()`, `.remove_all()`, `.retain_all()`, `.reverse()`, `.set()`, `.shuffle()`, `.size()`, `.sort()`, `.sorted()`, `.sum()`, `.symmetric_difference()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.union()`, `.update()`
 
 ### set
 
 `.add()`, `.clone()`, `.contains()`, `.copy()`, `.difference()`, `.has()`, `.intersection()`, `.issubset()`, `.issuperset()`, `.items()`, `.iter()`, `.length()`, `.list()`, `.max()`, `.min()`, `.remove()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.sum()`, `.symmetric_difference()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.union()`
 
-### range
+### rangeMethod
 
-`.contains()`, `.first()`, `.items()`, `.iter()`, `.last()`, `.length()`, `.list()`, `.max()`, `.min()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.sum()`, `.to_list()`, `.to_set()`
+`.contains()`, `.first()`, `.items()`, `.iter()`, `.last()`, `.length()`, `.list()`, `.max()`, `.min()`, `.reverse()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.sorted()`, `.sum()`, `.sum()`, `.to_list()`, `.to_set()`
 
 ### text
 
