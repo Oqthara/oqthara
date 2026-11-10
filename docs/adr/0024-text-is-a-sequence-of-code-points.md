@@ -116,3 +116,7 @@ Python 3 strings are sequences of code points, so `len("aðŸ˜€b") == 3` and `"aðŸ
 library already assume. Python's own storage is flexible (one byte per character for
 Latin-1, more for wider strings); Oqthara keeps UTF-16 storage and pays the scan instead,
 which is a difference in performance, not in observable behaviour.
+
+CPython 3.13 `Objects/unicodeobject.c` and PEP 393, consulted 2026-11-10 for the code point
+unit and the indexing rule. Oqthara adopts the unit and the observable behaviour and rejects
+the flexible per-string encoding, for the reason given above.
