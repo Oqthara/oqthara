@@ -1,0 +1,14 @@
+a = frozenset([3, 1, 2, 1])
+b = frozenset([2, 3, 4])
+print a
+print a.length()
+print 1 in a
+print 5 in a
+print a.union(b)
+print a.intersection(b)
+print a.difference(b)
+print a.symmetric_difference(b)
+print a == frozenset([1, 2, 3])
+print type_of(a)
+print frozenset().length()
+print frozenset([1, 2]) == frozenset([2, 1])
