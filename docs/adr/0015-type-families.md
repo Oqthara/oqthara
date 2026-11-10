@@ -50,11 +50,10 @@ as acceptable:
 
 There is **one** numeric family with two representations, not two numeric types: `Long` and
 `Double` are unified as the `number`/`decimal` distinction and interoperate through
-`Arithmetic` and `Values.add`/`compare`. That unification is **incomplete inside collections**:
-`Values.equal` widens at the top level but delegates to `equals` for collection contents, so
-`1 == 1.0` is `true` while `[1] == [1.0]` is `false`. The details and consequences are under
-"Hashability and equality" below. No collection, builtin or IR node invents a *third* numeric
-rule; the defect is that the existing rule stops at the container boundary.
+`Arithmetic` and `Values.add`/`compare`. That unification once stopped at the container
+boundary, so `1 == 1.0` was `true` while `[1] == [1.0]` was `false`; **ADR-0017 closed that
+gap** and equality now widens at every depth. No collection, builtin or IR node ever invented
+a *third* numeric rule. See "Hashability and equality" below.
 
 ## Decisions (§6.2)
 
@@ -96,50 +95,33 @@ decision, not a quiet change to `Long`.
 
 ### Hashability and equality
 
-`==` routes through `Values.equal`, which **is not uniformly structural**. The code is exactly:
+**Superseded in part by [ADR-0017](0017-equality-and-hashing.md).** This section recorded the
+state at the time it was written: the numeric rule stopped at the container boundary, and
+hash and equality disagreed. ADR-0017 fixed both and is the authoritative description of
+`==`, hashing and container keying. What remains true from this section is the last point
+below, that mutating a value used as a key makes it unreachable, which is a bounded
+limitation rather than a defect.
 
-```java
-if (a instanceof Long x && b instanceof Double y) return x.doubleValue() == y;
-if (a instanceof Double x && b instanceof Long y) return x == y.doubleValue();
-if (isNumber(a) && isNumber(b)) return asDouble(a) == asDouble(b);
-return a.equals(b);
+`==` routes through `Values.equal`. **Since ADR-0017 it is uniformly structural**: numbers
+widen at every depth, lists and tuples compare structurally in order, maps and sets compare
+without order, and a tuple never equals a list.
+
+```
+print 1 == 1.0                 # true
+print [1] == [1.0]             # true
+print (1,) == (1.0,)           # true
+print {1: "a"} == {1.0: "a"}   # true
+print set([1]) == set([1.0])   # true
 ```
 
-The numeric widening applies **only at the top level**. Once a value is inside a collection, Java's own
-`equals` runs instead, so numeric widening is lost:
+Hashing agrees with equality: a whole decimal hashes as the whole number it equals, and
+containers hash by content, so a set cannot hold two values that compare equal and a map
+finds a key regardless of which numeric representation wrote it.
 
-```
-print 1 == 1.0            # true
-print [1] == [1.0]        # false   <- inconsistent with the line above
-print (1,) == (1.0,)      # false
-print {1: "a"} == {1.0: "a"}   # false
-print set([1]) == set([1.0])   # false
-```
-
-Three concrete consequences are recorded here because §6 asks about hashability and the answers are
-currently unsafe:
-
-1. **Equality and hashing disagree.** `1 == 1.0` is `true`, but `Long` and `Double` hash differently,
-   so `set([1, 1.0])` has length 2 and `1 in set([1.0])` is `false` — two elements that compare equal
-   coexist in one set, and a map can hold both `1` and `1.0` as separate keys.
-2. **Equality is depth-dependent.** A nested collection compares with different rules than its
-   elements do.
-3. **Mutable `data` as a map key silently loses the entry.** `OqData.hashCode()` is derived from its
-   fields, and fields are mutable, so mutating a key after insertion makes it unreachable:
-
-   ```
-   data P(x)
-   p = P(1)
-   m = {}
-   m[p] = "a"
-   p.x = 2
-   print m[p]        # nothing  -- the entry is still there but can no longer be found
-   ```
-
-The honest answer to "what makes a value hashable" is therefore **nothing enforces hashability**, and
-the current rules are internally inconsistent. §6.2 asks for one model; this record states the gap
-precisely rather than claiming the guarantee the runtime does not provide. Consolidating equality and
-hashability into a single coherent rule is the follow-up this ADR exists to justify.
+The one remaining hazard is that **mutating a value used as a key loses the entry**, because
+`OqData.hashCode()` and the structural hash of a list derive from mutable contents. Enforcing
+hashability needs a type-level predicate the language does not have yet; ADR-0017 records it
+as a known limitation.
 
 ### Generics
 

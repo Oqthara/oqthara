@@ -20,7 +20,7 @@ implemented, `0.x` means implemented but not yet reconciled against the other co
 | 1 | Type and value representation | [ADR-0007](../adr/0007-boxed-values.md), [ADR-0015](../adr/0015-type-families.md), §7.3 `M1`, `M2`, `M8` | `1` | `ValuesTest`, `ImmutableRefusalTest` |
 | 2 | Bindings, scopes, `const`, assignment | [ADR-0013](../adr/0013-destructuring.md), §7.3 `E7`–`E11`, `language.md` §Variables | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 3 | Function signatures and overload selection | [ADR-0012](../adr/0012-overload-resolution.md) | `1` | `LanguageFeatureTest` overload cases |
-| 4 | Collection protocols and iteration | [ADR-0016](../adr/0016-iteration-snapshots.md), §7.3 `M4` | `0.5` | `ValuesTest`, `ConcurrencyTest` |
+| 4 | Collection protocols and iteration | [ADR-0016](../adr/0016-iteration-snapshots.md), [ADR-0017](../adr/0017-equality-and-hashing.md), §7.3 `M4` | `1` | `ValuesTest`, `ValueTest`, `ConcurrencyTest` |
 | 5 | Destructuring and unpacking | [ADR-0013](../adr/0013-destructuring.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 6 | Expression-oriented `try` | [ADR-0014](../adr/0014-try-as-an-expression.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 7 | `class`, interface and `data` behaviour | `language.md` §Data types only | `0.5` | `LanguageFeatureTest` |
@@ -158,8 +158,7 @@ The version column tracks how settled a contract is, not how recently it changed
 
 - `1` — the behaviour is implemented, tested, and no other contract contradicts it.
 - `0.5` — the behaviour is implemented and tested, but the contract is incomplete in a way
-  another area already depends on. `#4` is `0.5` because iteration snapshots are specified but
-  container equality is not, and the two interact. `#7` is `0.5` because `data` is specified but
+  another area already depends on. `#7` is `0.5` because `data` is specified but
   `class` is not, and both will share a method-resolution rule. `#9` is `0.5` because the bridge
   has no conversion layer (`03-runtime.md`, `M8`). `#11` is `0.5` because cancellation is absent
   and the depth counter is not thread-safe.

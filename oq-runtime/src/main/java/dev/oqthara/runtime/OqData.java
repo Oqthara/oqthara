@@ -31,16 +31,21 @@ public final class OqData {
         fields.put(name, value);
     }
 
+    /**
+     * A {@code data} value equals another of the same type with equal fields, where field
+     * equality is {@link Values#equal} so that numbers widen inside an object exactly as they
+     * do everywhere else (ADR-0017).
+     */
     @Override
     public boolean equals(Object other) {
         if (this == other) return true;
         if (!(other instanceof OqData data)) return false;
-        return typeName.equals(data.typeName) && fields.equals(data.fields);
+        return typeName.equals(data.typeName) && Values.dataFieldsEqual(fields, data.fields);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(typeName, fields);
+        return Value.hashing(this);
     }
 
     @Override

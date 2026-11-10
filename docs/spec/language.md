@@ -425,6 +425,59 @@ A tuple satisfies Java's `List` interface for reading. Mutating it from Java thr
 **Deferred.** Tuple destructuring (`a, b = pair`), named or typed tuple fields, and tuple
 arithmetic (`+`, `*`) are not part of Alpha 3. See `docs/governance/roadmap-alpha-3.md`.
 
+## Equality and hashing
+
+`==` is one definition applied at every depth, and hashing agrees with it.
+
+```
+print 1 == 1.0                 # true: one number, two representations
+print [1] == [1.0]             # true
+print (1,) == (1.0,)           # true
+print {1: "a"} == {1.0: "a"}   # true
+print set([1]) == set([1.0])   # true
+```
+
+A whole number and a whole decimal that denote the same value are equal, and they hash
+alike, so a set cannot hold both and a map finds the entry whichever representation wrote it:
+
+```
+print length(set([1, 1.0]))    # 1
+print 1 in set([1.0])          # true
+m = {1: "a"}
+print m[1.0]                   # a
+```
+
+The rules per family:
+
+| Values | Equal when |
+|---|---|
+| numbers | they denote the same value, whether whole or decimal |
+| text | the characters are the same, case sensitively |
+| booleans | both are the same boolean |
+| lists | same length, and each position equal |
+| tuples | same length, and each position equal |
+| maps | same size, and every key of one finds an equal value in the other; order is irrelevant |
+| sets | same size, and every member of one is in the other; order is irrelevant |
+| `data` | same type name and equal fields, compared by the same rule |
+| `nothing` | only against another `nothing` |
+
+A tuple never equals a list, even with the same items and order. A list never equals a set.
+Comparing values of unrelated families with `==` is `false` rather than an error, so
+`1 == "1"` is `false`.
+
+`unique`, `union`, `intersection`, `difference`, `has_value` and membership all use this same
+rule, so nothing disagrees with `==`.
+
+**Mutating a value used as a key loses it.** A list, map or `data` value derives its hash from
+its contents, and its contents can change. If you use one as a set element or a map key and
+then mutate it, the entry stays in the collection but can no longer be found. Prefer
+immutable values — numbers, text, tuples — as keys.
+
+**A collection that contains itself cannot be hashed or compared**, and raises
+`this collection contains itself, so it cannot be hashed or compared` rather than crashing.
+
+See [ADR-0017](../adr/0017-equality-and-hashing.md).
+
 ## Data types
 
 ```

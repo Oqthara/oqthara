@@ -346,12 +346,13 @@ class LanguageFeatureTest {
     }
 
     @Test
-    void numericEqualityDoesNotReachInsideCollections() {
-        // ADR-0015 records this as an open defect rather than a design choice. `Values.equal`
-        // widens Long and Double at the top level, then delegates to `Object.equals` for
-        // collection contents, where Java's Long.equals(Double) is false. These assertions
-        // pin the current behaviour so a future fix has to change them deliberately.
-        assertEquals("true\nfalse\nfalse\nfalse\nfalse\n", ok("""
+    void numericEqualityReachesInsideCollections() {
+        // ADR-0017. `1 == 1.0` is true, so every container has to agree: a whole number and a
+        // whole decimal are the same value wherever they appear. Before ADR-0017 the first
+        // line was true and the rest were false, because `Values.equal` widened numerics at
+        // the top level and then fell through to `Object.equals`, where
+        // `Long.equals(Double)` is false.
+        assertEquals("true\ntrue\ntrue\ntrue\ntrue\n", ok("""
                 print 1 == 1.0
                 print [1] == [1.0]
                 print (1, 2) == (1.0, 2)
@@ -361,13 +362,15 @@ class LanguageFeatureTest {
     }
 
     @Test
-    void equalNumbersHashDifferently() {
-        // The second half of the same defect: `1 == 1.0` is true, but Long and Double hash
-        // differently, so a set can hold both and `in` uses hashing rather than `Values.equal`.
-        assertEquals("true\n2\nfalse\n2\n", ok("""
+    void equalNumbersHashAlike() {
+        // Hash consistency with equality, the other half of the ADR-0017 contract. A set or map
+        // keyed by hash must not be able to hold two values that compare equal, so equal
+        // numbers have to hash alike as well.
+        assertEquals("true\n1\ntrue\ntrue\n1\n", ok("""
                 print 1 == 1.0
                 print length(set([1, 1.0]))
                 print 1 in set([1.0])
+                print 1.0 in set([1])
                 m = {}
                 m[1] = "a"
                 m[1.0] = "b"

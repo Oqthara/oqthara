@@ -187,6 +187,7 @@ is ever compiled, this reasoning expires and the slot must become a `ThreadLocal
 | `M11` | Only an `OqError` exits 1 with a source position; only a non-`OqError` `RuntimeException` exits 70. |
 | `M12` | `StackOverflowError` and `OutOfMemoryError` are reported as program failures and exit 1. |
 | `M13` | The step and output budgets are shared by every thread a program runs, but the recursion depth counter is not thread-safe: concurrent tasks corrupt it. |
+| `M14` | Two values that `==` calls equal hash alike at every depth, so a set cannot hold both and a map finds a key whichever numeric representation wrote it (ADR-0017). |
 
 ## 7.3.3 Invalid transitions
 
@@ -243,6 +244,7 @@ shallow enough to parse and still be too deep to print.
 | `M10` | `StepBudgetTest.printLoopStopsAtTheOutputCeiling`, `.oversizedReadIsRefused`; `WaitedBudgetTest.theLimitIsOnTheTotalNotOneCall`; `HostBuiltinLimitsTest.exactlySixteenMebibytesIsAllowed`, `.oneBytePastSixteenMebibytesIsRefused` |
 | `M11`, `M12` | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
 | `M13` | `ConcurrencyTest.twoTasksBothComplete`, `.parMapPreservesOrder`; the shared-counter half is exercised there, the depth half is not |
+| `M14` | `ValueTest.equalNumbersHashAlike`, `.crossTypeLookup`, `.setCollapsesEqualValues`; `LanguageFeatureTest.equalNumbersHashAlike`, `.numericEqualityReachesInsideCollections` |
 | `E38`, `E39` | `HostBuiltinLimitsTest.runCommandTimeoutKillsTheWholeProcessTree`, `.runCommandTimeoutsACommandThatNeverClosesItsOutput`, `.runCommandOutputIsBounded`, `.runCommandDoesNotGoThroughAShell` |
 | `E35`, `E36` | `WaitedBudgetTest.waitingPastTheLimitIsRefused`, `.waitingUpToTheLimitIsAllowed`, `.theLimitIsOnTheTotalNotOneCall` |
 | `E40` | `StepBudgetTest.unboundedRecursionStopsWithADiagnostic` |
@@ -250,9 +252,11 @@ shallow enough to parse and still be too deep to print.
 
 ## 7.3.6 Open defects in this model
 
-**Equality is not transitive across containers, and membership disagrees with it.** `Values.equal`
-widens `number` against `decimal` only at the top level, then falls through to `Object.equals` for
-collections. Measured:
+**Closed: equality and hashing disagreed across the container boundary.** This was the defect
+that motivated the Phase 2 exit gate's equality and hashability work. `Values.equal` widened
+`number` against `decimal` only at the top level and then fell through to `Object.equals` for
+collections, while sets and maps hashed raw `Long`/`Double`, which hash differently. Measured
+before the fix:
 
 ```
 print 1 == 1.0                   -> true
@@ -261,14 +265,19 @@ print (1,) == (1.0,)             -> false
 print {"a": 1} == {"a": 1.0}     -> false
 print length(set([1, 1.0]))      -> 2
 print 1 in set([1, 1.0])         -> true
-print 1.0 in set([1, 1.0])       -> true
 print 1.0 in [1]                 -> true
 ```
 
-A set claims to hold two distinct elements while reporting membership for both equal numbers, and
-a list says `1.0 in [1]` while `[1] == [1.0]` is false. This is the equality and hashability work
-the Phase 2 exit gate names; it needs an `equals`/`hashCode` contract for values, not a top-level
-widening.
+A set claimed to hold two distinct elements while reporting membership for both equal numbers, and
+a list said `1.0 in [1]` while `[1] == [1.0]` was false. [ADR-0017](../../adr/0017-equality-and-hashing.md)
+fixed it by giving values an `equals`/`hashCode` contract that delegates to `Values.equal` and
+hashes structurally, and by backing sets and maps with it. Measured after the fix, `[1] == [1.0]`,
+`(1,) == (1.0,)` and `{"a": 1} == {"a": 1.0}` are all `true`, and `length(set([1, 1.0]))` is `1`.
+The invariant `M14` in §7.3.2 states the rule.
+
+Two bounded limitations remain and are accepted rather than open: a value used as a key that is
+then mutated can no longer be found, and a self-referential collection raises rather than being
+hashed. Both are recorded in ADR-0017.
 
 **A collection reached through `use` may not be an Oq collection.** `M8` means a JDK type that
 implements `List` is presented as a `list` without conversion. If that implementation is
