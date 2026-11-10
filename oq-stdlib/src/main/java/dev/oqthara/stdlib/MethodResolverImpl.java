@@ -57,7 +57,25 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             }
             return null;
         }
+        if (receiver instanceof dev.oqthara.runtime.OqMutex mutex) {
+            return mutexMethod(mutex, name, span);
+        }
         return null;
+    }
+
+    /**
+     * Methods on a mutex, per ADR-0039 Decision 5. There are two, and both are questions a
+     * program can act on: take the lock around a body, or ask whether it is free.
+     */
+    private OqCallable mutexMethod(
+            dev.oqthara.runtime.OqMutex mutex, String name, Span span) {
+        return switch (name) {
+            case "lock" -> dev.oqthara.runtime.NativeFunction.of(name, 1,
+                    (host, args, callSpan) -> mutex.lock(
+                            host, callableArgument(name, args.get(0), 1, "m.lock(body)", callSpan), callSpan));
+            case "is_free" -> fixed(name, 0, (host, args) -> mutex.isFree());
+            default -> null;
+        };
     }
 
     /**

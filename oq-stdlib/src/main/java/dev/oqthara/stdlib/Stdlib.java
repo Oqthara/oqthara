@@ -80,6 +80,17 @@ public final class Stdlib {
     /** The longest single {@code sleep} call, so one statement cannot block the program for hours. */
     static final long MAX_SLEEP_MILLIS = 10_000;
 
+    /**
+     * The one executor {@code spawn} hands tasks to. Created on first use and never shut down:
+     * a per-call executor was unreachable and never closed, so the leak grew with the number of
+     * tasks. Virtual threads do not keep the JVM alive, so leaving this open changes nothing
+     * observable when a program ends (ADR-0039, Decision 2).
+     */
+    private static final class TaskRunner {
+        static final java.util.concurrent.ExecutorService EXECUTOR =
+                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+    }
+
 
 
     /** The most names {@code list_files} will return from one directory. */
@@ -1587,7 +1598,7 @@ public final class Stdlib {
             java.util.concurrent.CompletableFuture<Object> future =
                     java.util.concurrent.CompletableFuture.supplyAsync(
                             () -> host.call(callback, List.of(), span),
-                            java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+                            TaskRunner.EXECUTOR);
             return new dev.oqthara.runtime.OqTask(future);
         }));
         interpreter.defineBuiltin(NativeFunction.of("await", 1, (host, args, span) -> {
@@ -1597,6 +1608,21 @@ public final class Stdlib {
             }
             return task.await(span);
         }));
+        interpreter.defineBuiltin(NativeFunction.of("await", 2, (host, args, span) -> {
+            if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
+                throw new OqError("await() needs a task from spawn(), got "
+                        + Values.typeName(args.get(0)), span);
+            }
+            long millis = (long) (Values.asDouble(args.get(1)) * 1000);
+            if (millis > MAX_SLEEP_MILLIS) {
+                throw new OqError("cannot await for more than "
+                        + MAX_SLEEP_MILLIS / 1000 + " seconds", span,
+                        "A long wait would block the program; the limit is "
+                                + MAX_SLEEP_MILLIS / 1000 + " seconds per call.");
+            }
+            dev.oqthara.runtime.WaitedBudget.charge(millis, span);
+            return task.awaitWithin(millis, span);
+        }));
         interpreter.defineBuiltin(NativeFunction.of("done", 1, (host, args, span) -> {
             if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
                 throw new OqError("done() needs a task from spawn(), got "
@@ -1604,6 +1630,8 @@ public final class Stdlib {
             }
             return task.isDone();
         }));
+        interpreter.defineBuiltin(NativeFunction.of("mutex", 0, (host, args, span) ->
+                new dev.oqthara.runtime.OqMutex()));
         interpreter.defineBuiltin(NativeFunction.of("par_map", 2, (host, args, span) -> {
             List<?> items = Values.iterableList(args.get(0), span);
             Object callback = args.get(1);

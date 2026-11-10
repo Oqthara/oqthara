@@ -69,6 +69,7 @@ public final class Values {
         if (value instanceof OqInstance instance) return instance.className();
         if (value instanceof OqIterator) return "iterator";
         if (value instanceof OqTask) return "task";
+        if (value instanceof OqMutex) return "mutex";
         if (value instanceof OqCallable c) return "function " + c.name();
         return "java " + value.getClass().getSimpleName();
     }

@@ -236,6 +236,12 @@
       "slug": "docs/adr/0038-constant-time-and-password-hashing"
     },
     {
+      "path": "docs/adr/0039-executors-and-cancellation.md",
+      "title": "ADR-0039 — Executors, cancellation, and synchronization",
+      "section": "adr",
+      "slug": "docs/adr/0039-executors-and-cancellation"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

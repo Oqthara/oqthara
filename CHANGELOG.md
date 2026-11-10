@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A mutex, a bounded `await`, and one shared task executor.** `mutex()` returns the one
+  concurrency primitive the language now has: `m.lock(body)` acquires, runs the body, and
+  releases however the body ends, so a raising body cannot leave the lock held. It takes a
+  function rather than a `lock`/`unlock` pair because the language has no `finally`, and it is
+  not reentrant — locking it twice from the same task raises instead of deadlocking. This
+  closes a measured defect: two tasks each incrementing a shared counter 2000 times produced
+  3840, 3850 and 3704 instead of 4000, and now produce 4000 on every run. `await(task, seconds)`
+  bounds the wait and then raises, without cancelling: the interpreter checks for interruption
+  nowhere, so a reported stop would not be a real one, and the task keeps running. `spawn` now
+  uses one shared virtual-thread executor instead of creating and abandoning one per call.
+  Cancellation, executors and channels are deliberately absent, with the reasons recorded.
+  Specified by [ADR-0039](docs/adr/0039-executors-and-cancellation.md).
 - **Constant-time comparison and password hashing.** `secure_equal(a, b)` compares two texts
   through `MessageDigest.isEqual`, so the running time does not depend on where they first
   differ; `==` is unchanged, because most text comparisons are not secrets and paying that cost
