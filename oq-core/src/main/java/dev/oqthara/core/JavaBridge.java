@@ -45,9 +45,10 @@ public final class JavaBridge {
         Object[] bestArgs = null;
         int bestScore = Integer.MIN_VALUE;
         for (Constructor<?> ctor : type.getConstructors()) {
-            Object[] converted = tryConvert(ctor.getParameterTypes(), args, cwd);
+            Object[] converted = tryConvert(ctor.getParameterTypes(), args, cwd,
+                    ctor.isVarArgs());
             if (converted == null) continue;
-            int score = score(ctor.getParameterTypes(), args);
+            int score = score(ctor.getParameterTypes(), args, ctor.isVarArgs());
             if (score > bestScore) {
                 best = ctor;
                 bestArgs = converted;
@@ -74,9 +75,10 @@ public final class JavaBridge {
         int bestScore = Integer.MIN_VALUE;
         for (Method method : receiver.getClass().getMethods()) {
             if (!method.getName().equals(name)) continue;
-            Object[] converted = tryConvert(method.getParameterTypes(), args, cwd);
+            Object[] converted = tryConvert(method.getParameterTypes(), args, cwd,
+                    method.isVarArgs());
             if (converted == null) continue;
-            int score = score(method.getParameterTypes(), args);
+            int score = score(method.getParameterTypes(), args, method.isVarArgs());
             if (score > bestScore) {
                 best = method;
                 bestArgs = converted;
@@ -101,9 +103,10 @@ public final class JavaBridge {
         int bestScore = Integer.MIN_VALUE;
         for (Method method : type.getMethods()) {
             if (!method.getName().equals(name) || !Modifier.isStatic(method.getModifiers())) continue;
-            Object[] converted = tryConvert(method.getParameterTypes(), args, cwd);
+            Object[] converted = tryConvert(method.getParameterTypes(), args, cwd,
+                    method.isVarArgs());
             if (converted == null) continue;
-            int score = score(method.getParameterTypes(), args);
+            int score = score(method.getParameterTypes(), args, method.isVarArgs());
             if (score > bestScore) {
                 best = method;
                 bestArgs = converted;
@@ -124,6 +127,20 @@ public final class JavaBridge {
         if (receiver == null || receiver instanceof Long || receiver instanceof Double
                 || receiver instanceof Boolean || receiver instanceof String) {
             return NOT_FOUND;
+        }
+        // A Class<?> receiver is a static reference: `Math.PI`, `Integer.MAX_VALUE`. Field.get
+        // takes the instance whose field is read, and for a static field that instance is null -
+        // passing the Class object asked for the field of a Class and found nothing.
+        if (receiver instanceof Class<?> type) {
+            try {
+                Field field = type.getField(name);
+                if (!Modifier.isStatic(field.getModifiers())) return NOT_FOUND;
+                return normalize(field.get(null));
+            } catch (NoSuchFieldException e) {
+                return NOT_FOUND;
+            } catch (IllegalAccessException e) {
+                throw new OqError("cannot read field " + name + ": " + e.getMessage(), span);
+            }
         }
         try {
             Field field = receiver.getClass().getField(name);
@@ -153,13 +170,45 @@ public final class JavaBridge {
     }
 
     private static Object[] tryConvert(Class<?>[] types, List<Object> args, Path cwd) {
-        if (types.length != args.size()) return null;
+        return tryConvert(types, args, cwd, false);
+    }
+
+    /**
+     * Converts arguments to a method's parameter types, or null when they do not fit.
+     *
+     * <p>A {@code T...} parameter arrives as a trailing {@code T[]}, so an exact arity check
+     * refused every varargs call: {@code String.format("%s-%s", "a", "b")} reports that no such
+     * method exists even though it does. With {@code varargs} true the tail is packed into a
+     * fresh array, which is what the compiler would have emitted at the call site.
+     */
+    private static Object[] tryConvert(Class<?>[] types, List<Object> args, Path cwd,
+                                       boolean varargs) {
+        if (!varargs) {
+            if (types.length != args.size()) return null;
+            Object[] converted = new Object[types.length];
+            for (int i = 0; i < types.length; i++) {
+                Object value = convert(args.get(i), types[i], cwd);
+                if (value == NOT_FOUND) return null;
+                converted[i] = value;
+            }
+            return converted;
+        }
+        int fixed = types.length - 1;
+        if (args.size() < fixed) return null;
         Object[] converted = new Object[types.length];
-        for (int i = 0; i < types.length; i++) {
+        for (int i = 0; i < fixed; i++) {
             Object value = convert(args.get(i), types[i], cwd);
             if (value == NOT_FOUND) return null;
             converted[i] = value;
         }
+        Class<?> component = types[fixed].getComponentType();
+        Object packed = java.lang.reflect.Array.newInstance(component, args.size() - fixed);
+        for (int i = fixed; i < args.size(); i++) {
+            Object value = convert(args.get(i), component, cwd);
+            if (value == NOT_FOUND) return null;
+            java.lang.reflect.Array.set(packed, i - fixed, value);
+        }
+        converted[fixed] = packed;
         return converted;
     }
 
@@ -205,9 +254,18 @@ public final class JavaBridge {
         return NOT_FOUND;
     }
 
-    private static int score(Class<?>[] types, List<Object> args) {
+    /**
+     * Prefers the overload whose parameter types fit the arguments most exactly.
+     *
+     * <p>An overload that survived {@link #tryConvert} always has a parameter for every
+     * argument, except a varargs one, whose trailing array stands for zero or more. Those
+     * arguments are scored against the array's component type, so a varargs call is ranked by
+     * the same rules as a fixed one instead of reading past the argument list.
+     */
+    private static int score(Class<?>[] types, List<Object> args, boolean varargs) {
         int score = 0;
-        for (int i = 0; i < types.length; i++) {
+        int fixed = varargs ? types.length - 1 : types.length;
+        for (int i = 0; i < fixed; i++) {
             Object value = args.get(i);
             Class<?> type = types[i];
             if (value == null) {
@@ -240,6 +298,18 @@ public final class JavaBridge {
                 score += 50;
             } else {
                 score += 2;
+            }
+        }
+        if (varargs) {
+            Class<?> component = types[fixed].getComponentType();
+            // A varargs call is a slightly worse fit than an exact one, so it never wins a tie
+            // against a fixed-arity overload that accepts the same arguments.
+            score -= 1;
+            for (int i = fixed; i < args.size(); i++) {
+                Object value = args.get(i);
+                if (value != null && component.isInstance(value)) score += 40;
+                else if (component == String.class) score += 40;
+                else score += 2;
             }
         }
         return score;

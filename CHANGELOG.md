@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A static field can be read off its class.** `Integer.MAX_VALUE`, `Math.PI` and every other
+  static field were unreachable: the bridge asked the `Class` *object* for a field of that
+  name and found none, so the program failed with `cannot read field 'MAX_VALUE' on java
+  Class`. A class receiver is now read as a class, and only a field declared `static` is
+  accepted — naming an instance field on the class is still refused, since there is no
+  instance to read from. Found by probing the six interop behaviours the requirement matrix
+  listed as unspecified, not by a failing test.
+- **A Java varargs method accepts its trailing arguments.** `String.format("%s-%s", "a", "b")`,
+  `String.join` and `Arrays.asList` were all refused with `has no static method 'format'`,
+  because the bridge demanded one argument per declared parameter and a `T...` parameter is
+  declared as a trailing `T[]`. Arguments beyond the fixed prefix are now packed into that
+  array, including the empty tail — `String.format("no arguments")` used to fail twice over,
+  once on arity and once on an out-of-bounds read in overload scoring. Overload selection is
+  unchanged for fixed-arity calls and slightly disfavours a varargs match on a tie.
 - **A failure inside an imported module quotes the module, not the importer.** The error
   excerpt was always drawn from the main program's source, so an error inside `boom.oq` was
   positioned at `boom.oq:2:11` but quoted line 2 of the program that imported it — a line the

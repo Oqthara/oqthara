@@ -194,6 +194,12 @@
       "slug": "docs/adr/0031-hover"
     },
     {
+      "path": "docs/adr/0032-static-fields-and-varargs.md",
+      "title": "ADR-0032: Static fields and varargs at the Java boundary",
+      "section": "adr",
+      "slug": "docs/adr/0032-static-fields-and-varargs"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
