@@ -81,6 +81,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `memory_mb` | built-in |
 | `min` | built-in |
 | `move_file` | built-in |
+| `mutex` | built-in |
 | `now` | built-in |
 | `number` | built-in |
 | `par_map` | built-in |
@@ -141,6 +142,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `zip` | built-in |
 
 ## Methods on values
+
+### mutexMethod
+
+`.is_free()`, `.lock()`
 
 ### iteratorMethod
 

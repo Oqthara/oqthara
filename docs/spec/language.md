@@ -1358,10 +1358,59 @@ squares = par_map([1, 2, 3, 4], x -> x * x)
 print squares            # [1, 4, 9, 16]
 ```
 
-Errors inside a task are re-raised by `await`, so `try`/`catch` works across the
-boundary. There is no shared-memory model to learn: values are ordinary Oqthara values and
-the JVM's memory model applies. For shared mutation, use a synchronized Java structure from
-the standard library.
+`await(task, seconds)` waits at most that long and then raises
+`the task did not finish within N seconds`. The task is **not** cancelled — it keeps running,
+and any work it does still happens. The reason is that nothing in the interpreter checks for
+interruption, so a cancel would be reported without being performed, and a caller who was told
+a task had stopped while it kept mutating shared state would be worse off than one who was told
+the wait ended. `sleep` and `await` share one ceiling: ten seconds per call.
+
+Errors inside a task are re-raised by `await`, so `try`/`catch` works across the boundary. An
+error in a task that nothing awaits is **not** reported: the process still exits successfully,
+because `spawn` deliberately does not turn an unobserved failure into a fatal one.
+
+### Shared state
+
+Values are ordinary Oqthara values, and the JVM's memory model applies. Two tasks that both
+run `n = n + 1` can read the same `n` and both write the same successor, so the total is short.
+`mutex()` gives one primitive for that:
+
+```
+n = 0
+const m = mutex()
+
+fun bump()
+  n = n + 1
+  return n
+end
+
+fun twice()
+  i = 0
+  while i < 2000
+    m.lock(bump)
+    i = i + 1
+  end
+end
+
+const t = spawn(twice)
+const other = spawn(twice)
+await(t)
+await(other)
+print n                  # 4000, every run
+```
+
+`lock(body)` takes a function rather than being a pair of `lock`/`unlock` calls, because the
+language has no `finally` and a raising body would otherwise leave the mutex held forever. The
+lock is released however the body ends. It is **not reentrant**: locking it twice from the same
+task raises `this mutex is already held by this task` instead of deadlocking.
+
+`m.is_free()` reports whether the lock is held at that instant. It is for diagnostics — another
+task can take the lock before the caller acts on the answer.
+
+The mutex protects a convention, not the data. Nothing stops a program from writing `n = n + 1`
+outside the lock; `lock` is how you say "these steps belong together", and the language does not
+enforce it. There is no cancellation and no `close`, and there are no channels: a channel would
+be another lifetime, and a blocking receive with no timeout would be a hang with no escape.
 
 ## Building
 
