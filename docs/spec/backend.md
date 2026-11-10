@@ -390,6 +390,95 @@ checks that both backends print the same bytes, then measures whole CLI invocati
 warm-up and several runs. It prints a table; the repository does not commit a performance
 claim that it cannot reproduce.
 
+## How values are represented
+
+The compiled backend emits JVM operations against the same runtime classes the interpreter
+uses, so the two cannot disagree about a value's representation. This section records what
+those classes are, so a reader debugging a compiled program knows what they are looking at.
+
+### Scalars
+
+`number` is `java.lang.Long` when whole and `java.lang.Double` when not; `text` is
+`String`; `boolean` is `Boolean`; `nothing` is a single `null` sentinel. All values cross the
+boundary as `Object`, which is why `docs/adr/0007-boxed-values.md` exists: the compiler emits
+no unboxing it cannot prove safe, and the runtime helpers accept `Object` throughout.
+
+Integer arithmetic is `long` arithmetic and wraps (ADR-0015). Decimal arithmetic is `double`
+arithmetic and has the usual precision limits, which the language does not hide.
+
+### `map` and `set` are insertion-ordered
+
+Both are `LinkedHashMap` and `LinkedHashSet` underneath:
+
+```
+print {"b": 1, "a": 2}.keys()      # ["b", "a"]
+```
+
+The order is the order of first insertion, and removing then re-adding a key moves it to the
+end. This is a language guarantee, not an accident of `java.util`: a `HashMap` would reorder
+on resize and make `for k in m` non-reproducible between runs, which no program should have
+to defend against.
+
+`OqMap` and `OqSet` hold `Value` boxes rather than raw objects, so their `hashCode` and
+`equals` are Oqthara's rather than Java's. That is what makes `{1: "a"}[1.0]` find its entry
+(ADR-0017): the boxes of `1` and `1.0` are equal and hash alike, while `Long` and `Double`
+are not.
+
+### `for` walks a snapshot; `.iter()` does not
+
+`for` captures the collection's contents when the loop starts, so a program may add to or
+remove from a list while looping over it, and the loop sees the state at entry:
+
+```
+xs = [1, 2, 3]
+seen = []
+for x in xs
+  seen = seen + [x]
+  xs = xs + [9]
+end
+print seen      # [1, 2, 3]
+print xs        # [1, 2, 3, 9, 9, 9]
+```
+
+`docs/adr/0016-iteration-snapshots.md` records why: the alternative is the
+`ConcurrentModificationException`-style failure Python has, which is a harder thing to
+explain than a defined result. The cost is one copy per loop entry, which for the sizes
+Oqthara programs work with is not measurable.
+
+An explicit `.iter()` does **not** copy. It reads the collection it came from, per
+ADR-0020, because an explicit iterator is the caller asking to walk the real thing. Changing
+the collection mid-walk is therefore invalid, and the runtime translates the JDK's
+`ConcurrentModificationException` into a program error naming `for` as the fix rather than
+letting it escape as an internal error.
+
+Text iterates by code point either way, and text is immutable, so neither path can produce a
+lone surrogate.
+
+### `set` methods mutate through an unchecked cast
+
+`MethodResolverImpl.asMutableSet` casts `Set<?>` to `Set<Object>`. This is the one unchecked
+cast on a hot path, and it is deliberate: `OqSet` implements `Set<Object>` and unwraps boxes
+on the way out, so a method that receives a `Set<?>` view of one can still call `add`.
+Replacing it with a copying wrapper would make `s.add(x)` silently fail to affect `s`.
+
+### Text stores UTF-16 and exposes code points
+
+`String` is the storage type; the language's unit is the code point. `"a😀b".length()` is `3`,
+`"a😀b"[1]` is `"😀"`, and no operation can produce a lone surrogate.
+`docs/adr/0024-text-is-a-sequence-of-code-points.md` records the decision and its accepted
+cost: indexing text is O(n) in the position, because locating the i-th code point in a
+UTF-16 buffer requires a scan. Storing an `int[]` would make indexing O(1) and double or
+quadruple memory for ASCII, which is the common case.
+
+### The current error position is per thread
+
+`Errors.current` is a `ThreadLocal`. Compiled code is single-threaded, because every
+concurrency builtin is `HOST_DEPENDENT` and a program that calls one is compiled to a
+launcher rather than to bytecode. The interpreter is not: `spawn` and `par_map` run user code
+on virtual threads, and a process-wide slot would let two callbacks report each other's
+positions. ADR-0025 records the change and the measurement that showed it to be about 15%
+faster on a hot arithmetic loop, because a `ThreadLocal` read is not a memory barrier.
+
 ## Order of work
 
 1. ~~**T-0038** — emit a real class file and jar.~~ Done (launcher model).
