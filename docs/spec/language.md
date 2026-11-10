@@ -70,8 +70,9 @@ first, second = {"a": 1, "b": 2}   # keys, in the map's own order
 One value supplies several names. The number of values must equal the number of
 names; a mismatch is an error, never a partial binding. The source may be a tuple, a
 list, a set, a range, a map (which yields its keys, like iterating it) or text (which
-yields its characters, one per code point). `data` instances and every number, boolean
-or `nothing` value are rejected.
+yields its characters, one per code point, as described in
+[What one character is](#what-one-character-is)). `data` instances and every number,
+boolean or `nothing` value are rejected.
 
 Destructuring is a *binding* operation, not pattern matching. The left side is a plain
 list of names; there are no nested patterns, no rest target and no discard. `_` is an
@@ -101,6 +102,31 @@ Useful methods: `.upper()`, `.lower()`, `.trim()`, `.split(",")`, `.lines()`,
 `.words()`, `.chars()`, `.replace(a, b)`, `.contains(s)`, `.starts_with(s)`,
 `.ends_with(s)`, `.slice(from, to)`, `.repeat(n)`, `.pad_start(n, fill)`,
 `.pad_end(n, fill)`, `.number()`.
+
+### What one character is
+
+A text value is a sequence of **code points** ([ADR-0024](../adr/0024-text-is-a-sequence-of-code-points.md)).
+Every operation that measures, indexes, walks or slices text counts code points, not
+bytes and not UTF-16 units, so all of them agree on the same value:
+
+| Expression | Result | Why |
+|---|---|---|
+| `"a😀b".length()` | `3` | three characters |
+| `"a😀b"[1]` | `"😀"` | the second character |
+| `"a😀b".to_list()` | `["a", "😀", "b"]` | three characters |
+| `"a😀b".chars()` | `["a", "😀", "b"]` | same three |
+| `"a😀b".reverse()` | `"b😀a"` | characters reversed |
+| `"a😀b".find("b")` | `2` | a character offset |
+| `"a😀b".substring(1, 2)` | `"😀"` | character bounds |
+| `for c in "a😀b"` | three iterations | one character each |
+
+This matches Python 3, which counts code points. Text is stored as UTF-16 internally, so
+indexing is O(n) in the position; that is an implementation cost, not something the
+language exposes. `.length()` also scans, so hoist it out of a loop that repeats it.
+
+Grapheme clusters are *not* the unit: `"é"` written as `e` plus a combining accent has
+length `2`, because it is two code points. [ADR-0024](../adr/0024-text-is-a-sequence-of-code-points.md)
+records why code points were chosen over clusters.
 
 ## Numbers
 

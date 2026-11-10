@@ -110,8 +110,10 @@ Use `fs.to_set()` to compare.
 
 `bytes` exists in Python to hold raw octets separately from text, because Python 3 made
 `str` a sequence of code points rather than bytes. Oqthara has no such split: text is a
-sequence of characters, there is no `bytearray`, and there is no `open()` returning binary
-data yet. Adding `bytes` now would create a second string-like type with no operation that
+sequence of code points, there is no `bytearray`, and there is no `open()` returning binary
+data yet. (This sentence was aspirational when written; text measured and indexed UTF-16
+units instead. [ADR-0024](0024-text-is-a-sequence-of-code-points.md) made the code match
+the claim.) Adding `bytes` now would create a second string-like type with no operation that
 needs it, which is the thing §9.1 warns against.
 
 When file and network I/O arrives, binary payloads will need a representation, and that is

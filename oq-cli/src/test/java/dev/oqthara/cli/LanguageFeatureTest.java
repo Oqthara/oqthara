@@ -203,6 +203,77 @@ class LanguageFeatureTest {
                 """));
     }
 
+    /**
+     * ADR-0024: text is a sequence of code points, not UTF-16 code units.
+     *
+     * <p>Before this, `.length()` counted four for a three-character text, `.to_list()` split
+     * the emoji into two lone surrogates, and indexing returned half a character. Every
+     * operation below has to agree, which is the whole point of stating one unit.
+     */
+    @Test
+    void textIsCountedInCodePoints() {
+        assertEquals("3\n", ok("print \"a\uD83D\uDE00b\".length()"));
+        assertEquals("[\"a\", \"\uD83D\uDE00\", \"b\"]\n",
+                ok("print \"a\uD83D\uDE00b\".to_list()"));
+        assertEquals("\uD83D\uDE00\n", ok("print \"a\uD83D\uDE00b\"[1]"));
+        assertEquals("b\n", ok("print \"a\uD83D\uDE00b\"[-1]"));
+        // Iteration agrees with indexing: three characters, not four.
+        assertEquals("a|\n\uD83D\uDE00|\nb|\n", ok("""
+                for c in "a\uD83D\uDE00b"
+                  print c + "|"
+                end
+                """));
+        // A reversed text reverses characters, so the emoji survives it whole.
+        assertEquals("b\uD83D\uDE00a\n", ok("print \"a\uD83D\uDE00b\".reverse()"));
+        // Singleton astral character: one character, and reversing it is itself.
+        assertEquals("1\n\uD83D\uDE00\n", ok("""
+                print "\uD83D\uDE00".length()
+                print "\uD83D\uDE00".reverse()
+                """));
+        // ASCII and BMP text keep their old counts; this is not allowed to move them.
+        assertEquals("5\n1\n3\n", ok("""
+                print "h\u00e9llo".length()
+                print "\u20ac".length()
+                print "abc".length()
+                """));
+    }
+
+    /**
+     * The bounded text methods take character offsets too. A `substring` or `pad` that
+     * counted storage units would disagree with `length()` on the same value.
+     */
+    @Test
+    void boundedTextMethodsCountCodePoints() {
+        assertEquals("\uD83D\uDE00\n", ok("print \"a\uD83D\uDE00b\".substring(1, 2)"));
+        assertEquals("a\uD83D\uDE00b--\n", ok("print \"a\uD83D\uDE00b\".pad_end(5, \"-\")"));
+        // `find` reports a character offset, so it lines up with indexing.
+        assertEquals("2\n", ok("print \"a\uD83D\uDE00b\".find(\"b\")"));
+        assertEquals("1\n", ok("print \"a\uD83D\uDE00b\".find(\"\uD83D\uDE00\")"));
+        assertEquals("-1\n", ok("print \"abc\".find(\"z\")"));
+    }
+
+    /**
+     * The characters a text yields must reassemble into that text. A split surrogate pair
+     * cannot, which is how it would show up as corruption later.
+     */
+    @Test
+    void textCharactersReassembleIntoTheText() {
+        assertEquals("a\uD83D\uDE00b\na\uD83D\uDE00b\na\uD83D\uDE00b\n", ok("""
+                original = "a\uD83D\uDE00b"
+                print original.to_list().join("")
+                print original.chars().join("")
+                print original.characters().join("")
+                """));
+        // And the length of the parts equals the length of the whole, which is the property
+        // that was false before: four characters for a three-character text.
+        assertEquals("3\n3\n3\n", ok("""
+                original = "a\uD83D\uDE00b"
+                print original.to_list().length()
+                print original.chars().length()
+                print original.length()
+                """));
+    }
+
     @Test
     void sortingMixedData() {
         assertEquals("[1, 2, 3]\n", ok("print [3, 1, 2].sort()"));

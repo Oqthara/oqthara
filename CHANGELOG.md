@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Text counts code points, not UTF-16 units.** `"a😀b".length()` reported `4` for a
+  three-character text, `.to_list()` and `.characters()` split the emoji into two lone
+  surrogates (values that cannot be encoded as UTF-8), and `text[i]` returned half a
+  character — while `.chars()` and slicing already counted code points. Every operation that
+  measures, indexes, walks, slices or reverses text now agrees: `length()` is `3`, `[1]` is
+  `"😀"`, `.reverse()` is `"b😀a"`, `.find()` returns a character offset, and
+  `.substring()`/`.pad_*()` take character bounds. ASCII and BMP text are unchanged. See
+  [ADR-0024](docs/adr/0024-text-is-a-sequence-of-code-points.md).
+
 ### Added
 - **`frozenset`, the immutable and hashable set.** `frozenset([1, 2])` holds the same
   operations as `set` minus the mutators, and is accepted as a map key or a set member
