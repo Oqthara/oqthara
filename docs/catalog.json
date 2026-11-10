@@ -146,6 +146,12 @@
       "slug": "docs/adr/0023-collection-protocols"
     },
     {
+      "path": "docs/adr/0024-text-is-a-sequence-of-code-points.md",
+      "title": "ADR-0024 — Text is a sequence of code points",
+      "section": "adr",
+      "slug": "docs/adr/0024-text-is-a-sequence-of-code-points"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

@@ -621,7 +621,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
 
     private OqCallable textMethod(String text, String name, Span span) {
         return switch (name) {
-            case "length", "size" -> fixed(name, 0, (host, args) -> (long) text.length());
+            case "length", "size" -> fixed(name, 0, (host, args) -> (long) Values.codePointCount(text));
             case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(text, span));
             case "upper", "uppercase" -> fixed(name, 0, (host, args) -> text.toUpperCase(java.util.Locale.ROOT));
             case "lower", "lowercase" -> fixed(name, 0, (host, args) -> text.toLowerCase(java.util.Locale.ROOT));
@@ -633,11 +633,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                             Values.display(args.get(0))), -1))));
             case "lines" -> fixed(name, 0, (host, args) -> new ArrayList<Object>(
                     List.of(text.split("\\R", -1))));
-            case "chars" -> fixed(name, 0, (host, args) -> {
-                List<Object> chars = new ArrayList<>();
-                text.codePoints().forEach(cp -> chars.add(new String(Character.toChars(cp))));
-                return chars;
-            });
+            case "chars" -> fixed(name, 0, (host, args) -> Values.textCharacters(text));
             case "replace" -> fixed(name, 2, (host, args) ->
                     text.replace(Values.display(args.get(0)), Values.display(args.get(1))));
             case "replace_all" -> fixed(name, 2, (host, args) ->
@@ -647,17 +643,25 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                     text.startsWith(Values.display(args.get(0))));
             case "ends_with", "ends" -> fixed(name, 1, (host, args) ->
                     text.endsWith(Values.display(args.get(0))));
-            case "find", "index_of" -> fixed(name, 1, (host, args) ->
-                    (long) text.indexOf(Values.display(args.get(0))));
+            case "find", "index_of" -> fixed(name, 1, (host, args) -> {
+                int at = text.indexOf(Values.display(args.get(0)));
+                // Report the position as a character offset, so it agrees with `length` and
+                // indexing per ADR-0024. A -1 "not found" stays -1.
+                return at < 0 ? -1L : (long) text.codePointCount(0, at);
+            });
             case "substring", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
                     (host, args, callSpan) -> {
+                        // Bounds are character offsets, per ADR-0024, so they are converted to
+                        // UTF-16 offsets before reaching String.substring.
+                        int count = Values.codePointCount(text);
                         int from = ((Number) args.get(0)).intValue();
-                        if (from < 0) from = text.length() + from;
-                        int to = args.size() > 1 ? ((Number) args.get(1)).intValue() : text.length();
-                        if (to < 0) to = text.length() + to;
-                        from = Math.max(0, Math.min(from, text.length()));
-                        to = Math.max(from, Math.min(to, text.length()));
-                        return text.substring(from, to);
+                        if (from < 0) from = count + from;
+                        int to = args.size() > 1 ? ((Number) args.get(1)).intValue() : count;
+                        if (to < 0) to = count + to;
+                        from = Math.max(0, Math.min(from, count));
+                        to = Math.max(from, Math.min(to, count));
+                        return text.substring(
+                                text.offsetByCodePoints(0, from), text.offsetByCodePoints(0, to));
                     });
             case "repeat" -> fixed(name, 1, (host, args) ->
                     text.repeat(((Number) args.get(0)).intValue()));
@@ -668,26 +672,24 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "words" -> fixed(name, 0, (host, args) -> new ArrayList<Object>(
                     List.of(text.strip().isEmpty() ? new String[0] : text.strip().split("\\s+"))));
             case "number", "to_number" -> fixed(name, 0, (host, args) -> parseNumber(text, span));
-            case "characters" -> fixed(name, 0, (host, args) -> {
-                List<Object> chars = new ArrayList<>();
-                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
-                return chars;
-            });
-            case "to_list", "list" -> fixed(name, 0, (host, args) -> {
-                List<Object> chars = new ArrayList<>();
-                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
-                return chars;
-            });
+            case "characters" -> fixed(name, 0, (host, args) -> Values.textCharacters(text));
+            case "to_list", "list" -> fixed(name, 0, (host, args) -> Values.textCharacters(text));
             case "to_set", "set" -> fixed(name, 0, (host, args) -> {
                 Set<Object> chars = new OqSet();
-                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+                for (Object c : Values.textCharacters(text)) chars.add(c);
                 return chars;
             });
-            case "reverse" -> fixed(name, 0, (host, args) ->
-                    new StringBuilder(text).reverse().toString());
+            case "reverse" -> fixed(name, 0, (host, args) -> {
+                // Reverse characters, not UTF-16 units: StringBuilder.reverse would reorder the
+                // two halves of a surrogate pair and produce two lone surrogates per ADR-0024.
+                List<Object> chars = Values.textCharacters(text);
+                java.util.Collections.reverse(chars);
+                StringBuilder out = new StringBuilder();
+                for (Object c : chars) out.append((String) c);
+                return out.toString();
+            });
             case "sorted" -> fixed(name, 0, (host, args) -> {
-                List<Object> chars = new ArrayList<>();
-                for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
+                List<Object> chars = Values.textCharacters(text);
                 chars.sort((a, b) -> Values.compare(a, b, span));
                 return chars;
             });
@@ -725,16 +727,16 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     }
 
     private static String pad(String text, List<Object> args, boolean start) {
+        // Widths are character counts, per ADR-0024, so the padding is built from whole
+        // characters rather than trimmed to a UTF-16 length that could split a surrogate pair.
         int width = ((Number) args.get(0)).intValue();
         String fill = args.size() > 1 ? Values.display(args.get(1)) : " ";
-        if (fill.isEmpty()) fill = " ";
+        List<Object> fillChars = Values.textCharacters(fill);
+        if (fillChars.isEmpty()) fillChars = List.of(" ");
+        int needed = width - Values.codePointCount(text);
+        if (needed <= 0) return text;
         StringBuilder padding = new StringBuilder();
-        while (text.length() + padding.length() < width) {
-            padding.append(fill);
-        }
-        if (padding.length() > width - text.length()) {
-            padding.setLength(Math.max(0, width - text.length()));
-        }
+        for (int i = 0; i < needed; i++) padding.append(fillChars.get(i % fillChars.size()));
         return start ? padding + text : text + padding;
     }
 

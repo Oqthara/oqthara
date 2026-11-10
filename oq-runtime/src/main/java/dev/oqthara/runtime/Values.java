@@ -160,6 +160,44 @@ public final class Values {
         return s;
     }
 
+    /**
+     * The number of characters in {@code s}, counting code points rather than UTF-16 units.
+     *
+     * <p>Text is a sequence of code points per [ADR-0024]; a character outside the basic
+     * multilingual plane occupies two {@code char}s but is one character to the language.
+     */
+    public static int codePointCount(String s) {
+        return s.codePointCount(0, s.length());
+    }
+
+    /**
+     * The character at {@code index}, counting code points rather than UTF-16 units.
+     *
+     * <p>The caller is responsible for bounds; {@link #index} checks against
+     * {@link #codePointCount} first.
+     */
+    public static String codePointAt(String s, int index) {
+        return new String(Character.toChars(s.codePointAt(s.offsetByCodePoints(0, index))));
+    }
+
+    /**
+     * Every character of {@code s} as a one-character text, in order.
+     *
+     * <p>This is the single implementation behind iteration, {@code .to_list()},
+     * {@code .to_set()}, {@code .sorted()} and destructuring, so that all of them agree on
+     * what a character is.
+     */
+    public static List<Object> textCharacters(String s) {
+        List<Object> chars = new ArrayList<>();
+        int i = 0;
+        while (i < s.length()) {
+            int cp = s.codePointAt(i);
+            chars.add(new String(Character.toChars(cp)));
+            i += Character.charCount(cp);
+        }
+        return chars;
+    }
+
     public static String quote(String s) {
         StringBuilder sb = new StringBuilder("\"");
         for (int i = 0; i < s.length(); i++) {
@@ -520,11 +558,12 @@ public final class Values {
         }
         if (target instanceof String s) {
             long i = integerIndex(key, span);
-            long index = i < 0 ? s.length() + i : i;
-            if (index < 0 || index >= s.length()) {
-                throw new OqError("index " + i + " is out of range for text of length " + s.length(), span);
+            int count = codePointCount(s);
+            long index = i < 0 ? count + i : i;
+            if (index < 0 || index >= count) {
+                throw new OqError("index " + i + " is out of range for text of length " + count, span);
             }
-            return String.valueOf(s.charAt((int) index));
+            return codePointAt(s, (int) index);
         }
         if (target instanceof OqData d) {
             if (key instanceof String name) return d.get(name);
@@ -621,10 +660,8 @@ public final class Values {
         }
 
         if (target instanceof String s) {
-            List<Object> chars = new ArrayList<>();
-            s.codePoints().forEach(cp -> chars.add(new String(Character.toChars(cp))));
             StringBuilder out = new StringBuilder();
-            for (Object c : sliceItems(chars, from, to, stride, span)) out.append((String) c);
+            for (Object c : sliceItems(textCharacters(s), from, to, stride, span)) out.append((String) c);
             return out.toString();
         }
         if (target instanceof OqRange r) {
@@ -678,7 +715,7 @@ public final class Values {
     }
 
     public static int size(Object value, Span span) {
-        if (value instanceof String s) return s.length();
+        if (value instanceof String s) return codePointCount(s);
         if (value instanceof List<?> l) return l.size();
         if (value instanceof Map<?, ?> m) return m.size();
         if (value instanceof Set<?> s) return s.size();
@@ -716,11 +753,7 @@ public final class Values {
         if (value instanceof Set<?> set) return new ArrayList<>(set);
         if (value instanceof OqRange range) return range.toList();
         if (value instanceof Map<?, ?> map) return new ArrayList<>(map.keySet());
-        if (value instanceof String text) {
-            List<Object> chars = new ArrayList<>();
-            for (int i = 0; i < text.length(); i++) chars.add(String.valueOf(text.charAt(i)));
-            return chars;
-        }
+        if (value instanceof String text) return textCharacters(text);
         return null;
     }
 
@@ -792,11 +825,7 @@ public final class Values {
         if (value instanceof Set<?> s) return new ArrayList<>(s);
         if (value instanceof OqRange r) return r.toList();
         if (value instanceof Map<?, ?> m) return new ArrayList<>(m.keySet());
-        if (value instanceof String s) {
-            List<Object> chars = new ArrayList<>();
-            for (int i = 0; i < s.length(); i++) chars.add(String.valueOf(s.charAt(i)));
-            return chars;
-        }
+        if (value instanceof String s) return textCharacters(s);
         throw new OqError("cannot loop over " + typeName(value), span,
                 "Loops work with lists, sets, maps (keys), ranges and text. "
                         + (isNumber(value)
@@ -818,11 +847,7 @@ public final class Values {
         if (value instanceof Set<?> s) return new OqIterator(s.iterator(), value);
         if (value instanceof OqRange r) return new OqIterator(r.toList().iterator(), value);
         if (value instanceof Map<?, ?> m) return new OqIterator(m.keySet().iterator(), value);
-        if (value instanceof String s) {
-            List<Object> chars = new ArrayList<>();
-            for (int i = 0; i < s.length(); i++) chars.add(String.valueOf(s.charAt(i)));
-            return new OqIterator(chars.iterator(), value);
-        }
+        if (value instanceof String s) return new OqIterator(textCharacters(s).iterator(), value);
         throw new OqError("cannot iterate over " + typeName(value), span,
                 "iter() works with lists, tuples, sets, maps (keys), ranges and text. "
                         + (isNumber(value)
