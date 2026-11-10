@@ -80,6 +80,18 @@ public final class Value {
         requireHashable(value, role, Errors.current(), 0);
     }
 
+    /**
+     * The same check at a caller-supplied position.
+     *
+     * <p>The interpreter does not maintain {@link Errors#current()}, so a refusal raised from
+     * inside {@code OqMap.put} during interpretation would otherwise report a synthetic
+     * {@code <unknown>:1:1} instead of the line the program wrote. Callers that hold the span
+     * of the expression pass it here.
+     */
+    public static void requireHashable(Object value, String role, Span span) {
+        requireHashable(value, role, span, 0);
+    }
+
     private static void requireHashable(Object value, String role, Span span, int depth) {
         if (depth > MAX_DEPTH) throw new InvalidHashException();
         if (value instanceof OqFrozenSet frozen) {

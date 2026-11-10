@@ -200,6 +200,28 @@ class ErrorMessageContractTest {
     }
 
     @Test
+    void anUnhashableKeyIsReportedAtTheExpressionThatWroteIt() {
+        // The refusal is raised inside the collection, which has no source position of its own.
+        // Before the span was threaded through, both backends answered `<unknown>:1:1` and
+        // blamed whatever the program's first line was, which sends the reader to the wrong
+        // line. Each of these puts the offending literal on line 3.
+        for (String stmt : new String[] {"m = {}\nm[[9]] = 1", "s = {[9]}", "m = {[9]: 1}"}) {
+            String source = "a = 1\nb = 2\n" + stmt + "\n";
+            int offending = 1;
+            String[] lines = source.split("\n");
+            for (int i = 0; i < lines.length; i++) if (lines[i].contains("[9]")) offending = i + 1;
+            OqRunner.Result result = run(source);
+            assertEquals(1, result.code(), stmt + "\n" + result.stderr());
+            assertTrue(result.stderr().contains("cannot be used as a"),
+                    stmt + "\n" + result.stderr());
+            assertTrue(result.stderr().contains(":" + offending + ":"),
+                    "expected the position on line " + offending + ", got:\n" + result.stderr());
+            assertFalse(result.stderr().contains("<unknown>"),
+                    "expected a real file position, got:\n" + result.stderr());
+        }
+    }
+
+    @Test
     void changingACollectionInsideACallbackIsWellDefined() {
         assertEquals("[nothing, nothing, nothing]\n", ok("""
                 xs = [1, 2, 3]

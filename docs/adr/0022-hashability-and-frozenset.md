@@ -172,4 +172,23 @@ behaviour and were measured before the change.
 | `frozenset([1]) == set([1])` | n/a | `false` |
 | `bytes(3)` | `'bytes' is not defined` | still absent, deliberately |
 
+### Positions, added after this ADR merged
+
+The refusal above was correct in message and wrong in position. It is raised inside the
+collection, which has no span, so it fell back to `Errors.current()` — the last marked
+position. The compiled backend marks spans, so it reported a plausible-looking line; the
+**interpreter marks none**, so it reported `<unknown>:1:1` and pointed at line 1 of whatever
+the program was. Both are wrong, and the interpreter's is unusable.
+
+| Program | Was (interpreter) | Now (both backends) |
+| --- | --- | --- |
+| `m = {}` / `m[[1]] = 2` | `<unknown>:1:1`, blames line 1 | `:2:2` |
+| `s = {[1]}` | `<unknown>:1:1` | `:1:6` |
+| `m = {[1]: "a"}` | `<unknown>:1:1` (interpreter), `<unknown>:1:1` (compiled) | `:1:6` |
+
+`Value.requireHashable` gained a span-taking overload; the interpreter's set and map literals
+and `Values.setIndex` pass the span they already hold, and the compiled set and map literals
+now `mark` their span the way every other operation does. `ErrorMessageContractTest` asserts
+the reported line, so this cannot silently regress.
+
 The Python reference consulted for naming was CPython 3.13 on 2026-11-10, per §9.6.

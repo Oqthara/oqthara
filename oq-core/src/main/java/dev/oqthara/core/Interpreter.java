@@ -13,6 +13,7 @@ import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
 import dev.oqthara.runtime.OqTuple;
 import dev.oqthara.runtime.Span;
+import dev.oqthara.runtime.Value;
 import dev.oqthara.runtime.Values;
 import dev.oqthara.runtime.WaitedBudget;
 
@@ -525,13 +526,19 @@ public final class Interpreter implements OqHost {
             }
             case Ast.SetLit set -> {
                 Set<Object> items = new OqSet();
-                for (Ast.Expr item : set.items()) items.add(evaluate(item, env));
+                for (Ast.Expr item : set.items()) {
+                    Object value = evaluate(item, env);
+                    Value.requireHashable(value, "a set member", item.span());
+                    items.add(value);
+                }
                 yield items;
             }
             case Ast.MapLit map -> {
                 Map<Object, Object> entries = new OqMap();
                 for (Ast.Entry entry : map.entries()) {
-                    entries.put(evaluate(entry.key(), env), evaluate(entry.value(), env));
+                    Object key = evaluate(entry.key(), env);
+                    Value.requireHashable(key, "a map key", entry.key().span());
+                    entries.put(key, evaluate(entry.value(), env));
                 }
                 yield entries;
             }
