@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Examples for the modules added this round, and a test that runs them.** `urls.oq`,
+  `hashing.oq`, `concurrency.oq` and `database.oq` demonstrate URL handling, hashing and PBKDF2,
+  the mutex and `await`, and SQLite with transaction rollback and a refused injection. §17.9
+  requires an example per module, and these four had none. `ExamplesRunTest` executes every
+  example through the real CLI; the README previously claimed CI did this, and nothing did.
+- **SQLite database support.** `db_query(path, sql, params)` reads, `db_execute(path, sql, params)`
+  writes, and `db_transaction(path, body)` commits when the body returns and rolls back when it
+  raises. There is no connection value: every call opens, works and closes, so a connection
+  cannot be leaked — the language has no `close`, and a handle would be the first API to leak on
+  the error path. Parameters are always bound, never spliced, and the placeholder count is
+  checked because SQLite treats an unbound placeholder as NULL: a forgotten parameter previously
+  wrote `nothing` and exited 0. SQL NULL maps to `nothing` in both directions. This adds the
+  project's first external runtime dependency, which grows the standalone jar from 435 KB to
+  13.5 MB; the trade is recorded in ADR-0040.
+- **`oq doc` now scans every standard library source file.** It previously read only
+  `Stdlib.java`, so a built-in defined in its own module file was missing from a reference page
+  that claims to list every function. The page went from 126 to 129 functions.
 - **A mutex, a bounded `await`, and one shared task executor.** `mutex()` returns the one
   concurrency primitive the language now has: `m.lock(body)` acquires, runs the body, and
   releases however the body ends, so a raising body cannot leave the lock held. It takes a
@@ -75,6 +92,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference documentation now lists 105 built-in functions, up from 98.
 
 ### Fixed
+- **`await` charged the timeout instead of the wait.** `await(task, 10)` billed ten seconds to
+  the program's 60-second wait budget even when the task had already finished, so eight awaits of
+  instant work raised `the program waited for too long` in microseconds — found by writing
+  `examples/concurrency.oq`. Without a timeout the same call billed nothing at all, so a loop
+  could wait forever by never passing one. Both now bill the time actually waited, and two
+  regression tests fail on the old behaviour.
+- **A built jar now carries the database driver.** `oq build` copied only `dev.oqthara` classes
+  into the jar it produced, so a program that called `db_query` built without error and then
+  failed at run time with "The SQLite driver is missing from this build" — the message was
+  accurate, but a built jar is documented as standalone. The driver needs its SLF4J binding as
+  well, since it logs on first use and the jar otherwise dies with `ClassNotFoundException:
+  org.slf4j.LoggerFactory`. Both travel now, and the jar for `examples/database.oq` grows to
+  13,859,109 B; `BuildJarTest` asserts it prints exactly what the interpreter prints.
+- **Building a jar no longer re-reads its dependencies once per class.** `JarBuilder` asked each
+  source for one entry at a time, and reading a single entry out of a zip means inflating every
+  entry before it, so copying the 143 driver and SLF4J classes re-inflated the driver archive
+  143 times. Carrying the driver therefore cost ~19 s per built jar instead of ~1.4 s, which
+  made `./gradlew build` appear to hang: `BuildJarTest` alone went from 1m 23s to 17m 5s and the
+  full build from 9m to over 24m. Each source now hands its wanted entries to the builder in a
+  single pass. The jar's contents are unchanged, and a regression test fails at 19,062 ms on the
+  old code.
 - **A static field can be read off its class.** `Integer.MAX_VALUE`, `Math.PI` and every other
   static field were unreachable: the bridge asked the `Class` *object* for a field of that
   name and found none, so the program failed with `cannot read field 'MAX_VALUE' on java

@@ -39,7 +39,7 @@ final class DocGenerator {
         }
         Path output = root.resolve("docs/stdlib/reference.md");
         try {
-            String markdown = generate(builtins, methods);
+            String markdown = generateFrom(stdlib, methods);
             Files.createDirectories(output.getParent());
             Files.writeString(output, markdown, StandardCharsets.UTF_8);
         } catch (Exception e) {
@@ -234,8 +234,27 @@ final class DocGenerator {
         }
     }
 
-    static String generate(Path builtinsFile, Path methodsFile) throws Exception {
-        Map<String, List<String>> builtins = extract(builtinsFile, "NativeFunction");
+    /**
+     * Scans every {@code *Module.java} in the standard library package, not just
+     * {@code Stdlib.java}. Modules live in their own files, and reading only one file would
+     * leave their functions out of a page that claims to list every built-in.
+     */
+    static String generateFrom(Path stdlibDir, Path methodsFile) throws Exception {
+        Map<String, List<String>> builtins = new TreeMap<>();
+        try (var files = Files.list(stdlibDir)) {
+            List<Path> sources = files
+                    .filter(p -> p.getFileName().toString().endsWith(".java"))
+                    .sorted()
+                    .toList();
+            for (Path source : sources) {
+                builtins.putAll(extract(source, "NativeFunction"));
+            }
+        }
+        return render(builtins, methodsFile);
+    }
+
+    private static String render(Map<String, List<String>> builtins, Path methodsFile)
+            throws Exception {
         Map<String, List<String>> methods = new LinkedHashMap<>();
         extractMethods(methodsFile, methods);
 

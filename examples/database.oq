@@ -1,0 +1,43 @@
+# A database with no connection to leak: every call opens, works and closes.
+# Run: oq run examples/database.oq
+path = path_join(cwd(), "oq-example.db")
+if exists(path)
+  delete(path)
+end
+
+db_execute(path, "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT NOT NULL, qty INTEGER NOT NULL)", [])
+
+# A transaction is a body. It commits when the body returns and rolls back when it raises.
+db_transaction(path, fun()
+  for name in ["bolt", "nut", "washer"]
+    db_execute(path, "INSERT INTO item (name, qty) VALUES (?, ?)", [name, 2])
+  end
+  return true
+end)
+
+rows = db_query(path, "SELECT name, qty FROM item ORDER BY name", [])
+print "{rows.length()} items stored"
+total = 0
+for row in rows
+  print "  {row[\"name\"]} x {row[\"qty\"]}"
+  total = total + row["qty"]
+end
+print "total: {total}"
+
+# Parameters are bound, never spliced, so a quote in the data is only data.
+payload = "'; DROP TABLE item; --"
+db_execute(path, "INSERT INTO item (name, qty) VALUES (?, ?)", [payload, 1])
+count = db_query(path, "SELECT count(*) AS n FROM item", [])
+print "after an injection attempt: {count[0][\"n\"]} rows, table intact"
+
+try
+  db_transaction(path, fun()
+    db_execute(path, "DELETE FROM item", [])
+    error("the batch was rejected")
+  end)
+catch err
+  print "rolled back: {err.message}"
+end
+print "rows after rollback: {db_query(path, \"SELECT count(*) AS n FROM item\", [])[0][\"n\"]}"
+
+delete(path)

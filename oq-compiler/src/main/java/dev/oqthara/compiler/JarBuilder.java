@@ -35,6 +35,13 @@ public final class JarBuilder {
             "dev/oqthara/cli/Modules",
             "dev/oqthara/cli/OqRunner",
             "dev/oqthara/cli/Details",
+            // A built jar must be standalone, and the SQLite driver is the first dependency
+            // outside dev.oqthara that a program can reach. Without these the jar compiles and
+            // then fails at run time with "the SQLite driver is missing from this build".
+            "org/sqlite/",
+            // sqlite-jdbc logs through SLF4J, so the API and the no-op binding the stdlib adds
+            // have to travel with it; the API alone fails with ClassNotFoundException.
+            "org/slf4j/",
     };
 
     private JarBuilder() {
@@ -68,7 +75,7 @@ public final class JarBuilder {
                 : ClassFileWriter.programClass(mainClass, source);
 
         Set<String> written = new LinkedHashSet<>();
-        int classes = 0;
+        int classes;
         int skipped = 0;
         try (OutputStream file = Files.newOutputStream(output);
              JarOutputStream jar = new JarOutputStream(file)) {
@@ -80,27 +87,11 @@ public final class JarBuilder {
             jar.write(programBytes);
             jar.closeEntry();
             written.add(mainClass.replace('.', '/') + ".class");
-            classes++;
 
             for (ClassSource classSource : classSources()) {
-                for (String entryName : classSource.entries()) {
-                    if (!isSafeEntryName(entryName)) {
-                        skipped++;
-                        continue;
-                    }
-                    if (!wanted(entryName) || written.contains(entryName)) continue;
-                    byte[] bytes = classSource.read(entryName);
-                    if (bytes == null) {
-                        skipped++;
-                        continue;
-                    }
-                    jar.putNextEntry(new JarEntry(entryName));
-                    jar.write(bytes);
-                    jar.closeEntry();
-                    written.add(entryName);
-                    classes++;
-                }
+                skipped += classSource.copyInto(jar, written);
             }
+            classes = written.size();
 
             if (compiledClass == null) {
                 jar.putNextEntry(new JarEntry("oq/main.oq"));
@@ -134,10 +125,14 @@ public final class JarBuilder {
         return false;
     }
 
+    /**
+     * A place classes can be copied from. Sources hand their wanted entries to the builder in
+     * one pass: reading a single entry out of a jar means inflating everything before it, so a
+     * get-one-at-a-time API would re-inflate the archive once per copied class.
+     */
     private interface ClassSource {
-        List<String> entries() throws IOException;
-
-        byte[] read(String entry) throws IOException;
+        /** Copies every wanted entry not already written; returns how many were skipped. */
+        int copyInto(JarOutputStream jar, Set<String> written) throws IOException;
     }
 
     private static List<ClassSource> classSources() {
@@ -174,51 +169,54 @@ public final class JarBuilder {
     }
 
     private static ClassSource directorySource(Path root) {
-        return new ClassSource() {
-            @Override
-            public List<String> entries() throws IOException {
-                try (Stream<Path> stream = Files.walk(root)) {
-                    return stream.filter(Files::isRegularFile)
-                            .map(p -> root.relativize(p).toString().replace('\\', '/'))
-                            .toList();
+        return (jar, written) -> {
+            List<String> entries;
+            try (Stream<Path> stream = Files.walk(root)) {
+                entries = stream.filter(Files::isRegularFile)
+                        .map(p -> root.relativize(p).toString().replace('\\', '/'))
+                        .toList();
+            }
+            int skipped = 0;
+            for (String entry : entries) {
+                if (!isSafeEntryName(entry)) {
+                    skipped++;
+                    continue;
                 }
+                if (!wanted(entry) || written.contains(entry)) continue;
+                jar.putNextEntry(new JarEntry(entry));
+                jar.write(Files.readAllBytes(root.resolve(entry)));
+                jar.closeEntry();
+                written.add(entry);
             }
-
-            @Override
-            public byte[] read(String entry) throws IOException {
-                Path file = root.resolve(entry);
-                return Files.isRegularFile(file) ? Files.readAllBytes(file) : null;
-            }
+            return skipped;
         };
     }
 
+    /**
+     * Copies a jar's wanted entries in a single pass over the archive. The builder shares one
+     * {@code written} set across all sources, so the first source to supply an entry wins.
+     */
     private static ClassSource jarSource(Path jarPath) {
-        return new ClassSource() {
-            @Override
-            public List<String> entries() throws IOException {
-                List<String> names = new ArrayList<>();
-                try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
-                    ZipEntry entry;
-                    while ((entry = zip.getNextEntry()) != null) {
-                        if (!entry.isDirectory()) names.add(entry.getName());
+        return (jar, written) -> {
+            try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
+                ZipEntry entry;
+                int skipped = 0;
+                while ((entry = zip.getNextEntry()) != null) {
+                    if (entry.isDirectory()) continue;
+                    String name = entry.getName();
+                    if (!isSafeEntryName(name)) {
+                        skipped++;
+                        continue;
                     }
+                    if (!wanted(name) || written.contains(name)) continue;
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    zip.transferTo(buffer);
+                    jar.putNextEntry(new JarEntry(name));
+                    jar.write(buffer.toByteArray());
+                    jar.closeEntry();
+                    written.add(name);
                 }
-                return names;
-            }
-
-            @Override
-            public byte[] read(String entry) throws IOException {
-                try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
-                    ZipEntry current;
-                    while ((current = zip.getNextEntry()) != null) {
-                        if (current.getName().equals(entry)) {
-                            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-                            zip.transferTo(buffer);
-                            return buffer.toByteArray();
-                        }
-                    }
-                }
-                return null;
+                return skipped;
             }
         };
     }

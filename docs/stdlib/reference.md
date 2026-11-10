@@ -33,6 +33,9 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `cwd` | built-in |
 | `date_parse` | built-in |
 | `datetime` | built-in |
+| `db_execute` | built-in |
+| `db_query` | built-in |
+| `db_transaction` | built-in |
 | `delete` | built-in |
 | `done` | built-in |
 | `enumerate` | built-in |

@@ -1,6 +1,8 @@
 package dev.oqthara.runtime;
 
 import org.junit.jupiter.api.BeforeEach;
+
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -35,6 +37,49 @@ class WaitedBudgetTest {
             WaitedBudget.charge(10_000, span);
         }
         assertThrows(OqError.class, () -> WaitedBudget.charge(10_000, span));
+    }
+
+    @Test
+    void aFinishedTaskChargesAlmostNothingWhateverItsTimeout() {
+        // Found by an example: eight awaits of instant work with a 10-second limit reported
+        // "waited for too long" in microseconds, because the timeout itself was billed as
+        // though the program had spent it. The timeout is a ceiling, not a cost.
+        WaitedBudget.reset();
+        CompletableFuture<Object> done = CompletableFuture.completedFuture(1);
+        for (int i = 0; i < 20; i++) {
+            assertEquals(1, new OqTask(done).awaitWithin(10_000, span));
+        }
+        assertDoesNotThrow(() -> WaitedBudget.charge(WaitedBudget.MAX_MILLIS, span));
+    }
+
+    @Test
+    void aBoundedAwaitIsBilledForTheTimeItWaited() {
+        // A 10-second ceiling on a task that takes milliseconds must charge milliseconds. A
+        // full-limit charge afterwards can only succeed if the real wait was billed.
+        WaitedBudget.reset();
+        OqTask slow = slowTask(200);
+        assertEquals(1, slow.awaitWithin(10_000, span));
+        assertThrows(OqError.class, () -> WaitedBudget.charge(WaitedBudget.MAX_MILLIS, span));
+    }
+
+    @Test
+    void anUnboundedAwaitIsBilledForTheTimeItWaited() {
+        // The same example: await(task) with no limit charged nothing at all, so a loop could
+        // wait forever by never passing a timeout.
+        WaitedBudget.reset();
+        assertEquals(1, slowTask(200).await(span));
+        assertThrows(OqError.class, () -> WaitedBudget.charge(WaitedBudget.MAX_MILLIS, span));
+    }
+
+    private static OqTask slowTask(long millis) {
+        return new OqTask(CompletableFuture.supplyAsync(() -> {
+            try {
+                Thread.sleep(millis);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return 1;
+        }));
     }
 
     @Test
