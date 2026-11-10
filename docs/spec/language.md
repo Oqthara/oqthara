@@ -582,7 +582,7 @@ views, so a map cannot be changed behind a list you are holding.
 | `frozenset` | yes | no | yes | no | insertion |
 | `range` | yes | yes | yes | no | counting |
 | `text` | yes | yes | substring | no | position |
-| `iterator` | no | no | no | position | walk order |
+| `iterator` | no | no | no | no | walk order |
 
 An `iterator` has no length, no index and no membership test, because each of those would
 consume or depend on the walk's position. Sets and maps are **insertion-ordered and

@@ -1,0 +1,12 @@
+frozenset({3, 1, 2})
+3
+true
+false
+frozenset({3, 1, 2, 4})
+frozenset({3, 2})
+frozenset({1})
+frozenset({1, 4})
+true
+frozenset
+0
+true
