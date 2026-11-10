@@ -31,6 +31,8 @@ import java.time.Duration;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
+import java.time.format.DateTimeFormatter;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -76,6 +78,8 @@ public final class Stdlib {
         installFiles(interpreter);
         installJson(interpreter);
         installEncoding(interpreter);
+        installCsv(interpreter);
+        installDates(interpreter);
         installTime(interpreter);
         installHttp(interpreter);
         installConcurrency(interpreter);
@@ -782,6 +786,197 @@ public final class Stdlib {
             if (!option.flag) sb.append(':').append(option.type);
         }
         return sb.toString();
+    }
+
+    /**
+     * CSV per RFC 4180.
+     *
+     * <p>Quoting is the whole of CSV and it is what a splitting implementation gets wrong:
+     * {@code a,"b,c"} has two fields, and so does {@code a,",b"}. The parser below walks the
+     * text once and never splits.
+     */
+    private static void installCsv(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.of("csv_parse", 1, (host, args, span) ->
+                csvParse(text(args.get(0), "csv_parse", span), ',', false, span)));
+        interpreter.defineBuiltin(NativeFunction.of("csv_parse", 2, (host, args, span) ->
+                csvParse(text(args.get(0), "csv_parse", span),
+                        csvDelimiter(args.get(1), span), false, span)));
+        interpreter.defineBuiltin(NativeFunction.of("csv_parse", 3, (host, args, span) ->
+                csvParse(text(args.get(0), "csv_parse", span),
+                        csvDelimiter(args.get(1), span), Values.truthy(args.get(2)), span)));
+        interpreter.defineBuiltin(NativeFunction.of("csv_write", 1, (host, args, span) ->
+                csvWrite(args.get(0), ',', span)));
+        interpreter.defineBuiltin(NativeFunction.of("csv_write", 2, (host, args, span) ->
+                csvWrite(args.get(0), csvDelimiter(args.get(1), span), span)));
+    }
+
+    /**
+     * The delimiter is one character.
+     *
+     * <p>A multi-character delimiter does not exist in any CSV dialect, and accepting one turns
+     * {@code csv_parse} into a general splitter that callers will reach for when CSV is not what
+     * they have.
+     */
+    private static char csvDelimiter(Object value, Span span) {
+        String delimiter = text(value, "csv_parse", span);
+        if (delimiter.length() != 1) {
+            throw new OqError("a delimiter must be exactly one character, got \""
+                    + delimiter + "\"", span,
+                    "Use , or ; or \t. A longer delimiter is not a CSV dialect.");
+        }
+        if (delimiter.charAt(0) == '"' || delimiter.charAt(0) == '\n'
+                || delimiter.charAt(0) == '\r') {
+            throw new OqError("a delimiter cannot be a quote or a line break", span);
+        }
+        return delimiter.charAt(0);
+    }
+
+    /**
+     * One pass, one quote state.
+     *
+     * <p>Malformed input raises rather than being repaired: a repaired table has the wrong shape
+     * and no one is told, which is worse than a program that stops.
+     */
+    private static Object csvParse(String source, char delimiter, boolean comment, Span span) {
+        List<Object> rows = new ArrayList<>();
+        List<Object> row = new ArrayList<>();
+        StringBuilder field = new StringBuilder();
+        boolean quoted = false;
+        // Whether the row's FIRST field was quoted. A quoted "#id" is data, not a comment, and
+        // the per-field flag is cleared by the delimiter long before the row ends.
+        boolean firstFieldQuoted = false;
+        int line = 1;
+
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (quoted) {
+                if (c == '"') {
+                    if (i + 1 < source.length() && source.charAt(i + 1) == '"') {
+                        field.append('"');
+                        i++;
+                    } else {
+                        quoted = false;
+                        // Text after a closing quote would be silently glued onto the field by a
+                        // lenient parser, so it is refused instead.
+                        if (i + 1 < source.length() && source.charAt(i + 1) != delimiter
+                                && source.charAt(i + 1) != '\n' && source.charAt(i + 1) != '\r') {
+                            throw new OqError("csv_parse() found text after a closing quote on line "
+                                    + line, span,
+                                    "A quoted field must be followed by the delimiter or the end "
+                                            + "of the line.");
+                        }
+                    }
+                } else {
+                    if (c == '\n') line++;
+                    field.append(c);
+                }
+                continue;
+            }
+            if (c == delimiter) {
+                row.add(field.toString());
+                field.setLength(0);
+            } else if (c == '\n' || c == '\r') {
+                if (c == '\r' && i + 1 < source.length() && source.charAt(i + 1) == '\n') i++;
+                row.add(field.toString());
+                field.setLength(0);
+                if (!(comment && !firstFieldQuoted && !row.isEmpty()
+                        && String.valueOf(row.get(0)).startsWith("#"))) {
+                    rows.add(row);
+                }
+                row = new ArrayList<>();
+                firstFieldQuoted = false;
+                line++;
+            } else if (c == '"') {
+                if (field.length() > 0) {
+                    throw new OqError("csv_parse() found a quote inside an unquoted field on line "
+                            + line, span,
+                            "Quote the whole field, or double the quote if one is meant literally.");
+                }
+                quoted = true;
+                if (row.isEmpty()) firstFieldQuoted = true;
+            } else {
+                field.append(c);
+            }
+        }
+        if (quoted) {
+            throw new OqError("csv_parse() reached the end of the text inside a quoted field "
+                    + "that began on line " + line, span, "A quoted field needs a closing quote.");
+        }
+        // A trailing newline ends the last row; anything else is still a row.
+        if (field.length() > 0 || !row.isEmpty()) {
+            row.add(field.toString());
+            if (!(comment && !firstFieldQuoted && !row.isEmpty()
+                    && String.valueOf(row.get(0)).startsWith("#"))) {
+                rows.add(row);
+            }
+        }
+        return rows;
+    }
+
+    /** Quote exactly the fields that need it, and escape a quote by doubling it. */
+    private static String csvWrite(Object value, char delimiter, Span span) {
+        if (!(value instanceof List<?> rows)) {
+            throw new OqError("csv_write() needs a list of rows, got " + Values.typeName(value),
+                    span);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Object rowValue : rows) {
+            if (!(rowValue instanceof List<?> row)) {
+                throw new OqError("csv_write() needs each row to be a list, got "
+                        + Values.typeName(rowValue), span);
+            }
+            for (int i = 0; i < row.size(); i++) {
+                if (i > 0) sb.append(delimiter);
+                sb.append(csvField(Values.display(row.get(i)), delimiter));
+            }
+            sb.append('\n');
+        }
+        String result = sb.toString();
+        if (result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > MAX_TEXT_BYTES) {
+            throw new OqError("csv_write() produced more than " + MAX_TEXT_BYTES + " bytes", span);
+        }
+        return result;
+    }
+
+    private static String csvField(String value, char delimiter) {
+        boolean needsQuotes = value.indexOf(delimiter) >= 0 || value.indexOf('"') >= 0
+                || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0;
+        if (!needsQuotes) return value;
+        return "\"" + value.replace("\"", "\"\"") + "\"";
+    }
+
+    /**
+     * Dates in the shapes the time functions already produce.
+     *
+     * <p>{@code today()} returns {@code YYYY-MM-DD} and {@code now()} returns an ISO-8601
+     * instant ending in {@code Z}, so parsing returns exactly those shapes and a parsed value is
+     * interchangeable with a generated one.
+     */
+    private static void installDates(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.of("date_parse", 1, (host, args, span) ->
+                dateParse(text(args.get(0), "date_parse", span), span)));
+        interpreter.defineBuiltin(NativeFunction.of("instant_parse", 1, (host, args, span) ->
+                instantParse(text(args.get(0), "instant_parse", span), span)));
+    }
+
+    private static String dateParse(String source, Span span) {
+        try {
+            return LocalDate.parse(source, DateTimeFormatter.ISO_LOCAL_DATE).toString();
+        } catch (DateTimeParseException e) {
+            throw new OqError("date_parse() could not read \"" + source + "\"", span,
+                    "Use YYYY-MM-DD. A date with no zone is not given one, because that would "
+                            + "make the result depend on the machine.");
+        }
+    }
+
+    private static String instantParse(String source, Span span) {
+        try {
+            return java.time.Instant.parse(source).toString();
+        } catch (DateTimeParseException e) {
+            throw new OqError("instant_parse() could not read \"" + source + "\"", span,
+                    "Use an ISO-8601 instant with an explicit offset, such as "
+                            + "2026-11-10T13:58:06Z.");
+        }
     }
 
     private static void installTime(Interpreter interpreter) {

@@ -212,6 +212,12 @@
       "slug": "docs/adr/0034-logging-and-argument-parsing"
     },
     {
+      "path": "docs/adr/0035-csv-and-structured-data.md",
+      "title": "ADR-0035: CSV and structured text data",
+      "section": "adr",
+      "slug": "docs/adr/0035-csv-and-structured-data"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

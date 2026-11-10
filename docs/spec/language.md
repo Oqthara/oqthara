@@ -1047,6 +1047,29 @@ print secure_random_hex(8).length()   # 16
 
 JSON: `json_parse(text)`, `json(value)`.
 
+CSV: `csv_parse(text)`, `csv_parse(text, delimiter)`, `csv_parse(text, delimiter, comments)`
+return a list of rows of text, following RFC 4180 quoting. `csv_write(rows)` writes the same
+shape back. A quoted field may contain the delimiter, a line break, or a doubled quote. A
+malformed row raises an error rather than being repaired, because a table with the wrong shape
+and no warning is worse than a program that stops. The delimiter is exactly one character.
+Comment lines beginning with `#` are dropped only when the third argument is `true`; a quoted
+`"#field"` is always data.
+
+```oq
+print csv_parse("a,\"b,c\"")            # [["a", "b,c"]]
+print csv_parse(csv_write([["a", "b,c"]])) # [["a", "b,c"]]
+```
+
+XML is not provided. A parser for it needs namespace resolution, entity rules and a decision
+about external entities, and the last of those is the XXE vulnerability class; an unhardened
+implementation would be a security regression rather than a feature. Recorded as absent in the
+requirement matrix.
+
+Dates: `date_parse(text)` accepts `YYYY-MM-DD` and returns the same shape `today()` produces.
+`instant_parse(text)` accepts an ISO-8601 instant with an explicit offset and returns the same
+`...Z` shape `now()` produces, converting to UTC. A date with no offset is never given one,
+because that would make the result depend on which machine ran the program.
+
 Time: `now()`, `today()`, `datetime()`, `timestamp()`, `sleep(seconds)`.
 
 HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
@@ -1075,7 +1098,9 @@ print parsed.values.port
 print parsed.rest       # ["file.txt"]
 ```
 
-Both are specified by [ADR-0034](../adr/0034-logging-and-argument-parsing.md).
+Logging and argument parsing are specified by
+[ADR-0034](../adr/0034-logging-and-argument-parsing.md); CSV and date parsing by
+[ADR-0035](../adr/0035-csv-and-structured-data.md).
 
 ### Host calls are bounded
 

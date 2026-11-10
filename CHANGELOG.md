@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CSV reading and writing, and date parsing.** `csv_parse` follows RFC 4180 with a real quote
+  state machine rather than splitting on commas, so `a,"b,c"` is two fields and `a,",b"` is
+  two fields; a field may contain the delimiter, a line break, or a doubled quote. Malformed
+  input raises an error naming the line instead of being repaired into a table with the wrong
+  shape. `csv_write` quotes exactly the fields that need it, so writing then reading gives back
+  the same rows. `date_parse` and `instant_parse` return the same shapes `today()` and `now()`
+  already produce, so a parsed value and a generated one are interchangeable. Specified by
+  [ADR-0035](docs/adr/0035-csv-and-structured-data.md). XML is deliberately not implemented —
+  an unhardened hand-written parser would be a security regression, and that is recorded as
+  absent rather than approximated. The reference now lists 109 built-in functions, up from 105.
 - **Logging, and a command-line argument parser.** `log_debug`, `log_info`, `log_warn` and
   `log_error` write `LEVEL message` to the error stream so a program's output stays pipeable;
   the threshold comes from `OQ_LOG_LEVEL`, defaults to `info`, and can be changed at run time

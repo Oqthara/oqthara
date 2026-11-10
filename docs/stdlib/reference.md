@@ -27,7 +27,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `clone` | built-in |
 | `contains` | built-in |
 | `cpu_count` | built-in |
+| `csv_parse` | built-in |
+| `csv_write` | built-in |
 | `cwd` | built-in |
+| `date_parse` | built-in |
 | `datetime` | built-in |
 | `delete` | built-in |
 | `done` | built-in |
@@ -47,6 +50,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `http_get` | built-in |
 | `http_post` | built-in |
 | `input` | built-in |
+| `instant_parse` | built-in |
 | `is_nothing` | built-in |
 | `is_number` | built-in |
 | `is_text` | built-in |
