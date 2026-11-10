@@ -91,6 +91,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `pow` | built-in |
 | `print` | built-in |
 | `push` | built-in |
+| `query_encode` | built-in |
+| `query_parse` | built-in |
 | `random` | built-in |
 | `random_item` | built-in |
 | `range` | built-in |
@@ -125,6 +127,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `tz_convert` | built-in |
 | `unique` | built-in |
 | `upper` | built-in |
+| `url_decode` | built-in |
+| `url_encode` | built-in |
+| `url_join` | built-in |
+| `url_parse` | built-in |
 | `values` | built-in |
 | `walk` | built-in |
 | `write` | built-in |

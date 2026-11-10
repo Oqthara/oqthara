@@ -59,6 +59,24 @@ public final class Stdlib {
     /** How long {@code run_command} waits before it gives up on the child process. */
     static final Duration COMMAND_TIMEOUT = Duration.ofSeconds(30);
 
+    /**
+     * The TCP handshake, and only that. A host that is unreachable entirely is a different failure
+     * from a server that accepts and then thinks, and both should not share one number.
+     */
+    static final Duration HTTP_CONNECT_TIMEOUT = Duration.ofSeconds(15);
+
+    /**
+     * The wait for response headers. {@link java.net.http.HttpRequest#timeout} stops here, so this
+     * does not bound the body; {@link #HTTP_BODY_TIMEOUT} does (ADR-0037, Decision 6).
+     */
+    static final Duration HTTP_HEADER_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * The wait for the body once headers arrive. Separate from {@link #COMMAND_TIMEOUT} so that a
+     * stalled server reports an HTTP deadline rather than the subprocess timeout it used to borrow.
+     */
+    static final Duration HTTP_BODY_TIMEOUT = Duration.ofSeconds(30);
+
     /** The longest single {@code sleep} call, so one statement cannot block the program for hours. */
     static final long MAX_SLEEP_MILLIS = 10_000;
 
@@ -82,6 +100,7 @@ public final class Stdlib {
         installCsv(interpreter);
         installDates(interpreter);
         installTime(interpreter);
+        installUrls(interpreter);
         installHttp(interpreter);
         installConcurrency(interpreter);
         installProcess(interpreter);
@@ -1174,6 +1193,196 @@ public final class Stdlib {
         }));
     }
 
+    /**
+     * URL parsing and encoding (ADR-0037).
+     *
+     * <p>Parsing is {@link java.net.URI}, the same class the HTTP client uses, so a URL that
+     * {@code http_get} would reject is rejected here too rather than parsed into something that
+     * cannot be requested.
+     */
+    private static void installUrls(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.of("url_parse", 1, (host, args, span) -> {
+            String text = Values.display(args.get(0));
+            URI uri;
+            try {
+                uri = URI.create(text);
+            } catch (IllegalArgumentException e) {
+                throw new OqError("invalid URL '" + text + "'", span,
+                        e.getMessage() + ". A URL must escape spaces and other reserved "
+                                + "characters; url_encode() escapes a value, url_join() escapes "
+                                + "a reference.");
+            }
+            LinkedHashMap<String, Object> fields = new LinkedHashMap<>();
+            fields.put("scheme", uri.getScheme());
+            fields.put("host", uri.getHost());
+            // Never a scheme default: 443 would make https://h and https://h:443 indistinguishable,
+            // and they are different strings (ADR-0037, Decision 1).
+            fields.put("port", uri.getPort() < 0 ? null : (long) uri.getPort());
+            // An opaque URI such as mailto: has no path. Reporting "" would claim it has an empty
+            // one, which is a different statement.
+            fields.put("path", uri.isOpaque() ? null : uri.getPath());
+            fields.put("query", uri.getRawQuery());
+            fields.put("fragment", uri.getRawFragment());
+            return new OqData("Url", fields);
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("url_encode", 1, (host, args, span) -> {
+            String text = Values.display(args.get(0));
+            return java.net.URLEncoder.encode(text, StandardCharsets.UTF_8);
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("url_decode", 1, (host, args, span) -> {
+            String text = Values.display(args.get(0));
+            try {
+                return java.net.URLDecoder.decode(text, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                throw new OqError("invalid percent-encoding in '" + text + "'", span,
+                        e.getMessage() + ". A literal % must be written %25.");
+            }
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("query_parse", 1, (host, args, span) -> {
+            String text = Values.display(args.get(0));
+            // A leading ? is what a caller most often has in hand, from url_parse or from a line
+            // they pasted. Refusing it would be a puzzle with no purpose, so it is stripped.
+            String body = text.startsWith("?") ? text.substring(1) : text;
+            List<Object> pairs = new ArrayList<>();
+            if (body.isEmpty()) return pairs;
+            for (String part : body.split("&", -1)) {
+                if (part.isEmpty()) continue;
+                int equals = part.indexOf('=');
+                String name = equals < 0 ? part : part.substring(0, equals);
+                String value = equals < 0 ? "" : part.substring(equals + 1);
+                LinkedHashMap<String, Object> pair = new LinkedHashMap<>();
+                pair.put("name", decodeQueryComponent(name, text, span));
+                pair.put("value", decodeQueryComponent(value, text, span));
+                pairs.add(new OqData("QueryPair", pair));
+            }
+            return pairs;
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("query_encode", 1, (host, args, span) -> {
+            List<?> pairs = Values.iterableList(args.get(0), span);
+            StringBuilder out = new StringBuilder();
+            for (Object entry : pairs) {
+                String name;
+                String value;
+                if (entry instanceof OqData pair) {
+                    if (!pair.has("name") || !pair.has("value")) {
+                        throw new OqError(
+                                "query_encode() needs every pair to have a name and a value", span,
+                                "query_parse() returns that shape. A pair can also be written as "
+                                        + "a map: {\"name\": \"q\", \"value\": \"x\"}.");
+                    }
+                    name = Values.display(pair.get("name"));
+                    value = Values.display(pair.get("value"));
+                } else if (entry instanceof Map<?, ?> map) {
+                    // A map literal is the only pair a caller can write by hand; OqData cannot be
+                    // constructed from source. Accepting only the parsed shape would make the
+                    // inverse of query_parse unusable, which is the defect this branch removes.
+                    if (!map.containsKey("name") || !map.containsKey("value")) {
+                        throw new OqError(
+                                "query_encode() needs every pair to have a name and a value", span,
+                                "Write one as {\"name\": \"q\", \"value\": \"x\"}, or build the "
+                                        + "list with query_parse().");
+                    }
+                    name = Values.display(map.get("name"));
+                    value = Values.display(map.get("value"));
+                } else {
+                    throw new OqError("query_encode() needs a list of {name, value} pairs, found "
+                            + Values.typeName(entry), span,
+                            "query_parse() returns exactly that shape, so a parsed query can be "
+                                    + "encoded again unchanged.");
+                }
+                if (!out.isEmpty()) out.append('&');
+                out.append(java.net.URLEncoder.encode(name, StandardCharsets.UTF_8));
+                out.append('=');
+                out.append(java.net.URLEncoder.encode(value, StandardCharsets.UTF_8));
+            }
+            return out.toString();
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("url_join", 2, (host, args, span) ->
+                urlJoin(Values.display(args.get(0)), Values.display(args.get(1)), span)));
+    }
+
+    /** Decodes one query component, naming the whole query when the component is malformed. */
+    private static String decodeQueryComponent(String component, String whole, Span span) {
+        try {
+            return java.net.URLDecoder.decode(component, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            throw new OqError("invalid percent-encoding in query '" + whole + "'", span,
+                    e.getMessage() + ". A literal % must be written %25.");
+        }
+    }
+
+    /**
+     * Resolves {@code reference} against {@code base}, escaping it per segment.
+     *
+     * <p>{@code URI.resolve} does the joining, but it refuses a reference containing a space, and
+     * it would also treat a leading {@code /} as replacing the base path. Both behaviours are
+     * correct HTTP; the first is inconvenient and the second is surprising. The reference is
+     * therefore escaped first, segment by segment, so {@code url_join(base, "a b/c")} means
+     * {@code a%20b/c} and not a single path component with an escaped slash.
+     */
+    private static String urlJoin(String base, String reference, Span span) {
+        URI baseUri;
+        try {
+            baseUri = URI.create(base);
+        } catch (IllegalArgumentException e) {
+            throw new OqError("invalid base URL '" + base + "'", span, e.getMessage());
+        }
+        // Absolute references replace the base entirely; escaping a full URL would destroy its
+        // own scheme separator.
+        if (reference.contains("://")) {
+            try {
+                return URI.create(reference).toString();
+            } catch (IllegalArgumentException e) {
+                throw new OqError("invalid reference URL '" + reference + "'", span, e.getMessage());
+            }
+        }
+        StringBuilder escaped = new StringBuilder();
+        String[] segments = reference.split("/", -1);
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0) escaped.append('/');
+            String segment = segments[i];
+            // "." and ".." are path syntax, not characters to encode, so they stay literal and
+            // URI.resolve still gets to apply them.
+            if (segment.equals(".") || segment.equals("..")) {
+                escaped.append(segment);
+            } else {
+                escaped.append(encodePathSegment(segment));
+            }
+        }
+        try {
+            return baseUri.resolve(escaped.toString()).toString();
+        } catch (IllegalArgumentException e) {
+            throw new OqError("cannot join '" + reference + "' to '" + base + "'", span,
+                    e.getMessage());
+        }
+    }
+
+    /**
+     * Percent-encodes one path segment as UTF-8.
+     *
+     * <p>{@code URLEncoder} cannot be used: it escapes {@code /} to {@code %2F}, which would turn
+     * one segment into an encoded separator, and it maps a space to {@code +}, which is a literal
+     * plus in a path. Only unreserved characters survive, matching RFC 3986 §2.3.
+     */
+    private static String encodePathSegment(String segment) {
+        StringBuilder out = new StringBuilder();
+        for (byte b : segment.getBytes(StandardCharsets.UTF_8)) {
+            int value = b & 0xFF;
+            boolean unreserved = (value >= 'A' && value <= 'Z')
+                    || (value >= 'a' && value <= 'z')
+                    || (value >= '0' && value <= '9')
+                    || value == '-' || value == '_' || value == '.' || value == '~';
+            if (unreserved) {
+                out.append((char) value);
+            } else {
+                out.append('%');
+                out.append(Character.toUpperCase(Character.forDigit((value >> 4) & 0xF, 16)));
+                out.append(Character.toUpperCase(Character.forDigit(value & 0xF, 16)));
+            }
+        }
+        return out.toString();
+    }
+
     private static void installHttp(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("http_get", 1, (host, args, span) ->
                 http(host, "GET", Values.display(args.get(0)), null, span)));
@@ -1184,11 +1393,11 @@ public final class Stdlib {
     private static Object http(OqHost host, String method, String url, String body, Span span) {
         try {
             HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(15))
+                    .connectTimeout(HTTP_CONNECT_TIMEOUT)
                     .followRedirects(HttpClient.Redirect.NORMAL)
                     .build();
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(HTTP_HEADER_TIMEOUT)
                     .header("User-Agent", "oqthara/0.1");
             if (method.equals("POST")) {
                 builder.POST(HttpRequest.BodyPublishers.ofString(body == null ? "" : body));
@@ -1217,13 +1426,116 @@ public final class Stdlib {
         } catch (IllegalArgumentException e) {
             throw new OqError("invalid URL '" + url + "'", span, e.getMessage());
         } catch (java.io.UncheckedIOException e) {
-            throw new OqError("HTTP request failed: " + e.getMessage(), span,
+            throw new OqError(describeNetworkFailure(url, e), span,
                     "Check the URL and your network connection.");
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new OqError("HTTP request failed: " + e.getMessage(), span,
+            throw new OqError(describeNetworkFailure(url, e), span,
                     "Check the URL and your network connection.");
         }
+    }
+
+    /**
+     * Names a transport failure in words instead of appending its message.
+     *
+     * <p>Every exception in these chains carries a null message, which is why the error used to
+     * read {@code HTTP request failed: null}. Measured, the chains are two levels deep and the
+     * informative part is not always at the leaf:
+     *
+     * <pre>
+     * http://127.0.0.1:1/           ConnectException -> ConnectException -> ClosedChannelException
+     * http://no-such-host.invalid/  ConnectException -> ConnectException -> UnresolvedAddressException
+     * </pre>
+     *
+     * <p>Both wrap a {@code ConnectException}, so the outer type alone cannot tell a refused
+     * connection from a name that did not resolve, and the leaf alone cannot tell either because
+     * {@code ClosedChannelException} says nothing by itself. The whole chain is therefore scanned
+     * for the most specific recognised type, and the classification is by type rather than by
+     * message, because the message is exactly what is missing (ADR-0037, Decision 8).
+     */
+    private static String describeNetworkFailure(String url, Throwable error) {
+        List<Throwable> chain = new ArrayList<>();
+        for (Throwable cause = error;
+                cause != null && chain.size() < 8 && !chain.contains(cause);
+                cause = cause.getCause()) {
+            chain.add(cause);
+        }
+        // Most specific first: these are subclasses of the types checked after them.
+        for (String detail : new String[] {
+                nameResolutionDetail(chain),
+                routeDetail(chain),
+                timeoutDetail(chain),
+                tlsDetail(chain),
+                refusalDetail(chain)}) {
+            if (detail != null) {
+                return "HTTP request failed for '" + url + "': " + detail;
+            }
+        }
+        Throwable leaf = chain.get(chain.size() - 1);
+        return "HTTP request failed for '" + url + "': the request failed: " + safeMessage(leaf);
+    }
+
+    /** A name that did not resolve, which is distinct from a host that resolved and refused. */
+    private static String nameResolutionDetail(List<Throwable> chain) {
+        for (Throwable cause : chain) {
+            if (cause instanceof java.nio.channels.UnresolvedAddressException) {
+                return "cannot resolve the host: the name did not resolve to an address";
+            }
+            if (cause instanceof java.net.UnknownHostException) {
+                return "cannot resolve the host: " + safeMessage(cause);
+            }
+        }
+        return null;
+    }
+
+    private static String routeDetail(List<Throwable> chain) {
+        for (Throwable cause : chain) {
+            if (cause instanceof java.net.NoRouteToHostException) {
+                return "cannot reach the host: no route to it";
+            }
+        }
+        return null;
+    }
+
+    private static String timeoutDetail(List<Throwable> chain) {
+        for (Throwable cause : chain) {
+            if (cause instanceof java.net.http.HttpTimeoutException) {
+                return "no response headers within " + HTTP_HEADER_TIMEOUT.toSeconds()
+                        + " seconds";
+            }
+            if (cause instanceof java.net.SocketTimeoutException) {
+                return "the connection timed out after " + HTTP_CONNECT_TIMEOUT.toSeconds()
+                        + " seconds";
+            }
+        }
+        return null;
+    }
+
+    /** A rejected certificate is not a network problem, so it gets its own wording and no hint. */
+    private static String tlsDetail(List<Throwable> chain) {
+        for (Throwable cause : chain) {
+            if (cause instanceof javax.net.ssl.SSLException) {
+                return "the TLS handshake failed: " + safeMessage(cause);
+            }
+        }
+        return null;
+    }
+
+    private static String refusalDetail(List<Throwable> chain) {
+        for (Throwable cause : chain) {
+            if (cause instanceof java.net.ConnectException) {
+                return "cannot reach the host: connection refused";
+            }
+        }
+        return null;
+    }
+
+    /** A cause's message, or its class name when the message is absent or blank. */
+    private static String safeMessage(Throwable error) {
+        String message = error.getMessage();
+        return message == null || message.isBlank()
+                ? error.getClass().getSimpleName()
+                : message;
     }
 
     private static void installConcurrency(Interpreter interpreter) {
@@ -1467,7 +1779,7 @@ public final class Stdlib {
     }
 
     /**
-     * Drains a response body on its own thread and gives up at {@link #COMMAND_TIMEOUT}.
+     * Drains a response body on its own thread and gives up at {@link #HTTP_BODY_TIMEOUT}.
      *
      * <p>{@link java.net.http.HttpRequest#timeout} stops at the headers, so it does not cover a
      * body that trickles or stops arriving. The reader thread is abandoned rather than joined:
@@ -1476,12 +1788,12 @@ public final class Stdlib {
     private static byte[] readCappedWithinDeadline(java.io.InputStream body, Span span) {
         var reader = java.util.concurrent.CompletableFuture.supplyAsync(() -> readCapped(body));
         try {
-            return reader.get(COMMAND_TIMEOUT.toMillis(),
+            return reader.get(HTTP_BODY_TIMEOUT.toMillis(),
                     java.util.concurrent.TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.TimeoutException e) {
             reader.cancel(true);
             throw new OqError("the response body did not finish in "
-                    + COMMAND_TIMEOUT.toSeconds() + " seconds", span,
+                    + HTTP_BODY_TIMEOUT.toSeconds() + " seconds", span,
                     "The server sent headers but stalled the body. A response that never "
                             + "finishes would block the program forever.");
         } catch (java.util.concurrent.ExecutionException e) {

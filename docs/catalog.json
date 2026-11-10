@@ -224,6 +224,12 @@
       "slug": "docs/adr/0036-time-zones-and-filesystem"
     },
     {
+      "path": "docs/adr/0037-networking-and-urls.md",
+      "title": "ADR-0037: Networking, URLs, and HTTP timeouts",
+      "section": "adr",
+      "slug": "docs/adr/0037-networking-and-urls"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
