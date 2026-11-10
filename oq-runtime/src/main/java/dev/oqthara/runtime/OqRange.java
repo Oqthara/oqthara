@@ -48,6 +48,24 @@ public record OqRange(long start, long end, boolean inclusive, long step) {
         return items;
     }
 
+    /**
+     * Whether {@code value} is one of the numbers this range walks. Walking starts at
+     * {@code start} and advances by {@code step}, so a value counts only when it is reachable
+     * from the start by a whole number of steps. Comparing against the bounds is not enough:
+     * {@code 2 in range(0, 10, 3)} walked {@code 0, 3, 6, 9} and must be false.
+     */
+    public boolean contains(long value) {
+        long last = high();
+        if (step > 0) {
+            if (value < start || value > last) return false;
+        } else {
+            if (value > start || value < last) return false;
+        }
+        // Reachable means the distance is a whole number of steps. Both differences share the
+        // sign of `step` once the bounds check has passed, so the remainder is non-negative.
+        return (value - start) % step == 0;
+    }
+
     @Override
     public String toString() {
         String base = start + (inclusive ? " to " : " until ") + end;

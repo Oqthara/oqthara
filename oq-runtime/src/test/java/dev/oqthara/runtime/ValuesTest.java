@@ -231,4 +231,87 @@ class ValuesTest {
         OqError error = assertThrows(OqError.class, () -> Values.length(5L, span));
         assertTrue(error.getMessage().contains("length() needs"), error.getMessage());
     }
+
+    /**
+     * A strided range holds only the numbers its walk reaches. Membership used to compare
+     * against the bounds alone, so `2 in range(0, 10, 3)` was true even though the walk is
+     * `0, 3, 6, 9`. The step and the direction both have to agree with the start.
+     */
+    @Test
+    void aStridedRangeExcludesNumbersBetweenItsSteps() {
+        OqRange forward = new OqRange(0, 10, false, 3);
+        assertTrue(Values.contains(forward, 0L, span));
+        assertTrue(Values.contains(forward, 3L, span));
+        assertTrue(Values.contains(forward, 6L, span));
+        assertTrue(Values.contains(forward, 9L, span));
+        assertFalse(Values.contains(forward, 1L, span));
+        assertFalse(Values.contains(forward, 2L, span));
+        assertFalse(Values.contains(forward, 7L, span));
+        assertFalse(Values.contains(forward, 10L, span));
+        assertFalse(Values.contains(forward, 12L, span));
+        assertFalse(Values.contains(forward, -1L, span));
+    }
+
+    @Test
+    void aBackwardRangeHoldsOnlyTheNumbersItWalksDownTo() {
+        // `5 to 1 by -1` was empty under the old bounds test, which assumed end > start.
+        OqRange backward = new OqRange(5, 1, true, -1);
+        assertEquals(5L, Values.length(backward, span));
+        for (long n = 1; n <= 5; n++) {
+            assertTrue(Values.contains(backward, n, span), n + " is in 5 to 1 by -1");
+        }
+        assertFalse(Values.contains(backward, 0L, span));
+        assertFalse(Values.contains(backward, 6L, span));
+
+        // A strided walk down is still strided. `range(9, 1, -2)` is exclusive, so it stops
+        // before reaching 1 and walks 9, 7, 5, 3.
+        OqRange strided = new OqRange(9, 1, false, -2);
+        assertEquals(List.of(9L, 7L, 5L, 3L), strided.toList());
+        assertTrue(Values.contains(strided, 9L, span));
+        assertTrue(Values.contains(strided, 7L, span));
+        assertTrue(Values.contains(strided, 3L, span));
+        assertFalse(Values.contains(strided, 1L, span));
+        assertFalse(Values.contains(strided, 8L, span));
+
+        // Making the same bounds inclusive reaches 1, and membership follows the walk.
+        OqRange inclusive = new OqRange(9, 1, true, -2);
+        assertEquals(List.of(9L, 7L, 5L, 3L, 1L), inclusive.toList());
+        assertTrue(Values.contains(inclusive, 1L, span));
+    }
+
+    @Test
+    void membershipAgreesWithTheWalkItCanBeMaterialisedInto() {
+        // The property the bug violated: `in` must answer yes exactly for the numbers that
+        // `.to_list()` contains. Checked over a spread of starts, bounds and steps.
+        long[][] shapes = {
+                {0, 10, 1}, {0, 10, 3}, {0, 10, 7}, {3, 3, 1}, {3, 3, 5},
+                {9, 1, -1}, {9, 1, -2}, {0, 0, -1}, {-5, 5, 4}, {5, -5, -4},
+        };
+        for (long[] shape : shapes) {
+            OqRange range = new OqRange(shape[0], shape[1], true, shape[2]);
+            List<Object> walked = range.toList();
+            for (long n = -12; n <= 12; n++) {
+                assertEquals(walked.contains(n), Values.contains(range, n, span),
+                        n + " in " + range + " vs " + walked);
+            }
+        }
+    }
+
+    @Test
+    void anEmptyRangeHoldsNothing() {
+        // `range(1, 0)` steps forward but its end is behind its start, so nothing is reachable.
+        OqRange empty = new OqRange(1, 0, false, 1);
+        assertEquals(0L, Values.length(empty, span));
+        assertFalse(Values.contains(empty, 0L, span));
+        assertFalse(Values.contains(empty, 1L, span));
+    }
+
+    @Test
+    void aFractionalOrNonNumericItemIsNeverInARange() {
+        OqRange range = new OqRange(0, 5, true, 1);
+        assertFalse(Values.contains(range, 3.5d, span));
+        assertFalse(Values.contains(range, "3", span));
+        // A whole-valued decimal is a number, so it converts like an integer.
+        assertTrue(Values.contains(range, 3.0d, span));
+    }
 }

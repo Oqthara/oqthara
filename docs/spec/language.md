@@ -492,6 +492,19 @@ message says so. Lists, tuples, sets, maps (keys), ranges and text all have `.it
 step. Ranges also gained a method surface: `.to_list()`, `.to_set()`, `.first()`, `.last()`,
 `.contains(x)`, `.sum()`, `.min()`, `.max()`, `.sorted()` and `.reverse()`.
 
+Membership in a range means **reachable by the walk**, not merely inside the bounds. A range
+that steps by three holds only every third number: `3 in range(0, 10, 3)` is true and
+`2 in range(0, 10, 3)` is false, even though `2` lies between the ends. A range that counts
+down holds only the numbers it counts down to, so `range(5, 1, -1)` contains `3` and not `9`.
+`x in r` and `r.contains(x)` always agree, and both agree with `r.to_list()`:
+
+```
+print 2 in range(0, 10, 3)      # false
+print 3 in range(0, 10, 3)      # true
+print 3 in range(5, 1, -1)      # true
+print 9 in range(5, 1, -1)      # false
+```
+
 `.reverse()` has no single answer for every family, so the rule is stated per family. For
 `text` and `list` it returns the receiver's family, because those are ordered sequences whose
 reversal is still a sequence. For `range` it returns the `range` `2 to 0 by -1`, because a

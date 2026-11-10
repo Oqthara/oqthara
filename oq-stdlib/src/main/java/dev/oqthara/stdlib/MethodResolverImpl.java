@@ -596,9 +596,18 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             });
             case "to_set", "set" -> fixed(name, 0, (host, args) ->
                     new dev.oqthara.runtime.OqSet(range.toList()));
-            case "contains" -> fixed(name, 1, (host, args) -> args.get(0) instanceof Long l
-                    && l >= range.start()
-                    && l <= (range.inclusive() ? range.end() : range.end() - 1));
+            case "contains" -> fixed(name, 1, (host, args) -> {
+                Object item = args.get(0);
+                // `r.contains(x)` and `x in r` are two spellings of one question, so they must
+                // accept the same items. `3.0` is the same number as `3` everywhere else in the
+                // language, so a whole-valued decimal counts here too (ADR-0026).
+                if (item instanceof Long l) return range.contains(l);
+                if (Values.isNumber(item)) {
+                    double d = Values.asDouble(item);
+                    return d == Math.rint(d) && range.contains((long) d);
+                }
+                return false;
+            });
             case "first" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
                 List<Object> items = range.toList();
                 if (items.isEmpty()) {
