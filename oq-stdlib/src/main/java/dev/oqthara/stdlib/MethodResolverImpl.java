@@ -3,6 +3,7 @@ package dev.oqthara.stdlib;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqFrozenSet;
 import dev.oqthara.runtime.OqMap;
 import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OqHost;
@@ -33,6 +34,9 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         }
         if (receiver instanceof Map<?, ?> map) {
             return mapMethod(map, name, span);
+        }
+        if (receiver instanceof OqFrozenSet frozen) {
+            return frozenSetMethod(frozen, name, span);
         }
         if (receiver instanceof Set<?> set) {
             return setMethod(set, name, span);
@@ -374,6 +378,88 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                     ? (Object) new OqSet(map.keySet())
                     : (Object) new ArrayList<>(map.keySet()));
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(map));
+            default -> null;
+        };
+    }
+
+    /**
+     * Methods on a frozenset. The read-only half of the set surface, with every result keeping
+     * the frozen family: {@code frozenset([1]).union([2])} is a frozenset, not a set, or the
+     * immutability promise would quietly evaporate after one call (ADR-0022).
+     *
+     * <p>The mutators are refused by name here rather than left to {@link OqFrozenSet}'s
+     * {@code add}, because that would report "a frozenset is immutable" from inside a set
+     * operation the caller never wrote.
+     */
+    private OqCallable frozenSetMethod(OqFrozenSet frozen, String name, Span span) {
+        return switch (name) {
+            case "add", "remove", "clear", "update", "pop", "discard", "add_all", "remove_all",
+                 "retain_all", "sort", "reverse", "shuffle", "fill" -> null;
+            case "length", "size" -> fixed(name, 0, (host, args) -> (long) frozen.size());
+            case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(frozen, span));
+            case "has", "contains" -> fixed(name, 1, (host, args) -> frozen.contains(args.get(0)));
+            case "items", "list", "to_list" -> fixed(name, 0, (host, args) -> new ArrayList<>(frozen));
+            case "to_set", "set" -> fixed(name, 0, (host, args) -> new OqSet(frozen));
+            case "frozenset", "clone", "copy" -> fixed(name, 0, (host, args) -> frozen);
+            case "union" -> fixed(name, 1, (host, args) -> {
+                List<Object> merged = new ArrayList<>(frozen);
+                merged.addAll(asCollection(args.get(0), span));
+                return new OqFrozenSet(merged);
+            });
+            case "intersection" -> fixed(name, 1, (host, args) -> {
+                Collection<?> other = asCollection(args.get(0), span);
+                Set<Object> keep = new OqSet(other);
+                List<Object> result = new ArrayList<>();
+                for (Object item : frozen) if (keep.contains(item)) result.add(item);
+                return new OqFrozenSet(result);
+            });
+            case "difference" -> fixed(name, 1, (host, args) -> {
+                Collection<?> other = asCollection(args.get(0), span);
+                Set<Object> drop = new OqSet(other);
+                List<Object> result = new ArrayList<>();
+                for (Object item : frozen) if (!drop.contains(item)) result.add(item);
+                return new OqFrozenSet(result);
+            });
+            case "symmetric_difference" -> fixed(name, 1, (host, args) -> {
+                Collection<?> other = asCollection(args.get(0), span);
+                Set<Object> mine = new OqSet(frozen);
+                List<Object> result = new ArrayList<>();
+                for (Object item : frozen) if (!containsValue(other, item)) result.add(item);
+                for (Object item : other) if (!mine.contains(item)) result.add(item);
+                return new OqFrozenSet(result);
+            });
+            case "issubset" -> fixed(name, 1, (host, args) -> {
+                Collection<?> other = asCollection(args.get(0), span);
+                for (Object item : frozen) if (!containsValue(other, item)) return (Object) false;
+                return (Object) true;
+            });
+            case "issuperset" -> fixed(name, 1, (host, args) -> {
+                Set<Object> mine = new OqSet(frozen);
+                for (Object item : asCollection(args.get(0), span)) {
+                    if (!mine.contains(item)) return (Object) false;
+                }
+                return (Object) true;
+            });
+            case "sum" -> fixed(name, 0, (host, args) -> {
+                Object total = 0L;
+                for (Object item : frozen) total = Values.add(total, item, span);
+                return total;
+            });
+            case "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> copy = new ArrayList<>(frozen);
+                copy.sort((a, b) -> Values.compare(a, b, span));
+                return copy;
+            });
+            case "min", "max" -> fixed(name, 0, (host, args) -> {
+                if (frozen.isEmpty()) return null;
+                Object best = frozen.iterator().next();
+                for (Object item : frozen) {
+                    int c = Values.compare(item, best, span);
+                    if (name.equals("min") ? c < 0 : c > 0) best = item;
+                }
+                return best;
+            });
+            case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(frozen));
             default -> null;
         };
     }
@@ -727,6 +813,12 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     }
 
     @SuppressWarnings("unchecked")
+    /** Membership across an arbitrary collection, using Oqthara equality. */
+    private static boolean containsValue(Collection<?> items, Object item) {
+        for (Object each : items) if (Values.equal(each, item)) return true;
+        return false;
+    }
+
     private static Set<Object> asMutableSet(Set<?> set) {
         return (Set<Object>) set;
     }

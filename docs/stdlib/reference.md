@@ -37,6 +37,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `filter` | built-in |
 | `floor` | built-in |
 | `format` | built-in |
+| `frozenset` | built-in |
 | `http_get` | built-in |
 | `http_post` | built-in |
 | `input` | built-in |
@@ -116,6 +117,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 ### map
 
 `.clear()`, `.clone()`, `.contains()`, `.contains_key()`, `.copy()`, `.each()`, `.entries()`, `.get()`, `.has()`, `.has_value()`, `.items()`, `.iter()`, `.keys()`, `.length()`, `.map()`, `.merge()`, `.pop()`, `.put()`, `.remove()`, `.reverse()`, `.set()`, `.size()`, `.sorted()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.update()`, `.values()`
+
+### frozenSetMethod
+
+`.add()`, `.add_all()`, `.clear()`, `.clone()`, `.contains()`, `.copy()`, `.difference()`, `.discard()`, `.fill()`, `.frozenset()`, `.has()`, `.intersection()`, `.issubset()`, `.issuperset()`, `.items()`, `.iter()`, `.length()`, `.list()`, `.max()`, `.min()`, `.pop()`, `.remove()`, `.remove_all()`, `.retain_all()`, `.reverse()`, `.set()`, `.shuffle()`, `.size()`, `.sort()`, `.sorted()`, `.sum()`, `.symmetric_difference()`, `.text()`, `.to_list()`, `.to_set()`, `.to_string()`, `.union()`, `.update()`
 
 ### set
 

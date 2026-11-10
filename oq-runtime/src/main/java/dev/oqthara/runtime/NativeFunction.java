@@ -28,6 +28,11 @@ public final class NativeFunction implements OqCallable {
         return new NativeFunction(name, minArity, Integer.MAX_VALUE, body);
     }
 
+    /** A builtin that takes between {@code minArity} and {@code maxArity} arguments. */
+    public static NativeFunction variadic(String name, int minArity, int maxArity, Body body) {
+        return new NativeFunction(name, minArity, maxArity, body);
+    }
+
     @Override
     public String name() {
         return name;

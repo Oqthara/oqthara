@@ -62,6 +62,7 @@ public final class Values {
         if (value instanceof OqTuple) return "tuple";
         if (value instanceof List<?>) return "list";
         if (value instanceof Map<?, ?>) return "map";
+        if (value instanceof OqFrozenSet) return "frozenset";
         if (value instanceof Set<?>) return "set";
         if (value instanceof OqRange) return "range";
         if (value instanceof OqData d) return d.typeName();
@@ -100,6 +101,16 @@ public final class Values {
                 sb.append(repr(list.get(i)));
             }
             return sb.append(']').toString();
+        }
+        if (value instanceof OqFrozenSet frozen) {
+            StringBuilder sb = new StringBuilder("frozenset({");
+            boolean first = true;
+            for (Object item : frozen) {
+                if (!first) sb.append(", ");
+                sb.append(repr(item));
+                first = false;
+            }
+            return sb.append("})").toString();
         }
         if (value instanceof Set<?> set) {
             StringBuilder sb = new StringBuilder("{");
@@ -181,6 +192,7 @@ public final class Values {
         if (a instanceof OqTuple x && b instanceof OqTuple y) return tuplesEqual(x, y);
         if (a instanceof List<?> x && b instanceof List<?> y) return listsEqual(x, y);
         if (a instanceof Map<?, ?> x && b instanceof Map<?, ?> y) return mapsEqual(x, y);
+        if (a instanceof OqFrozenSet != b instanceof OqFrozenSet) return false;
         if (a instanceof Set<?> x && b instanceof Set<?> y) return setsEqual(x, y);
         return a.equals(b);
     }

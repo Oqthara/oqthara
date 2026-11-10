@@ -15,12 +15,11 @@ import java.util.Map;
  * <code>{1: "a"}</code> could not be read back with the key {@code 1.0}. All three are now
  * correct.
  *
- * <p>Hashing is structural, matching {@link Values#equal}: lists and tuples hash by content,
- * maps by their entries, and sets by their elements. A list is therefore usable as a key
- * even though it is mutable; mutating one after using it as a key makes it unfindable,
- * exactly as already happens for {@link OqData}. A collection that contains itself cannot be
- * hashed or compared, so both stop at a bounded depth with a normal Oqthara error rather than
- * overflowing the stack.
+ * <p>Hashing is structural, matching {@link Values#equal}: tuples hash by content, maps by
+ * their entries, and sets by their elements. Only values that cannot change are allowed as
+ * keys or members, which is why {@link #requireHashable} refuses the mutable families. A
+ * collection that contains itself cannot be hashed or compared, so both stop at a bounded
+ * depth with a normal Oqthara error rather than overflowing the stack.
  */
 public final class Value {
 
@@ -61,6 +60,40 @@ public final class Value {
     /** The structural hash of {@code value}, for {@link OqData} to delegate to. */
     static int hashing(Object value) {
         return hash(value, 0);
+    }
+
+    /**
+     * Asserts that {@code value} may be used as a map key or a set member.
+     *
+     * <p>Hashing is structural, so a mutable value's hash changes when it is mutated. Inserting
+     * one would pick a bucket from the old hash, and every later lookup would use the new hash
+     * and miss — the entry stays in the container but becomes unreachable, with no error and no
+     * change in {@code length}. So the mutable families are refused here instead, and
+     * {@code frozenset} exists to give a hashable counterpart to {@code set}.
+     *
+     * <p>The walk is deep because a tuple is only as immutable as its contents: {@code ([1],)}
+     * holds a list and fails for the same reason a bare list does.
+     *
+     * @param role what the value was being used as, for the error message
+     */
+    static void requireHashable(Object value, String role) {
+        requireHashable(value, role, Errors.current(), 0);
+    }
+
+    private static void requireHashable(Object value, String role, Span span, int depth) {
+        if (depth > MAX_DEPTH) throw new InvalidHashException();
+        if (value instanceof OqFrozenSet frozen) {
+            for (Object item : frozen) requireHashable(item, role, span, depth + 1);
+            return;
+        }
+        if (value instanceof OqTuple tuple) {
+            for (int i = 0; i < tuple.size(); i++) requireHashable(tuple.get(i), role, span, depth + 1);
+            return;
+        }
+        if (value instanceof OqData) throw new UnhashableValueException(Values.typeName(value), role, span);
+        if (value instanceof List<?> || value instanceof Map<?, ?> || value instanceof java.util.Set<?>) {
+            throw new UnhashableValueException(Values.typeName(value), role, span);
+        }
     }
 
     @Override
@@ -124,6 +157,17 @@ public final class Value {
      * program's own failure — exit status 1 with a hint — instead of "internal error ... this is
      * a bug in Oqthara". Recursive data is usually a mistake in the program, not in the runtime.
      */
+    static final class UnhashableValueException extends OqError {
+        private static final long serialVersionUID = 1L;
+
+        UnhashableValueException(String typeName, String role, Span span) {
+            super("a " + typeName + " cannot be used as " + role, span,
+                    "Hashing is structural, so mutating the value afterwards would change its "
+                            + "hash and make the entry impossible to find again. Use an immutable "
+                            + "value instead: a tuple, a frozenset, text or a number.");
+        }
+    }
+
     static final class InvalidHashException extends OqError {
         private static final long serialVersionUID = 1L;
 

@@ -33,6 +33,7 @@ public final class OqSet extends AbstractSet<Object> {
 
     @Override
     public boolean add(Object item) {
+        Value.requireHashable(item, "a set member");
         return backing.add(Value.of(item));
     }
 

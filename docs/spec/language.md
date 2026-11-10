@@ -604,6 +604,7 @@ The rules per family:
 | tuples | same length, and each position equal |
 | maps | same size, and every key of one finds an equal value in the other; order is irrelevant |
 | sets | same size, and every member of one is in the other; order is irrelevant |
+| frozensets | same as sets, and never equal to a `set` |
 | `data` | same type name and equal fields, compared by the same rule |
 | `nothing` | only against another `nothing` |
 
@@ -614,10 +615,29 @@ Comparing values of unrelated families with `==` is `false` rather than an error
 `unique`, `union`, `intersection`, `difference`, `has_value` and membership all use this same
 rule, so nothing disagrees with `==`.
 
-**Mutating a value used as a key loses it.** A list, map or `data` value derives its hash from
-its contents, and its contents can change. If you use one as a set element or a map key and
-then mutate it, the entry stays in the collection but can no longer be found. Prefer
-immutable values — numbers, text, tuples — as keys.
+**Only immutable values may be keys.** Hashing is structural, so a mutable value's hash would
+change the moment it changed, and the entry would stay in the collection while becoming
+impossible to find again. Oqthara refuses the value instead of allowing that:
+
+```
+print {[1]: "a"}
+# error: a list cannot be used as a map key
+
+print set([[1]])
+# error: a list cannot be used as a set member
+```
+
+| Family | Usable as a key or member |
+|---|---|
+| number, decimal, text, boolean, `nothing`, range | yes |
+| tuple | yes, when every item is |
+| `frozenset` | yes, when every member is |
+| function | yes, by identity |
+| list, set, map, `data` | no, because they can change |
+
+The check is deep, so a tuple is only as usable as what it holds: `{([1],): "a"}` is refused
+because the list inside can change. A `set` that must be a key becomes a `frozenset`, and a
+list becomes a tuple of fixed length. See [ADR-0022](../adr/0022-hashability-and-frozenset.md).
 
 **A collection that contains itself cannot be hashed or compared**, and raises
 `this collection contains itself, so it cannot be hashed or compared` rather than crashing.

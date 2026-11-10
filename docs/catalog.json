@@ -134,6 +134,12 @@
       "slug": "docs/adr/0021-collection-family-operations"
     },
     {
+      "path": "docs/adr/0022-hashability-and-frozenset.md",
+      "title": "ADR-0022 — Hashability, and why `frozenset` is not just a Python import",
+      "section": "adr",
+      "slug": "docs/adr/0022-hashability-and-frozenset"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
