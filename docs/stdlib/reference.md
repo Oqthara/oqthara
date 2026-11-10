@@ -16,6 +16,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 |---|---|
 | `abs` | built-in |
 | `append` | built-in |
+| `arg_parse` | built-in |
 | `args` | built-in |
 | `assert` | built-in |
 | `await` | built-in |
@@ -58,6 +59,12 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `length` | built-in |
 | `list` | built-in |
 | `list_files` | built-in |
+| `log_debug` | built-in |
+| `log_enabled` | built-in |
+| `log_error` | built-in |
+| `log_info` | built-in |
+| `log_level` | built-in |
+| `log_warn` | built-in |
 | `lower` | built-in |
 | `make_dir` | built-in |
 | `map` | built-in |

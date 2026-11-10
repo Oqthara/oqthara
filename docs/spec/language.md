@@ -1057,6 +1057,26 @@ Processes: `run_command(path)` returns `.code` and `.output`. `env(name)`,
 
 Program: `args()`, `input()`, `input(prompt)`, `exit(code)`.
 
+Logging: `log_debug`, `log_info`, `log_warn`, `log_error` write `LEVEL message` to the error
+stream, never to the output stream, so a program's output stays pipeable. The threshold is
+read from `OQ_LOG_LEVEL` once per process and defaults to `info`; `log_level(name)` changes it
+at run time and `log_enabled(name)` asks whether a level would be written. There are no
+timestamps, because a program that prints a clock is not reproducible.
+
+Arguments: `arg_parse(arguments, options)` turns `args()` into `{flags, values, rest}` from a
+declaration like `["verbose", "port:int", "output:text?"]`. A trailing `?` marks an option
+optional and an absent optional is absent from `values`, not null. A malformed command line
+raises an error naming the offending token and listing what was declared.
+
+```oq
+parsed = arg_parse(args(), ["verbose", "port:int", "name:text?"])
+print parsed.flags      # ["verbose"]
+print parsed.values.port
+print parsed.rest       # ["file.txt"]
+```
+
+Both are specified by [ADR-0034](../adr/0034-logging-and-argument-parsing.md).
+
 ### Host calls are bounded
 
 The language restricts the host calls that can consume unbounded time or memory, so a
