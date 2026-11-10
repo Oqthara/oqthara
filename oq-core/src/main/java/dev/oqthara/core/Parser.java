@@ -68,6 +68,15 @@ public final class Parser {
         if (check(Token.Kind.KEYWORD)) {
             return keywordStatement();
         }
+        // `class`, `contract` and `this` are contextual: they are recognised only where a
+        // declaration or receiver can start, so `class = 1` and `this = 5` keep working
+        // (ADR-0027 D1). `looksLikeClass` is the one place that decides.
+        if (check(Token.Kind.IDENT) && (peek().lexeme().equals("class") && looksLikeClass())) {
+            return classStatement(advance());
+        }
+        if (check(Token.Kind.IDENT) && (peek().lexeme().equals("contract") && looksLikeContract())) {
+            return contractStatement(advance());
+        }
         if (check(Token.Kind.IDENT) && COMMANDS.contains(peek().lexeme())
                 && !(checkNext(Token.Kind.LPAREN) && isAdjacent(peek(), tokens.get(current + 1)))) {
             return commandStatement();
@@ -243,6 +252,133 @@ public final class Parser {
         expect(Token.Kind.RPAREN, "to close the field list");
         endStatement();
         return new Ast.DataDecl(name.lexeme(), fields, keyword.span());
+    }
+
+    /**
+     * True when {@code class} begins a declaration rather than naming a variable: the next
+     * token must be a name and the one after it a {@code (}. {@code class = 1} and
+     * {@code class.x = 1} therefore keep their old meaning.
+     */
+    private boolean looksLikeClass() {
+        return current + 2 < tokens.size()
+                && tokens.get(current + 1).kind() == Token.Kind.IDENT
+                && tokens.get(current + 2).kind() == Token.Kind.LPAREN;
+    }
+
+    /** {@code contract} is a declaration when a name and a line end follow it. */
+    private boolean looksLikeContract() {
+        return current + 1 < tokens.size() && tokens.get(current + 1).kind() == Token.Kind.IDENT
+                && (current + 2 >= tokens.size()
+                || tokens.get(current + 2).kind() == Token.Kind.NEWLINE
+                || tokens.get(current + 2).kind() == Token.Kind.SEMICOLON
+                || tokens.get(current + 2).kind() == Token.Kind.EOF);
+    }
+
+    private Ast.Stmt classStatement(Token keyword) {
+        Token name = expect(Token.Kind.IDENT, "a class name");
+        expect(Token.Kind.LPAREN, "after the class name");
+        List<Ast.FieldDef> fields = new ArrayList<>();
+        if (!check(Token.Kind.RPAREN)) {
+            do {
+                Token field = expect(Token.Kind.IDENT, "a field name");
+                Ast.Expr defaultValue = null;
+                if (match(Token.Kind.ASSIGN)) {
+                    defaultValue = expression();
+                }
+                fields.add(new Ast.FieldDef(field.lexeme(), defaultValue, field.span()));
+            } while (match(Token.Kind.COMMA));
+        }
+        expect(Token.Kind.RPAREN, "to close the field list");
+        String implementsName = null;
+        if (check(Token.Kind.IDENT) && peek().lexeme().equals("implements")) {
+            advance();
+            implementsName = expect(Token.Kind.IDENT, "a contract name").lexeme();
+        }
+        endStatement();
+        List<Ast.MethodDecl> methods = new ArrayList<>();
+        List<Ast.Stmt> init = null;
+        while (true) {
+            skipSeparators();
+            if (check(Token.Kind.EOF)) {
+                throw error(peek(), "expected 'end' to close this 'class'",
+                        "The class body was never closed.");
+            }
+            if (check(Token.Kind.KEYWORD) && peek().lexeme().equals("end")) {
+                advance();
+                break;
+            }
+            if (check(Token.Kind.KEYWORD) && peek().lexeme().equals("fun")) {
+                methods.add(methodDeclaration());
+                continue;
+            }
+            if (check(Token.Kind.IDENT) && peek().lexeme().equals("init")) {
+                Token initKeyword = advance();
+                endStatement();
+                init = block();
+                expectKeyword("end", "to close this 'init'");
+                endStatement();
+                continue;
+            }
+            throw error(peek(), "unexpected " + describe(peek()) + " in a class body",
+                    "A class body holds 'init' and 'fun' declarations.");
+        }
+        endStatement();
+        return new Ast.ClassDecl(name.lexeme(), fields, implementsName, methods, init, keyword.span());
+    }
+
+    private Ast.MethodDecl methodDeclaration() {
+        Token keyword = advance();
+        Token name = expect(Token.Kind.IDENT, "a method name");
+        expect(Token.Kind.LPAREN, "after the method name");
+        List<String> params = new ArrayList<>();
+        if (!check(Token.Kind.RPAREN)) {
+            do {
+                params.add(expect(Token.Kind.IDENT, "a parameter name").lexeme());
+            } while (match(Token.Kind.COMMA));
+        }
+        expect(Token.Kind.RPAREN, "to close the parameter list");
+        endStatement();
+        List<Ast.Stmt> body = block();
+        expectKeyword("end", "to close this method");
+        endStatement();
+        return new Ast.MethodDecl(name.lexeme(), params, body, keyword.span());
+    }
+
+    private Ast.Stmt contractStatement(Token keyword) {
+        Token name = expect(Token.Kind.IDENT, "a contract name");
+        endStatement();
+        List<Ast.Signature> signatures = new ArrayList<>();
+        while (true) {
+            skipSeparators();
+            if (check(Token.Kind.EOF)) {
+                throw error(peek(), "expected 'end' to close this 'contract'",
+                        "The contract body was never closed.");
+            }
+            if (check(Token.Kind.KEYWORD) && peek().lexeme().equals("end")) {
+                advance();
+                break;
+            }
+            if (check(Token.Kind.KEYWORD) && peek().lexeme().equals("fun")) {
+                Token fun = advance();
+                Token method = expect(Token.Kind.IDENT, "a method name");
+                expect(Token.Kind.LPAREN, "after the method name");
+                int arity = 0;
+                if (!check(Token.Kind.RPAREN)) {
+                    do {
+                        expect(Token.Kind.IDENT, "a parameter name");
+                        arity++;
+                    } while (match(Token.Kind.COMMA));
+                }
+                expect(Token.Kind.RPAREN, "to close the parameter list");
+                endStatement();
+                signatures.add(new Ast.Signature(method.lexeme(), arity, fun.span()));
+                continue;
+            }
+            throw error(peek(), "unexpected " + describe(peek()) + " in a contract",
+                    "A contract lists method signatures: 'fun name(params)'.");
+        }
+        endStatement();
+        return new Ast.ContractDecl(name.lexeme(), signatures, keyword.span());
     }
 
     private Ast.Stmt returnStatement(Token keyword) {

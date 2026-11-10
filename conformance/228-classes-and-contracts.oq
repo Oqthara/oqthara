@@ -1,0 +1,55 @@
+contract Shape
+  fun area()
+  fun scale(factor)
+end
+
+class Square(side) implements Shape
+  init
+    if this.side < 0
+      error("side must not be negative")
+    end
+  end
+  fun area()
+    return this.side * this.side
+  end
+  fun scale(factor)
+    this.side = this.side * factor
+    return this
+  end
+end
+
+s = Square(4)
+print s.area()
+print s.scale(2).area()
+print type_of(s)
+print s
+
+other = Square(8)
+print s == other
+print s == s
+
+class Tally(total = 0)
+  fun add(n)
+    this.total = this.total + n
+    return this
+  end
+  fun value()
+    return this.total
+  end
+end
+
+t = Tally()
+t.add(1).add(2).add(3)
+print t.value()
+
+class Hidden(_secret = 7)
+  fun reveal()
+    return this._secret
+  end
+end
+print Hidden().reveal()
+
+bag1 = Tally()
+bag2 = Tally()
+bag1.add(5)
+print bag2.value()

@@ -15,7 +15,7 @@ public final class Ast {
     public sealed interface Stmt extends Node permits
             VarDecl, Assign, CompoundAssign, If, While, ForEach, ForRange,
             FuncDecl, Return, Break, Continue, DataDecl, ExprStmt, IndexAssign, FieldAssign,
-            UseStmt, ImportStmt, Command, TryStmt, Destructure {
+            UseStmt, ImportStmt, Command, TryStmt, Destructure, ClassDecl, ContractDecl {
     }
 
     public sealed interface Expr extends Node permits
@@ -76,6 +76,25 @@ public final class Ast {
     }
 
     public record FieldDef(String name, Expr defaultValue, Span span) {
+    }
+
+    /**
+     * {@code class Name(field, ...)} ... {@code end}. A class is a reference type with
+     * identity; see ADR-0027. {@code implementsName} is null when no contract is named, and
+     * {@code init} is null when the class declares no initializer body.
+     */
+    public record ClassDecl(String name, List<FieldDef> fields, String implementsName,
+                            List<MethodDecl> methods, List<Stmt> init, Span span) implements Stmt {
+    }
+
+    public record MethodDecl(String name, List<String> params, List<Stmt> body, Span span) {
+    }
+
+    /** {@code contract Name} followed by method signatures and {@code end}. No bodies. */
+    public record ContractDecl(String name, List<Signature> methods, Span span) implements Stmt {
+    }
+
+    public record Signature(String name, int arity, Span span) {
     }
 
     public record ExprStmt(Expr expr, Span span) implements Stmt {

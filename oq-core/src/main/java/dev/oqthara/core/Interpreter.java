@@ -7,6 +7,7 @@ import dev.oqthara.runtime.OverloadedFunction;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqInstance;
 import dev.oqthara.runtime.OqMap;
 import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OutputBudget;
@@ -36,8 +37,14 @@ public final class Interpreter implements OqHost {
     private final Path workingDirectory;
     private final MethodResolver methods;
     private final Map<String, Class<?>> javaTypes = new LinkedHashMap<>();
+    // Class declarations by name. Method dispatch needs the body and the scope it was
+    // declared in, both of which belong to the declaration rather than to the instance.
+    private final Map<String, ClassCtor> classes = new LinkedHashMap<>();
     private final Map<String, OqCallable> builtins = new LinkedHashMap<>();
     private final ThreadLocal<List<String>> callStack = ThreadLocal.withInitial(ArrayList::new);
+    // The class whose method is running, used to decide whether a `_`-prefixed field
+    // (ADR-0027 D7) is reachable from here. Null outside every class method.
+    private final ThreadLocal<String> currentClass = new ThreadLocal<>();
     // Written from every virtual thread a program runs, so it must not be a plain int: two
     // threads incrementing concurrently would otherwise lose counts and weaken the budget.
     private final java.util.concurrent.atomic.AtomicLong steps =
@@ -143,6 +150,8 @@ public final class Interpreter implements OqHost {
         }
         try {
             hoist(program.statements(), env);
+            validateDeclarations(program.statements());
+            validateNested(program.statements());
             for (Ast.Stmt stmt : program.statements()) {
                 execute(stmt, env);
             }
@@ -192,6 +201,12 @@ public final class Interpreter implements OqHost {
                     }
                 }
                 env.define(data.name(), new DataCtor(data.name(), fields, defaults), true);
+            } else if (stmt instanceof Ast.ClassDecl classDecl) {
+                ClassCtor ctor = new ClassCtor(classDecl, env);
+                classes.put(classDecl.name(), ctor);
+                env.define(classDecl.name(), ctor, true);
+            } else if (stmt instanceof Ast.ContractDecl contract) {
+                env.define(contract.name(), new ContractValue(contract), true);
             }
         }
     }
@@ -369,6 +384,18 @@ public final class Interpreter implements OqHost {
                     ret.value() == null ? null : evaluate(ret.value(), env));
             case Ast.Break brk -> throw new BreakSignal(brk.span());
             case Ast.Continue cont -> throw new ContinueSignal(cont.span());
+            case Ast.ClassDecl classDecl -> {
+                if (!env.hasLocal(classDecl.name())) {
+                    ClassCtor ctor = new ClassCtor(classDecl, env);
+                    classes.put(classDecl.name(), ctor);
+                    env.define(classDecl.name(), ctor, true);
+                }
+            }
+            case Ast.ContractDecl contract -> {
+                if (!env.hasLocal(contract.name())) {
+                    env.define(contract.name(), new ContractValue(contract), true);
+                }
+            }
             case Ast.DataDecl data -> {
                 if (!env.hasLocal(data.name())) {
                     List<Ast.FieldDef> fields = data.fields();
@@ -400,6 +427,14 @@ public final class Interpreter implements OqHost {
                                 assign.span());
                     }
                     data.set(assign.field(), value);
+                } else if (target instanceof OqInstance instance) {
+                    requireFieldAccess(instance, assign.field(), assign.span());
+                    if (!instance.has(assign.field())) {
+                        throw new OqError("type " + instance.className() + " has no field named '"
+                                + assign.field() + "'", assign.span(),
+                                "Available fields: " + String.join(", ", instance.fields().keySet()));
+                    }
+                    instance.set(assign.field(), value);
                 } else if (target instanceof Map<?, ?> raw) {
                     @SuppressWarnings("unchecked")
                     Map<Object, Object> map = (Map<Object, Object>) raw;
@@ -671,6 +706,9 @@ public final class Interpreter implements OqHost {
                 return invoke(method, args, call.span(), call.method());
             }
         }
+        if (receiver instanceof OqInstance instance) {
+            return invokeInstanceMethod(instance, call.method(), args, call.span());
+        }
         if (receiver instanceof Class<?> type) {
             Object result = JavaBridge.callStatic(type, call.method(), args, call.span(), workingDirectory);
             if (result == JavaBridge.NOT_FOUND) {
@@ -706,6 +744,15 @@ public final class Interpreter implements OqHost {
                         field.span(), "Available fields: " + String.join(", ", data.fields().keySet()));
             }
             return data.get(field.name());
+        }
+        if (target instanceof OqInstance instance) {
+            requireFieldAccess(instance, field.name(), field.span());
+            if (!instance.has(field.name())) {
+                throw new OqError("type " + instance.className() + " has no field named '"
+                        + field.name() + "'", field.span(),
+                        "Available fields: " + String.join(", ", instance.fields().keySet()));
+            }
+            return instance.get(field.name());
         }
         if (target instanceof Map<?, ?> map) {
             return map.get(field.name());
@@ -756,6 +803,298 @@ public final class Interpreter implements OqHost {
                 values.put(field.name(), value);
             }
             return new OqData(name, values);
+        }
+    }
+
+    /**
+     * A {@code class} declaration as a callable (ADR-0027). Construction evaluates the caller's
+     * arguments left to right, then fills omitted fields from their defaults in declaration
+     * order, then runs {@code init}. Nothing is visible to the program until all three succeed,
+     * so a failure cannot leave a half-built instance reachable.
+     */
+    public static final class ClassCtor implements OqCallable {
+        private final Ast.ClassDecl decl;
+        private final Env declarationScope;
+
+        ClassCtor(Ast.ClassDecl decl, Env declarationScope) {
+            this.decl = decl;
+            this.declarationScope = declarationScope;
+        }
+
+        public Ast.ClassDecl decl() {
+            return decl;
+        }
+
+        Env declarationScope() {
+            return declarationScope;
+        }
+
+        @Override
+        public String name() {
+            return decl.name();
+        }
+
+        @Override
+        public Object call(OqHost host, List<Object> args, Span span) {
+            Interpreter interpreter = (Interpreter) host;
+            List<Ast.FieldDef> fields = decl.fields();
+            if (args.size() > fields.size()) {
+                throw new OqError(decl.name() + "() expects at most " + fields.size() + " argument"
+                        + (fields.size() == 1 ? "" : "s") + ", got " + args.size(), span,
+                        "Fields: " + String.join(", ", fields.stream().map(Ast.FieldDef::name).toList()));
+            }
+            LinkedHashMap<String, Object> values = new LinkedHashMap<>();
+            for (int i = 0; i < fields.size(); i++) {
+                Ast.FieldDef field = fields.get(i);
+                Object value;
+                if (i < args.size()) {
+                    value = args.get(i);
+                } else if (field.defaultValue() != null) {
+                    value = interpreter.evaluate(field.defaultValue(), declarationScope);
+                } else {
+                    throw new OqError("missing value for field '" + field.name() + "' of " + decl.name(),
+                            span, "Pass all " + fields.size()
+                                    + " fields, or give this one a default in the class declaration.");
+                }
+                values.put(field.name(), value);
+            }
+            OqInstance instance = new OqInstance(decl.name(), values);
+            instance.bindDeclaration(this);
+            if (decl.init() != null) {
+                interpreter.runInitializer(decl, instance, span);
+            }
+            return instance;
+        }
+    }
+
+    /** Runs a class's {@code init} body with {@code this} bound to the new instance. */
+    void runInitializer(Ast.ClassDecl decl, OqInstance instance, Span span) {
+        ClassCtor owner = ownerOf(instance);
+        Env scope = new Env(owner == null ? new Env() : owner.declarationScope());
+        bindThis(scope, instance);
+        String previousClass = currentClass.get();
+        currentClass.set(decl.name());
+        try {
+            executeBlock(decl.init(), scope);
+        } finally {
+            currentClass.set(previousClass);
+        }
+    }
+
+    /**
+     * Checks every class and contract in the program once all declarations are visible
+     * (ADR-0027 D6). These are declaration-time checks, so a broken contract is reported even
+     * when no instance is ever built, and a misspelled method is never a silent success.
+     */
+    private void validateDeclarations(List<Ast.Stmt> statements) {
+        // A declaration is legal anywhere a statement is, so a class nested in a function or a
+        // block must face the same checks as a top-level one. Validating only the program's own
+        // statements let a nested class implement a missing contract or declare a method twice
+        // without a diagnostic, purely because of where it was written.
+        Map<String, Ast.ContractDecl> contracts = new LinkedHashMap<>();
+        collectContracts(statements, contracts);
+        for (Ast.Stmt stmt : statements) {
+            if (stmt instanceof Ast.ContractDecl contract) {
+                Set<String> seen = new LinkedHashSet<>();
+                for (Ast.Signature signature : contract.methods()) {
+                    if (!seen.add(signature.name())) {
+                        throw new OqError("contract " + contract.name() + " declares '"
+                                + signature.name() + "' more than once", signature.span(),
+                                "A class has one method per name, so a contract cannot ask for two.");
+                    }
+                }
+            }
+            if (!(stmt instanceof Ast.ClassDecl classDecl)) {
+                continue;
+            }
+            Set<String> fieldNames = new LinkedHashSet<>();
+            for (Ast.FieldDef field : classDecl.fields()) {
+                if (!fieldNames.add(field.name())) {
+                    throw new OqError("class " + classDecl.name() + " declares field '"
+                            + field.name() + "' more than once", field.span());
+                }
+            }
+            Map<String, Integer> aritiesByName = new LinkedHashMap<>();
+            for (Ast.MethodDecl method : classDecl.methods()) {
+                if (fieldNames.contains(method.name())) {
+                    throw new OqError("class " + classDecl.name() + " has both a field and a method"
+                            + " named '" + method.name() + "'", method.span(),
+                            "Fields and methods share one name space in a class.");
+                }
+                Integer existing = aritiesByName.putIfAbsent(method.name(), method.params().size());
+                if (existing != null) {
+                    throw new OqError("class " + classDecl.name() + " declares '"
+                            + method.name() + "' more than once", method.span(),
+                            "A class has one method per name; give them different names.");
+                }
+            }
+            if (classDecl.implementsName() == null) {
+                continue;
+            }
+            Ast.ContractDecl contract = contracts.get(classDecl.implementsName());
+            if (contract == null) {
+                throw new OqError("class " + classDecl.name() + " implements '"
+                        + classDecl.implementsName() + "', which is not declared", classDecl.span(),
+                        "Declare the contract before or after the class, at the top level.");
+            }
+            for (Ast.Signature signature : contract.methods()) {
+                Integer arity = aritiesByName.get(signature.name());
+                if (arity == null || arity != signature.arity()) {
+                    throw new OqError("class " + classDecl.name() + " implements "
+                            + contract.name() + " but has no '" + signature.name() + "' taking "
+                            + signature.arity() + " argument"
+                            + (signature.arity() == 1 ? "" : "s"), classDecl.span(),
+                            "Add the method, or remove 'implements " + contract.name() + "'.");
+                }
+            }
+        }
+    }
+
+    /** Every contract reachable in the program, including ones declared in nested blocks. */
+    private static void collectContracts(List<Ast.Stmt> statements,
+                                         Map<String, Ast.ContractDecl> contracts) {
+        for (Ast.Stmt stmt : statements) {
+            if (stmt instanceof Ast.ContractDecl contract) {
+                contracts.put(contract.name(), contract);
+            }
+            for (List<Ast.Stmt> nested : nestedBlocks(stmt)) {
+                collectContracts(nested, contracts);
+            }
+        }
+    }
+
+    /**
+     * The statement lists a statement owns directly. Used to find nested declarations; this is a
+     * walk of the syntax tree, not of scopes, so it does not need to model any of the language's
+     * binding rules.
+     */
+    private static List<List<Ast.Stmt>> nestedBlocks(Ast.Stmt stmt) {
+        List<List<Ast.Stmt>> blocks = new ArrayList<>();
+        if (stmt instanceof Ast.FuncDecl function) {
+            blocks.add(function.body());
+        } else if (stmt instanceof Ast.If branch) {
+            for (Ast.Branch arm : branch.branches()) blocks.add(arm.body());
+            if (branch.elseBranch() != null) blocks.add(branch.elseBranch());
+        } else if (stmt instanceof Ast.While loop) {
+            blocks.add(loop.body());
+        } else if (stmt instanceof Ast.ForEach loop) {
+            blocks.add(loop.body());
+        } else if (stmt instanceof Ast.ForRange loop) {
+            blocks.add(loop.body());
+        } else if (stmt instanceof Ast.TryStmt tryStmt) {
+            blocks.add(tryStmt.body());
+            if (tryStmt.handler() != null) blocks.add(tryStmt.handler());
+        }
+        return blocks;
+    }
+
+    /** Runs the same declaration checks over every nested block in the program. */
+    private void validateNested(List<Ast.Stmt> statements) {
+        for (Ast.Stmt stmt : statements) {
+            for (List<Ast.Stmt> nested : nestedBlocks(stmt)) {
+                validateDeclarations(nested);
+                validateNested(nested);
+            }
+        }
+    }
+
+    /**
+     * The declaration an instance was built from. This reads the handle bound at construction
+     * rather than looking the name up in {@code classes}, because a nested class of the same
+     * name would otherwise retarget the outer one's instances (and run their {@code init} in the
+     * wrong scope).
+     */
+    private ClassCtor ownerOf(OqInstance instance) {
+        Object declaration = instance.declaration();
+        return declaration instanceof ClassCtor ctor ? ctor : null;
+    }
+
+    /**
+     * A field whose name starts with {@code _} is private to its class (ADR-0027 D7). The
+     * check runs on both read and write, so encapsulation is one rule rather than two.
+     */
+    private void requireFieldAccess(OqInstance instance, String name, Span span) {
+        if (!name.startsWith("_") || instance.className().equals(currentClass.get())) {
+            return;
+        }
+        throw new OqError("field '" + name + "' of " + instance.className() + " is private", span,
+                "A name starting with '_' is only reachable from inside " + instance.className()
+                        + " itself. Add a method that exposes it.");
+    }
+
+    private static void bindThis(Env scope, OqInstance instance) {
+        scope.defineFixed("this", instance, "this",
+                "this is the object the method was called on and cannot be reassigned.");
+    }
+
+    /**
+     * Dispatches an instance method (ADR-0027 D3). This runs only after {@code MethodResolver}
+     * has declined, so a class cannot shadow {@code list.push} or any other built-in method.
+     */
+    private Object invokeInstanceMethod(OqInstance instance, String name, List<Object> args, Span span) {
+        ClassCtor owner = ownerOf(instance);
+        if (owner == null) {
+            throw new OqError("type " + instance.className() + " has no method '" + name + "'", span,
+                    "Check the spelling, or use a built-in function instead.");
+        }
+        Ast.MethodDecl wrongArity = null;
+        for (Ast.MethodDecl method : owner.decl().methods()) {
+            if (!method.name().equals(name)) {
+                continue;
+            }
+            if (method.params().size() == args.size()) {
+                return callMethod(owner, method, instance, args, span);
+            }
+            if (wrongArity == null) {
+                wrongArity = method;
+            }
+        }
+        if (wrongArity != null) {
+            List<String> arities = new ArrayList<>();
+            for (Ast.MethodDecl method : owner.decl().methods()) {
+                if (method.name().equals(name)) {
+                    arities.add(String.valueOf(method.params().size()));
+                }
+            }
+            throw new OqError("method '" + name + "' of " + instance.className()
+                    + " does not take " + args.size() + " argument"
+                    + (args.size() == 1 ? "" : "s"), span,
+                    "It takes " + String.join(" or ", arities) + ".");
+        }
+        throw new OqError("type " + instance.className() + " has no method '" + name + "'", span,
+                "Check the spelling, or use a built-in function instead.");
+    }
+
+    private Object callMethod(ClassCtor owner, Ast.MethodDecl method, OqInstance instance,
+                              List<Object> args, Span span) {
+        Env scope = new Env(owner.declarationScope());
+        bindThis(scope, instance);
+        for (int i = 0; i < method.params().size(); i++) {
+            scope.define(method.params().get(i), args.get(i), true);
+        }
+        String previousClass = currentClass.get();
+        currentClass.set(owner.decl().name());
+        try {
+            executeBlock(method.body(), scope);
+        } catch (OqFunction.ReturnSignal signal) {
+            return signal.value();
+        } finally {
+            currentClass.set(previousClass);
+        }
+        return null;
+    }
+
+    /** A {@code contract} value. It exists so {@code implements} can be checked by name. */
+    public record ContractValue(Ast.ContractDecl decl) implements OqCallable {
+        @Override
+        public String name() {
+            return decl.name();
+        }
+
+        @Override
+        public Object call(OqHost host, List<Object> args, Span span) {
+            throw new OqError("a contract cannot be constructed: " + decl.name(), span,
+                    "Declare a class that implements it instead.");
         }
     }
 

@@ -119,6 +119,16 @@ class ParserFuzzTest {
                     if (field.defaultValue() != null) work.add(field.defaultValue());
                 }
             }
+            case Ast.ClassDecl x -> {
+                for (Ast.FieldDef field : x.fields()) {
+                    if (field.defaultValue() != null) work.add(field.defaultValue());
+                }
+                for (Ast.MethodDecl method : x.methods()) work.addAll(method.body());
+                if (x.init() != null) work.addAll(x.init());
+            }
+            case Ast.ContractDecl ignored -> {
+                // Signatures carry a name and an arity, never an expression.
+            }
             case Ast.ExprStmt x -> work.add(x.expr());
             case Ast.Assign x -> work.add(x.value());
             case Ast.Destructure x -> work.add(x.value());
