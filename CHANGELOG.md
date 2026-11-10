@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Iteration is a protocol.** Lists, tuples, sets, maps (keys), ranges and text now answer
+  `.iter()`, which returns an `iterator` carrying a position. An iterator answers `has_next()`
+  and `next()`; calling `next()` on a spent one is an error that says so, rather than returning
+  `nothing`, because a collection may contain `nothing` and the two would be indistinguishable.
+  `for` still snapshots (ADR-0016), while `.iter()` reads the live collection — that difference
+  is the reason to have both, and it is documented. An iterator is a position rather than a
+  collection, so `length`, indexing, slicing and `in` refuse it instead of consuming it, and
+  `xs.next()` names the fix (`Call iter() first`). A `data` type joins the protocol by defining
+  `iter`. See [ADR-0020](docs/adr/0020-iterator-protocol.md).
+
+- **`enumerate(xs)`** pairs each item with its 0-based position: `enumerate(["a", "b"])` is
+  `[[0, "a"], [1, "b"]]`.
+
+- **`range(from, to, step)`** counts by a step, so `range(0, 10, 2)` is `0 until 10 by 2` and
+  `range(5, 0, -2)` counts down. A step of `0` is refused with `a range step cannot be 0`. A
+  range also grew a method surface it never had: `.to_list()`, `.to_set()`, `.first()`, `.last()`
+  and `.contains(x)`, plus `.length()` and `.iter()`. `(0 until 3).to_list()` used to fail with
+  `type range has no method 'to_list'` even though a range was already loopable.
+
 - **Changing a collection while looping over it is well defined.** A loop now walks a snapshot
   of the collection taken when it started, so the body may `add`, `remove` or `remove_value` on
   the very collection it is visiting. This used to be a fatal bug: `for x in xs` followed by

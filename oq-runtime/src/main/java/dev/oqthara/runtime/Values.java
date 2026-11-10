@@ -65,6 +65,7 @@ public final class Values {
         if (value instanceof Set<?>) return "set";
         if (value instanceof OqRange) return "range";
         if (value instanceof OqData d) return d.typeName();
+        if (value instanceof OqIterator) return "iterator";
         if (value instanceof OqTask) return "task";
         if (value instanceof OqCallable c) return "function " + c.name();
         return "java " + value.getClass().getSimpleName();
@@ -121,6 +122,7 @@ public final class Values {
             return sb.append('}').toString();
         }
         if (value instanceof OqRange r) return r.toString();
+        if (value instanceof OqIterator it) return it.toString();
         if (value instanceof OqData d) {
             StringBuilder sb = new StringBuilder(d.typeName()).append('(');
             boolean first = true;
@@ -668,6 +670,10 @@ public final class Values {
         if (value instanceof Map<?, ?> m) return m.size();
         if (value instanceof Set<?> s) return s.size();
         if (value instanceof OqRange r) return (int) r.size();
+        if (value instanceof OqIterator) {
+            throw new OqError("an iterator has no length", span,
+                    "An iterator is a position, not a collection. Use has_next() to ask what is left.");
+        }
         throw new OqError("length() needs text, list, map, set or range, got " + typeName(value), span);
     }
 
@@ -762,6 +768,13 @@ public final class Values {
     }
 
     public static Iterable<?> iterable(Object value, Span span) {
+        // A for loop over an iterator drains it, per ADR-0020: an iterator is a position, so
+        // there is nothing to copy and re-walking it would repeat items forever.
+        if (value instanceof OqIterator it) {
+            List<Object> rest = new ArrayList<>();
+            while (it.hasNext()) rest.add(it.next());
+            return rest;
+        }
         if (value instanceof List<?> l) return new ArrayList<>(l);
         if (value instanceof Set<?> s) return new ArrayList<>(s);
         if (value instanceof OqRange r) return r.toList();
@@ -778,8 +791,42 @@ public final class Values {
                         : "This is " + typeName(value) + "."));
     }
 
-    public static boolean contains(Object container, Object item, Span span) {
-        if (container instanceof List<?> l) return l.stream().anyMatch(x -> equal(x, item));
+    /**
+     * A live iterator over {@code value}, per ADR-0020.
+     *
+     * <p>Unlike {@link #iterable}, this does not copy. A {@code for} loop copies because
+     * ADR-0016 promises that mutating a collection inside the loop cannot disturb the walk;
+     * an explicit iterator is the caller asking to walk the real thing, and copying would
+     * make it a slower {@code for} with no extra guarantee.
+     */
+    public static OqIterator iterator(Object value, Span span) {
+        if (value instanceof OqIterator existing) return existing;
+        if (value instanceof List<?> l) return new OqIterator(l.iterator(), value);
+        if (value instanceof Set<?> s) return new OqIterator(s.iterator(), value);
+        if (value instanceof OqRange r) return new OqIterator(r.toList().iterator(), value);
+        if (value instanceof Map<?, ?> m) return new OqIterator(m.keySet().iterator(), value);
+        if (value instanceof String s) {
+            List<Object> chars = new ArrayList<>();
+            for (int i = 0; i < s.length(); i++) chars.add(String.valueOf(s.charAt(i)));
+            return new OqIterator(chars.iterator(), value);
+        }
+        throw new OqError("cannot iterate over " + typeName(value), span,
+                "iter() works with lists, tuples, sets, maps (keys), ranges and text. "
+                        + (isNumber(value)
+                        ? "For a count, use a range: (1 to " + display(value) + ").iter()"
+                        : "This is " + typeName(value) + "."));
+    }
+
+    /** The next item of {@code it}, or an error naming the fix when it is spent. */
+    public static Object iteratorNext(OqIterator it, Span span) {
+        if (!it.hasNext()) {
+            throw new OqError("this iterator is exhausted", span,
+                    "Check has_next() before calling next().");
+        }
+        return it.next();
+    }
+
+    public static boolean contains(Object container, Object item, Span span) {        if (container instanceof List<?> l) return l.stream().anyMatch(x -> equal(x, item));
         if (container instanceof Set<?> s) return s.contains(item);
         if (container instanceof Map<?, ?> m) return m.containsKey(item);
         if (container instanceof String s) return s.contains(display(item));

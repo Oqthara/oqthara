@@ -99,6 +99,13 @@ public final class Methods {
             throw new OqError("method calls need the Oqthara runtime on the classpath",
                     span, e.toString());
         }
+        // `xs.next()` and `xs.has_next()` are the two mistakes the iterator protocol (ADR-0020)
+        // makes easy, because "iterate this" and "advance this" read alike. Name the fix.
+        if (name.equals("next") || name.equals("has_next")) {
+            throw new OqError("type " + Values.typeName(receiver) + " has no method '" + name + "'",
+                    span, "Call iter() first: " + Values.typeName(receiver)
+                            + " is iterable, not an iterator.");
+        }
         throw new OqError("type " + Values.typeName(receiver) + " has no method '" + name + "'",
                 span, "Check the spelling, or use a built-in function instead.");
     }

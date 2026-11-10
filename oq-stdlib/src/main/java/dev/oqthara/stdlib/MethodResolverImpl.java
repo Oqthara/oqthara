@@ -20,6 +20,9 @@ import java.util.Set;
 public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResolver {
     @Override
     public OqCallable resolve(Object receiver, String name, Span span) {
+        if (receiver instanceof dev.oqthara.runtime.OqIterator iterator) {
+            return iteratorMethod(iterator, name, span);
+        }
         if (receiver instanceof List<?> list) {
             if (receiver instanceof dev.oqthara.runtime.OqTuple) {
                 OqCallable refusal = tupleRefusal(name, span);
@@ -35,6 +38,9 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         }
         if (receiver instanceof String text) {
             return textMethod(text, name, span);
+        }
+        if (receiver instanceof dev.oqthara.runtime.OqRange range) {
+            return rangeMethod(range, name, span);
         }
         if (Values.isNumber(receiver)) {
             return numberMethod(receiver, name, span);
@@ -62,9 +68,25 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 "It got " + Values.typeName(value) + ". Write " + call + ".");
     }
 
+    /**
+     * Methods on an iterator, per ADR-0020. An iterator tracks a position, so it exposes
+     * advancement and a rest-question, and refuses everything that would consume it.
+     */
+    private OqCallable iteratorMethod(
+            dev.oqthara.runtime.OqIterator iterator, String name, Span span) {
+        return switch (name) {
+            case "has_next" -> fixed(name, 0, (host, args) -> iterator.hasNext());
+            case "next" -> dev.oqthara.runtime.NativeFunction.of(name, 0,
+                    (host, args, callSpan) -> Values.iteratorNext(iterator, callSpan));
+            case "iter" -> fixed(name, 0, (host, args) -> iterator);
+            default -> null;
+        };
+    }
+
     private OqCallable listMethod(List<?> list, String name, Span span) {
         return switch (name) {
             case "length", "size" -> fixed(name, 0, (host, args) -> (long) list.size());
+            case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(list, span));
             case "push", "add" -> fixed(name, 1, (host, args) -> {
                 asMutable(list).add(args.get(0));
                 return null;
@@ -257,6 +279,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     private OqCallable mapMethod(Map<?, ?> map, String name, Span span) {
         return switch (name) {
             case "length", "size" -> fixed(name, 0, (host, args) -> (long) map.size());
+            case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(map, span));
             case "keys" -> fixed(name, 0, (host, args) -> new ArrayList<>(map.keySet()));
             case "values" -> fixed(name, 0, (host, args) -> new ArrayList<>(map.values()));
             case "entries" -> fixed(name, 0, (host, args) -> {
@@ -311,6 +334,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     private OqCallable setMethod(Set<?> set, String name, Span span) {
         return switch (name) {
             case "length", "size" -> fixed(name, 0, (host, args) -> (long) set.size());
+            case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(set, span));
             case "add" -> fixed(name, 1, (host, args) -> {
                 asMutableSet(set).add(args.get(0));
                 return null;
@@ -338,9 +362,45 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         };
     }
 
+    /**
+     * Methods on a range. Ranges had no method surface at all, so `(0 to 4).to_list()` failed
+     * even though a range is iterable and `length()` already worked on one.
+     */
+    private OqCallable rangeMethod(
+            dev.oqthara.runtime.OqRange range, String name, Span span) {
+        return switch (name) {
+            case "length", "size" -> fixed(name, 0, (host, args) -> range.size());
+            case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(range, span));
+            case "to_list", "list", "items" -> fixed(name, 0, (host, args) -> range.toList());
+            case "to_set", "set" -> fixed(name, 0, (host, args) ->
+                    new dev.oqthara.runtime.OqSet(range.toList()));
+            case "contains" -> fixed(name, 1, (host, args) -> args.get(0) instanceof Long l
+                    && l >= range.start()
+                    && l <= (range.inclusive() ? range.end() : range.end() - 1));
+            case "first" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
+                List<Object> items = range.toList();
+                if (items.isEmpty()) {
+                    throw new dev.oqthara.runtime.OqError("this range is empty", callSpan,
+                            "Check length() before asking for the first item.");
+                }
+                return items.get(0);
+            });
+            case "last" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
+                List<Object> items = range.toList();
+                if (items.isEmpty()) {
+                    throw new dev.oqthara.runtime.OqError("this range is empty", callSpan,
+                            "Check length() before asking for the last item.");
+                }
+                return items.get(items.size() - 1);
+            });
+            default -> null;
+        };
+    }
+
     private OqCallable textMethod(String text, String name, Span span) {
         return switch (name) {
             case "length", "size" -> fixed(name, 0, (host, args) -> (long) text.length());
+            case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(text, span));
             case "upper", "uppercase" -> fixed(name, 0, (host, args) -> text.toUpperCase(java.util.Locale.ROOT));
             case "lower", "lowercase" -> fixed(name, 0, (host, args) -> text.toLowerCase(java.util.Locale.ROOT));
             case "trim", "strip" -> fixed(name, 0, (host, args) -> text.strip());
