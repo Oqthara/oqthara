@@ -188,6 +188,12 @@
       "slug": "docs/adr/0030-docstrings"
     },
     {
+      "path": "docs/adr/0031-hover.md",
+      "title": "ADR-0031: Hover in the language server",
+      "section": "adr",
+      "slug": "docs/adr/0031-hover"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
