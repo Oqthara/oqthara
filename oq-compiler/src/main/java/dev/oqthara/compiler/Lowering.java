@@ -374,6 +374,16 @@ public final class Lowering {
                 yield out;
             }
             case Ast.Index index -> List.of(index.target(), index.index());
+            case Ast.Slice slice -> {
+                // Omitted parts are still operands so the child list stays positional; a null
+                // Const stands for "omitted", which the runtime reads as the corresponding end.
+                List<Ast.Expr> parts = new ArrayList<>();
+                parts.add(slice.target());
+                for (Ast.Expr part : new Ast.Expr[] {slice.from(), slice.to(), slice.step()}) {
+                    if (part != null) parts.add(part);
+                }
+                yield parts;
+            }
             case Ast.Field field -> List.of(field.target());
             case Ast.Lambda lambda -> lambda.body() == null ? List.of() : List.of(lambda.body());
             case Ast.Grouping grouping -> List.of(grouping.expr());
@@ -462,6 +472,11 @@ public final class Lowering {
     }
 
     /** Evaluates operands so that a nested {@code try} still starts from an empty stack. */
+    /** Lowers one operand, honouring a {@code try} expression inside it. */
+    private void operand(Ast.Expr expr) {
+        operands(List.of(expr));
+    }
+
     private void operands(List<Ast.Expr> operands) {
         if (operands.stream().noneMatch(Lowering::mentionsTry)) {
             for (Ast.Expr operand : operands) {
@@ -844,6 +859,18 @@ public final class Lowering {
                 operands(List.of(index.target(), index.index()));
                 mark(index.span());
                 code.add(new Ir.Index());
+            }
+            case Ast.Slice slice -> {
+                operand(slice.target());
+                for (Ast.Expr part : new Ast.Expr[] {slice.from(), slice.to(), slice.step()}) {
+                    if (part == null) {
+                        code.add(new Ir.Const(null));
+                    } else {
+                        operand(part);
+                    }
+                }
+                mark(slice.span());
+                code.add(new Ir.Slice());
             }
             case Ast.Field field -> {
                 expression(field.target());

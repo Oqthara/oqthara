@@ -10,7 +10,7 @@ public final class Ir {
     }
 
     public sealed interface Instr permits Const, Load, Store, Declare, Call, CallValue, Print, Binary,
-            Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeTuple, MakeMap, MakeSet, Index,
+            Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeTuple, MakeMap, MakeSet, Index, Slice,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
             GetField, SetField, Range, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
             JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda,
@@ -93,6 +93,10 @@ public final class Ir {
     }
 
     public record MakeSet(int count) implements Instr {
+    }
+
+    /** Slices a sequence; the four operands are target, from, to and step, with nulls for omitted. */
+    public record Slice() implements Instr {
     }
 
     public record Index() implements Instr {
@@ -267,6 +271,7 @@ public final class Ir {
             case CallValue c -> "call_value/" + c.argc() + " " + c.name();
             case Lambda l -> "lambda " + l.method() + "/" + l.arity() + " captures " + l.captures();
             case Print p -> "print " + p.count();
+            case Slice ignored -> "slice";
             case Binary b -> "binary " + b.op();
             case Unary u -> "unary " + u.op();
             case Jump j -> "jump " + j.target();

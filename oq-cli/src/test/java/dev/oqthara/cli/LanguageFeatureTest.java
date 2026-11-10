@@ -972,4 +972,95 @@ class LanguageFeatureTest {
                 print type_of(c)
                 """));
     }
+
+    @Test
+    void aSliceTakesARangeAndOmittingABoundMeansThatEnd() {
+        assertEquals("[2, 3]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[1:3]
+                """));
+        assertEquals("[1, 2, 3]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[:3]
+                """));
+        assertEquals("[3, 4, 5]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[2:]
+                """));
+        assertEquals("[1, 2, 3, 4, 5]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[:]
+                """));
+    }
+
+    @Test
+    void aNegativeSliceBoundCountsFromTheEnd() {
+        assertEquals("[4, 5]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[-2:]
+                """));
+        assertEquals("[1, 2, 3, 4]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[0:-1]
+                """));
+        assertEquals("[3, 4]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[-3:-1]
+                """));
+    }
+
+    @Test
+    void aStepWalksTheSliceAndANegativeStepReversesIt() {
+        assertEquals("[1, 3, 5]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[::2]
+                """));
+        assertEquals("[5, 4, 3, 2, 1]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[::-1]
+                """));
+        assertEquals("[5, 4, 3]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs[4:1:-1]
+                """));
+    }
+
+    @Test
+    void anOutOfRangeSliceBoundIsClampedButAZeroStepIsRefused() {
+        assertEquals("[1, 2, 3]\n", ok("""
+                xs = [1, 2, 3]
+                print xs[0:999]
+                """));
+        fails("""
+                xs = [1, 2, 3]
+                print xs[::0]
+                """, "a slice step cannot be 0");
+    }
+
+    @Test
+    void aSliceKeepsTheFamilyItCameFrom() {
+        assertEquals("bc\n", ok("print \"abcdef\"[1:3]"));
+        assertEquals("cba\n", ok("print \"abc\"[::-1]"));
+        assertEquals("(1, 2)\n", ok("""
+                t = (1, 2, 3)
+                print t[0:2]
+                """));
+        assertEquals("[2, 3, 4]\n", ok("print range(0, 10)[2:5]"));
+    }
+
+    @Test
+    void theSliceMethodResolvesNegativesLikeTheSyntax() {
+        assertEquals("[4, 5]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs.slice(-2, 5)
+                """));
+        assertEquals("[1, 2, 3, 4]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs.slice(0, -1)
+                """));
+        assertEquals("[4, 5]\n", ok("""
+                xs = [1, 2, 3, 4, 5]
+                print xs.slice(-2)
+                """));
+    }
 }

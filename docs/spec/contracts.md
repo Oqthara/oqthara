@@ -20,7 +20,7 @@ implemented, `0.x` means implemented but not yet reconciled against the other co
 | 1 | Type and value representation | [ADR-0007](../adr/0007-boxed-values.md), [ADR-0015](../adr/0015-type-families.md), §7.3 `M1`, `M2`, `M8` | `1` | `ValuesTest`, `ImmutableRefusalTest` |
 | 2 | Bindings, scopes, `const`, assignment | [ADR-0013](../adr/0013-destructuring.md), §7.3 `E7`–`E11`, `language.md` §Variables | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 3 | Function signatures and overload selection | [ADR-0012](../adr/0012-overload-resolution.md) | `1` | `LanguageFeatureTest` overload cases |
-| 4 | Collection protocols and iteration | [ADR-0016](../adr/0016-iteration-snapshots.md), [ADR-0017](../adr/0017-equality-and-hashing.md), §7.3 `M4` | `1` | `ValuesTest`, `ValueTest`, `ConcurrencyTest` |
+| 4 | Collection protocols and iteration | [ADR-0016](../adr/0016-iteration-snapshots.md), [ADR-0017](../adr/0017-equality-and-hashing.md), [ADR-0018](../adr/0018-index-semantics.md), [ADR-0019](../adr/0019-slicing.md), §7.3 `M4` | `1` | `ValuesTest`, `ValueTest`, `ConcurrencyTest`, `LanguageFeatureTest` index and slice cases |
 | 5 | Destructuring and unpacking | [ADR-0013](../adr/0013-destructuring.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 6 | Expression-oriented `try` | [ADR-0014](../adr/0014-try-as-an-expression.md) | `1` | `LanguageFeatureTest`, `BytecodeCompilerTest` |
 | 7 | `class`, interface and `data` behaviour | `language.md` §Data types only | `0.5` | `LanguageFeatureTest` |

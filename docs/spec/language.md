@@ -381,6 +381,38 @@ xs.insert(3, 4)         # appending at length is allowed
 
 See [ADR-0018](../adr/0018-index-semantics.md).
 
+### Slicing
+
+`xs[from:to]` takes a run of items, and `xs[from:to:step]` takes every `step`-th. Either
+bound may be omitted, in which case it means the corresponding end, so `xs[:3]` is the first
+three items, `xs[2:]` is everything from the third, and `xs[:]` is a copy of the whole
+sequence. A negative bound counts from the end, so `xs[-2:]` is the last two items.
+
+A **bound** is resolved differently from an index, and the difference matters. An index
+names exactly one element, so an index that names nothing is an error. A bound names the
+edge of a range, so a bound past the end means the end: `xs[0:999]` is the whole list, not
+an error. That is what makes `xs[i:i + 10]` safe on a short list.
+
+A step of `1` walks forwards. A negative step walks backwards and reverses the result, so
+`xs[::-1]` is the reversal and `xs[4:1:-1]` is `[5, 4, 3]`. A step of `0` is an error
+because it names no traversal.
+
+The result is always a new value, never a view of the original, and it keeps the family it
+came from: a list slice is a list, a tuple slice is a tuple, and a text slice is text because
+a text slice is a substring. A range slice is a list, since a sub-range with a step is not a
+range. `xs[i:j]` is not assignable -- only an index is.
+
+```
+xs = [1, 2, 3, 4, 5]
+print xs[1:3]     # [2, 3]
+print xs[-2:]     # [4, 5]
+print xs[::2]     # [1, 3, 5]
+print xs[::-1]    # [5, 4, 3, 2, 1]
+print "abcdef"[1:3]   # bc
+```
+
+See [ADR-0019](../adr/0019-slicing.md).
+
 ## Tuples
 
 A tuple is a fixed-length, ordered, immutable group of values. It is not a list: a list

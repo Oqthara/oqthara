@@ -49,15 +49,19 @@ class SequenceIndexClampTest {
     }
 
     @Test
-    void aNegativeStartIsClampedToZero() {
-        // Was `internal error: IndexOutOfBoundsException: fromIndex = -2` before the clamp.
-        assertEquals(list(1, 2, 3, 4), slice(list(1, 2, 3, 4, 5), -2L, 4L));
+    void aNegativeStartCountsFromTheEnd() {
+        // Was `internal error: IndexOutOfBoundsException: fromIndex = -2` before any handling.
+        // Clamping it to 0, as it did after that, made -2 mean the start instead of the end;
+        // a negative bound is a position from the end, as `xs[-1]` already is. See ADR-0019.
+        assertEquals(list(4), slice(list(1, 2, 3, 4, 5), -2L, 4L));
     }
 
     @Test
-    void aNegativeEndIsClampedToZero() {
-        // from = 0 > to = -1 used to set from = -1 and throw from the JDK.
-        assertEquals(List.of(), slice(list(1, 2, 3), 0L, -1L));
+    void aNegativeEndCountsFromTheEnd() {
+        // from = 0 > to = -1 used to set from = -1 and throw from the JDK; folding negatives to
+        // 0 made every negative end empty. A negative bound counts from the end (ADR-0019), and
+        // a bound resolved past the start is clamped to 0, which still gives an empty range.
+        assertEquals(list(1, 2), slice(list(1, 2, 3), 0L, -1L));
         assertEquals(List.of(), slice(list(1, 2, 3), -5L, -9L));
     }
 
@@ -116,7 +120,7 @@ class SequenceIndexClampTest {
         Object sliced = resolver.resolve(new OqTuple(List.of(1L, 2L, 3L)), "subList", span)
                 .call(null, List.of(-1L, 9L), span);
         assertEquals(OqTuple.class, sliced.getClass());
-        assertEquals(List.of(1L, 2L, 3L), sliced);
+        assertEquals(List.of(3L), sliced);
     }
 
     @Test
