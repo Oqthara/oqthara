@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SQLite database support.** `db_query(path, sql, params)` reads, `db_execute(path, sql, params)`
+  writes, and `db_transaction(path, body)` commits when the body returns and rolls back when it
+  raises. There is no connection value: every call opens, works and closes, so a connection
+  cannot be leaked — the language has no `close`, and a handle would be the first API to leak on
+  the error path. Parameters are always bound, never spliced, and the placeholder count is
+  checked because SQLite treats an unbound placeholder as NULL: a forgotten parameter previously
+  wrote `nothing` and exited 0. SQL NULL maps to `nothing` in both directions. This adds the
+  project's first external runtime dependency, which grows the standalone jar from 435 KB to
+  13.5 MB; the trade is recorded in ADR-0040.
+- **`oq doc` now scans every standard library source file.** It previously read only
+  `Stdlib.java`, so a built-in defined in its own module file was missing from a reference page
+  that claims to list every function. The page went from 126 to 129 functions.
 - **A mutex, a bounded `await`, and one shared task executor.** `mutex()` returns the one
   concurrency primitive the language now has: `m.lock(body)` acquires, runs the body, and
   releases however the body ends, so a raising body cannot leave the lock held. It takes a

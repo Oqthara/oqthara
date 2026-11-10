@@ -334,8 +334,14 @@ def cited_builtins_exist() -> None:
     for page in ("docs/spec/language.md", "docs/stdlib/reference.md"):
         text = read(page)
         declared |= set(re.findall(r"\bfun ([a-z][a-z_0-9]*)\s*\(", text))
-        for name in re.findall(r"\b([a-z][a-z_0-9]*_[a-z_0-9]+)\b", text):
-            cited.setdefault(name, page)
+        # A snake_case name in quotes is a string literal or a map key — `saved["last_id"]` —
+        # not a function being called, so only unquoted occurrences are citations. The check is
+        # on the character before the match: a lookbehind would instead let the pattern start
+        # one character late and report `ast_id` from inside `last_id`.
+        for match in re.finditer(r"\b[a-z][a-z_0-9]*_[a-z_0-9]+\b", text):
+            if match.start() > 0 and text[match.start() - 1] == '"':
+                continue
+            cited.setdefault(match.group(0), page)
     cited = {name: page for name, page in cited.items() if name not in declared}
     # Paths such as `tests/test_math.oq` contain snake_case file stems, not builtin names.
     cited = {name: page for name, page in cited.items() if not re.search(rf"{name}\.[a-z]+", read(page))}

@@ -117,6 +117,7 @@ public final class Stdlib {
         installProcess(interpreter);
         installLogging(interpreter);
         installArguments(interpreter);
+        DatabaseModule.install(interpreter);
     }
 
     private static void installCore(Interpreter interpreter) {

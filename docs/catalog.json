@@ -242,6 +242,12 @@
       "slug": "docs/adr/0039-executors-and-cancellation"
     },
     {
+      "path": "docs/adr/0040-database-support.md",
+      "title": "ADR-0040 — Database support",
+      "section": "adr",
+      "slug": "docs/adr/0040-database-support"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

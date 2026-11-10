@@ -1412,6 +1412,99 @@ outside the lock; `lock` is how you say "these steps belong together", and the l
 enforce it. There is no cancellation and no `close`, and there are no channels: a channel would
 be another lifetime, and a blocking receive with no timeout would be a hang with no escape.
 
+## Databases
+
+SQLite is supported through three functions. There is no connection value and no `open`/`close`
+pair, because the language has no `close`: every call opens the database, does its work, and
+closes it before returning or raising.
+
+```oq
+db_execute("app.db", "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)", [])
+
+saved = db_execute("app.db", "INSERT INTO users (name) VALUES (?)", ["ana"])
+print saved["last_id"]
+
+rows = db_query("app.db", "SELECT id, name FROM users WHERE name = ?", ["ana"])
+for row in rows
+    print "{row["id"]} {row["name"]}"
+end
+```
+
+`db_execute(path, sql, params)` runs a statement that does not return rows and gives back
+`{"affected": n, "last_id": n}`. `db_query(path, sql, params)` runs a statement that does and
+gives back a list of maps, one per row, keyed by column name.
+
+The path is repeated on every call. That redundancy is the design: a value you cannot hold is a
+value you cannot leak or forget to close.
+
+### Parameters are always bound
+
+Every function takes its values in the `params` list and binds them with a prepared statement.
+Values are never spliced into the SQL text, so text that looks like SQL is stored as text:
+
+```oq
+payload = "'; DROP TABLE users--"
+db_execute("app.db", "INSERT INTO users (name) VALUES (?)", [payload])
+
+print db_query("app.db", "SELECT name FROM users", [])[0]["name"] == payload   # true
+print db_query("app.db", "SELECT count(*) AS n FROM users", [])[0]["n"]       # the table is intact
+```
+
+Pass `[]` when the statement has no placeholders. The number of `?` placeholders must equal the
+number of parameters; a mismatch raises rather than writing NULL:
+
+```
+error: db_execute() has 1 placeholder but got 0 parameters
+```
+
+That check exists because SQLite treats an unbound placeholder as NULL. Without it, a forgotten
+parameter would store `nothing` and exit successfully.
+
+### Transactions
+
+`db_transaction(path, body)` runs `body` with an open transaction: it commits when the body
+returns and rolls back when the body raises. Calls to `db_query` and `db_execute` made inside the
+body join that transaction, even though they name the path again.
+
+```oq
+fun transfer()
+    db_execute("bank.db", "UPDATE accounts SET balance = balance - ? WHERE id = ?", [50, 1])
+    db_execute("bank.db", "UPDATE accounts SET balance = balance + ? WHERE id = ?", [50, 2])
+    return "ok"
+end
+
+db_transaction("bank.db", transfer)
+```
+
+If the body raises, both statements are discarded and the original error reaches the caller
+unchanged. A transaction cannot be nested; a nested call raises rather than silently joining the
+outer one, because a joined inner transaction would turn an inner rollback into an outer commit.
+
+### Types
+
+| SQLite | Oqthara |
+|---|---|
+| `INTEGER` | number (whole) |
+| `REAL` | number (decimal) |
+| `TEXT` | text |
+| `BLOB` | bytes |
+| `NULL` | `nothing` |
+| anything else | text |
+
+`nothing` round-trips: a NULL column reads back as `nothing`, and passing `nothing` as a parameter
+writes NULL. Boolean parameters are stored as `1` and `0`, and read back as numbers, because
+SQLite has no boolean type.
+
+### Errors
+
+A malformed statement, a failed constraint, or a path whose directory does not exist raises an
+error whose message begins with `database error:` and includes the driver's explanation. The
+prefix is the stable part; the text after it is the driver's and may change between versions.
+
+`:memory:` is accepted as a path and gives a scratch database. Because the connection closes at
+the end of every call, an in-memory database does not persist between calls; use
+`db_transaction` to keep one alive across several statements.
+
 ## Building
 
 ```bash
