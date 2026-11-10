@@ -1,0 +1,2 @@
+n = nothing
+print n.x
