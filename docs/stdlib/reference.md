@@ -87,6 +87,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `path_join` | built-in |
 | `path_name` | built-in |
 | `path_parent` | built-in |
+| `pbkdf2_sha256` | built-in |
 | `pop` | built-in |
 | `pow` | built-in |
 | `print` | built-in |
@@ -107,6 +108,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `round` | built-in |
 | `run_command` | built-in |
 | `save` | built-in |
+| `secure_equal` | built-in |
 | `secure_random_hex` | built-in |
 | `set` | built-in |
 | `sha1` | built-in |

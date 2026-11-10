@@ -716,6 +716,49 @@ public final class Stdlib {
             RANDOM.nextBytes(bytes);
             return HexFormat.of().formatHex(bytes);
         }));
+        interpreter.defineBuiltin(NativeFunction.of("secure_equal", 2, (host, args, span) -> {
+            // MessageDigest.isEqual is the JVM's constant-time comparison. Writing the loop here
+            // was rejected: a hand-written xor accumulator is only correct if the compiler does
+            // not reintroduce a branch (ADR-0038, Decision 1).
+            byte[] left = utf8(args.get(0), "secure_equal", span);
+            byte[] right = utf8(args.get(1), "secure_equal", span);
+            return MessageDigest.isEqual(left, right);
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("pbkdf2_sha256", 3, (host, args, span) ->
+                pbkdf2(args.get(0), args.get(1), args.get(2), span)));
+    }
+
+    /** The largest iteration count {@code pbkdf2_sha256} accepts, so a call cannot look hung. */
+    static final long MAX_PBKDF2_ITERATIONS = 10_000_000L;
+
+    /**
+     * A salted password hash, deliberately separate from {@code sha256} (ADR-0038, Decision 4).
+     *
+     * <p>The salt is a parameter because a generated one would have to be returned alongside the
+     * iteration count for the stored value to be verifiable, and this library has no record type
+     * for that. Generating it is the caller's job with {@code secure_random_hex}.
+     */
+    private static Object pbkdf2(Object passwordValue, Object saltValue, Object iterationsValue,
+            Span span) {
+        String password = text(passwordValue, "pbkdf2_sha256", span);
+        String salt = text(saltValue, "pbkdf2_sha256", span);
+        long iterations = wholeNumber(iterationsValue, "pbkdf2_sha256", span);
+        if (iterations < 1 || iterations > MAX_PBKDF2_ITERATIONS) {
+            throw new OqError("pbkdf2_sha256() needs an iteration count from 1 to "
+                    + MAX_PBKDF2_ITERATIONS + ", got " + iterations, span,
+                    "A count near zero is not a password hash and a count above the maximum "
+                            + "runs long enough to look like a hang. 600000 is a common choice.");
+        }
+        try {
+            javax.crypto.spec.PBEKeySpec spec = new javax.crypto.spec.PBEKeySpec(
+                    password.toCharArray(), utf8(salt, "pbkdf2_sha256", span), (int) iterations,
+                    256);
+            javax.crypto.SecretKeyFactory factory =
+                    javax.crypto.SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256");
+            return HexFormat.of().formatHex(factory.generateSecret(spec).getEncoded());
+        } catch (java.security.GeneralSecurityException e) {
+            throw new OqError("cannot derive the password hash", span, safeMessage(e));
+        }
     }
 
     /**
