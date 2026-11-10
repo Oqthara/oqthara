@@ -1100,6 +1100,45 @@ a guess: `CST` is three different zones. A bare date is an error too — use `da
 HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
 `.body` and `.ok`.
 
+A failed request names the phase that failed and the cause, instead of ending in `null`:
+
+```
+print http_get("http://127.0.0.1:1/")
+# error: HTTP request failed for 'http://127.0.0.1:1/': cannot reach the host: connection refused
+
+print http_get("http://no-such-host.invalid/")
+# error: HTTP request failed for 'http://no-such-host.invalid/': cannot resolve the host: the name did not resolve to an address
+```
+
+The two are distinguished because a name that does not resolve is a different problem from a
+host that resolved and refused. Neither case is retried: `http_post` is not idempotent, so an
+automatic retry could create a duplicate the server never acknowledged. Three timeouts apply —
+15 seconds to connect, 30 seconds for headers, 30 seconds for the body — and each reports its
+own phase, so a stalled server is never described as the subprocess timeout. TLS keeps the JVM
+defaults: certificates and hostnames are validated, and there is no option to turn that off.
+
+URLs: `url_parse(url)` returns `.scheme`, `.host`, `.port`, `.path`, `.query` and `.fragment`.
+`url_encode(text)` and `url_decode(text)` are **form** encoding: a space becomes `+`, and a
+literal `+` becomes `%2B`, so the two round-trip. `query_parse(query)` returns a list of
+`{name, value}` pairs in order — a repeated name is kept, which a map could not do — and
+`query_encode(pairs)` accepts either those pairs or a plain map. `url_join(base, reference)`
+resolves a reference against a base and escapes it per path segment, which `url_encode` cannot
+do correctly because it turns `/` into `%2F` and a space into `+`.
+
+```oq
+const u = url_parse("https://example.com/a/b?x=1&y=2#frag")
+print u.scheme      # https
+print u.port        # nothing
+print u.path        # /a/b
+print query_parse("a=1&a=2")   # [QueryPair(name: "a", value: "1"), QueryPair(name: "a", value: "2")]
+print url_join("https://example.com/a/", "a b/c")
+# https://example.com/a/a%20b/c
+```
+
+`port` is `nothing` when the URL does not write one; the scheme default is never invented, since
+that would make `https://h` and `https://h:443` indistinguishable. Text that cannot be parsed as
+a URL is an error rather than a value with empty fields.
+
 Files: `read(path)`, `read_lines(path)`, `save(path, text)`, `append(path, text)`,
 `exists(path)`, `delete(path)`, `make_dir(path)`, `file_size(path)`, `list_files(directory)`,
 `path_join(a, b)`, `path_name(path)`, `path_parent(path)`, `cwd()`.
@@ -1169,7 +1208,7 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | `read`, `read_lines` | 16 MiB per file | `the file is too large to read: <path>` |
 | `input()` | 16,777,216 characters per line | `input line is too large` |
 | `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
-| `http_get`, `http_post` | 30 seconds for the body, 16 MiB per body | `the response body did not finish in 30 seconds`, `response is too large: <url>` |
+| `http_get`, `http_post` | 15 s to connect, 30 s for headers, 30 s for the body, 16 MiB per body | `cannot reach the host: connection refused`, `no response headers within 30 seconds`, `the response body did not finish in 30 seconds`, `response is too large: <url>` |
 | `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call` |
 | `sleep` | 10 seconds per call, 60 seconds total | `cannot sleep for more than 10 seconds`, `the program waited for too long` |
 | `list_files` | 100,000 entries | `directory has too many entries: <path>` |

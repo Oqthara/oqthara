@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **URLs, query strings, and honest HTTP failures.** `url_parse` splits a URL into `scheme`,
+  `host`, `port`, `path`, `query` and `fragment`, leaving `port` as `nothing` rather than
+  inventing the scheme default. `url_encode`/`url_decode` are form encoding, so a space is `+`
+  and a literal `+` is `%2B`; `query_parse` returns ordered `{name, value}` pairs so a repeated
+  name survives, and `query_encode` accepts either those pairs or a plain map. `url_join`
+  resolves and escapes a reference per path segment, which form encoding cannot do because it
+  would turn `/` into `%2F`. Two defects are fixed: every transport failure used to report
+  `HTTP request failed: null`, and now names the cause (`connection refused` is distinguished
+  from a host that did not resolve); and the three HTTP deadlines were unexplained literals,
+  one of which reused the subprocess timeout. Specified by
+  [ADR-0037](docs/adr/0037-networking-and-urls.md). Sockets and an HTTP server are deliberately
+  not implemented — neither can be given a lifetime while the language has no `close`.
 - **CSV reading and writing, and date parsing.** `csv_parse` follows RFC 4180 with a real quote
   state machine rather than splitting on commas, so `a,"b,c"` is two fields and `a,",b"` is
   two fields; a field may contain the delimiter, a line break, or a doubled quote. Malformed
