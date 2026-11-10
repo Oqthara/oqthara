@@ -897,6 +897,13 @@ public final class BytecodeCompiler {
                                 "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
                     }
                 }
+                case Ir.Slice ignored -> {
+                    if (reachable) {
+                        call(COLLECTIONS, "slice",
+                                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;"
+                                        + "Ljava/lang/Object;)Ljava/lang/Object;");
+                    }
+                }
                 case Ir.SetIndex ignored -> {
                     if (reachable) {
                         call(COLLECTIONS, "setIndex",

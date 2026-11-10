@@ -99,8 +99,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/spec/states/02-compiler.md` rather than papered over.
 - `docs/adr/0002-ci-split.md` no longer points at the removed `STATUS.md` and `RESUME.md`.
 
+### Added
+
+- **Slice syntax.** `xs[from:to]` and `xs[from:to:step]`, with either bound omittable
+  (`xs[:3]`, `xs[2:]`, `xs[:]`). A negative bound counts from the end. A step walks the
+  result, and a negative step reverses it, so `xs[::-1]` reverses a list. Slicing a list,
+  tuple, range or set gives a list; slicing text gives text. Bounds are clamped to the
+  sequence, so `xs[0:999]` is the whole list, but a step of `0` is refused. `[1,2,3][0:2]`
+  previously failed to parse at all. See [ADR-0019](docs/adr/0019-slicing.md).
+
 ### Fixed
 
+- **`slice` and `subList` resolve negative bounds instead of ignoring them.** Both folded
+  every negative bound to `0` through `clampIndex`, so `xs.slice(-2, 5)` returned the whole
+  list rather than its last two items, and `xs.slice(0, -1)` returned `[]` rather than
+  everything but the last item. A negative bound now counts from the end, as `xs[-1]` does,
+  and is then clamped; `xs.slice(0, 999)` still returns the whole list.
 - **Index operations share one rule, and an out-of-range `insert` no longer crashes.** `insert`
   handed an unchecked index to `ArrayList.add`, so `l.insert(99, 0)` exited 70 with
   `internal error: IndexOutOfBoundsException` and `This is a bug in Oqthara`: a user mistake

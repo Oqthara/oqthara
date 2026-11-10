@@ -20,7 +20,7 @@ public final class Ast {
 
     public sealed interface Expr extends Node permits
             NumberLit, StringLit, BoolLit, NothingLit, Var, ListLit, TupleLit, MapLit, SetLit,
-            Unary, Binary, Logical, Call, MethodCall, Index, Field, Lambda, Grouping,
+            Unary, Binary, Logical, Call, MethodCall, Index, Slice, Field, Lambda, Grouping,
             InExpr, RangeExpr, TryExpr {
     }
 
@@ -161,6 +161,10 @@ public final class Ast {
     }
 
     public record Index(Expr target, Expr index, Span span) implements Expr {
+    }
+
+    /** A slice. Any of {@code from}, {@code to} and {@code step} may be null when omitted. */
+    public record Slice(Expr target, Expr from, Expr to, Expr step, Span span) implements Expr {
     }
 
     public record Field(Expr target, String name, Span span) implements Expr {

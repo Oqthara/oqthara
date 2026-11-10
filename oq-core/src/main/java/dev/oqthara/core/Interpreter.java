@@ -564,6 +564,12 @@ public final class Interpreter implements OqHost {
             case Ast.Call call -> evaluateCall(call, env);
             case Ast.MethodCall call -> evaluateMethod(call, env);
             case Ast.Index index -> Values.index(evaluate(index.target(), env), evaluate(index.index(), env), index.span());
+            case Ast.Slice slice -> Values.slice(
+                    evaluate(slice.target(), env),
+                    slice.from() == null ? null : evaluate(slice.from(), env),
+                    slice.to() == null ? null : evaluate(slice.to(), env),
+                    slice.step() == null ? null : evaluate(slice.step(), env),
+                    slice.span());
             case Ast.Field field -> evaluateField(field, env);
             case Ast.Lambda lambda -> new OqFunction("<lambda>", lambda.params(),
                     lambda.body() != null

@@ -116,6 +116,12 @@
       "slug": "docs/adr/0018-index-semantics"
     },
     {
+      "path": "docs/adr/0019-slicing.md",
+      "title": "ADR-0019 — Slicing",
+      "section": "adr",
+      "slug": "docs/adr/0019-slicing"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

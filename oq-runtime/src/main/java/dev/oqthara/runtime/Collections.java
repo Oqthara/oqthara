@@ -55,6 +55,10 @@ public final class Collections {
         return Values.index(target, key, Errors.current());
     }
 
+    public static Object slice(Object target, Object from, Object to, Object step) {
+        return Values.slice(target, from, to, step, Errors.current());
+    }
+
     public static void setIndex(Object target, Object key, Object value) {
         Values.setIndex(target, key, value, Errors.current());
     }

@@ -566,10 +566,100 @@ public final class Values {
         throw new OqError("cannot assign into " + typeName(target), span);
     }
 
+    /**
+     * Resolves a slice bound against a sequence of the given length.
+     *
+     * <p>An omitted bound is supplied here as {@code null} and means the corresponding end. A
+     * present bound is a position, so it follows the same negative rule as an index, and is then
+     * clamped: a bound past the end names the end. That differs from {@link #position} on purpose
+     * -- a bound delimits a range, so {@code xs[i:i + 10]} must not fail because {@code xs} is
+     * short, whereas an index selects one element and there is no element to mean "off the end".
+     */
+    private static int sliceBound(Object bound, int size, int whenOmitted, String which, Span span) {
+        if (bound == null) return whenOmitted;
+        long i = integerIndex(bound, span, which);
+        long resolved = i < 0 ? size + i : i;
+        if (resolved < 0) return 0;
+        if (resolved > size) return size;
+        return (int) resolved;
+    }
+
+    /**
+     * Slices a list, tuple, range or text.
+     *
+     * <p>Bounds are positions and are clamped after the negative rule; a step of zero is refused
+     * because it names no traversal. The result is always a new value, and a text slice is text,
+     * because a substring is what a text slice is for.
+     */
+    public static Object slice(Object target, Object from, Object to, Object step, Span span) {
+        if (target == null) {
+            throw new OqError("cannot slice nothing", span,
+                    "The value is nothing; check for a missing result.");
+        }
+        long stride = 1;
+        if (step != null) {
+            stride = integerIndex(step, span, "a slice step");
+            if (stride == 0) {
+                throw new OqError("a slice step cannot be 0", span,
+                        "A step of 1 takes every item, 2 takes every other one, and -1 reverses.");
+            }
+        }
+
+        if (target instanceof String s) {
+            List<Object> chars = new ArrayList<>();
+            s.codePoints().forEach(cp -> chars.add(new String(Character.toChars(cp))));
+            StringBuilder out = new StringBuilder();
+            for (Object c : sliceItems(chars, from, to, stride, span)) out.append((String) c);
+            return out.toString();
+        }
+        if (target instanceof OqRange r) {
+            return new ArrayList<>(sliceItems(r.toList(), from, to, stride, span));
+        }
+        if (target instanceof OqTuple) {
+            // A tuple stays a tuple, matching `subList` on a tuple: immutability is part of the
+            // value, and a caller who sliced one to inspect a run should not be handed a mutable
+            // copy by accident.
+            return OqTuple.of(sliceItems((List<?>) target, from, to, stride, span));
+        }
+        if (target instanceof List<?> list) {
+            return new ArrayList<>(sliceItems(list, from, to, stride, span));
+        }
+        if (target instanceof OqSet set) {
+            return new ArrayList<>(sliceItems(new ArrayList<>(set), from, to, stride, span));
+        }
+        throw new OqError("cannot slice " + typeName(target), span,
+                "Slicing works on a list, a tuple, a range, text or a set.");
+    }
+
+    private static List<Object> sliceItems(List<?> list, Object from, Object to, long stride, Span span) {
+        int size = list.size();
+        List<Object> out = new ArrayList<>();
+
+        if (stride > 0) {
+            int start = sliceBound(from, size, 0, "a slice start", span);
+            int end = sliceBound(to, size, size, "a slice end", span);
+            for (long i = start; i < end; i += stride) out.add(list.get((int) i));
+            return out;
+        }
+
+        // Travelling backwards, an omitted bound means the far end in that direction, and a
+        // supplied bound that already meant "from the end" is resolved after the negative rule
+        // like any other position.
+        int start = sliceBound(from, size, size - 1, "a slice start", span);
+        if (start >= size) start = size - 1;
+        int end = sliceBound(to, size, -1, "a slice end", span);
+        for (long i = start; i > end && i >= 0; i += stride) out.add(list.get((int) i));
+        return out;
+    }
+
     public static long integerIndex(Object key, Span span) {
+        return integerIndex(key, span, "an index");
+    }
+
+    private static long integerIndex(Object key, Span span, String what) {
         if (key instanceof Long l) return l;
         if (key instanceof Double d && d == Math.rint(d)) return d.longValue();
-        throw new OqError("index must be a number, got " + typeName(key), span);
+        throw new OqError(what + " must be a whole number, got " + typeName(key), span);
     }
 
     public static int size(Object value, Span span) {

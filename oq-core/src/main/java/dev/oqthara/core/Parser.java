@@ -539,9 +539,7 @@ public final class Parser {
                 expr = new Ast.Call(expr, args, paren.span());
             } else if (match(Token.Kind.LBRACKET)) {
                 Token bracket = previous();
-                Ast.Expr index = expression();
-                expect(Token.Kind.RBRACKET, "to close the index");
-                expr = new Ast.Index(expr, index, bracket.span());
+                expr = subscript(expr, bracket);
             } else if (match(Token.Kind.DOT)) {
                 Token dot = previous();
                 Token name = expect(Token.Kind.IDENT, "a field or method name after '.'");
@@ -563,6 +561,40 @@ public final class Parser {
             }
         }
         return expr;
+    }
+
+    /**
+     * Parses what follows a {@code [} on a postfix expression.
+     *
+     * <p>The first token after {@code [} decides which form this is. A {@code :} means the
+     * from-bound was omitted, so the slice starts at the beginning; otherwise one expression is
+     * parsed and the next token says whether it was the index or the start of a slice. Only one
+     * token of lookahead is needed because a slice is committed by the first {@code :}.
+     */
+    private Ast.Expr subscript(Ast.Expr target, Token bracket) {
+        Ast.Expr first = null;
+        if (!check(Token.Kind.COLON)) {
+            first = expression();
+            if (!check(Token.Kind.COLON)) {
+                expect(Token.Kind.RBRACKET, "to close the index");
+                return new Ast.Index(target, first, bracket.span());
+            }
+        }
+        advance(); // the ':'
+
+        Ast.Expr to = null;
+        if (!check(Token.Kind.RBRACKET) && !check(Token.Kind.COLON)) {
+            to = expression();
+        }
+
+        Ast.Expr step = null;
+        if (match(Token.Kind.COLON)) {
+            if (!check(Token.Kind.RBRACKET)) {
+                step = expression();
+            }
+        }
+        expect(Token.Kind.RBRACKET, "to close the slice");
+        return new Ast.Slice(target, first, to, step, bracket.span());
     }
 
     private List<Ast.Expr> arguments() {

@@ -223,13 +223,15 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                     new ArrayList<>(list.subList(clampIndex(args.get(0), list.size()), list.size())));
             case "subList", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
                     (host, args, callSpan) -> {
-                // Both bounds land in [0, size] before touching java.util.List.subList, which
-                // throws IndexOutOfBoundsException for anything else and would surface an
-                // Oqthara bug to the program.
-                int from = clampIndex(args.get(0), list.size());
+                // A bound is a position, so it resolves negatives from the end, and is then
+                // clamped into [0, size] before java.util.List.subList sees it -- that throws
+                // IndexOutOfBoundsException outside the range, which would surface as an
+                // Oqthara bug. Folding negatives to 0, as this used to, made `slice(-2, 5)`
+                // return the whole list instead of its last two items.
+                int from = resolvedBound(args.get(0), list.size());
                 int to = args.size() == 1
                         ? list.size()
-                        : clampIndex(args.get(1), list.size());
+                        : resolvedBound(args.get(1), list.size());
                 // An inverted range is empty, not an error: the spec promises clamping, and a
                 // caller that computed start > end gets the same empty answer as start == end.
                 // Java's subList would throw here, so the two indices are ordered explicitly.
@@ -443,6 +445,19 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
      * silently slices the wrong range, and turns a large negative into a positive index. The
      * clamp happens in {@code long} so neither can occur.
      */
+    /**
+     * A slice bound: negatives count from the end, then the result is clamped into
+     * {@code [0, size]}. Clamping a bound past either end is deliberate -- a bound delimits a
+     * range, so {@code slice(i, i + 10)} must not fail on a short list.
+     */
+    private static int resolvedBound(Object value, int size) {
+        long index = ((Number) value).longValue();
+        long resolved = index < 0 ? size + index : index;
+        if (resolved < 0) return 0;
+        if (resolved > size) return size;
+        return (int) resolved;
+    }
+
     private static int clampIndex(Object value, int size) {
         long index = ((Number) value).longValue();
         if (index < 0) return 0;
