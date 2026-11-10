@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{flags, values, rest}`, converts typed values, treats a trailing `?` as optional, and raises
   an error naming the offending token when the command line does not match what was declared.
   Both are specified by [ADR-0034](docs/adr/0034-logging-and-argument-parsing.md). The
-  reference documentation now covers 63 functions, up from 57.
+  reference documentation now lists 105 built-in functions, up from 98.
 
 ### Fixed
 - **A static field can be read off its class.** `Integer.MAX_VALUE`, `Math.PI` and every other
