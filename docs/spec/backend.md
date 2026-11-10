@@ -390,6 +390,38 @@ checks that both backends print the same bytes, then measures whole CLI invocati
 warm-up and several runs. It prints a table; the repository does not commit a performance
 claim that it cannot reproduce.
 
+### Baseline for collection families
+
+`bench/programs` now holds one program per collection family, so a change that quietly
+makes a family quadratic shows up as a regression in a named row rather than in an
+aggregate. Each program prints a value that is checked against nothing but itself, so the
+useful signal is the interpreter-to-compiled ratio, not the absolute milliseconds.
+
+Measured on Darwin arm64, 8 CPUs, JDK 21, with `--limit 20 --runs 5 --warmup 2`:
+
+| program | family | interpreter ms | compiled ms | ratio |
+|---|---|---|---|---|
+| `frozenset_ops` | `frozenset` | 183.6 | 155.5 | 1.18x |
+| `map_ops` | `map` | 313.4 | 261.1 | 1.20x |
+| `numeric_loop` | scalars/control flow | 551.2 | 606.6 | 0.91x |
+| `range_ops` | `range` | 187.4 | 125.3 | 1.50x |
+| `recursion` | calls/frames | 547.4 | 258.8 | 2.11x |
+| `set_ops` | `set` | 211.0 | 102.7 | 2.05x |
+| `string_list` | `text`/`list` | 305.0 | 226.3 | 1.35x |
+| `tuple_ops` | `tuple` | 192.9 | 184.0 | 1.05x |
+
+Two rows are worth reading carefully, because they are the honest part of this table.
+`numeric_loop` is *slower* compiled than interpreted: tight arithmetic with no calls is
+already near the interpreter's per-instruction cost, and the compiled backend pays jar
+startup that a long-running loop does not amortise as well as a call-heavy one does.
+`tuple_ops` is close to parity for the same reason — it is allocation and indexing with
+almost no dispatch. The families that benefit most are the ones where the interpreter
+spends its time in method resolution (`set`, `frozenset`) or in frame setup (`recursion`).
+
+These numbers are a snapshot, not a gate. They are recorded so that a future change has
+something to be compared against; the harness is the reproducible part, and the `--limit`
+default of 4 means a plain run measures only the first four programs alphabetically.
+
 ## How values are represented
 
 The compiled backend emits JVM operations against the same runtime classes the interpreter

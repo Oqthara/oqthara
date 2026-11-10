@@ -1,0 +1,7 @@
+# Tuple construction and indexing: 200,000 rounds.
+total = 0
+for i in 1 to 200000
+  t = (i, i + 1, i + 2)
+  total = total + t[0] + t[2]
+end
+print total

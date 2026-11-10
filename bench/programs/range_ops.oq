@@ -1,0 +1,10 @@
+# Range materialization and membership: 100,000 rounds.
+total = 0
+for i in 1 to 100000
+  r = 1 to 100
+  total = total + r.length()
+  if i in r
+    total = total + 1
+  end
+end
+print total
