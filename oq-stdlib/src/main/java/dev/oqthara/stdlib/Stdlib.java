@@ -129,6 +129,15 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("range", 2, (host, args, span) ->
                 new OqRange(wholeNumber(args.get(0), "range", span),
                         wholeNumber(args.get(1), "range", span), false)));
+        interpreter.defineBuiltin(NativeFunction.of("range", 3, (host, args, span) -> {
+            long step = wholeNumber(args.get(2), "range", span);
+            if (step == 0) {
+                throw new dev.oqthara.runtime.OqError("a range step cannot be 0", span,
+                        "Without a step there is no next number. Use 1 for every answer, or -1 to count down.");
+            }
+            return new OqRange(wholeNumber(args.get(0), "range", span),
+                    wholeNumber(args.get(1), "range", span), false, step);
+        }));
         interpreter.defineBuiltin(NativeFunction.of("error", 1, (host, args, span) -> {
             throw new OqError(Values.display(args.get(0)), span);
         }));
@@ -254,6 +263,17 @@ public final class Stdlib {
             if (args.get(0) instanceof List<?> list) return list;
             List<Object> result = new ArrayList<>();
             for (Object item : Values.iterable(args.get(0), span)) result.add(item);
+            return result;
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("enumerate", 1, (host, args, span) -> {
+            List<Object> result = new ArrayList<>();
+            long index = 0;
+            for (Object item : Values.iterable(args.get(0), span)) {
+                List<Object> pair = new ArrayList<>(2);
+                pair.add(index++);
+                pair.add(item);
+                result.add(pair);
+            }
             return result;
         }));
         interpreter.defineBuiltin(NativeFunction.of("zip", 2, (host, args, span) -> {
@@ -883,6 +903,14 @@ public final class Stdlib {
         }
         dev.oqthara.runtime.OqCallable method = interpreter.methods().resolve(receiver, name, span);
         if (method == null) {
+            // Keep this in step with Methods.java: the compiled path reaches this message and
+            // the interpreted path reaches that one, so a hint added to only one would make the
+            // two backends disagree about the same mistake.
+            if (name.equals("next") || name.equals("has_next")) {
+                throw new OqError(Values.typeName(receiver) + " has no method '" + name + "'", span,
+                        "Call iter() first: " + Values.typeName(receiver)
+                                + " is iterable, not an iterator.");
+            }
             throw new OqError(Values.typeName(receiver) + " has no method '" + name + "'", span);
         }
         return host.call(method, args, span);

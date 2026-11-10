@@ -413,6 +413,52 @@ print "abcdef"[1:3]   # bc
 
 See [ADR-0019](../adr/0019-slicing.md).
 
+### Iteration
+
+`for x in xs` walks a collection. It takes a **snapshot** first, so changing the collection
+inside the loop cannot disturb the walk:
+
+```
+xs = [1, 2, 3]
+for x in xs
+    if x == 1
+        xs.add(99)
+    end
+    print x      # 1 2 3, not 1 2 3 99
+end
+```
+
+To walk with a position, ask for an **iterator**. An iterable *can produce* an iterator and
+can be walked as often as you like; an iterator *tracks a position* and is consumed once.
+
+```
+it = [1, 2].iter()
+print it.has_next()   # true
+print it.next()       # 1
+print it.next()       # 2
+print it.has_next()   # false
+print it.next()       # error: this iterator is exhausted
+```
+
+There is no `nothing` answer for an exhausted iterator, because a list may contain
+`nothing` and the two would be indistinguishable. `has_next()` asks the question instead,
+so a correct loop can always be written.
+
+`.iter()` is **lazy**: it reads the live collection rather than copying, which is the reason
+to use it instead of `for` on a large collection. The trade is that you must not change the
+collection while iterating it — `for` is the safe choice when you might.
+
+An iterator is a position, not a collection, so `length`, indexing, slicing and `in` all
+refuse it rather than consuming it. `xs.next()` is an error too; call `iter()` first, and the
+message says so. Lists, tuples, sets, maps (keys), ranges and text all have `.iter()`, and a
+`data` type joins the protocol by defining `iter`.
+
+`enumerate(xs)` pairs each item with its position, and `range(from, to, step)` counts with a
+step. Ranges also gained a method surface: `.to_list()`, `.to_set()`, `.first()`, `.last()`
+and `.contains(x)`.
+
+See [ADR-0020](../adr/0020-iterator-protocol.md).
+
 ## Tuples
 
 A tuple is a fixed-length, ordered, immutable group of values. It is not a list: a list

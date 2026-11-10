@@ -311,8 +311,10 @@ def cited_builtins_exist() -> None:
     # Method names are often aliased on one `case "trim_end", "strip_end" ->` arm, so every
     # quoted name before the arrow is a real name; reading only the first under-reports.
     method_names: set[str] = set()
-    for arm in re.findall(r"^\s*case ((?:\s*\"[a-z_0-9]+\"\s*,?)+)\s*->", methods, re.M):
-        method_names |= set(re.findall(r'"([a-z_0-9]+)"', arm))
+    # Aliases may differ in case (`subList` sits beside `slice`), and a case-sensitive class
+    # here silently dropped every name on such an arm -- which is how `has_next` went unseen.
+    for arm in re.findall(r"^\s*case ((?:\s*\"[A-Za-z_0-9]+\"\s*,?)+)\s*->", methods, re.M):
+        method_names |= set(re.findall(r'"([A-Za-z_0-9]+)"', arm))
 
     # Constructors and iteration helpers the parser or interpreter define directly.
     core_names = {"print", "write", "list", "map", "set", "tuple", "range", "in", "for", "fun"}

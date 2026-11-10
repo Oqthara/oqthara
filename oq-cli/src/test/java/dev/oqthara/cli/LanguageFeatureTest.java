@@ -1063,4 +1063,133 @@ class LanguageFeatureTest {
                 print xs.slice(-2)
                 """));
     }
+
+    @Test
+    void anIteratorWalksOnceAndThenSaysSo() {
+        assertEquals("1\n2\nfalse\n", ok("""
+                it = [1, 2].iter()
+                print it.next()
+                print it.next()
+                print it.has_next()
+                """));
+        assertEquals("true\nfalse\n", ok("""
+                print [1].iter().has_next()
+                print [].iter().has_next()
+                """));
+    }
+
+    @Test
+    void anExhaustedIteratorRefusesRatherThanReturningNothing() {
+        // A `nothing` sentinel would be indistinguishable from a list that contains `nothing`,
+        // so the loop could not be written correctly. ADR-0020 rejects that alternative.
+        fails("""
+                it = [1].iter()
+                it.next()
+                it.next()
+                """, "this iterator is exhausted");
+    }
+
+    @Test
+    void everyIterableFamilyHasAnIterator() {
+        // Maps yield keys, matching what `for` does, so one rule covers both.
+        assertEquals("1\n2\n", ok("""
+                for x in (1, 2).iter()
+                    print x
+                end
+                """));
+        assertEquals("a\nb\n", ok("""
+                for c in "ab".iter()
+                    print c
+                end
+                """));
+        assertEquals("a\nb\n", ok("""
+                for k in {"a": 1, "b": 2}.iter()
+                    print k
+                end
+                """));
+        assertEquals("0\n1\n", ok("""
+                for i in range(0, 2).iter()
+                    print i
+                end
+                """));
+    }
+
+    @Test
+    void twoIteratorsOverOneListAreIndependent() {
+        assertEquals("1\n1\n", ok("""
+                xs = [1, 2]
+                a = xs.iter()
+                b = xs.iter()
+                print a.next()
+                print b.next()
+                """));
+    }
+
+    @Test
+    void anIteratorIsAPositionSoItHasNoLengthIndexOrMembership() {
+        fails("print length([1, 2].iter())", "an iterator has no length");
+        fails("xs = [1, 2]\nprint xs.iter()[0]", "cannot index iterator");
+        fails("xs = [1, 2]\nprint xs.iter()[0:1]", "cannot slice iterator");
+        fails("print 1 in [1, 2].iter()", "cannot check membership in iterator");
+    }
+
+    @Test
+    void anIterableIsNotAnIterator() {
+        // The two read alike, so the error has to name the fix rather than the spelling.
+        fails("xs = [1, 2]\nprint xs.next()", "Call iter() first");
+        fails("xs = [1, 2]\nprint xs.has_next()", "Call iter() first");
+    }
+
+    @Test
+    void iterIsLazyWhileForStillSnapshots() {
+        // ADR-0016's guarantee for `for` must survive adding a live iterator.
+        assertEquals("1\n2\n3\n[1, 2, 3, 99]\n", ok("""
+                xs = [1, 2, 3]
+                for x in xs
+                    if x == 1
+                        xs.add(99)
+                    end
+                    print x
+                end
+                print xs
+                """));
+        // A for loop over an iterator drains it, so the second walk yields nothing.
+        assertEquals("1\n2\n", ok("""
+                it = [1, 2].iter()
+                for x in it
+                    print x
+                end
+                for y in it
+                    print y
+                end
+                """));
+    }
+
+    @Test
+    void anIteratorReprsItsSource() {
+        assertEquals("iterator([1, 2, 3])\n", ok("print repr([1, 2, 3].iter())"));
+        assertEquals("iterator\n", ok("print type_of([1].iter())"));
+    }
+
+    @Test
+    void enumeratePairsEachItemWithItsPosition() {
+        assertEquals("[[0, \"a\"], [1, \"b\"]]\n", ok("print enumerate([\"a\", \"b\"])"));
+        assertEquals("[]\n", ok("print enumerate([])"));
+    }
+
+    @Test
+    void aRangeCanAdvanceByAStep() {
+        assertEquals("[0, 2, 4, 6, 8]\n", ok("print range(0, 10, 2).to_list()"));
+        assertEquals("[5, 3, 1]\n", ok("print range(5, 0, -2).to_list()"));
+        assertEquals("4\n", ok("print length(range(0, 10, 3))"));
+        fails("print range(0, 5, 0).to_list()", "a range step cannot be 0");
+    }
+
+    @Test
+    void aRangeHasAMethodSurface() {
+        assertEquals("[0, 1, 2]\n", ok("print (0 until 3).to_list()"));
+        assertEquals("0\n2\n", ok("print (0 until 3).first()\nprint (0 until 3).last()"));
+        assertEquals("true\nfalse\n",
+                ok("print (0 until 3).contains(2)\nprint (0 until 3).contains(3)"));
+    }
 }

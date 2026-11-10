@@ -122,6 +122,12 @@
       "slug": "docs/adr/0019-slicing"
     },
     {
+      "path": "docs/adr/0020-iterator-protocol.md",
+      "title": "ADR-0020 — The iteration protocol",
+      "section": "adr",
+      "slug": "docs/adr/0020-iterator-protocol"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

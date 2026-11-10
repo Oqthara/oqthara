@@ -665,6 +665,17 @@ public final class Interpreter implements OqHost {
         }
         Object result = JavaBridge.callMethod(receiver, call.method(), args, call.span(), workingDirectory);
         if (result == JavaBridge.NOT_FOUND) {
+            // `xs.next()` and `xs.has_next()` are the two mistakes the iterator protocol
+            // (ADR-0020) makes easy, because "iterate this" and "advance this" read alike.
+            // Name the fix. Methods.java and Stdlib.java carry the same hint for the other
+            // two paths a method call can take, so all of them agree.
+            if (call.method().equals("next") || call.method().equals("has_next")
+                   ) {
+                throw new OqError("type " + Values.typeName(receiver)
+                        + " has no method '" + call.method() + "'",
+                        call.span(), "Call iter() first: " + Values.typeName(receiver)
+                                + " is iterable, not an iterator.");
+            }
             throw new OqError("type " + Values.typeName(receiver) + " has no method '" + call.method() + "'",
                     call.span(), "Check the spelling, or use a built-in function instead.");
         }
