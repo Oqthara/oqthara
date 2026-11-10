@@ -485,7 +485,20 @@ public final class BytecodeCompiler {
                     case Ir.Declare declare ->
                             resolved[i] = declare(declare.name(), declare.fixed(), next++);
                     case Ir.Store store -> resolved[i] = assign(store.name(), next++);
-                    case Ir.Load load -> resolved[i] = lookup(load.name()).slot();
+                    case Ir.Load load -> {
+                        // A bare `fun` name that no variable shadows is a callable value, so
+                        // it needs scratch slots to build the value's argument-count list.
+                        // A negative code other than -1 marks that load: -(slot + 2).
+                        if (lookupOrNull(load.name()) == null
+                                && functionArities.containsKey(load.name())) {
+                            int first = next;
+                            next += Math.max(1, functionArities.get(load.name()).size());
+                            checkSlotLimit(next);
+                            resolved[i] = -first - 2;
+                        } else {
+                            resolved[i] = lookup(load.name()).slot();
+                        }
+                    }
                     // Collection literals need one scratch slot per item (two per map
                     // entry); resolved[i] records the first slot.
                     case Ir.MakeList make -> {
@@ -627,12 +640,8 @@ public final class BytecodeCompiler {
             Binding binding = lookupOrNull(name);
             if (binding == null) {
                 refuseEnclosing(name);
-                if (functionArities.containsKey(name)) {
-                    // A bare function name is a function value in the interpreter, which a
-                    // compiled class cannot create without a callable wrapper.
-                    throw new NotSupportedException("function '" + name
-                            + "' is used as a value, which is not compiled yet");
-                }
+                // A bare `fun` name is handled by the load arm of `plan`, so reaching this
+                // point means the name was never a function or a variable in this method.
                 throw new NotSupportedException(
                         "variable '" + name + "' is used before assignment");
             }
@@ -809,8 +818,14 @@ public final class BytecodeCompiler {
                 case Ir.Const constant -> {
                     if (reachable) emitConstant(constant.value());
                 }
-                case Ir.Load ignored -> {
-                    if (reachable) load(slot);
+                case Ir.Load load -> {
+                    if (reachable) {
+                        if (slot < -1) {
+                            emitFunctionValue(load.name(), -slot - 2);
+                        } else {
+                            load(slot);
+                        }
+                    }
                 }
                 case Ir.Store ignored -> {
                     if (reachable) store(slot);
@@ -1259,6 +1274,43 @@ public final class BytecodeCompiler {
          */
         private static String builtinDescriptor(int argc) {
             return "(" + OBJECT_DESCRIPTOR.repeat(argc + 1) + ")Ljava/lang/Object;";
+        }
+
+        /**
+         * Materialises a bare {@code fun} name as a callable value. A name with one declared
+         * arity needs no scratch slot; a name with several compiles to one method per arity
+         * under the same name, so the counts are collected into a list and
+         * {@code Callables.overload} builds one value that dispatches on argument count,
+         * matching the interpreter's single value per name.
+         */
+        private void emitFunctionValue(String name, int firstSlot) {
+            Set<Integer> arities = functionArities.get(name);
+            if (arities.size() == 1) {
+                int arity = arities.iterator().next();
+                emitClassConstant(ownerInternalName);
+                emitConstant(name);
+                emitConstant((long) arity);
+                emitConstant(name);
+                call(CALLABLES, "function",
+                        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;"
+                                + "Ljava/lang/Object;)Ljava/lang/Object;");
+                return;
+            }
+            for (int arity : arities) {
+                emitConstant((long) arity);
+            }
+            // The counts go on the stack in declaration order, so the last declared arity is
+            // the last list element, matching `OverloadedFunction.describeArities` order.
+            emitMakeCollection(arities.size(), firstSlot, false);
+            // `overload(owner, arities, name)`: the owner has to be pushed before the list,
+            // so it is parked in the scratch slot the list emitter just freed.
+            store(firstSlot);
+            emitClassConstant(ownerInternalName);
+            load(firstSlot);
+            emitConstant(name);
+            call(CALLABLES, "overload",
+                    "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)"
+                            + "Ljava/lang/Object;");
         }
 
         /**

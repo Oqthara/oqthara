@@ -21,18 +21,31 @@ public final class CompiledFunction implements OqCallable {
     private final String methodName;
     private final Object[] captured;
     private final int arity;
+    private final String name;
     private volatile Method method;
 
     public CompiledFunction(Class<?> owner, String methodName, int arity, Object[] captured) {
+        this(owner, methodName, arity, captured, LAMBDA_NAME);
+    }
+
+    /**
+     * A {@code fun} used as a value keeps its declared name, so {@code print f} renders
+     * {@code <function double>} exactly as the interpreter's {@code OqFunction} does. A lambda
+     * stays {@code <lambda>}. Both are arity-checked with the name they report, which is why
+     * an arity error names the function rather than the binding it was stored in.
+     */
+    public CompiledFunction(Class<?> owner, String methodName, int arity, Object[] captured,
+            String name) {
         this.owner = owner;
         this.methodName = methodName;
         this.arity = arity;
         this.captured = captured;
+        this.name = name;
     }
 
     @Override
     public String name() {
-        return LAMBDA_NAME;
+        return name;
     }
 
     @Override
@@ -43,7 +56,7 @@ public final class CompiledFunction implements OqCallable {
     @Override
     public Object call(OqHost host, List<Object> args, Span span) {
         if (args.size() != arity) {
-            throw new OqError(LAMBDA_NAME + "() expects " + arity + " argument"
+            throw new OqError(name + "() expects " + arity + " argument"
                     + (arity == 1 ? "" : "s") + ", got " + args.size(), span);
         }
         Object[] all = new Object[captured.length + args.size()];
@@ -67,10 +80,15 @@ public final class CompiledFunction implements OqCallable {
     private Method resolve() {
         Method resolved = method;
         if (resolved != null) return resolved;
+        // An overload set compiles to one method per arity under the same name, so the name
+        // alone does not identify a method: the parameter count does. Captured values are
+        // leading parameters, exactly as the constructor documents.
+        int parameters = captured.length + arity;
         synchronized (this) {
             if (method == null) {
                 for (Method candidate : owner.getDeclaredMethods()) {
-                    if (candidate.getName().equals(methodName)) {
+                    if (candidate.getName().equals(methodName)
+                            && candidate.getParameterCount() == parameters) {
                         method = candidate;
                         break;
                     }
