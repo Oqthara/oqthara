@@ -178,19 +178,25 @@ behaviour and were measured before the change.
 
 The refusal above was correct in message and wrong in position. It is raised inside the
 collection, which has no span, so it fell back to `Errors.current()` — the last marked
-position. The compiled backend marks spans, so it reported a plausible-looking line; the
-**interpreter marks none**, so it reported `<unknown>:1:1` and pointed at line 1 of whatever
-the program was. Both are wrong, and the interpreter's is unusable.
+position. The interpreter marks nothing at all, so every one of these reported
+`<unknown>:1:1` there; the compiled backend's behaviour depended on whether the enclosing
+operation marked, which is not a property worth relying on.
 
 | Program | Was (interpreter) | Now (both backends) |
 | --- | --- | --- |
-| `m = {}` / `m[[1]] = 2` | `<unknown>:1:1`, blames line 1 | `:2:2` |
+| `m = {}` / `m[[1]] = 2` | `<unknown>:1:1`, blamed line 1 | `:2:2` |
 | `s = {[1]}` | `<unknown>:1:1` | `:1:6` |
-| `m = {[1]: "a"}` | `<unknown>:1:1` (interpreter), `<unknown>:1:1` (compiled) | `:1:6` |
+| `m = {[1]: "a"}` | `<unknown>:1:1` | `:1:6` |
 
 `Value.requireHashable` gained a span-taking overload; the interpreter's set and map literals
 and `Values.setIndex` pass the span they already hold, and the compiled set and map literals
 now `mark` their span the way every other operation does. `ErrorMessageContractTest` asserts
 the reported line, so this cannot silently regress.
+
+This repair covered the literal forms only. The **constructor and algebra** paths —
+`set(...)`, `frozenset(...)`, `unique(...)`, `.to_set()`, and the set methods — reach the same
+refusal and were still reporting `<unknown>:1:1` through the interpreter. **ADR-0025** fixes
+that class by marking in the interpreter's call funnel, which is why the interpreter now
+reports real positions everywhere rather than only at literals.
 
 The Python reference consulted for naming was CPython 3.13 on 2026-11-10, per §9.6.

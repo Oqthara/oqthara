@@ -288,6 +288,33 @@ class BuildJarTest {
 
     /** A program that ends normally must still do so once the handler catches Throwable. */
     @Test
+    void aCompiledJarReportsAnUnhashableMemberAtTheSameCallAsTheInterpreter(@TempDir Path dir)
+            throws Exception {
+        // ADR-0025: the interpreter used to answer `<unknown>:1:1` here. Both backends now
+        // report the call expression, and this test pins them to each other so a future change
+        // to either one's marking cannot silently diverge.
+        for (String stmt : new String[] {
+                "print(set([[1]]))",
+                "print(frozenset([[1]]))",
+                "print(unique([[1]]))",
+                "print([[1]].to_set())",
+                "print(set([1]).union([[1]]))",
+                "print(set([1]).add([[1]]))"}) {
+            Path source = dir.resolve("member.oq");
+            Files.writeString(source, "a = 1\nb = 2\n" + stmt + "\n");
+            Path jar = dir.resolve("member.jar");
+            assertEquals(0, build(source, jar), stmt);
+
+            ProcessResult fromJar = runJar(jar, dir);
+            assertEquals(1, fromJar.exit(), stmt + "\n" + fromJar.stderr());
+            assertTrue(fromJar.stderr().contains("member.oq:3:"),
+                    stmt + "\n" + fromJar.stderr());
+            assertFalse(fromJar.stderr().contains("<unknown>"),
+                    stmt + "\n" + fromJar.stderr());
+        }
+    }
+
+    @Test
     void aCatchAllHandlerDoesNotDisturbNormalPrograms(@TempDir Path dir) throws Exception {
         Path jar = dir.resolve("ok.jar");
         Path source = dir.resolve("ok.oq");

@@ -83,10 +83,10 @@ public final class Value {
     /**
      * The same check at a caller-supplied position.
      *
-     * <p>The interpreter does not maintain {@link Errors#current()}, so a refusal raised from
-     * inside {@code OqMap.put} during interpretation would otherwise report a synthetic
-     * {@code <unknown>:1:1} instead of the line the program wrote. Callers that hold the span
-     * of the expression pass it here.
+     * <p>A caller that holds the span of the expression it is evaluating passes it here rather
+     * than relying on {@link Errors#current()}. The interpreter marks in its call funnel
+     * (ADR-0025), so the no-span overload is correct there too, but the explicit form does not
+     * depend on a mark having happened and is what the collection constructors use.
      */
     public static void requireHashable(Object value, String role, Span span) {
         requireHashable(value, role, span, 0);

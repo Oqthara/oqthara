@@ -152,6 +152,12 @@
       "slug": "docs/adr/0024-text-is-a-sequence-of-code-points"
     },
     {
+      "path": "docs/adr/0025-refusals-report-the-call-site.md",
+      "title": "ADR-0025 — A refusal reports the call site that caused it",
+      "section": "adr",
+      "slug": "docs/adr/0025-refusals-report-the-call-site"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

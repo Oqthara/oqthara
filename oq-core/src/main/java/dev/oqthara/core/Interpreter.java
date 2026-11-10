@@ -1,5 +1,6 @@
 package dev.oqthara.core;
 
+import dev.oqthara.runtime.Errors;
 import dev.oqthara.runtime.MethodResolver;
 import dev.oqthara.runtime.NativeFunction;
 import dev.oqthara.runtime.OverloadedFunction;
@@ -622,6 +623,9 @@ public final class Interpreter implements OqHost {
     }
 
     private Object invoke(Object callee, List<Object> args, Span span, String name) {
+        // Mark before dispatch so a refusal raised inside a runtime helper reports the call
+        // rather than the synthetic span (ADR-0025). Both backends then agree on positions.
+        Errors.mark(span);
         if (callee instanceof OqCallable callable) {
             List<String> stack = callStack.get();
             stack.add(callable.name());
