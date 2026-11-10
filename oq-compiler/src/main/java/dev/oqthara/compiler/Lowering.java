@@ -27,8 +27,12 @@ public final class Lowering {
     private final List<LoopContext> loops = new ArrayList<>();
     private int loopCounter = 0;
 
-    /** A `data` type visible in the current block, matching the interpreter's hoisting. */
-    private record DataType(String name, List<Ast.FieldDef> fields) {
+    /**
+     * A `data` type visible in the current block, matching the interpreter's hoisting.
+     * {@code immutable} travels with the type so construction sets the same flag the
+     * interpreter would (ADR-0028).
+     */
+    private record DataType(String name, List<Ast.FieldDef> fields, boolean immutable) {
     }
 
     private record LoopContext(String id, String breakLabel, String continueLabel) {
@@ -147,7 +151,7 @@ public final class Lowering {
         Map<String, DataType> types = new LinkedHashMap<>();
         for (Ast.Stmt stmt : statements) {
             if (stmt instanceof Ast.DataDecl data) {
-                types.put(data.name(), new DataType(data.name(), data.fields()));
+                types.put(data.name(), new DataType(data.name(), data.fields(), data.immutable()));
             }
         }
         typeScopes.push(types);
@@ -980,7 +984,7 @@ public final class Lowering {
         for (Ast.FieldDef field : fields) {
             names.add(field.name());
         }
-        code.add(new Ir.MakeData(type.name(), List.copyOf(names)));
+        code.add(new Ir.MakeData(type.name(), List.copyOf(names), type.immutable()));
     }
 
     /**

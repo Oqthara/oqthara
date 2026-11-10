@@ -250,8 +250,26 @@ public final class Parser {
             } while (match(Token.Kind.COMMA));
         }
         expect(Token.Kind.RPAREN, "to close the field list");
+        boolean immutable = declaresImmutable();
         endStatement();
-        return new Ast.DataDecl(name.lexeme(), fields, keyword.span());
+        return new Ast.DataDecl(name.lexeme(), fields, immutable, keyword.span());
+    }
+
+    /**
+     * True when the contextual word {@code immutable} follows the field list. It is not a
+     * reserved word, so {@code immutable = 1} still names a variable (ADR-0028), matching how
+     * {@code implements} and {@code init} are read.
+     */
+    private boolean declaresImmutable() {
+        if (!check(Token.Kind.IDENT) || !peek().lexeme().equals("immutable")) return false;
+        if (current + 1 < tokens.size()) {
+            Token.Kind next = tokens.get(current + 1).kind();
+            if (next != Token.Kind.NEWLINE && next != Token.Kind.SEMICOLON && next != Token.Kind.EOF) {
+                return false;
+            }
+        }
+        advance();
+        return true;
     }
 
     /**

@@ -1,0 +1,20 @@
+# Immutable data values can be map keys and set members; mutable ones cannot (ADR-0028).
+data Point(x, y) immutable
+data Mutable(x)
+
+m = {Point(1, 2): "a"}
+print m[Point(1, 2)]
+print length(set([Point(1, 2), Point(1, 2)]))
+
+p = Point(3, 4)
+print p
+
+try
+  p.x = 9
+catch err
+  print "refused"
+end
+
+q = Mutable(1)
+q.x = 2
+print q

@@ -777,6 +777,49 @@ a.items.push(1)
 print b.items      # [], not [1]
 ```
 
+### Immutable data
+
+A `data` declaration may end with `immutable`. The fields are then fixed at construction,
+and the value may be used where a stable hash is required — as a map key or a set member,
+which reject a mutable `data` value:
+
+```
+data Point(x, y) immutable
+
+m = {Point(3, 4): "a"}
+print m[Point(3, 4)]        # a — structural lookup finds the entry
+print length(set([Point(1, 2), Point(1, 2)]))   # 1
+
+p = Point(3, 4)
+p.x = 9                     # error: Point is immutable, so field 'x' cannot be changed
+```
+
+The refusal names the field and shows how to rebuild the value, because building a new one
+is the only way to change an immutable record:
+
+```
+error: Point is immutable, so field 'x' cannot be changed
+  help: Build a new value instead: Point(x: ..., y: 2)
+```
+
+`immutable` fixes the **field**, not its contents. A field may still hold a mutable value,
+and changing that value changes the record's rendering and its hash:
+
+```
+data Box(items) immutable
+b = Box([])
+b.items.push(1)
+print b          # Box(items: [1])
+```
+
+This is the rule tuples already follow — `(list, 1)` is an immutable tuple holding a mutable
+list. Deep freezing would have to reach every nested value, and no family in the language
+does that. Treat an immutable record that holds a mutable collection as a mutable value: it
+cannot be used as a map key safely.
+
+`immutable` is not a reserved word; `immutable = 7` still names a variable. See
+[ADR-0028](../adr/0028-data-evolution.md).
+
 ## Classes and contracts
 
 `data` is for values. A `class` is for objects that have identity and behaviour:

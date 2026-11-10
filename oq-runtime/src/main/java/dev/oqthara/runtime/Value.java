@@ -102,7 +102,10 @@ public final class Value {
             for (int i = 0; i < tuple.size(); i++) requireHashable(tuple.get(i), role, span, depth + 1);
             return;
         }
-        if (value instanceof OqData) throw new UnhashableValueException(Values.typeName(value), role, span);
+        if (value instanceof OqData data) {
+            if (data.immutable()) return;
+            throw new UnhashableValueException(Values.typeName(value), role, span);
+        }
         if (value instanceof List<?> || value instanceof Map<?, ?> || value instanceof java.util.Set<?>) {
             throw new UnhashableValueException(Values.typeName(value), role, span);
         }
@@ -176,7 +179,8 @@ public final class Value {
             super("a " + typeName + " cannot be used as " + role, span,
                     "Hashing is structural, so mutating the value afterwards would change its "
                             + "hash and make the entry impossible to find again. Use an immutable "
-                            + "value instead: a tuple, a frozenset, text or a number.");
+                            + "value instead: a tuple, a frozenset, text or a number, or declare the "
+                            + "data type 'immutable'.");
         }
     }
 

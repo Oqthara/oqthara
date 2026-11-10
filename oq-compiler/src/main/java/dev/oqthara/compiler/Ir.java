@@ -144,7 +144,7 @@ public final class Ir {
      * order. The field names travel with the instruction so the generated code preserves
      * the interpreter's field order and rendering.
      */
-    public record MakeData(String type, List<String> fields) implements Instr {
+    public record MakeData(String type, List<String> fields, boolean immutable) implements Instr {
         public int count() {
             return fields.size();
         }

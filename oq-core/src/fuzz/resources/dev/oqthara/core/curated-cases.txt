@@ -51,3 +51,16 @@ end
 class\nend
 class C(\ncontract\nclass C(x)\
   fun\n  end\nend
+
+# T-0029: the immutable modifier on a data declaration (ADR-0028). Valid forms, the
+# contextual-word cases that must keep parsing as names, and malformed trailing tokens.
+data Point(x, y) immutable
+print Point(1, 2)
+data Bag(items = []) immutable
+print Bag()
+immutable = 7\
+print immutable
+immutable
+data P(x) immutable extra
+data P(x) immutable = 1
+data P() immutable

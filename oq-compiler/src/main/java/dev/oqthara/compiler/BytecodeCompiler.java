@@ -1343,8 +1343,12 @@ public final class BytecodeCompiler {
                         "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
             }
             emitConstant(make.type());
+            // The flag is a primitive in the descriptor, so it must not be boxed the way
+            // emitConstant would box a Boolean constant.
+            bytes.write(make.immutable() ? ICONST_1 : ICONST_0);
+            push();
             call(DATA_VALUES, "make",
-                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;");
+                    "(Ljava/lang/Object;Ljava/lang/String;Z)Ljava/lang/Object;");
         }
 
         /**

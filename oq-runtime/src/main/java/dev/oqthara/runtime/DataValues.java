@@ -13,13 +13,17 @@ public final class DataValues {
     private DataValues() {
     }
 
-    /** Builds an {@link OqData} from a map of field names to values, preserving order. */
-    public static Object make(Object fieldMap, String type) {
+    /**
+     * Builds an {@link OqData} from a map of field names to values, preserving order.
+     * {@code immutable} carries the declaration's modifier so compiled construction and
+     * interpreted construction produce the same value (ADR-0028).
+     */
+    public static Object make(Object fieldMap, String type, boolean immutable) {
         LinkedHashMap<String, Object> values = new LinkedHashMap<>();
         for (Map.Entry<?, ?> entry : ((Map<?, ?>) fieldMap).entrySet()) {
             values.put(String.valueOf(entry.getKey()), entry.getValue());
         }
-        return new OqData(type, values);
+        return new OqData(type, values, immutable);
     }
 
     @SuppressWarnings("unchecked")
@@ -78,7 +82,7 @@ public final class DataValues {
                 throw new OqError("type " + data.typeName() + " has no field named '" + name + "'",
                         Errors.current());
             }
-            data.set(name, value);
+            data.set(name, value, Errors.current());
             return;
         }
         if (target instanceof Map<?, ?> raw) {
