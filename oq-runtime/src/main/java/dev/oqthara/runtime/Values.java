@@ -1,8 +1,6 @@
 package dev.oqthara.runtime;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -165,13 +163,96 @@ public final class Values {
         return sb.append('"').toString();
     }
 
+    /**
+     * The one definition of {@code ==}, applied at every depth (ADR-0017). Numbers widen, lists
+     * and tuples compare structurally in order, maps and sets compare without order, and a
+     * tuple never equals a list. Before ADR-0017 the numeric rule stopped at the container
+     * boundary, so {@code 1 == 1.0} was true while <code>[1] == [1.0]</code> was false.
+     */
     public static boolean equal(Object a, Object b) {
         if (a == null || b == null) return a == b;
+        if (a instanceof OqData x && b instanceof OqData y) return x.equals(y);
         if (a instanceof OqTuple != b instanceof OqTuple) return false;
         if (a instanceof Long x && b instanceof Double y) return x.doubleValue() == y;
         if (a instanceof Double x && b instanceof Long y) return x == y.doubleValue();
         if (isNumber(a) && isNumber(b)) return asDouble(a) == asDouble(b);
+        if (a instanceof OqTuple x && b instanceof OqTuple y) return tuplesEqual(x, y);
+        if (a instanceof List<?> x && b instanceof List<?> y) return listsEqual(x, y);
+        if (a instanceof Map<?, ?> x && b instanceof Map<?, ?> y) return mapsEqual(x, y);
+        if (a instanceof Set<?> x && b instanceof Set<?> y) return setsEqual(x, y);
         return a.equals(b);
+    }
+
+    /**
+     * Compares the fields of two {@link OqData} values, in declaration order, using
+     * {@link #equal} so numbers widen inside an object.
+     */
+    static boolean dataFieldsEqual(java.util.LinkedHashMap<String, Object> a,
+                                   java.util.LinkedHashMap<String, Object> b) {
+        if (a.size() != b.size()) return false;
+        java.util.Iterator<java.util.Map.Entry<String, Object>> left = a.entrySet().iterator();
+        java.util.Iterator<java.util.Map.Entry<String, Object>> right = b.entrySet().iterator();
+        while (left.hasNext() && right.hasNext()) {
+            java.util.Map.Entry<String, Object> l = left.next();
+            java.util.Map.Entry<String, Object> r = right.next();
+            if (!l.getKey().equals(r.getKey())) return false;
+            if (!equal(l.getValue(), r.getValue())) return false;
+        }
+        return true;
+    }
+
+    private static boolean tuplesEqual(OqTuple a, OqTuple b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            if (!equal(a.get(i), b.get(i))) return false;
+        }
+        return true;
+    }
+
+    private static boolean listsEqual(List<?> a, List<?> b) {
+        if (a.size() != b.size()) return false;
+        for (int i = 0; i < a.size(); i++) {
+            if (!equal(a.get(i), b.get(i))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Two maps are equal when they have the same size and each key of one finds an equal value
+     * in the other. Keys are matched with {@link #equal} rather than by hash, so a map built
+     * with {@code {1: "a"}} equals one built with {@code {1.0: "a"}} regardless of the
+     * container that backs either.
+     */
+    private static boolean mapsEqual(Map<?, ?> a, Map<?, ?> b) {
+        if (a.size() != b.size()) return false;
+        for (Map.Entry<?, ?> entry : a.entrySet()) {
+            boolean found = false;
+            for (Map.Entry<?, ?> other : b.entrySet()) {
+                if (equal(entry.getKey(), other.getKey())) {
+                    if (!equal(entry.getValue(), other.getValue())) return false;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
+    }
+
+    /** Two sets are equal when they have the same size and every member of one is in the other. */
+    private static boolean setsEqual(Set<?> a, Set<?> b) {
+        if (a.size() != b.size()) return false;
+        for (Object item : a) {
+            boolean found = false;
+            for (Object other : b) {
+                if (equal(item, other)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+        return true;
     }
 
     public static int compare(Object a, Object b, Span span) {
@@ -238,13 +319,13 @@ public final class Values {
             return result;
         }
         if (a instanceof Map<?, ?> x && b instanceof Map<?, ?> y) {
-            Map<Object, Object> result = new LinkedHashMap<>();
+            Map<Object, Object> result = new OqMap();
             x.forEach(result::put);
             y.forEach(result::put);
             return result;
         }
         if (a instanceof Set<?> x && b instanceof Set<?> y) {
-            Set<Object> result = new LinkedHashSet<>(x);
+            Set<Object> result = new OqSet(x);
             result.addAll(y);
             return result;
         }
@@ -260,7 +341,7 @@ public final class Values {
             return asDouble(a) - asDouble(b);
         }
         if (a instanceof Set<?> x && b instanceof Set<?> y) {
-            Set<Object> result = new LinkedHashSet<>(x);
+            Set<Object> result = new OqSet(x);
             result.removeAll(y);
             return result;
         }

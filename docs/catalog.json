@@ -104,6 +104,12 @@
       "slug": "docs/adr/0016-iteration-snapshots"
     },
     {
+      "path": "docs/adr/0017-equality-and-hashing.md",
+      "title": "0017 — Equality and hashing agree",
+      "section": "adr",
+      "slug": "docs/adr/0017-equality-and-hashing"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

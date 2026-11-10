@@ -5,6 +5,8 @@ import dev.oqthara.runtime.NativeFunction;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqMap;
+import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
 import dev.oqthara.runtime.OutputBudget;
@@ -244,7 +246,7 @@ public final class Stdlib {
                 invokeMethod(host, args.get(0), "unique", List.of(), span)));
         interpreter.defineBuiltin(NativeFunction.of("set", 1, (host, args, span) -> {
             if (args.get(0) instanceof Set<?> set) return set;
-            Set<Object> result = new LinkedHashSet<>();
+            Set<Object> result = new OqSet();
             for (Object item : Values.iterable(args.get(0), span)) result.add(item);
             return result;
         }));
@@ -912,12 +914,12 @@ public final class Stdlib {
             return copy;
         }
         if (value instanceof Map<?, ?> map) {
-            Map<Object, Object> copy = new LinkedHashMap<>();
+            Map<Object, Object> copy = new OqMap();
             map.forEach((k, v) -> copy.put(deepCopy(k), deepCopy(v)));
             return copy;
         }
         if (value instanceof Set<?> set) {
-            Set<Object> copy = new LinkedHashSet<>();
+            Set<Object> copy = new OqSet();
             for (Object item : set) copy.add(deepCopy(item));
             return copy;
         }

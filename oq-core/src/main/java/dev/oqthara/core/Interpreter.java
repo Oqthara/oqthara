@@ -6,6 +6,8 @@ import dev.oqthara.runtime.OverloadedFunction;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqMap;
+import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OutputBudget;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
@@ -522,12 +524,12 @@ public final class Interpreter implements OqHost {
                 yield new OqTuple(items);
             }
             case Ast.SetLit set -> {
-                Set<Object> items = new LinkedHashSet<>();
+                Set<Object> items = new OqSet();
                 for (Ast.Expr item : set.items()) items.add(evaluate(item, env));
                 yield items;
             }
             case Ast.MapLit map -> {
-                Map<Object, Object> entries = new LinkedHashMap<>();
+                Map<Object, Object> entries = new OqMap();
                 for (Ast.Entry entry : map.entries()) {
                     entries.put(evaluate(entry.key(), env), evaluate(entry.value(), env));
                 }

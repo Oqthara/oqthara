@@ -3,6 +3,7 @@ package dev.oqthara.stdlib;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
@@ -196,7 +197,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "contains" -> fixed(name, 1, (host, args) ->
                     Values.contains(list, args.get(0), span));
             case "unique" -> fixed(name, 0, (host, args) -> {
-                Set<Object> seen = new LinkedHashSet<>(list);
+                Set<Object> seen = new OqSet(list);
                 // A tuple stays a tuple; otherwise `(1, 1, 2).unique()` silently handed back a
                 // mutable list, which is the one thing a tuple is not.
                 List<Object> unique = new ArrayList<>(seen);
@@ -269,7 +270,14 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 return null;
             });
             case "has", "contains", "contains_key" -> fixed(name, 1, (host, args) -> map.containsKey(args.get(0)));
-            case "has_value" -> fixed(name, 1, (host, args) -> map.containsValue(args.get(0)));
+            case "has_value" -> fixed(name, 1, (host, args) -> {
+                // A value lookup has to use the same equality as `==` (ADR-0017), so a map
+                // holding 1 reports has_value(1.0) rather than missing it.
+                for (Object value : map.values()) {
+                    if (Values.equal(value, args.get(0))) return true;
+                }
+                return false;
+            });
             case "remove" -> fixed(name, 1, (host, args) -> asMutableMap(map).remove(args.get(0)));
             case "clear" -> fixed(name, 0, (host, args) -> {
                 asMutableMap(map).clear();
@@ -305,17 +313,17 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "has", "contains" -> fixed(name, 1, (host, args) -> set.contains(args.get(0)));
             case "items", "list", "to_list" -> fixed(name, 0, (host, args) -> new ArrayList<>(set));
             case "union" -> fixed(name, 1, (host, args) -> {
-                Set<Object> result = new LinkedHashSet<>(set);
+                Set<Object> result = new OqSet(set);
                 result.addAll(asCollection(args.get(0), span));
                 return result;
             });
             case "intersection" -> fixed(name, 1, (host, args) -> {
-                Set<Object> result = new LinkedHashSet<>(set);
+                Set<Object> result = new OqSet(set);
                 result.retainAll(asCollection(args.get(0), span));
                 return result;
             });
             case "difference" -> fixed(name, 1, (host, args) -> {
-                Set<Object> result = new LinkedHashSet<>(set);
+                Set<Object> result = new OqSet(set);
                 result.removeAll(asCollection(args.get(0), span));
                 return result;
             });

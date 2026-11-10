@@ -101,6 +101,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`==` and hashing now agree at every depth.** `1 == 1.0` was `true`, but `[1] == [1.0]`,
+  `(1,) == (1.0,)` and `{1: "a"} == {1.0: "a"}` were all `false`, while
+  `length(set([1, 1.0]))` was `2` and `{1: "a"}[1.0]` raised. The numeric rule widened at the
+  top level and then fell through to `Object.equals`, and sets and maps hashed raw `Long` and
+  `Double`, which hash differently. Equality is now structural at every depth and hashing
+  agrees with it, so a set cannot hold two equal values and a map finds a key whichever
+  numeric representation wrote it. `unique`, `union`, `intersection`, `difference` and
+  `has_value` had each rebuilt that rule by hand and now use the single definition. A `data`
+  value also compared its fields with `Object.equals`, so `P(1, 2) == P(1.0, 2)` was `false`;
+  it now uses the same rule, which also applies inside collections. A self-referential
+  collection now reports
+  `this collection contains itself, so it cannot be hashed or compared` and exits 1 instead of
+  exiting 70 with an internal error. See [ADR-0017](docs/adr/0017-equality-and-hashing.md).
 - **A `const` can no longer be defeated by redeclaring it.** `const x = 1` followed by
   `const x = 2` in the same scope used to replace the binding, so `x` printed `2` while any
   further `x = ...` was still refused: the constant looked enforced and was not. Declaring a
