@@ -218,6 +218,12 @@
       "slug": "docs/adr/0035-csv-and-structured-data"
     },
     {
+      "path": "docs/adr/0036-time-zones-and-filesystem.md",
+      "title": "ADR-0036: Time zones, file operations, and binary data",
+      "section": "adr",
+      "slug": "docs/adr/0036-time-zones-and-filesystem"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

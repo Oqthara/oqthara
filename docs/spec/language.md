@@ -1072,8 +1072,63 @@ because that would make the result depend on which machine ran the program.
 
 Time: `now()`, `today()`, `datetime()`, `timestamp()`, `sleep(seconds)`.
 
+`now()` and `timestamp()` are UTC. `today()` and `datetime()` are **local**, so the same
+program prints different strings on machines in different zones — measured, not inferred:
+
+```
+$ TZ=Pacific/Kiritimati oq run t.oq
+2026-11-11
+$ TZ=UTC oq run t.oq
+2026-11-10
+```
+
+That is a trap worth naming. When a result has to be the same everywhere, use `now()` and
+`instant_parse`, not `today()` and `datetime()`.
+
+Time zones: `tz_convert(instant, zone)` converts an ISO-8601 instant into wall-clock text
+carrying an explicit numeric offset, for an IANA zone name.
+
+```oq
+print tz_convert("2026-11-10T14:04:24Z", "Asia/Tokyo")   # 2026-11-10T23:04:24+09:00
+print tz_convert("2026-11-10T14:04:24Z", "UTC")          # 2026-11-10T14:04:24Z
+```
+
+The output carries an offset rather than a zone name, because a timestamp that requires a
+zone-database lookup to read is not a timestamp. An abbreviation such as `JST` is an error, not
+a guess: `CST` is three different zones. A bare date is an error too — use `date_parse` first.
+
 HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
 `.body` and `.ok`.
+
+Files: `read(path)`, `read_lines(path)`, `save(path, text)`, `append(path, text)`,
+`exists(path)`, `delete(path)`, `make_dir(path)`, `file_size(path)`, `list_files(directory)`,
+`path_join(a, b)`, `path_name(path)`, `path_parent(path)`, `cwd()`.
+
+Also `is_file(path)` and `is_dir(path)`, because `exists` answers true for a directory and
+`file_size` reports a directory's own size rather than failing. `walk(directory)` returns every
+path under a directory as relative text, sorted, and does **not** follow symbolic links:
+following one can revisit a directory already walked, and no entry cap stops a short cycle for
+the right reason.
+
+```oq
+print walk("src")   # ["main", "main/Main.java", "test", "test/MainTest.java"]
+```
+
+Copying: `copy_file(source, target)` and `move_file(source, target)` refuse an existing target
+rather than overwriting it. Moving copies and then deletes the source, so a failure leaves the
+source intact rather than a half-written target behind.
+
+Binary: `read_bytes(path)` returns lowercase hex text and `write_bytes(path, hex)` accepts it.
+There is no bytes type; hex round-trips through files, JSON and the encoders above, and a
+program doing real binary arithmetic should not be parsing hex in the first place.
+
+```oq
+print read_bytes("a.bin")      # 00ff10
+write_bytes("b.bin", "00ff10")
+```
+
+Neither copying nor reading is confined to the working directory. Oqthara is not a sandbox —
+see the note below.
 
 Processes: `run_command(path)` returns `.code` and `.output`. `env(name)`,
 `cpu_count()`, `memory_mb()`.
@@ -1100,7 +1155,8 @@ print parsed.rest       # ["file.txt"]
 
 Logging and argument parsing are specified by
 [ADR-0034](../adr/0034-logging-and-argument-parsing.md); CSV and date parsing by
-[ADR-0035](../adr/0035-csv-and-structured-data.md).
+[ADR-0035](../adr/0035-csv-and-structured-data.md); time zones and the filesystem additions by
+[ADR-0036](../adr/0036-time-zones-and-filesystem.md).
 
 ### Host calls are bounded
 

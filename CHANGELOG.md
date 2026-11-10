@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0035](docs/adr/0035-csv-and-structured-data.md). XML is deliberately not implemented —
   an unhardened hand-written parser would be a security regression, and that is recorded as
   absent rather than approximated. The reference now lists 109 built-in functions, up from 105.
+- **Time zones, file operations, and binary content.** `tz_convert(instant, zone)` converts an
+  ISO-8601 instant into wall-clock text with an explicit numeric offset for an IANA zone; an
+  abbreviation such as `JST` is an error rather than a guess, because `CST` is three different
+  zones. `copy_file` and `move_file` refuse an existing target, and moving copies before
+  deleting so a failure leaves the source intact. `read_bytes`/`write_bytes` move binary content
+  as lowercase hex, matching what the encoders already take. `walk` traverses recursively
+  without following symbolic links, and `is_file`/`is_dir` distinguish what `exists` cannot —
+  `file_size` reports a directory's own size rather than failing. The specification now also
+  documents, because it was measured, that `today()` and `datetime()` are local while `now()`
+  and `timestamp()` are UTC, so the same program prints different dates in different zones.
+  Specified by [ADR-0036](docs/adr/0036-time-zones-and-filesystem.md).
 - **Logging, and a command-line argument parser.** `log_debug`, `log_info`, `log_warn` and
   `log_error` write `LEVEL message` to the error stream so a program's output stays pipeable;
   the threshold comes from `OQ_LOG_LEVEL`, defaults to `info`, and can be changed at run time

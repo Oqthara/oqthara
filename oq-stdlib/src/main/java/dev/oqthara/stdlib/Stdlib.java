@@ -76,6 +76,7 @@ public final class Stdlib {
         installCollections(interpreter);
         installMath(interpreter);
         installFiles(interpreter);
+        installFileOps(interpreter);
         installJson(interpreter);
         installEncoding(interpreter);
         installCsv(interpreter);
@@ -507,6 +508,149 @@ public final class Stdlib {
         }));
         interpreter.defineBuiltin(NativeFunction.of("cwd", 0, (host, args, span) ->
                 host.workingDirectory().toAbsolutePath().toString()));
+    }
+
+    /**
+     * The file operations §17.3 asked for that the older module lacked: copying, moving,
+     * binary content, traversal, and the two predicates {@code exists} cannot express.
+     *
+     * <p>Binary content is lowercase hex text rather than a bytes type — see ADR-0036. A copy
+     * or move is charged against the transfer budget, so neither is a way to move unlimited
+     * bytes for free, and neither overwrites an existing target: silently replacing a file a
+     * program meant to keep is the failure mode worth refusing.
+     */
+    private static void installFileOps(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.of("is_file", 1, (host, args, span) ->
+                Files.isRegularFile(resolve(host, args.get(0)))));
+        interpreter.defineBuiltin(NativeFunction.of("is_dir", 1, (host, args, span) ->
+                Files.isDirectory(resolve(host, args.get(0)))));
+        interpreter.defineBuiltin(NativeFunction.of("read_bytes", 1, (host, args, span) -> {
+            Path path = resolve(host, args.get(0));
+            try (java.io.InputStream stream = Files.newInputStream(path)) {
+                byte[] bytes = stream.readNBytes(MAX_TEXT_BYTES + 1);
+                if (bytes.length > MAX_TEXT_BYTES) {
+                    throw new OqError("file is too large to read: " + path, span,
+                            "It is more than the " + MAX_TEXT_BYTES + " byte limit.");
+                }
+                chargeTransfer(host, bytes.length);
+                return hexOf(bytes);
+            } catch (OqError error) {
+                throw error;
+            } catch (IOException e) {
+                throw new OqError("cannot read file '" + path + "'", span, e.getMessage());
+            }
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("write_bytes", 2, (host, args, span) -> {
+            Path path = resolve(host, args.get(0));
+            byte[] bytes = bytesOfHex(Values.display(args.get(1)), span);
+            chargeTransfer(host, bytes.length);
+            try {
+                if (path.getParent() != null) Files.createDirectories(path.getParent());
+                Files.write(path, bytes);
+                return null;
+            } catch (IOException e) {
+                throw new OqError("cannot write file '" + path + "'", span, e.getMessage());
+            }
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("copy_file", 2, (host, args, span) -> {
+            Path source = resolve(host, args.get(0));
+            Path target = resolve(host, args.get(1));
+            return copyCharged(host, source, target, span);
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("move_file", 2, (host, args, span) -> {
+            Path source = resolve(host, args.get(0));
+            Path target = resolve(host, args.get(1));
+            // Copy, then delete, rather than Files.move: a cross-filesystem move that fails
+            // halfway leaves a partial target, and Files.move does not promise otherwise.
+            // Deleting only after the copy succeeded keeps the failure recoverable.
+            copyCharged(host, source, target, span);
+            try {
+                Files.delete(source);
+                return null;
+            } catch (IOException e) {
+                throw new OqError("copied '" + target + "' but could not remove '" + source + "'", span,
+                        "Both files now exist. (" + e.getMessage() + ")");
+            }
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("walk", 1, (host, args, span) -> {
+            Path root = resolve(host, args.get(0));
+            if (!Files.isDirectory(root)) {
+                throw new OqError("not a directory: " + root, span,
+                        "walk() lists the files under a directory. Use list_files for one level.");
+            }
+            List<Object> found = new ArrayList<>();
+            // Files.walk without FOLLOW_LINKS: following a link can revisit a directory already
+            // walked, and the entry cap alone would not stop a short cycle from repeating until
+            // it was hit for the wrong reason.
+            try (var stream = Files.walk(root)) {
+                Iterator<Path> entries = stream.sorted().iterator();
+                while (entries.hasNext()) {
+                    Path entry = entries.next();
+                    if (entry.equals(root)) continue;
+                    if (found.size() > MAX_LIST_ENTRIES) {
+                        throw new OqError("directory tree has too many entries: " + root, span,
+                                "It has more than " + MAX_LIST_ENTRIES + " entries.");
+                    }
+                    found.add(root.relativize(entry).toString().replace(java.io.File.separatorChar, '/'));
+                }
+            } catch (OqError error) {
+                throw error;
+            } catch (IOException e) {
+                throw new OqError("cannot walk '" + root + "'", span, e.getMessage());
+            }
+            chargeTransfer(host, found.size());
+            return found;
+        }));
+    }
+
+    /** Copies one file, refusing an existing target and billing the bytes moved. */
+    private static Object copyCharged(OqHost host, Path source, Path target, Span span) {
+        try (java.io.InputStream in = Files.newInputStream(source)) {
+            if (Files.exists(target)) {
+                throw new OqError("target already exists: " + target, span,
+                        "copy_file and move_file never overwrite. Delete it first, or pick another name.");
+            }
+            long size = Files.size(source);
+            if (size > MAX_TEXT_BYTES) {
+                throw new OqError("file is too large to copy: " + source, span,
+                        "It is more than the " + MAX_TEXT_BYTES + " byte limit.");
+            }
+            if (target.getParent() != null) Files.createDirectories(target.getParent());
+            java.nio.file.Files.copy(in, target);
+            chargeTransfer(host, size);
+            return null;
+        } catch (OqError error) {
+            throw error;
+        } catch (IOException e) {
+            throw new OqError("cannot copy '" + source + "' to '" + target + "'", span, e.getMessage());
+        }
+    }
+
+    private static String hexOf(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+            sb.append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
+    }
+
+    private static byte[] bytesOfHex(String hex, Span span) {
+        if (hex.length() % 2 != 0) {
+            throw new OqError("hex text must have an even number of digits", span,
+                    "write_bytes() takes lowercase hex, the same shape read_bytes() returns.");
+        }
+        byte[] bytes = new byte[hex.length() / 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int hi = Character.digit(hex.charAt(i * 2), 16);
+            int lo = Character.digit(hex.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) {
+                throw new OqError("not hex: '" + hex + "'", span,
+                        "write_bytes() takes lowercase hex, the same shape read_bytes() returns.");
+            }
+            bytes[i] = (byte) ((hi << 4) | lo);
+        }
+        return bytes;
     }
 
     private static void installJson(Interpreter interpreter) {
@@ -988,6 +1132,28 @@ public final class Stdlib {
                 LocalDateTime.now().withNano(0).toString()));
         interpreter.defineBuiltin(NativeFunction.of("timestamp", 0, (host, args, span) ->
                 System.currentTimeMillis()));
+        interpreter.defineBuiltin(NativeFunction.of("tz_convert", 2, (host, args, span) -> {
+            String instantText = Values.display(args.get(0));
+            java.time.ZoneId zone;
+            try {
+                zone = java.time.ZoneId.of(Values.display(args.get(1)));
+            } catch (java.time.DateTimeException e) {
+                throw new OqError("unknown time zone: '" + Values.display(args.get(1)) + "'", span,
+                        "Use an IANA name such as 'Asia/Tokyo' or 'Europe/Lisbon', not an "
+                                + "abbreviation like 'JST'.");
+            }
+            java.time.Instant instant;
+            try {
+                instant = java.time.Instant.parse(instantText);
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new OqError("not an instant: '" + instantText + "'", span,
+                        "tz_convert() takes an instant like '2026-11-10T14:04:24Z' or "
+                                + "'2026-11-10T14:04:24+02:00'. Parse a bare date first.");
+            }
+            // An offset, not a zone name: the output has to be unambiguous on its own, and a
+            // reader that has to look up a zone to read a timestamp is not receiving a timestamp.
+            return instant.atZone(zone).toOffsetDateTime().toString();
+        }));
         interpreter.defineBuiltin(NativeFunction.of("sleep", 1, (host, args, span) -> {
             long millis = (long) (Values.asDouble(args.get(0)) * 1000);
             if (millis > MAX_SLEEP_MILLIS) {

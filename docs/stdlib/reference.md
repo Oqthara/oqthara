@@ -26,6 +26,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `clamp` | built-in |
 | `clone` | built-in |
 | `contains` | built-in |
+| `copy_file` | built-in |
 | `cpu_count` | built-in |
 | `csv_parse` | built-in |
 | `csv_write` | built-in |
@@ -51,6 +52,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `http_post` | built-in |
 | `input` | built-in |
 | `instant_parse` | built-in |
+| `is_dir` | built-in |
+| `is_file` | built-in |
 | `is_nothing` | built-in |
 | `is_number` | built-in |
 | `is_text` | built-in |
@@ -77,6 +80,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `md5` | built-in |
 | `memory_mb` | built-in |
 | `min` | built-in |
+| `move_file` | built-in |
 | `now` | built-in |
 | `number` | built-in |
 | `par_map` | built-in |
@@ -92,6 +96,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `range` | built-in |
 | `range_list` | built-in |
 | `read` | built-in |
+| `read_bytes` | built-in |
 | `read_lines` | built-in |
 | `regex` | built-in |
 | `replace` | built-in |
@@ -117,10 +122,13 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `today` | built-in |
 | `trim` | built-in |
 | `type_of` | built-in |
+| `tz_convert` | built-in |
 | `unique` | built-in |
 | `upper` | built-in |
 | `values` | built-in |
+| `walk` | built-in |
 | `write` | built-in |
+| `write_bytes` | built-in |
 | `write_text` | built-in |
 | `zip` | built-in |
 
