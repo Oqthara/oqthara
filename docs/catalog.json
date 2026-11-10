@@ -110,6 +110,12 @@
       "slug": "docs/adr/0017-equality-and-hashing"
     },
     {
+      "path": "docs/adr/0018-index-semantics.md",
+      "title": "0018 — Index semantics are uniform across collection operations",
+      "section": "adr",
+      "slug": "docs/adr/0018-index-semantics"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

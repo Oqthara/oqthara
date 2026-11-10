@@ -3,6 +3,7 @@ package dev.oqthara.cli;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LanguageFeatureTest {
@@ -861,5 +862,114 @@ class LanguageFeatureTest {
                 end
                 print n
                 """).strip() + "\n");
+    }
+
+    @Test
+    void anIndexOfZeroRemovesTheFirstElement() {
+        assertEquals("1\n[2, 3]\n", ok("""
+                l = [1, 2, 3]
+                print l.remove(0)
+                print l
+                """));
+    }
+
+    @Test
+    void aNegativeIndexOfMinusOneRemovesTheLastElement() {
+        assertEquals("3\n[1, 2]\n", ok("""
+                l = [1, 2, 3]
+                print l.remove(-1)
+                print l
+                """));
+    }
+
+    @Test
+    void removePastTheEndIsRefusedRatherThanIgnored() {
+        fails("""
+                l = [1, 2, 3]
+                l.remove(99)
+                """, "index 99 is out of range for a list of length 3");
+        fails("""
+                l = [1, 2, 3]
+                l.remove(-4)
+                """, "index -4 is out of range for a list of length 3");
+    }
+
+    @Test
+    void removeNeedsAnIndexAndNamesRemoveValueForAValue() {
+        fails("""
+                l = [1, 2, 3]
+                l.remove("x")
+                """, "remove_value");
+    }
+
+    @Test
+    void insertAcceptsTheLengthAndNegativeIndexes() {
+        assertEquals("[1, 2, 3, 9]\n", ok("""
+                l = [1, 2, 3]
+                l.insert(3, 9)
+                print l
+                """));
+        assertEquals("[1, 2, 9, 3]\n", ok("""
+                l = [1, 2, 3]
+                l.insert(-1, 9)
+                print l
+                """));
+        assertEquals("[5]\n", ok("""
+                l = []
+                l.insert(0, 5)
+                print l
+                """));
+    }
+
+    @Test
+    void insertPastTheLengthIsRefusedWithoutAnInternalError() {
+        OqRunner.Result result = OqRunner.run("""
+                l = [1, 2, 3]
+                l.insert(4, 9)
+                """);
+        assertEquals(1, result.code(), "internal error path reached: " + result.stderr());
+        assertTrue(result.stderr().contains("index 4 is out of range for a list of length 3"),
+                "wrong message: " + result.stderr());
+        assertFalse(result.stderr().contains("This is a bug in Oqthara"),
+                "reported as a language defect: " + result.stderr());
+    }
+
+    @Test
+    void anOutOfRangeIndexReadIsStillRefused() {
+        fails("""
+                l = [1, 2, 3]
+                print l.get(99)
+                """, "index 99 is out of range for a list of length 3");
+        assertEquals("3\n", ok("""
+                l = [1, 2, 3]
+                print l.get(-1)
+                """));
+    }
+
+    @Test
+    void everyIndexOperationSharesOneMessage() {
+        String[] sources = {
+            "l = [1, 2, 3]\nl.get(99)\n",
+            "l = [1, 2, 3]\nl[99]\n",
+            "l = [1, 2, 3]\nl.remove(99)\n",
+            "l = [1, 2, 3]\nl.insert(99, 9)\n",
+        };
+        for (String source : sources) {
+            OqRunner.Result result = OqRunner.run(source);
+            assertEquals(1, result.code(), "expected a refusal for: " + source);
+            assertTrue(result.stderr().contains("is out of range for a list of length 3"),
+                    "message drifted for: " + source + " -> " + result.stderr());
+        }
+    }
+
+    @Test
+    void aClonedMapKeepsTheEqualityContract() {
+        assertEquals("a\ntrue\nmap\n", ok("""
+                m = {1: "a"}
+                c = m.clone()
+                print c[1.0]
+                print c == {1.0: "a"}
+                print type_of(c)
+                """));
     }
 }

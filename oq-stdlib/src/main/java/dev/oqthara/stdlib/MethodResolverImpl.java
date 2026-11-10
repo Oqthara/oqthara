@@ -3,6 +3,7 @@ package dev.oqthara.stdlib;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqMap;
 import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.Span;
@@ -78,16 +79,19 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "get" -> fixed(name, 1, (host, args) ->
                     Values.index(list, args.get(0), span));
             case "insert" -> fixed(name, 2, (host, args) -> {
-                asMutable(list).add(((Number) args.get(0)).intValue(), args.get(1));
+                List<Object> mutable = asMutable(list);
+                mutable.add(Values.position(args.get(0), mutable.size(), "a list", true, span), args.get(1));
                 return null;
             });
             case "remove" -> fixed(name, 1, (host, args) -> {
                 List<Object> mutable = asMutable(list);
-                int index = args.get(0) instanceof Number n
-                        ? n.intValue()
-                        : indexOfValue(mutable, args.get(0));
-                if (index < 0 || index >= mutable.size()) return null;
-                return mutable.remove(index);
+                if (!(args.get(0) instanceof Number)) {
+                    throw new OqError(
+                            "remove takes an index, not " + Values.typeName(args.get(0)),
+                            span,
+                            "To remove the first matching value, use remove_value(" + "x" + ").");
+                }
+                return mutable.remove(Values.position(args.get(0), mutable.size(), "a list", false, span));
             });
             case "remove_value" -> fixed(name, 1, (host, args) -> {
                 List<Object> mutable = asMutable(list);
@@ -296,7 +300,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 }
                 return result;
             });
-            case "clone", "copy" -> fixed(name, 0, (host, args) -> new LinkedHashMap<>(map));
+            case "clone", "copy" -> fixed(name, 0, (host, args) -> new OqMap(map));
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(map));
             default -> null;
         };
