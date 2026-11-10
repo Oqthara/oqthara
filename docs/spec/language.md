@@ -466,7 +466,26 @@ message says so. Lists, tuples, sets, maps (keys), ranges and text all have `.it
 step. Ranges also gained a method surface: `.to_list()`, `.to_set()`, `.first()`, `.last()`,
 `.contains(x)`, `.sum()`, `.min()`, `.max()`, `.sorted()` and `.reverse()`.
 
-See [ADR-0020](../adr/0020-iterator-protocol.md).
+`.reverse()` has no single answer for every family, so the rule is stated per family. For
+`text` and `list` it returns the receiver's family, because those are ordered sequences whose
+reversal is still a sequence. For `range` it returns the `range` `2 to 0 by -1`, because a
+counting sequence reverses into a counting sequence. For `set` and `map` it returns a `list`
+of the reversed walk order, because the reversed order of a set is not a set — the family's
+defining property is unordered membership, and no `set` can hold "the reversed order".
+`frozenset` has no `reverse` at all. `.sorted()` deliberately widens to a `list` for every
+family, since only a sequence has an order to preserve.
+
+Reversing a range is constant-time and keeps a step: `range(0, 9, 3)` walks `0, 3, 6`, so it
+reverses to `6 to 0 by -3`. The new start is the last value the walk reaches, not `end`, which
+is why `range(0, 9, 3).reverse()` is not `8 to 0 by -3` — `8` was never in the range.
+
+The unifying rule is narrower than "always keep the family": **an operation may not change
+whether a value is mutable, and it may not claim an order its family does not have.** That
+is why `range` cannot widen (it is immutable, and a list would be a lie) and why `set`
+cannot stay a `set` (a set has no order to show).
+
+See [ADR-0020](../adr/0020-iterator-protocol.md) and
+[ADR-0023](../adr/0023-collection-protocols.md).
 
 ### Aggregation and conversion
 
@@ -500,10 +519,50 @@ Sets compare and combine without changing either operand: `.union`, `.intersecti
 `.difference`, `.symmetric_difference`, `.issubset` and `.issuperset`.
 
 A map merges in place with `.merge(other)` or `.update(other)` — the argument's entries win
-and the receiver changes. `.items()` yields `[key, value]` pairs, and `.pop(key, default)`
-returns the default when the key is absent.
+and the receiver changes. `.items()` yields `[key, value]` pairs and `.entries()` yields
+`Entry` values with `.key` and `.value`; both are ordinary lists, so a loop reaches the parts
+by index (`p[0]`, `p[1]`) or by field (`e.key`, `e.value`). `.pop(key, default)` returns the
+default when the key is absent.
 
 See [ADR-0021](../adr/0021-collection-family-operations.md).
+
+### Which operations are eager, and which are lazy
+
+Exactly two things are lazy: `for` and `.iter()`. Everything that takes a function is eager
+and returns a `list`.
+
+| | `for` | `.iter()` | `map` / `filter` |
+|---|---|---|---|
+| Reads | a snapshot | the live collection | a snapshot taken by the operation |
+| Body runs | at the loop | at each `next()` | immediately |
+| Result | nothing | an `iterator` | a `list` |
+| Safe to mutate during | yes | no | yes |
+
+`map`, `filter`, `enumerate`, `zip` and `sorted` all return a `list`, so a program that wants
+a set or tuple converts at the end. A program that wants to walk without materialising uses
+`.iter()` and advances it explicitly.
+
+Views follow the same rule: `keys()`, `values()` and `entries()` return new lists, not live
+views, so a map cannot be changed behind a list you are holding.
+
+### What each family guarantees
+
+| Family | Length | Index | `in` | Mutable | Order |
+|---|---|---|---|---|---|
+| `list` | yes | yes | yes | yes | insertion |
+| `tuple` | yes | yes | yes | no | position |
+| `map` | yes | no | keys | yes | insertion |
+| `set` | yes | no | yes | yes | insertion |
+| `frozenset` | yes | no | yes | no | insertion |
+| `range` | yes | yes | yes | no | counting |
+| `text` | yes | yes | substring | no | position |
+| `iterator` | no | no | no | position | walk order |
+
+An `iterator` has no length, no index and no membership test, because each of those would
+consume or depend on the walk's position. Sets and maps are **insertion-ordered and
+deterministic**: the same program prints the same order on every platform and every run.
+
+See [ADR-0023](../adr/0023-collection-protocols.md).
 
 ## Tuples
 

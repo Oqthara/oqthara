@@ -156,6 +156,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously failed to parse at all. See [ADR-0019](docs/adr/0019-slicing.md).
 
 ### Fixed
+- **A refused key is reported where the program wrote it.** The refusal is raised inside the
+  collection, which holds no source position, so it fell back to the last marked span — and
+  the interpreter marks none, so `m[[1]] = 2` reported `<unknown>:1:1` and pointed at the
+  program's first line. The set and map literal paths did the same on both backends. The span
+  is now threaded through, so each reports the line and column of the offending expression.
+
 - **Mutating a collection while a live iterator walks it is an ordinary error, not an internal
   one.** `.iter()` reads the live collection (ADR-0020), so the mutation is genuinely invalid —
   but `java.util`'s fail-fast check escaped as
@@ -178,6 +184,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counted `case "x" -> null` arms as available methods and double-counted a nested switch, so
   `docs/stdlib/reference.md` listed `add` under frozensets and `sum` twice under ranges. It now
   counts only the outermost arms and skips refusals.
+- `reverse()` keeps the receiver's family. `range(0, 3).reverse()` returned a **list**, while
+  `list`, `text`, `set` and `frozenset` all preserve theirs; a reversal cannot make an immutable
+  value mutable, so it must not widen a `range` either. It now returns the `range` `2 to 0 by -1`,
+  and reversing twice returns the original. This is the same rule `clone()` follows.
+
 - `clone()` no longer changes a value's family. `(1, 2).clone()` returned a **list**, so cloning
   an immutable value produced something mutable; it now returns a tuple.
 

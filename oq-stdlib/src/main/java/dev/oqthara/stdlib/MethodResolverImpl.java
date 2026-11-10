@@ -550,7 +550,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "length", "size" -> fixed(name, 0, (host, args) -> range.size());
             case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(range, span));
             case "to_list", "list", "items" -> fixed(name, 0, (host, args) -> range.toList());
-            case "sum", "min", "max", "sorted", "reverse" -> fixed(name, 0, (host, args) -> {
+            case "sum", "min", "max", "sorted" -> fixed(name, 0, (host, args) -> {
                 List<Object> items = range.toList();
                 switch (name) {
                     case "sum" -> {
@@ -563,11 +563,6 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                         copy.sort((a, b) -> Values.compare(a, b, span));
                         return copy;
                     }
-                    case "reverse" -> {
-                        List<Object> copy = new ArrayList<>(items);
-                        java.util.Collections.reverse(copy);
-                        return copy;
-                    }
                     default -> {
                         if (items.isEmpty()) return null;
                         Object best = items.get(0);
@@ -578,6 +573,26 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                         return best;
                     }
                 }
+            });
+            // A range is an arithmetic progression, so reversing it gives another range with
+            // the same shape — not a list. Returning a list would drop the family for no
+            // reason, which is the rule ADR-0023 states and this case used to break.
+            //
+            // The endpoints come from the arithmetic, not from walking the range: a range can
+            // be huge (range(0, 2_000_000_000)) and reversing it must not allocate one element
+            // per step just to read the first and last.
+            //
+            // The new start is the last value the walk reaches, which is not `end` whenever the
+            // step does not divide the span: `range(0, 9, 3)` reaches 6, so it reverses to
+            // `6 to 0 by -3`, not `8 to 0 by -3`.
+            case "reverse" -> fixed(name, 0, (host, args) -> {
+                long size = range.size();
+                if (size == 0) {
+                    return new dev.oqthara.runtime.OqRange(range.start(), range.start(), false,
+                            range.step());
+                }
+                long last = range.start() + (size - 1) * range.step();
+                return new dev.oqthara.runtime.OqRange(last, range.start(), true, -range.step());
             });
             case "to_set", "set" -> fixed(name, 0, (host, args) ->
                     new dev.oqthara.runtime.OqSet(range.toList()));

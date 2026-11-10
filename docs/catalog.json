@@ -140,6 +140,12 @@
       "slug": "docs/adr/0022-hashability-and-frozenset"
     },
     {
+      "path": "docs/adr/0023-collection-protocols.md",
+      "title": "ADR-0023 — Collection protocols: nine contracts, and where laziness stops",
+      "section": "adr",
+      "slug": "docs/adr/0023-collection-protocols"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

@@ -156,6 +156,40 @@ class LanguageFeatureTest {
                 """));
     }
 
+    /**
+     * ADR-0023's family-preservation rule: an operation that cannot change a value's
+     * mutability must not change its family. `range.reverse()` used to return a list, which
+     * dropped the family for no reason. A reversed range is still an arithmetic progression.
+     */
+    @Test
+    void reversingARangeKeepsItARange() {
+        assertEquals("range\n", ok("print type_of(range(0, 3).reverse())"));
+        assertEquals("2 to 0 by -1\n", ok("print range(0, 3).reverse()"));
+        assertEquals("[2, 1, 0]\n", ok("print range(0, 3).reverse().to_list()"));
+        // A downward range reverses upward, and reversing twice is the original.
+        assertEquals("[1, 2, 3, 4, 5]\n", ok("print range(5, 0, -1).reverse().to_list()"));
+        assertEquals("[0, 1, 2]\n", ok("print range(0, 3).reverse().reverse().to_list()"));
+        // The boundaries that usually break reversal arithmetic.
+        assertEquals("[]\n", ok("print range(0, 0).reverse().to_list()"));
+        assertEquals("[3]\n", ok("print range(3, 4).reverse().to_list()"));
+        // A step larger than one keeps its stride, and a half-open range stays half-open in
+        // shape: reversing `0 until 5 by 2` must not add the excluded endpoint.
+        assertEquals("[4, 2, 0]\n", ok("print range(0, 5, 2).reverse().to_list()"));
+        assertEquals("[6, 3, 0]\n", ok("print range(0, 9, 3).reverse().to_list()"));
+    }
+
+    @Test
+    void reversingARangeDoesNotMaterializeIt() {
+        // Reading the endpoints from the arithmetic is what keeps this O(1). Building the list
+        // to read them back would exhaust memory here, so this test fails loudly rather than
+        // quietly getting slower.
+        assertEquals("2000000000\n1999999999 to 0 by -1\n", ok("""
+                rev = range(0, 2000000000).reverse()
+                print length(rev)
+                print rev
+                """));
+    }
+
     @Test
     void textIndexingAndSlicing() {
         assertEquals("h\no\n", ok("""
