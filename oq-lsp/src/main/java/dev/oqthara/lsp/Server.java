@@ -123,6 +123,7 @@ public final class Server {
                 sendResult(id, null);
             }
             case "textDocument/formatting" -> sendResult(id, formatting(params));
+            case "textDocument/hover" -> sendResult(id, hover(params));
             default -> sendError(id, -32601, "method not found: " + method);
         }
     }
@@ -131,6 +132,7 @@ public final class Server {
         Map<String, Object> capabilities = new LinkedHashMap<>();
         capabilities.put("textDocumentSync", 1L);
         capabilities.put("documentFormattingProvider", true);
+        capabilities.put("hoverProvider", true);
         Map<String, Object> serverInfo = new LinkedHashMap<>();
         serverInfo.put("name", "oq-lsp");
         serverInfo.put("version", "0.1.0-alpha.3");
@@ -158,6 +160,31 @@ public final class Server {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /**
+     * Returns {@code {contents, range}} for the identifier under the cursor, or null when
+     * nothing is declared there. A null result is the protocol's way of saying "show
+     * nothing"; an empty string would open an empty popup.
+     */
+    private Object hover(Map<String, Object> params) {
+        String uri = uri(params);
+        if (uri == null) return null;
+        String source = documents.get(uri);
+        if (source == null) return null;
+        Map<String, Object> position = asMap(params.get("position"));
+        if (position == null) return null;
+        Long line = asLong(position.get("line"));
+        Long character = asLong(position.get("character"));
+        if (line == null || character == null) return null;
+        String text = Hover.hover(uri, source, (int) (long) line, (int) (long) character);
+        if (text == null) return null;
+        Map<String, Object> hover = new LinkedHashMap<>();
+        hover.put("contents", Map.of("kind", "markdown", "value", text));
+        Map<String, Object> wordRange = Hover.rangeAt(source, (int) (long) line,
+                (int) (long) character);
+        if (wordRange != null) hover.put("range", wordRange);
+        return hover;
     }
 
     private void publishDiagnostics(String uri, String text) throws IOException {
@@ -334,5 +361,9 @@ public final class Server {
 
     private static String asString(Object value) {
         return value instanceof String text ? text : null;
+    }
+
+    private static Long asLong(Object value) {
+        return value instanceof Number number ? number.longValue() : null;
     }
 }

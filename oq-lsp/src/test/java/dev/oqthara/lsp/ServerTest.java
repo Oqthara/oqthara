@@ -163,6 +163,47 @@ class ServerTest {
         throw new AssertionError("source should not parse: " + source);
     }
 
+    @Test
+    void hoverAnswersWithMarkdownAndAWrongPositionAnswersWithNull() throws Exception {
+        String source = "\"\"\"Adds.\"\"\"\nfun add(a, b)\n  return a + b\nend\n\nprint add(1, 2)\n";
+        ByteArrayOutputStream requests = new ByteArrayOutputStream();
+        writeFrame(requests, request(1, "initialize", "{}"));
+        writeFrame(requests, notification("textDocument/didOpen", document(source)));
+        writeFrame(requests, request(2, "textDocument/hover", hoverParams(5, 6)));
+        writeFrame(requests, request(3, "textDocument/hover", hoverParams(0, 1)));
+        writeFrame(requests, request(4, "shutdown", "{}"));
+        writeFrame(requests, notification("exit", "{}"));
+
+        ByteArrayOutputStream responses = new ByteArrayOutputStream();
+        new Server(new ByteArrayInputStream(requests.toByteArray()), responses).run();
+        List<Map<String, Object>> messages = readAll(responses.toByteArray());
+
+        Map<String, Object> answered = byId(messages, 2L);
+        assertEquals("2.0", answered.get("jsonrpc"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) answered.get("result");
+        assertNotNull(result, "the documented function should resolve");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> contents = (Map<String, Object>) result.get("contents");
+        assertEquals("markdown", contents.get("kind"));
+        assertTrue(contents.get("value").toString().contains("fun add(a, b)"),
+                contents.get("value").toString());
+        assertTrue(contents.get("value").toString().contains("Adds."), contents.get("value").toString());
+        assertNotNull(result.get("range"), "a hover in a word reports the word's range");
+
+        Map<String, Object> empty = byId(messages, 3L);
+        assertNull(empty.get("result"), "a position that resolves to nothing returns null");
+    }
+
+    private static String hoverParams(int line, int character) {
+        Map<String, Object> document = new LinkedHashMap<>();
+        document.put("uri", URI);
+        Map<String, Object> position = new LinkedHashMap<>();
+        position.put("line", (long) line);
+        position.put("character", (long) character);
+        return Json.write(Map.of("textDocument", document, "position", position));
+    }
+
     private static String document(String text) {
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("uri", URI);

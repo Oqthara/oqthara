@@ -82,6 +82,16 @@ class DocstringTest {
     }
 
     @Test
+    void parsingNoCommentAtAllIsEmptyRatherThanAFailure() {
+        // Hover and `oq doc --source` both ask about declarations that have no comment,
+        // so null has to be a value the model accepts rather than an error it throws.
+        Docstring none = Docstring.parse(null);
+        assertNull(none.summary());
+        assertTrue(none.tagNames().isEmpty());
+        assertNull(none.tag("return"));
+    }
+
+    @Test
     void aTagWithNoTextIsAbsentRatherThanEmpty() {
         Docstring doc = Docstring.parse("Does.\n@return");
         assertNull(doc.tag("return"));

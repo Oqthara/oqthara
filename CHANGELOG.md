@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_Undocumented._` and counted, so the page shows the gap as well as the content. A multi-line
   literal that does not precede a declaration stays an ordinary value, so no existing program
   changes meaning. See [ADR-0030](docs/adr/0030-docstrings.md).
+- **Hover in the language server.** `oq-lsp` now answers `textDocument/hover` with the
+  signature and documentation comment of the declaration under the cursor, rendered as
+  markdown, and with the real arity of a builtin taken from the interpreter's table rather
+  than a second copy of the signature. A position that names nothing declared returns `null`
+  instead of an empty popup. Resolution is lexical, so shadowing and `use` imports are not
+  followed. See [ADR-0031](docs/adr/0031-hover.md).
 - **Modules and closures are specified.** `use "oq:name"` loads `name.oq` from beside the
   program, `modules/` or `lib/`; a file loads at most once, so import cycles terminate, and a
   module's top-level statements run before the importer's. There is one flat namespace: a

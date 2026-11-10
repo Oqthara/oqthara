@@ -1258,11 +1258,24 @@ parses, so the extension cannot drift from the language.
 ### Language server
 
 `oq-lsp` is a minimal stdio Language Server (JSON-RPC 2.0 with `Content-Length` framing).
-It publishes parse diagnostics on open and change, and returns whole-document formatting
-edits in the same canonical style as `oq fmt`. It supports `initialize`,
+It publishes parse diagnostics on open and change, returns whole-document formatting
+edits in the same canonical style as `oq fmt`, and answers hover with a declaration's
+signature and its documentation comment. It supports `initialize`,
 `textDocument/didOpen`, `textDocument/didChange`, `textDocument/didClose`,
-`textDocument/formatting`, `shutdown` and `exit`; unknown requests get a JSON-RPC
-"method not found" error and unknown notifications are ignored.
+`textDocument/formatting`, `textDocument/hover`, `shutdown` and `exit`; unknown requests
+get a JSON-RPC "method not found" error and unknown notifications are ignored.
+
+A hover returns markdown holding the declaration's signature in an `oq` code block,
+followed by its summary, a bullet per parameter the comment describes, and one line per
+remaining tag. A builtin resolves through the interpreter's own table, so the arity hint
+is the one the call site is checked against rather than a second copy of the signature.
+A position that names nothing declared returns `null`, which is how the protocol says
+"show nothing"; an empty string would open an empty popup.
+
+Resolution is lexical: the identifier under the cursor is matched against declarations in
+the same file. Shadowing, `use` imports and module declarations are not followed, so the
+answer describes the declaration the reader can see rather than the one the program would
+call.
 
 ```bash
 ./gradlew :oq-lsp:standaloneJar
@@ -1270,7 +1283,7 @@ java -jar oq-lsp/build/libs/oq-lsp.jar   # speak LSP on stdin/stdout
 ```
 
 Editors only need a command that starts that process; capabilities are `textDocumentSync`
-(full) and `documentFormattingProvider`.
+(full), `documentFormattingProvider` and `hoverProvider`.
 
 ## Installation
 

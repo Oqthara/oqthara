@@ -24,8 +24,9 @@ public record Docstring(String summary, Map<String, List<String>> tags) {
         return KNOWN;
     }
 
-    /** Parses a raw multi-line literal. Never null, never throws. */
+    /** Parses a raw multi-line literal. Never null, never throws, and accepts null. */
     public static Docstring parse(String raw) {
+        if (raw == null) return new Docstring(null, Map.of());
         List<String> summaryLines = new ArrayList<>();
         Map<String, List<String>> tags = new LinkedHashMap<>();
         List<String> current = summaryLines;
