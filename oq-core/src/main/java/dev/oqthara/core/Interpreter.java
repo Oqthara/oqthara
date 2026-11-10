@@ -656,6 +656,11 @@ public final class Interpreter implements OqHost {
         Object receiver = evaluate(call.receiver(), env);
         List<Object> args = new ArrayList<>();
         for (Ast.Expr arg : call.args()) args.add(evaluate(arg, env));
+        // Evaluating the receiver and arguments marks their own calls, so the position must be
+        // reset to this call's before dispatching. The JavaBridge fallbacks below raise errors
+        // from inside the runtime, where `Errors.current()` is the only position available
+        // (ADR-0025), and without this they would report the last call in the argument list.
+        Errors.mark(call.span());
         if (receiver == null) {
             throw new OqError("cannot call method '" + call.method() + "' on nothing", call.span(),
                     "Check that the value is not nothing before calling a method on it.");

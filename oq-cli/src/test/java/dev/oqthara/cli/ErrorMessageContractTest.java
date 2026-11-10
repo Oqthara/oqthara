@@ -257,8 +257,37 @@ class ErrorMessageContractTest {
     }
 
     @Test
-    void changingACollectionInsideACallbackIsWellDefined() {
-        assertEquals("[nothing, nothing, nothing]\n", ok("""
+    void anImmutableCollectionRefusalNamesTheCallThatTriedToChangeIt() {
+        // OqFrozenSet and the OqRange constructor raise from inside the runtime, where the
+        // only available position is `Errors.current()`. Passing a null span there reported
+        // `<unknown>`, and later reported whichever call in the receiver or argument list ran
+        // last, because the interpreter did not reset the mark before the JavaBridge fallback.
+        String[] stmts = {
+            "fs = frozenset([1])\nprint fs.add(2)",
+            "fs = frozenset([1])\nprint fs.remove(1)",
+            "fs = frozenset([1])\nprint fs.clear()",
+        };
+        for (String stmt : stmts) {
+            OqRunner.Result result = run(stmt);
+            assertEquals(1, result.code(), stmt + "\n" + result.stderr());
+            assertTrue(result.stderr().contains("immutable"), stmt + "\n" + result.stderr());
+            assertFalse(result.stderr().contains("<unknown>"),
+                    "expected a real file position, got:\n" + result.stderr());
+            assertTrue(result.stderr().contains(":2:9"),
+                    "expected the dot of the method call, got:\n" + result.stderr());
+        }
+        // An argument that is itself a call must not leave its own position behind.
+        OqRunner.Result nested = run("fs = frozenset([1])\nprint fs.add(frozenset([2]).length())");
+        assertTrue(nested.stderr().contains(":2:9"),
+                "an inner call in the arguments shifted the position:\n" + nested.stderr());
+        OqRunner.Result range = run("print range(0, 5, 0)");
+        assertTrue(range.stderr().contains(":1:12"),
+                "expected the range call's paren, got:\n" + range.stderr());
+        assertFalse(range.stderr().contains("<unknown>"), range.stderr());
+    }
+
+    @Test
+    void changingACollectionInsideACallbackIsWellDefined() {        assertEquals("[nothing, nothing, nothing]\n", ok("""
                 xs = [1, 2, 3]
                 print xs.map((x) -> xs.add(9))
                 """));
