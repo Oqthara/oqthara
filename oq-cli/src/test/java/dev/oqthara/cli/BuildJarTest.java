@@ -143,6 +143,25 @@ class BuildJarTest {
         assertEquals("[\"one\", \"two\"]", result.stdout().strip());
     }
 
+    /**
+     * Building a jar must read each archive on the classpath once, not once per copied class.
+     * Reading a single zip entry means inflating every entry before it, so the earlier
+     * entry-at-a-time API re-inflated the SQLite driver hundreds of times and took ~19 s per
+     * jar. This pins the cost of a jar that includes the driver to a sane bound.
+     */
+    @Test
+    void buildingAJarWithTheDatabaseDriverStaysFast() throws Exception {
+        Path work = root().resolve("build/jar-cost");
+        Files.createDirectories(work);
+        Path jar = work.resolve("cost.jar");
+        long start = System.nanoTime();
+        JarBuilder.build(jar, "oq.generated.Program", "print \"hi\"", "cost.oq");
+        long millis = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(Files.size(jar) > 10_000_000, "the jar should carry the driver");
+        // The quadratic version needed ~19 s here; the single-pass one needs ~1.4 s.
+        assertTrue(millis < 8_000, "building a jar took " + millis + " ms");
+    }
+
     @Test
     void unsafeJarEntryNamesAreRejected() {
         // Reviewer finding B: zip-slip protection.
@@ -163,6 +182,24 @@ class BuildJarTest {
                 Files.readString(dir.resolve("reader.oq")), List.of(), "", dir);
         assertEquals(0, result.code(), result.stderr());
         assertEquals("payload\n", result.stdout());
+    }
+
+    @Test
+    void aBuiltJarCarriesTheDatabaseDriver() throws Exception {
+        // Found by examples/database.oq: JarBuilder copied only dev.oqthara classes, so a jar
+        // built from a database program ran and then failed with "the SQLite driver is missing
+        // from this build". The driver and its SLF4J binding have to travel with it.
+        Path work = root().resolve("build/jar-conformance");
+        Files.createDirectories(work);
+        Path jar = work.resolve("database-standalone.jar");
+        String source = Files.readString(root().resolve("examples/database.oq"));
+        JarBuilder.build(jar, "oq.generated.Program", source, "database.oq");
+        ProcessResult result = runJar(jar, root());
+        assertEquals(0, result.exit(), "the standalone jar failed:\n" + result.stderr());
+        assertEquals("3 items stored\n  bolt x 2\n  nut x 2\n  washer x 2\ntotal: 6\n"
+                        + "after an injection attempt: 4 rows, table intact\n"
+                        + "rolled back: the batch was rejected\nrows after rollback: 4\n",
+                result.stdout());
     }
 
     @Test

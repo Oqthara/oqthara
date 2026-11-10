@@ -19,6 +19,7 @@ public final class OqTask {
     }
 
     public Object await(Span span) {
+        long start = System.nanoTime();
         try {
             return future.get();
         } catch (InterruptedException e) {
@@ -26,6 +27,10 @@ public final class OqTask {
             throw new OqError("interrupted while waiting for a task", span);
         } catch (ExecutionException e) {
             throw rethrow(e, span);
+        } finally {
+            // Charged after the wait because only the wait itself can be measured; charging
+            // nothing let an unbounded await loop sleep forever without touching the budget.
+            WaitedBudget.charge(elapsedMillis(start), span);
         }
     }
 
@@ -38,6 +43,10 @@ public final class OqTask {
      * reporting a timeout.
      */
     public Object awaitWithin(long millis, Span span) {
+        // The timeout is a ceiling, not a cost. Charging it up front spent the whole budget on
+        // tasks that had already finished: eight awaits of instant work with a 10-second limit
+        // reported "waited for too long" in microseconds.
+        long start = System.nanoTime();
         try {
             if (future.isDone()) return future.get();
             return future.get(millis, java.util.concurrent.TimeUnit.MILLISECONDS);
@@ -51,7 +60,13 @@ public final class OqTask {
             throw new OqError("interrupted while waiting for a task", span);
         } catch (ExecutionException e) {
             throw rethrow(e, span);
+        } finally {
+            WaitedBudget.charge(elapsedMillis(start), span);
         }
+    }
+
+    private static long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
     }
 
     private static RuntimeException rethrow(ExecutionException e, Span span) {

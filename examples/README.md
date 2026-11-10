@@ -41,7 +41,12 @@ java -jar oq.jar examples/hello.oq
 | `anagrams.oq` | grouping words by sorted characters |
 | `bst.oq` | binary search tree with recursion and data mutation |
 | `queue.oq` | a queue built on a list, exposing default-value isolation |
+| `urls.oq` | parsing, rebuilding and escaping URLs |
+| `hashing.oq` | SHA-256, HMAC, a salt, constant-time comparison and PBKDF2 |
+| `concurrency.oq` | `mutex()` closing a lost update, plus `spawn`/`await` |
+| `database.oq` | SQLite with no connection to leak: transactions, rollback, injection |
 | `tests/` | the language-level test suite for `oq test` |
 
-`guess.oq` is interactive and `grep.oq` needs arguments, so CI runs every other
-example; both are verified by hand in the checkpoints.
+`guess.oq` reads standard input and `grep.oq` needs two arguments, so neither is run
+automatically; both are verified by hand. Every other example is executed by
+`ExamplesRunTest`, which drives the real CLI, so an example cannot rot unnoticed.

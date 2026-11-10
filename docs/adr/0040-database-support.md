@@ -41,6 +41,26 @@ discover it.
 bundles native SQLite binaries for every supported platform and the jar task unzips them. The
 artifact is the only place this shows up; no build step changes.
 
+**Measured cost, per built program:** `oq build` copies the program's runtime classes into a
+single jar, so a program that can call `db_query` must carry the driver too, and the jar it
+produces for `examples/database.oq` is 13,859,109 B — every built program that touches a
+database pays the same 13.5 MB regardless of how little SQL it uses. This was not true when
+the ADR was first written: `JarBuilder` copied only `dev.oqthara` classes, so a built database
+program ran and then failed at its first query with "The SQLite driver is missing from this
+build". Adding `org/sqlite/` alone was not enough either, because the driver logs through
+SLF4J and the jar then failed with `ClassNotFoundException: org.slf4j.LoggerFactory`; the
+`org/slf4j/` prefix carries the API and the no-op binding together. `BuildJarTest` now asserts
+that a jar built from `examples/database.oq` exits 0 and prints the same seven lines the
+interpreter does.
+
+Carrying the driver also exposed a quadratic cost in `JarBuilder` itself. Reading one entry out
+of a zip means inflating every entry before it, and the builder asked for entries one at a time,
+so the 143 driver and SLF4J classes cost 143 passes over the driver archive: ~19 s per built jar
+rather than ~1.4 s. The consequence was not a wrong result but a build that looked hung —
+`BuildJarTest` rose from 1m 23s to 17m 5s and `./gradlew build` from 9m to over 24m. Each source
+now hands its wanted entries over in a single pass, which is why the 13.5 MB above is paid in
+time proportional to the archive rather than to its square.
+
 **Verified:** sqlite-jdbc 3.45.3.0 opens an in-memory database, creates a table, inserts a row,
 and reads back `1 ana 1.5` — run under the real build with the real jar task. The driver is
 reachable from Maven Central and CI uses `setup-gradle` with default caching, so no offline

@@ -1,0 +1,12 @@
+# Parse, rebuild and escape URLs. The same java.net.URI the HTTP client uses, so a URL
+# this accepts is one http_get will accept.
+# Run: oq run examples/urls.oq
+parsed = url_parse("https://user@example.com:8443/api/items?tag=a&tag=b#top")
+print "{parsed[\"scheme\"]}://{parsed[\"host\"]}:{parsed[\"port\"]}{parsed[\"path\"]}"
+
+# A parsed query keeps order and repeated names, so it can be encoded unchanged.
+query = query_parse("q=oq thara&tag=a&tag=b")
+print query_encode(query)
+print url_encode("a b&c=d")
+
+print url_join("https://example.com/api/", "v1/items")

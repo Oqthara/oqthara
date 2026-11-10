@@ -1621,7 +1621,6 @@ public final class Stdlib {
                         "A long wait would block the program; the limit is "
                                 + MAX_SLEEP_MILLIS / 1000 + " seconds per call.");
             }
-            dev.oqthara.runtime.WaitedBudget.charge(millis, span);
             return task.awaitWithin(millis, span);
         }));
         interpreter.defineBuiltin(NativeFunction.of("done", 1, (host, args, span) -> {

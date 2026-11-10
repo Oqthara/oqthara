@@ -1,0 +1,27 @@
+# Without a lock, two tasks incrementing a shared counter lose writes.
+m = mutex()
+counter = 0
+
+fun bump()
+  m.lock(fun()
+    n = counter
+    counter = n + 1
+  end)
+end
+
+tasks = []
+for i in 0 until 8
+  tasks.push(spawn(bump))
+end
+for t in tasks
+  await(t, 10)
+end
+print "counter = {counter} (expected 8)"
+
+a = spawn(fun()
+  return 21 * 2
+end)
+b = spawn(fun()
+  return sha256("abc").length()
+end)
+print "a = {await(a, 5)}, b = {await(b, 5)}"

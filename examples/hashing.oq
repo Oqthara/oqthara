@@ -1,0 +1,15 @@
+print "sha256(abc) = {sha256(\"abc\")}"
+print "md5(abc)    = {md5(\"abc\")}"
+
+mac = hmac_sha256("key", "message")
+print "hmac        = {mac}"
+
+salt = secure_random_hex(16)
+print "salt length = {salt.length()}"
+
+# secure_equal compares without an early return, so timing does not leak the prefix.
+print "match       = {secure_equal(sha256(\"a\"), sha256(\"a\"))}"
+print "differ      = {secure_equal(sha256(\"a\"), sha256(\"b\"))}"
+
+derived = pbkdf2_sha256("password", salt, 100000)
+print "kdf length  = {derived.length()}"
