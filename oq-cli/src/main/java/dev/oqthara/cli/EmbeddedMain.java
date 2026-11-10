@@ -77,7 +77,7 @@ public final class EmbeddedMain {
         } catch (Stdlib.ExitSignal exit) {
             System.exit(exit.code());
         } catch (OqError error) {
-            renderUncaught(err, error, source);
+            renderUncaught(err, error, source, sourceName);
             System.exit(1);
         } catch (Throwable failure) {
             // Bytecode hands every escaping throwable here, including the JVM failures the
@@ -165,8 +165,13 @@ public final class EmbeddedMain {
     }
 
     private static void renderUncaught(java.io.PrintStream err, OqError error, String source) {
+        renderUncaught(err, error, source, null);
+    }
+
+    private static void renderUncaught(java.io.PrintStream err, OqError error, String source,
+                                       String sourceName) {
         // The compiled jar has no embedded program text, so `source` is usually null here.
-        Details.render(err, error, source, System.console() != null);
+        Details.render(err, error, source, sourceName, System.console() != null);
         err.flush();
     }
 

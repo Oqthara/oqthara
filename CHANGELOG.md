@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A failure inside an imported module quotes the module, not the importer.** The error
+  excerpt was always drawn from the main program's source, so an error inside `boom.oq` was
+  positioned at `boom.oq:2:11` but quoted line 2 of the program that imported it — a line the
+  reader has no reason to connect to the message. The excerpt is now drawn only when the
+  retained source is the file the error points at; otherwise the position stands alone. This
+  affects `oq run` and the compiled jar alike. See
+  [ADR-0029](docs/adr/0029-closures-and-modules.md).
 - **Text counts code points, not UTF-16 units.** `"a😀b".length()` reported `4` for a
   three-character text, `.to_list()` and `.characters()` split the emoji into two lone
   surrogates (values that cannot be encoded as UTF-8), and `text[i]` returned half a
@@ -18,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0024](docs/adr/0024-text-is-a-sequence-of-code-points.md).
 
 ### Added
+- **Modules and closures are specified.** `use "oq:name"` loads `name.oq` from beside the
+  program, `modules/` or `lib/`; a file loads at most once, so import cycles terminate, and a
+  module's top-level statements run before the importer's. There is one flat namespace: a
+  module contributes its functions and types but not its locals, and a top-level name
+  declared twice is an error at the importer. A `fun` inside a `fun` captures the enclosing
+  bindings by reference, `const` included, so a closure sees later writes and a captured
+  parameter outlives the call that created it. Both behaviours shipped earlier and worked;
+  what was missing was the specification, which
+  [ADR-0029](docs/adr/0029-closures-and-modules.md) and
+  [the language spec](docs/spec/language.md#modules) now provide.
 - **Immutable `data` records.** `data Point(x, y) immutable` fixes the fields at construction
   and makes the value usable as a map key or set member, where a mutable `data` value is
   refused. Equality, hashing and rendering are unchanged — the modifier removes the guard

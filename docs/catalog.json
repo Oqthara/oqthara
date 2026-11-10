@@ -176,6 +176,12 @@
       "slug": "docs/adr/0028-data-evolution"
     },
     {
+      "path": "docs/adr/0029-closures-and-modules.md",
+      "title": "0029 — Closures and modules",
+      "section": "adr",
+      "slug": "docs/adr/0029-closures-and-modules"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
