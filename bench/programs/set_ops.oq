@@ -1,0 +1,14 @@
+# Set operations: 20,000 inserts, then 20,000 membership tests.
+s = set([])
+total = 0
+for i in 1 to 20000
+  s.add(i)
+end
+for i in 1 to 20000
+  if i in s
+    total = total + 1
+  end
+end
+u = s.union(set([0]))
+print total
+print u.length()

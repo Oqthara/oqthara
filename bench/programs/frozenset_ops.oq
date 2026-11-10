@@ -1,0 +1,10 @@
+# Frozen set algebra: 20,000 rounds of combining immutable sets.
+a = frozenset([1, 2, 3, 4])
+b = frozenset([3, 4, 5, 6])
+total = 0
+for i in 1 to 20000
+  u = a.union(b)
+  n = a.intersection(b)
+  total = total + u.length() + n.length()
+end
+print total
