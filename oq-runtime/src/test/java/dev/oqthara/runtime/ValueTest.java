@@ -3,6 +3,7 @@ package dev.oqthara.runtime;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -123,8 +124,44 @@ class ValueTest {
     }
 
     @Test
-    void setsCollapseEqualDataValues() {
-        assertEquals(1, new OqSet(List.of(data("P", "x", 1L), data("P", "x", 1.0))).size());
+    void setsCollapseEqualTupleValuesOfDifferentNumericTypes() {
+        // The intent is that equivalent members collapse on load. This used `data`, which is now
+        // refused as a member because its fields are mutable (ADR-0022); a tuple carries the
+        // same intent and is immutable.
+        assertEquals(1, new OqSet(List.of(new OqTuple(List.of(1L)), new OqTuple(List.of(1.0)))).size());
+    }
+
+    @Test
+    void mutableViewsAreRefusedAsSetMembersAndMapKeys() {
+        // Hashing is structural, so a mutable member would change hash after insertion and
+        // become unreachable. ADR-0022 refuses it up front instead.
+        assertThrows(Value.UnhashableValueException.class, () -> new OqSet(List.of(List.of(1L))));
+        assertThrows(Value.UnhashableValueException.class, () -> new OqSet(List.of(new OqSet())));
+        assertThrows(Value.UnhashableValueException.class, () -> new OqMap().put(List.of(1L), "a"));
+        assertThrows(Value.UnhashableValueException.class, () -> new OqMap().put(data("P", "x", 1L), "a"));
+    }
+
+    @Test
+    void aTupleHoldingAMutableViewIsRefusedBecauseItIsOnlyAsImmutableAsItsContents() {
+        assertThrows(Value.UnhashableValueException.class,
+                () -> new OqSet(List.of(new OqTuple(List.of(List.of(1L))))));
+        assertThrows(Value.UnhashableValueException.class,
+                () -> new OqMap().put(new OqTuple(List.of(data("P", "x", 1L))), "a"));
+    }
+
+    @Test
+    void immutableViewsAreAcceptedAsSetMembersAndMapKeys() {
+        OqMap map = new OqMap();
+        assertNull(map.put(new OqTuple(List.of(1L)), "a"));
+        assertEquals("a", map.get(new OqTuple(List.of(1.0))));
+        assertEquals(1, new OqSet(List.of(new OqFrozenSet(List.of(1L)))).size());
+    }
+
+    @Test
+    void aFrozenSetIsHashableOnlyWhenItsMembersAre() {
+        assertEquals(1, new OqSet(List.of(new OqFrozenSet(List.of(1L)))).size());
+        assertThrows(Value.UnhashableValueException.class,
+                () -> new OqFrozenSet(List.of(List.of(1L))));
     }
 
     @Test

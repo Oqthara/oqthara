@@ -62,6 +62,7 @@ public final class Values {
         if (value instanceof OqTuple) return "tuple";
         if (value instanceof List<?>) return "list";
         if (value instanceof Map<?, ?>) return "map";
+        if (value instanceof OqFrozenSet) return "frozenset";
         if (value instanceof Set<?>) return "set";
         if (value instanceof OqRange) return "range";
         if (value instanceof OqData d) return d.typeName();
@@ -100,6 +101,16 @@ public final class Values {
                 sb.append(repr(list.get(i)));
             }
             return sb.append(']').toString();
+        }
+        if (value instanceof OqFrozenSet frozen) {
+            StringBuilder sb = new StringBuilder("frozenset({");
+            boolean first = true;
+            for (Object item : frozen) {
+                if (!first) sb.append(", ");
+                sb.append(repr(item));
+                first = false;
+            }
+            return sb.append("})").toString();
         }
         if (value instanceof Set<?> set) {
             StringBuilder sb = new StringBuilder("{");
@@ -181,6 +192,7 @@ public final class Values {
         if (a instanceof OqTuple x && b instanceof OqTuple y) return tuplesEqual(x, y);
         if (a instanceof List<?> x && b instanceof List<?> y) return listsEqual(x, y);
         if (a instanceof Map<?, ?> x && b instanceof Map<?, ?> y) return mapsEqual(x, y);
+        if (a instanceof OqFrozenSet != b instanceof OqFrozenSet) return false;
         if (a instanceof Set<?> x && b instanceof Set<?> y) return setsEqual(x, y);
         return a.equals(b);
     }
@@ -818,12 +830,28 @@ public final class Values {
     }
 
     /** The next item of {@code it}, or an error naming the fix when it is spent. */
+    /**
+     * Advance a live iterator, translating the host's fail-fast check into an Oqthara error.
+     *
+     * <p>An iterator reads the collection it came from rather than a copy (ADR-0020), so
+     * changing that collection mid-walk makes {@code java.util} throw
+     * {@code ConcurrentModificationException}. That escaped as
+     * {@code internal error: ... This is a bug in Oqthara}, which is wrong twice: it is not
+     * a bug, and it tells the user nothing. The walk is genuinely invalid, so the error says
+     * so and names the fix. {@code for} is unaffected because it snapshots (ADR-0016).
+     */
     public static Object iteratorNext(OqIterator it, Span span) {
         if (!it.hasNext()) {
             throw new OqError("this iterator is exhausted", span,
                     "Check has_next() before calling next().");
         }
-        return it.next();
+        try {
+            return it.next();
+        } catch (java.util.ConcurrentModificationException e) {
+            throw new OqError("the collection changed while this iterator was walking it", span,
+                    "An iterator reads the live collection, so it cannot survive a change. "
+                            + "Use `for`, which walks a snapshot, or finish iterating first.");
+        }
     }
 
     public static boolean contains(Object container, Object item, Span span) {        if (container instanceof List<?> l) return l.stream().anyMatch(x -> equal(x, item));

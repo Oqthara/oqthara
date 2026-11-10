@@ -38,6 +38,7 @@ public final class OqMap extends AbstractMap<Object, Object> {
 
     @Override
     public Object put(Object key, Object value) {
+        Value.requireHashable(key, "a map key");
         return backing.put(Value.of(key), value);
     }
 

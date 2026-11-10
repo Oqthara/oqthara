@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`frozenset`, the immutable and hashable set.** `frozenset([1, 2])` holds the same
+  operations as `set` minus the mutators, and is accepted as a map key or a set member
+  wherever a `set` is refused. Every operation that returns a collection returns a frozenset,
+  so `frozenset([1]).union([2])` stays immutable. `set(fs)` and `fs.to_set()` convert between
+  the two. See [ADR-0022](docs/adr/0022-hashability-and-frozenset.md).
+
 - **Collection operations now read every family.** `sum`, `min`, `max` and `sorted` accept any
   collection rather than only a list, so `sum(set([1, 2, 3]))` and `sum(range(0, 4))` work
   instead of reporting `set has no method 'sum'`. `min` and `max` take either one collection or
@@ -150,6 +156,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously failed to parse at all. See [ADR-0019](docs/adr/0019-slicing.md).
 
 ### Fixed
+- **Mutating a collection while a live iterator walks it is an ordinary error, not an internal
+  one.** `.iter()` reads the live collection (ADR-0020), so the mutation is genuinely invalid —
+  but `java.util`'s fail-fast check escaped as
+  `internal error: ConcurrentModificationException ... This is a bug in Oqthara`. That blames
+  the language for something the program did, and leaves nothing to act on. It now reports
+  `the collection changed while this iterator was walking it` with the source position and a
+  hint to use `for`, which walks a snapshot. `for` is unaffected.
+
+- **A mutable value can no longer be a map key or a set member.** Hashing is structural, so
+  inserting a list and then mutating it left the entry present but unreachable: `length(m)`
+  still counted it and `repr(m)` still printed it, but no lookup could find it again. The same
+  applied to sets, maps and `data`. These are now refused up front:
+  `{[1]: "a"}` reports `a list cannot be used as a map key`, and `set([[1]])` reports
+  `a list cannot be used as a set member`. Nested tuples are walked, so `{([1],): "a"}` is
+  refused too. This is **breaking** for any program that relied on the old behaviour, and no
+  conformance program does; the suite is unchanged at 0 divergences. A mutable collection that
+  must be a key converts to a `frozenset` (sets) or a tuple (lists of fixed length).
+
+- **The generated method listing no longer promises methods a family refuses.** `oq doc`
+  counted `case "x" -> null` arms as available methods and double-counted a nested switch, so
+  `docs/stdlib/reference.md` listed `add` under frozensets and `sum` twice under ranges. It now
+  counts only the outermost arms and skips refusals.
 - `clone()` no longer changes a value's family. `(1, 2).clone()` returned a **list**, so cloning
   an immutable value produced something mutable; it now returns a tuple.
 

@@ -6,6 +6,7 @@ import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.OqMap;
+import dev.oqthara.runtime.OqFrozenSet;
 import dev.oqthara.runtime.OqSet;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqRange;
@@ -268,11 +269,18 @@ public final class Stdlib {
                 invokeMethod(host, args.get(0), "reverse", List.of(), span)));
         interpreter.defineBuiltin(NativeFunction.of("unique", 1, (host, args, span) ->
                 invokeMethod(host, args.get(0), "unique", List.of(), span)));
-        interpreter.defineBuiltin(NativeFunction.of("set", 1, (host, args, span) -> {
-            if (args.get(0) instanceof Set<?> set) return set;
+        interpreter.defineBuiltin(NativeFunction.variadic("set", 0, 1, (host, args, span) -> {
+            if (args.isEmpty()) return new OqSet();
+            if (args.get(0) instanceof OqSet set) return set;
             Set<Object> result = new OqSet();
             for (Object item : Values.iterable(args.get(0), span)) result.add(item);
             return result;
+        }));
+        interpreter.defineBuiltin(NativeFunction.variadic("frozenset", 0, 1, (host, args, span) -> {
+            if (args.isEmpty()) return new OqFrozenSet();
+            if (args.get(0) instanceof OqFrozenSet frozen) return frozen;
+            List<?> items = Values.iterableList(args.get(0), span);
+            return new OqFrozenSet(items);
         }));
         interpreter.defineBuiltin(NativeFunction.of("list", 1, (host, args, span) -> {
             if (args.get(0) instanceof List<?> list) return list;

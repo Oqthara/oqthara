@@ -174,6 +174,31 @@ class ErrorMessageContractTest {
                 """));
     }
 
+    /**
+     * A live iterator, unlike {@code for}, reads the collection it came from. Changing that
+     * collection mid-walk is genuinely invalid, and {@code java.util}'s fail-fast check used
+     * to escape as {@code internal error: ... This is a bug in Oqthara} — which is wrong, and
+     * leaves the user with nothing to act on. It is now an ordinary Oqthara error.
+     */
+    @Test
+    void changingACollectionWhileAnIteratorWalksItIsAUserError() {
+        goodError("""
+                xs = [1, 2, 3]
+                it = xs.iter()
+                print it.next()
+                xs.add(4)
+                print it.next()
+                """, "the collection changed while this iterator was walking it");
+        // The hint has to name the way out, because the walk cannot be resumed.
+        goodError("""
+                xs = [1, 2, 3]
+                it = xs.iter()
+                it.next()
+                xs.remove(0)
+                it.next()
+                """, "Use `for`, which walks a snapshot");
+    }
+
     @Test
     void changingACollectionInsideACallbackIsWellDefined() {
         assertEquals("[nothing, nothing, nothing]\n", ok("""

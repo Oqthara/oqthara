@@ -93,6 +93,17 @@ final class DocGenerator {
         return result;
     }
 
+    /** How many braces are open between {@code open} and {@code at}. */
+    private static int braceDepth(String source, int open, int at) {
+        int depth = 0;
+        for (int i = open; i < at && i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '{') depth++;
+            else if (c == '}') depth--;
+        }
+        return depth;
+    }
+
     private static void extractMethods(Path file, Map<String, List<String>> into) throws Exception {
         String source = Files.readString(file);
         String current = "general";
@@ -117,13 +128,25 @@ final class DocGenerator {
                 case "listMethod" -> "list";
                 case "mapMethod" -> "map";
                 case "setMethod" -> "set";
+                case "frozenSetMethod" -> "frozenset";
                 case "textMethod" -> "text";
                 case "numberMethod" -> "number";
+                case "rangeMethod" -> "range";
                 default -> names.get(g);
             };
+            // Only arms of the outermost switch count. `rangeMethod` switches again inside a
+            // single arm to share one body between sum, sorted and reverse, and counting those
+            // inner labels listed each of them twice.
+            int switchOpen = block.indexOf("switch (name)");
+            int switchBrace = switchOpen < 0 ? -1 : block.indexOf('{', switchOpen);
             var matcher = casePattern.matcher(block);
             List<String> namesInBlock = new ArrayList<>();
             while (matcher.find()) {
+                if (switchBrace >= 0 && braceDepth(block, switchBrace, matcher.start()) != 1) continue;
+                // A `case "x" -> null` arm refuses the name rather than providing it, so a
+                // listing that counted it would promise a method the family does not have.
+                String arm = block.substring(matcher.end(), Math.min(block.length(), matcher.end() + 12));
+                if (arm.stripLeading().startsWith("null")) continue;
                 for (String part : matcher.group(1).split(",")) {
                     String name = part.replace("\"", "").strip();
                     if (!name.isEmpty()) namesInBlock.add(name);

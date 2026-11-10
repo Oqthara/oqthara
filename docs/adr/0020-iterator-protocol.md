@@ -127,6 +127,24 @@ Both behaviours are stated here so that the difference is a decision rather than
 someone finds later. The consequence to document for users: do not mutate a collection
 while iterating it with `.iter()`; use `for`, which is safe.
 
+**What happens when you do it anyway.** The rule above says what not to do; it does not say
+what the language does when you break it. Left to `java.util`, the walk fails fast
+with `ConcurrentModificationException`, which surfaced as
+`internal error: ConcurrentModificationException: null / This is a bug in Oqthara`. That
+diagnosis is false — the user caused it — and it gave them nothing to act on. `next()` now
+translates the host exception into an ordinary Oqthara error with a position and a hint:
+
+```
+error: the collection changed while this iterator was walking it
+  help: An iterator reads the live collection, so it cannot survive a change.
+        Use `for`, which walks a snapshot, or finish iterating first.
+```
+
+This is the same principle ADR-0016 applied to `for`, and §9.5 of the directive states it
+directly: mutation diagnostics must remain Oqthara-level errors rather than leaking
+inconsistent host exceptions. The `for` path is unaffected because it never sees a live
+iterator.
+
 ### Where the protocol is checked
 
 Dispatch is by method presence, matching how `data` methods already resolve:

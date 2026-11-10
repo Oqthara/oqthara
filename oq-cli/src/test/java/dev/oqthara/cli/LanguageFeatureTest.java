@@ -380,18 +380,64 @@ class LanguageFeatureTest {
     }
 
     @Test
-    void mutatingADataKeyMakesItUnreachable() {
+    void mutatingADataKeyIsImpossibleBecauseDataCannotBeAKey() {
         // `OqData.hashCode()` is derived from mutable fields, so changing a field after the
-        // value is used as a map key leaves the entry present but unfindable. Recorded in
-        // ADR-0015 as a reason hashability is currently unenforced.
-        assertEquals("nothing\n1\n", ok("""
+        // value is used as a map key used to leave the entry present but unfindable. ADR-0022
+        // refuses the key instead, which is the whole point of the change.
+        fails("""
                 data P(x)
                 p = P(1)
                 m = {}
                 m[p] = "a"
                 p.x = 2
                 print m[p]
-                print length(keys(m))
+                """, "a P cannot be used as a map key");
+    }
+
+    @Test
+    void mutableCollectionFamiliesAreRefusedAsKeysAndMembers() {
+        fails("k = [1]\nm = {k: 1}", "a list cannot be used as a map key");
+        fails("m = {{}: 1}", "a map cannot be used as a map key");
+        fails("print set([[1]])", "a list cannot be used as a set member");
+        fails("print {set([1]): 1}", "a set cannot be used as a map key");
+        fails("print {([1],): 1}", "a list cannot be used as a map key");
+    }
+
+    @Test
+    void immutableFamiliesRemainUsableAsKeys() {
+        assertEquals("a\ntuple\n1\n", ok("""
+                m = {(1, 2): "a"}
+                print m[(1, 2)]
+                print type_of((1, 2))
+                print length({frozenset([1, 2]): 0})
+                """));
+    }
+
+    @Test
+    void aFrozensetIsTheHashableHalfOfTheSetSurface() {
+        assertEquals("frozenset\nfrozenset({1, 2, 3})\nfrozenset({1, 3})\ntrue\nfalse\n", ok("""
+                f = frozenset([1, 2])
+                print type_of(f)
+                print f.union([2, 3])
+                print f.symmetric_difference([2, 3])
+                print f.issubset([1, 2, 3])
+                print f == set([1, 2])
+                """));
+    }
+
+    @Test
+    void aFrozensetCannotBeMutatedAndSaysSo() {
+        fails("f = frozenset([1])\nf.add(2)", "a frozenset is immutable");
+        fails("frozenset([1]).remove(1)", "a frozenset is immutable");
+        fails("frozenset([1]).clear()", "a frozenset is immutable");
+    }
+
+    @Test
+    void frozensetSurgeryKeepsTheFrozenFamily() {
+        assertEquals("frozenset\nfrozenset\nset\n", ok("""
+                print type_of(frozenset([1]).union([2]))
+                print type_of(frozenset([1]).intersection([1]))
+                print type_of(frozenset([1]).to_set())
                 """));
     }
 
