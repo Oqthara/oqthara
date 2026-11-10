@@ -121,7 +121,12 @@ class CollectionPropertyTest {
         Random random = new Random(SEED + 6);
         for (int caseIndex = 0; caseIndex < CASES; caseIndex++) {
             List<Long> values = randomValues(random, 12);
-            if (values.isEmpty()) continue;
+            if (values.isEmpty()) {
+                // An empty `()` is not a tuple literal, so draw again rather than skipping --
+                // a skipped case would silently shrink the sample without saying so.
+                caseIndex--;
+                continue;
+            }
             // A tuple literal needs at least one element and a trailing comma to distinguish it
             // from a parenthesised expression.
             StringBuilder sb = new StringBuilder("(");
@@ -130,7 +135,7 @@ class CollectionPropertyTest {
                 sb.append(values.get(i));
             }
             if (values.size() == 1) sb.append(',');
-            String program = "print length(" + sb.append("))") + "";
+            String program = "print length(" + sb.append("))");
             assertEquals("" + values.size(), run(program), "case " + caseIndex + "\n" + program);
         }
     }
