@@ -20,9 +20,16 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -68,6 +75,7 @@ public final class Stdlib {
         installMath(interpreter);
         installFiles(interpreter);
         installJson(interpreter);
+        installEncoding(interpreter);
         installTime(interpreter);
         installHttp(interpreter);
         installConcurrency(interpreter);
@@ -504,6 +512,43 @@ public final class Stdlib {
                 Json.writePretty(args.get(0))));
     }
 
+    /**
+     * Encoding and hashing, the two §17 domains that were absent.
+     *
+     * <p>There is no bytes type, so binary data is spelled as text: lowercase hex or standard
+     * base64. Both are ASCII, both round-trip, and both survive a file, a JSON document and a
+     * terminal. Every primitive is a JVM provider -- nothing here implements a hash or a
+     * generator.
+     */
+    private static void installEncoding(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.of("hex_encode", 1, (host, args, span) ->
+                HexFormat.of().formatHex(utf8(args.get(0), "hex_encode", span))));
+        interpreter.defineBuiltin(NativeFunction.of("hex_decode", 1, (host, args, span) ->
+                decodeHex(text(args.get(0), "hex_decode", span), span)));
+        interpreter.defineBuiltin(NativeFunction.of("base64_encode", 1, (host, args, span) ->
+                Base64.getEncoder().encodeToString(utf8(args.get(0), "base64_encode", span))));
+        interpreter.defineBuiltin(NativeFunction.of("base64_decode", 1, (host, args, span) ->
+                decodeBase64(text(args.get(0), "base64_decode", span), span)));
+        interpreter.defineBuiltin(NativeFunction.of("sha256", 1, (host, args, span) ->
+                digest("SHA-256", args.get(0), "sha256", span)));
+        interpreter.defineBuiltin(NativeFunction.of("sha1", 1, (host, args, span) ->
+                digest("SHA-1", args.get(0), "sha1", span)));
+        interpreter.defineBuiltin(NativeFunction.of("md5", 1, (host, args, span) ->
+                digest("MD5", args.get(0), "md5", span)));
+        interpreter.defineBuiltin(NativeFunction.of("hmac_sha256", 2, (host, args, span) ->
+                hmac(args.get(0), args.get(1), span)));
+        interpreter.defineBuiltin(NativeFunction.of("secure_random_hex", 1, (host, args, span) -> {
+            long count = wholeNumber(args.get(0), "secure_random_hex", span);
+            if (count < 0 || count > 4096) {
+                throw new OqError("secure_random_hex() needs a byte count from 0 to 4096, got "
+                        + count, span);
+            }
+            byte[] bytes = new byte[(int) count];
+            RANDOM.nextBytes(bytes);
+            return HexFormat.of().formatHex(bytes);
+        }));
+    }
+
     private static void installTime(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("now", 0, (host, args, span) ->
                 java.time.Instant.now().toString()));
@@ -922,6 +967,105 @@ public final class Stdlib {
         List<Object> copy = new ArrayList<>(items);
         copy.sort((a, b) -> Values.compare(a, b, span));
         return copy;
+    }
+
+    /** A single, deliberately shared generator: {@code SecureRandom} is thread-safe. */
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * The argument of an encoding builtin, which must be text.
+     *
+     * <p>{@link Values#display} would accept a number and encode its printing, which is a
+     * different string from what the caller meant; the functions are about bytes, so the type
+     * is checked.
+     */
+    private static String text(Object value, String builtin, Span span) {
+        if (!(value instanceof String)) {
+            throw new OqError(builtin + "() needs text, got " + Values.typeName(value), span);
+        }
+        return (String) value;
+    }
+
+    private static byte[] utf8(Object value, String builtin, Span span) {
+        return text(value, builtin, span).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Hex back to text, reporting the offset of the first character that is not a hex digit.
+     *
+     * <p>{@link HexFormat#parseHex} throws {@code NumberFormatException} and
+     * {@code IllegalArgumentException}, and both reached the CLI as "This is a bug in Oqthara"
+     * -- a message about the interpreter for what is a mistake in the caller's string. The
+     * offset matters because the usual source is a digest pasted from a log.
+     */
+    private static String decodeHex(String text, Span span) {
+        if (text.length() % 2 != 0) {
+            throw new OqError("hex_decode() needs an even number of digits, got " + text.length(),
+                    span, "Each byte is two digits; the last one is incomplete.");
+        }
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean digit = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+            if (!digit) {
+                throw new OqError("hex_decode() found '" + c + "' at offset " + i, span,
+                        "Expected a lowercase hex digit 0-9 or a-f.");
+            }
+        }
+        return new String(HexFormat.of().parseHex(text), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Base64 back to text, reporting the offset of the first character outside the alphabet.
+     * The standard decoder also refuses bad padding; that message is kept as the detail.
+     */
+    private static String decodeBase64(String text, Span span) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            boolean accepted = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                    || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '=';
+            if (!accepted) {
+                throw new OqError("base64_decode() found '" + c + "' at offset " + i, span,
+                        "Expected the standard base64 alphabet with padding.");
+            }
+        }
+        if (text.length() % 4 != 0) {
+            // The platform decoder tolerates missing padding and so would accept "YWJ", which
+            // is a truncated value rather than a shorter one. Every encoder writes padding, so
+            // requiring it keeps a corrupt input from decoding to something plausible.
+            throw new OqError("base64_decode() needs a length divisible by 4, got "
+                    + text.length(), span, "Standard base64 pads with '=' to a multiple of four.");
+        }
+        try {
+            return new String(Base64.getDecoder().decode(text), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            throw new OqError("base64_decode() could not decode the value", span, e.getMessage());
+        }
+    }
+
+    private static String digest(String algorithm, Object value, String builtin, Span span) {
+        try {
+            MessageDigest md = MessageDigest.getInstance(algorithm);
+            return HexFormat.of().formatHex(md.digest(utf8(value, builtin, span)));
+        } catch (NoSuchAlgorithmException e) {
+            // Every algorithm named here is required by the Java platform, so this is a broken
+            // runtime rather than a program mistake.
+            throw new OqError(builtin + "() is unavailable in this runtime", span, e.getMessage());
+        }
+    }
+
+    private static String hmac(Object key, Object message, Span span) {
+        byte[] keyBytes = utf8(key, "hmac_sha256", span);
+        if (keyBytes.length == 0) {
+            throw new OqError("hmac_sha256() needs a non-empty key", span,
+                    "An empty key makes the result depend only on the message.");
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(keyBytes, "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(utf8(message, "hmac_sha256", span)));
+        } catch (NoSuchAlgorithmException | java.security.InvalidKeyException e) {
+            throw new OqError("hmac_sha256() is unavailable in this runtime", span, e.getMessage());
+        }
     }
 
     private static double asNumber(Object value, String builtin, Span span) {

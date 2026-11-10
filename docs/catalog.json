@@ -200,6 +200,12 @@
       "slug": "docs/adr/0032-static-fields-and-varargs"
     },
     {
+      "path": "docs/adr/0033-encoding-and-hashing.md",
+      "title": "ADR-0033: Encoding and hashing in the standard library",
+      "section": "adr",
+      "slug": "docs/adr/0033-encoding-and-hashing"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

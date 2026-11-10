@@ -1019,6 +1019,32 @@ write_text "x"     # same as write
 Files: `read`, `read_lines`, `save`, `append`, `exists`, `list_files`, `delete`,
 `make_dir`, `file_size`, `path_join`, `path_name`, `path_parent`, `cwd`.
 
+Encoding: `hex_encode`, `hex_decode`, `base64_encode`, `base64_decode`. There is no `bytes`
+type, so binary data is spelled as text: lowercase hex or standard base64 with padding. Both
+are ASCII and round-trip, so a digest or a payload survives a file, a JSON document or a
+terminal. Decoding refuses anything that is not canonically that spelling and reports the
+offset it refused, because a value pasted from a log is the usual source.
+
+```
+print hex_encode("abc")          # 616263
+print hex_decode("616263")       # abc
+print base64_encode("abc")       # YWJj
+print base64_decode("YWJj")      # abc
+```
+
+Hashing: `sha256(text)`, `sha1(text)`, `md5(text)`, `hmac_sha256(key, text)`. Each hashes the
+UTF-8 bytes of the text and returns lowercase hex, so the result matches what `sha256sum`
+prints for a UTF-8 file with the same content. `sha1` and `md5` exist because protocols and
+file formats still name them; they are not safe for a secret. Hashing is not password
+storage: there is no slow key-derivation function here, and `sha256` must not stand in for
+one. `secure_random_hex(n)` returns `n` bytes from the platform's `SecureRandom`, as hex, for
+a nonce or a token; `random()` remains the one for games and shuffling.
+
+```
+print sha256("abc")     # ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+print secure_random_hex(8).length()   # 16
+```
+
 JSON: `json_parse(text)`, `json(value)`.
 
 Time: `now()`, `today()`, `datetime()`, `timestamp()`, `sleep(seconds)`.
