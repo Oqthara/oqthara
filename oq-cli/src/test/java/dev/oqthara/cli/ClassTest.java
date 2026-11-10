@@ -431,4 +431,105 @@ class ClassTest {
                 """);
         assertTrue(message.contains("cannot"), message);
     }
+    // Regressions found by review of the first implementation. Each one failed silently before:
+    // no diagnostic, and in two cases the wrong answer.
+
+    @Test
+    void innerClassDoesNotRetargetInstancesOfAnOuterOne() {
+        assertEquals("outer\ninner\nouter\n", run("""
+                class Box(x)
+                  fun tag()
+                    return "outer"
+                  end
+                end
+                o = Box(1)
+                print o.tag()
+                fun makeInner()
+                  class Box(x)
+                    fun tag()
+                      return "inner"
+                    end
+                  end
+                  return Box(2)
+                end
+                print makeInner().tag()
+                print o.tag()
+                """));
+    }
+
+    @Test
+    void outerInstanceKeepsItsOwnInitBodyAfterANestedClassOfTheSameName() {
+        // Before the fix the registry was keyed by simple name, so a nested Keeper overwrote the
+        // outer one and the second call ran the inner init body. Each instance now carries the
+        // declaration it was built from. The variable label is shared because Oqthara assignment
+        // at function scope writes the enclosing binding, which plain functions do too, so only
+        // which body ran is asserted here.
+        assertEquals("B:inner\nA:inner\n", run("""
+                class Keeper()
+                  init
+                    print "A:" + label
+                  end
+                end
+                label = "outer"
+                fun makeInner()
+                  label = "inner"
+                  class Keeper()
+                    init
+                      print "B:" + label
+                    end
+                  end
+                  return Keeper()
+                end
+                makeInner()
+                Keeper()
+                """));
+    }
+
+    @Test
+    void indexAssignmentCannotReachAField() {
+        String message = failure("""
+                class Counter(_secret)
+                end
+                c = Counter(1)
+                c["_secret"] = 99
+                """);
+        assertTrue(message.contains("cannot be assigned by index"), message);
+    }
+
+    @Test
+    void nestedClassCannotImplementAMissingContract() {
+        String message = failure("""
+                fun build()
+                  class Bad(x) implements Missing
+                    fun a()
+                      return 1
+                    end
+                  end
+                  return Bad(1)
+                end
+                build()
+                """);
+        assertTrue(message.contains("Missing"), message);
+        assertTrue(message.contains("not declared"), message);
+    }
+
+    @Test
+    void nestedClassCannotDeclareAMethodTwice() {
+        String message = failure("""
+                fun build()
+                  class Bad(x)
+                    fun a()
+                      return 1
+                    end
+                    fun a()
+                      return 2
+                    end
+                  end
+                  return Bad(1)
+                end
+                build()
+                """);
+        assertTrue(message.contains("more than once"), message);
+    }
+
 }

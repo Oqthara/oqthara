@@ -835,6 +835,13 @@ print Account()._balance                 # error: field '_balance' of Account is
 Privacy is per class, not per object: a method of `A` may read `other._v` when `other` is
 also an `A`, and may not when it is a `B`.
 
+The check covers every way a field can be named, and an object has no index form, so
+`account["_balance"] = 99` is rejected rather than reaching the field.
+
+A class declared inside a function or a block is subject to the same declaration checks as
+one at the top level. It also does not disturb instances of a class of the same name declared
+outside: each object keeps the declaration it was built from.
+
 ### Contracts
 
 A `contract` lists the method names and arities a class promises to provide. It is checked

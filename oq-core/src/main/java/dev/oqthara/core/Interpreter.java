@@ -151,6 +151,7 @@ public final class Interpreter implements OqHost {
         try {
             hoist(program.statements(), env);
             validateDeclarations(program.statements());
+            validateNested(program.statements());
             for (Ast.Stmt stmt : program.statements()) {
                 execute(stmt, env);
             }
@@ -858,6 +859,7 @@ public final class Interpreter implements OqHost {
                 values.put(field.name(), value);
             }
             OqInstance instance = new OqInstance(decl.name(), values);
+            instance.bindDeclaration(this);
             if (decl.init() != null) {
                 interpreter.runInitializer(decl, instance, span);
             }
@@ -867,7 +869,7 @@ public final class Interpreter implements OqHost {
 
     /** Runs a class's {@code init} body with {@code this} bound to the new instance. */
     void runInitializer(Ast.ClassDecl decl, OqInstance instance, Span span) {
-        ClassCtor owner = classes.get(decl.name());
+        ClassCtor owner = ownerOf(instance);
         Env scope = new Env(owner == null ? new Env() : owner.declarationScope());
         bindThis(scope, instance);
         String previousClass = currentClass.get();
@@ -885,12 +887,12 @@ public final class Interpreter implements OqHost {
      * when no instance is ever built, and a misspelled method is never a silent success.
      */
     private void validateDeclarations(List<Ast.Stmt> statements) {
+        // A declaration is legal anywhere a statement is, so a class nested in a function or a
+        // block must face the same checks as a top-level one. Validating only the program's own
+        // statements let a nested class implement a missing contract or declare a method twice
+        // without a diagnostic, purely because of where it was written.
         Map<String, Ast.ContractDecl> contracts = new LinkedHashMap<>();
-        for (Ast.Stmt stmt : statements) {
-            if (stmt instanceof Ast.ContractDecl contract) {
-                contracts.put(contract.name(), contract);
-            }
-        }
+        collectContracts(statements, contracts);
         for (Ast.Stmt stmt : statements) {
             if (stmt instanceof Ast.ContractDecl contract) {
                 Set<String> seen = new LinkedHashSet<>();
@@ -948,6 +950,65 @@ public final class Interpreter implements OqHost {
         }
     }
 
+    /** Every contract reachable in the program, including ones declared in nested blocks. */
+    private static void collectContracts(List<Ast.Stmt> statements,
+                                         Map<String, Ast.ContractDecl> contracts) {
+        for (Ast.Stmt stmt : statements) {
+            if (stmt instanceof Ast.ContractDecl contract) {
+                contracts.put(contract.name(), contract);
+            }
+            for (List<Ast.Stmt> nested : nestedBlocks(stmt)) {
+                collectContracts(nested, contracts);
+            }
+        }
+    }
+
+    /**
+     * The statement lists a statement owns directly. Used to find nested declarations; this is a
+     * walk of the syntax tree, not of scopes, so it does not need to model any of the language's
+     * binding rules.
+     */
+    private static List<List<Ast.Stmt>> nestedBlocks(Ast.Stmt stmt) {
+        List<List<Ast.Stmt>> blocks = new ArrayList<>();
+        if (stmt instanceof Ast.FuncDecl function) {
+            blocks.add(function.body());
+        } else if (stmt instanceof Ast.If branch) {
+            for (Ast.Branch arm : branch.branches()) blocks.add(arm.body());
+            if (branch.elseBranch() != null) blocks.add(branch.elseBranch());
+        } else if (stmt instanceof Ast.While loop) {
+            blocks.add(loop.body());
+        } else if (stmt instanceof Ast.ForEach loop) {
+            blocks.add(loop.body());
+        } else if (stmt instanceof Ast.ForRange loop) {
+            blocks.add(loop.body());
+        } else if (stmt instanceof Ast.TryStmt tryStmt) {
+            blocks.add(tryStmt.body());
+            if (tryStmt.handler() != null) blocks.add(tryStmt.handler());
+        }
+        return blocks;
+    }
+
+    /** Runs the same declaration checks over every nested block in the program. */
+    private void validateNested(List<Ast.Stmt> statements) {
+        for (Ast.Stmt stmt : statements) {
+            for (List<Ast.Stmt> nested : nestedBlocks(stmt)) {
+                validateDeclarations(nested);
+                validateNested(nested);
+            }
+        }
+    }
+
+    /**
+     * The declaration an instance was built from. This reads the handle bound at construction
+     * rather than looking the name up in {@code classes}, because a nested class of the same
+     * name would otherwise retarget the outer one's instances (and run their {@code init} in the
+     * wrong scope).
+     */
+    private ClassCtor ownerOf(OqInstance instance) {
+        Object declaration = instance.declaration();
+        return declaration instanceof ClassCtor ctor ? ctor : null;
+    }
+
     /**
      * A field whose name starts with {@code _} is private to its class (ADR-0027 D7). The
      * check runs on both read and write, so encapsulation is one rule rather than two.
@@ -971,7 +1032,7 @@ public final class Interpreter implements OqHost {
      * has declined, so a class cannot shadow {@code list.push} or any other built-in method.
      */
     private Object invokeInstanceMethod(OqInstance instance, String name, List<Object> args, Span span) {
-        ClassCtor owner = classes.get(instance.className());
+        ClassCtor owner = ownerOf(instance);
         if (owner == null) {
             throw new OqError("type " + instance.className() + " has no method '" + name + "'", span,
                     "Check the spelling, or use a built-in function instead.");

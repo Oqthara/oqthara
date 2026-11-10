@@ -187,6 +187,13 @@ therefore never observes an unset field, and it **cannot introduce a new one** -
 `this.total` in `init` when `total` is not in the header is an error naming the missing
 field. Adding a field is a header edit, which keeps the field set readable from one place.
 
+
+Declaration checks are not limited to the top level. A declaration is legal anywhere a
+statement is, so a class written inside a function or a block faces exactly the same checks as
+one at the top level. The first implementation validated only `program.statements()`, so a
+nested class could implement a contract that did not exist, or declare the same method twice,
+with no diagnostic at all. Validation now walks nested blocks before execution begins.
+
 ### D7 — Visibility is declared, not enforced by JVM tricks
 
 §14.1 lists "visibility and encapsulation". The honest minimal answer for a dynamic
@@ -194,6 +201,22 @@ language with no module security boundary is a **single underscore convention pl
 declaration-level check**: a name beginning with `_` is private to the class, and reading or
 writing it from outside raises `field '_value' of Counter is private`. This is a real, testable rule rather
 than a claim about "access modifiers" the runtime cannot enforce against reflection.
+
+The check applies to every way a field can be named, dot-assignment and dot-read alike. An
+instance deliberately has **no index form**: `Counter(1)["_value"] = 99` is rejected rather
+than reaching the field. The first implementation allowed that write, which was a privacy
+hole because there was no matching read path to justify it; fields are named, not numbered.
+
+### D7a — An instance carries the declaration it was built from
+
+The first implementation registered classes in a map keyed by simple name and looked the
+declaration up again at dispatch time. A class declared inside a function shadows one of the
+same name at top level, so building an inner instance retargeted every existing instance of
+the outer class: their methods dispatched into the inner class's bodies, and their `init` ran
+in the inner class's declaration scope. Instances now bind their owning declaration at
+construction and dispatch through that handle, so a nested class cannot reach an outer
+instance. The registry remains for name resolution at the construction site, which is the
+only place a name is meaningful.
 
 ### D8 — Java interoperability
 

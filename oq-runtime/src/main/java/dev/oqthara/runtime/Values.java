@@ -612,16 +612,16 @@ public final class Values {
             map.put(key, value);
             return;
         }
+        // An instance has no index form. Writing through brackets used to reach a declared field
+        // directly and so skipped the privacy rule that dot-assignment enforces, while there was
+        // no matching read path to justify it (ADR-0027 D7). Fields are named, not numbered.
         if (target instanceof OqInstance instance) {
-            if (key instanceof String name) {
-                if (!instance.has(name)) {
-                    throw new OqError("type " + instance.className()
-                            + " has no field named '" + name + "'", span);
-                }
-                instance.set(name, value);
-                return;
-            }
-            throw new OqError("field name must be text, got " + typeName(key), span);
+            String hint = instance.fields().isEmpty()
+                    ? "Declare the field in the class header, then assign it by name."
+                    : "Write the field by name with a dot, for example: obj."
+                            + instance.fields().keySet().iterator().next();
+            throw new OqError("type " + instance.className() + " cannot be assigned by index", span,
+                    hint);
         }
         if (target instanceof OqData d) {
             if (key instanceof String name) {
