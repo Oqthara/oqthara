@@ -154,6 +154,47 @@ The Python reference consulted was CPython 3.13 on 2026-11-10, per §9.6. CPytho
 the failing call's own location for the equivalent `set([[1]])`, which is what this ADR
 makes Oqthara do on both backends.
 
+### The second layer, found later
+
+The repair above was necessary and not sufficient, and the way it was insufficient is worth
+recording because the two defects hid each other.
+
+With a `null` span the error rendered as `<unknown>`, so the fact that the *marked* position
+was also wrong could not be seen. On `main` before this repair the program
+
+```
+fs = frozenset([1])
+fs.add(2)
+```
+
+reported `<unknown>:1:1` — synthetic, because of the null span. The stale-mark defect was
+therefore never visible on `main`; it became observable only once the nulls were replaced,
+which is exactly why it had survived. With the nulls fixed but the mark still stale, the
+same two-line program reported line 1 for an error on line 2.
+
+`evaluateMethod` evaluated the receiver and every argument before dispatching, and each of
+those evaluations marked its own call. The JavaBridge fallback raises from inside the
+runtime, so it read whichever call had marked last — in the case above, the `frozenset([1])`
+on line 1. With an inner call in the arguments it was worse: `fs.add(frozenset([2]).length())`
+reported the position of `.length()`.
+
+The fix is one line in `evaluateMethod`, marking the method call after its operands are
+evaluated:
+
+```java
+Errors.mark(call.span());
+```
+
+The compiled backend never had this defect: `Lowering` emits `mark(call.span())` for
+`Ast.MethodCall`, so it was already reporting the method call's own position. The
+interpreter now agrees with it exactly — both backends report `:2:3` for the program above,
+which is the start of the receiver `fs`, and both report `:2:3` for
+`fs.add(frozenset([2]).length())`, where the stale mark used to land on `.length()`.
+
+`ErrorMessageContractTest.anImmutableCollectionRefusalNamesTheCallThatTriedToChangeIt`
+covers three mutators, the nested-call case, and `range(0, 5, 0)`, asserting both the
+position and the absence of `<unknown>`.
+
 ## Relationship to Python
 
 Python raises `TypeError: unhashable type: 'list'` from the frame that called `set`, and

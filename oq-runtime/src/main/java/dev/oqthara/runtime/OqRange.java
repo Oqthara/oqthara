@@ -7,7 +7,10 @@ public record OqRange(long start, long end, boolean inclusive, long step) {
 
     public OqRange {
         if (step == 0) {
-            throw new OqError("a range step cannot be 0", null,
+            // `Errors.current()` rather than a null span: a range built from inside the
+            // runtime (by slicing, or by a stdlib method) has no span of its own, and the
+            // call that produced it has already marked one (ADR-0025).
+            throw new OqError("a range step cannot be 0", Errors.current(),
                     "Without a step there is no next number. Use 1 for every answer, or -1 to count down.");
         }
     }

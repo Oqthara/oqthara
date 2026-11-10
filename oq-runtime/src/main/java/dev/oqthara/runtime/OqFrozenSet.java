@@ -79,44 +79,44 @@ public final class OqFrozenSet extends AbstractSet<Object> {
 
     @Override
     public boolean add(Object item) {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build a new frozenset with union, intersection, difference or "
                         + "symmetric_difference instead. If you need to change it in place, use set.");
     }
 
     @Override
     public boolean remove(Object item) {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build a new frozenset without the item using difference instead.");
     }
 
     @Override
     public void clear() {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build an empty frozenset with frozenset() instead.");
     }
 
     @Override
     public boolean addAll(Collection<?> items) {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build a new frozenset with union instead.");
     }
 
     @Override
     public boolean removeAll(Collection<?> items) {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build a new frozenset with difference instead.");
     }
 
     @Override
     public boolean retainAll(Collection<?> items) {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build a new frozenset with intersection instead.");
     }
 
     @Override
     public boolean removeIf(java.util.function.Predicate<? super Object> filter) {
-        throw new OqError("a frozenset is immutable", null,
+        throw new OqError("a frozenset is immutable", Errors.current(),
                 "Build a new frozenset from a filtered collection instead.");
     }
 
