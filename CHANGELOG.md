@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [ADR-0024](docs/adr/0024-text-is-a-sequence-of-code-points.md).
 
 ### Added
+- **Documentation comments.** A multi-line text literal standing before a `fun`, `data`,
+  `class` or `contract` documents it, with JavaDoc-style tags: `@param`, `@return`, `@throws`,
+  `@since`, `@author`, `@deprecated` and `@see`. The tags are parsed into a `Docstring` rather
+  than left as text, and an unrecognised tag is kept under its own name instead of refused, so
+  writing one is not an error. `oq doc --source <path>` renders a file, or every `.oq` file under
+  a directory, from the comments its declarations carry; a declaration with none is listed as
+  `_Undocumented._` and counted, so the page shows the gap as well as the content. A multi-line
+  literal that does not precede a declaration stays an ordinary value, so no existing program
+  changes meaning. See [ADR-0030](docs/adr/0030-docstrings.md).
 - **Modules and closures are specified.** `use "oq:name"` loads `name.oq` from beside the
   program, `modules/` or `lib/`; a file loads at most once, so import cycles terminate, and a
   module's top-level statements run before the importer's. There is one flat namespace: a

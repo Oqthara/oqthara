@@ -27,12 +27,13 @@ class ParserFuzzTest {
     @FuzzTest(maxDuration = "20s")
     void deeplyNestedInputDoesNotOverflow(FuzzedDataProvider data) {
         int depth = data.consumeInt(0, 2000);
-        String source = switch (data.consumeInt(0, 5)) {
+        String source = switch (data.consumeInt(0, 6)) {
             case 0 -> "x = " + "(".repeat(depth) + "1" + ")".repeat(depth);
             case 1 -> "x = " + "[".repeat(depth) + "1" + "]".repeat(depth);
             case 2 -> "x = " + "-".repeat(depth) + "1";
             case 3 -> "x = " + "not ".repeat(depth) + "true";
             case 4 -> "x = " + "1 ** ".repeat(depth) + "1";
+            case 5 -> "\"\"\"".repeat(depth) + "fun f()\n  return 1\nend";
             default -> {
                 StringBuilder nested = new StringBuilder("0");
                 for (int i = 0; i < Math.min(depth, 200); i++) {

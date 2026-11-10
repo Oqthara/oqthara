@@ -182,6 +182,12 @@
       "slug": "docs/adr/0029-closures-and-modules"
     },
     {
+      "path": "docs/adr/0030-docstrings.md",
+      "title": "ADR-0030: Documentation comments",
+      "section": "adr",
+      "slug": "docs/adr/0030-docstrings"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

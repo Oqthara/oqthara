@@ -1317,6 +1317,78 @@ oq test examples     # scan a specific directory
 Output is one `PASS`/`FAIL` line per file, a summary, and the full diagnostic for each
 failure. The command exits with `1` if anything failed, so it works in CI unchanged.
 
+## Documentation comments
+
+A multi-line text literal standing on its own before a declaration documents that
+declaration:
+
+```
+"""Adds two numbers.
+
+@param a the first addend
+@param b the second addend
+@return the sum
+"""
+fun add(a, b)
+  return a + b
+end
+```
+
+The literal attaches to the `fun`, `data`, `class` or `contract` that follows it. It is
+not evaluated and does not become a statement of its own.
+
+Only the multi-line form documents anything. A single-quoted string on the line before a
+declaration is a value, exactly as it always was, so nothing that used to work changes
+meaning:
+
+```
+print 1
+"""a value nobody reads"""
+print 2
+```
+
+That prints `1` then `2`, and the literal in the middle is an ordinary expression. A
+literal after an assignment is likewise a value, not a comment on the assignment.
+
+### Tags
+
+A tag begins a line inside the literal with `@name` and runs to the next tag:
+
+| Tag | Use |
+|---|---|
+| `@param name text` | describes one parameter, or a `data` field |
+| `@return text` | what the call produces |
+| `@throws Error text` | the failure it raises |
+| `@since version` | when it appeared |
+| `@author text` | who wrote it |
+| `@deprecated text` | what to use instead |
+| `@see other` | a related declaration |
+
+Everything before the first tag is the summary. A line that mentions an `@` but does not
+start with one is prose, so `Sends mail to @home when idle.` has no tags.
+
+A tag the language does not recognise is kept rather than refused. `@example add(1, 2)`
+is documentation under a name this version does not define, and writing it is not an
+error.
+
+A `@param` names its parameter explicitly. A `@param` whose name is not in the parameter
+list is ignored rather than reported, because the documentation is not the authority on
+the signature.
+
+### Reading it back
+
+`oq doc --source <path>` renders the declarations of a file, or of every `.oq` file under
+a directory, from the comments they carry:
+
+```
+oq doc --source src/
+oq doc --source src/ --out api.md
+```
+
+A declaration without a comment appears as `_Undocumented._`, and the footer counts
+documented and undocumented declarations, so the page shows what is missing rather than
+only what is present. See [ADR-0030](../adr/0030-docstrings.md).
+
 ## Modules
 
 A program can be split across files. `use "oq:name"` loads `name.oq` and makes its
