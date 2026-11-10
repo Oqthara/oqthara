@@ -206,6 +206,12 @@
       "slug": "docs/adr/0033-encoding-and-hashing"
     },
     {
+      "path": "docs/adr/0034-logging-and-argument-parsing.md",
+      "title": "ADR-0034: Logging and command-line argument parsing",
+      "section": "adr",
+      "slug": "docs/adr/0034-logging-and-argument-parsing"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

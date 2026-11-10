@@ -80,6 +80,8 @@ public final class Stdlib {
         installHttp(interpreter);
         installConcurrency(interpreter);
         installProcess(interpreter);
+        installLogging(interpreter);
+        installArguments(interpreter);
     }
 
     private static void installCore(Interpreter interpreter) {
@@ -549,6 +551,239 @@ public final class Stdlib {
         }));
     }
 
+    /**
+     * The threshold above which a log call writes. Read once from {@code OQ_LOG_LEVEL} so a
+     * deployment setting cannot change halfway through a run, then resettable by the program.
+     */
+    private static volatile Level level;
+
+    /** Log levels, ordered so a threshold is a comparison rather than a set membership test. */
+    private enum Level {
+        DEBUG(10, "DEBUG"), INFO(20, "INFO "), WARN(30, "WARN "), ERROR(40, "ERROR"),
+        NONE(100, "NONE ");
+
+        final int rank;
+        final String label;
+
+        Level(int rank, String label) {
+            this.rank = rank;
+            this.label = label;
+        }
+
+        static Level named(String name) {
+            String normalized = name.trim().toUpperCase(Locale.ROOT);
+            if (normalized.equals("WARNING")) normalized = "WARN";
+            for (Level candidate : values()) {
+                if (candidate.name().equals(normalized)) return candidate;
+            }
+            return null;
+        }
+    }
+
+    private static Level level() {
+        Level current = level;
+        if (current != null) return current;
+        synchronized (Stdlib.class) {
+            if (level == null) {
+                // An unrecognised value is ignored rather than fatal: a typo in a deployment
+                // variable must not turn a working program into a failing one.
+                Level fromEnvironment = Level.named(System.getenv().getOrDefault("OQ_LOG_LEVEL", "info"));
+                level = fromEnvironment == null ? Level.INFO : fromEnvironment;
+            }
+            return level;
+        }
+    }
+
+    private static void installLogging(Interpreter interpreter) {
+        // Registered by literal name rather than in a loop over Level: the documentation
+        // generator finds builtins by matching the literal in this file, so a computed name
+        // would make the four functions exist and be undocumented at the same time.
+        interpreter.defineBuiltin(NativeFunction.of("log_debug", 1, (host, args, span) ->
+                writeLog(host, Level.DEBUG, args.get(0))));
+        interpreter.defineBuiltin(NativeFunction.of("log_info", 1, (host, args, span) ->
+                writeLog(host, Level.INFO, args.get(0))));
+        interpreter.defineBuiltin(NativeFunction.of("log_warn", 1, (host, args, span) ->
+                writeLog(host, Level.WARN, args.get(0))));
+        interpreter.defineBuiltin(NativeFunction.of("log_error", 1, (host, args, span) ->
+                writeLog(host, Level.ERROR, args.get(0))));
+        interpreter.defineBuiltin(NativeFunction.of("log_level", 1, (host, args, span) -> {
+            String requested = text(args.get(0), "log_level", span);
+            Level chosen = Level.named(requested);
+            if (chosen == null) {
+                throw new OqError("log_level() got \"" + requested + "\"", span,
+                        "Use debug, info, warn, error or none.");
+            }
+            level = chosen;
+            return null;
+        }));
+        interpreter.defineBuiltin(NativeFunction.of("log_enabled", 1, (host, args, span) -> {
+            String requested = text(args.get(0), "log_enabled", span);
+            Level chosen = Level.named(requested);
+            if (chosen == null) {
+                throw new OqError("log_enabled() got \"" + requested + "\"", span,
+                        "Use debug, info, warn, error or none.");
+            }
+            return chosen.rank >= level().rank;
+        }));
+    }
+
+    /**
+     * Writes one line to the error stream, never the output stream.
+     *
+     * The stream split is the whole point: a program's output is its data, a log line is a
+     * diagnostic about the program, and `oq run p.oq > out` must not capture the second into
+     * the first. The message is converted the way `print` converts, so a string is not quoted
+     * and `log_info("done")` writes `INFO  done`.
+     */
+    private static Object writeLog(OqHost host, Level at, Object message) {
+        if (at.rank < level().rank) return null;
+        host.err().println(at.label + " " + Values.display(message));
+        return null;
+    }
+
+    private static void installArguments(Interpreter interpreter) {
+        interpreter.defineBuiltin(NativeFunction.variadic("arg_parse", 2, (host, args, span) -> {
+            List<String> arguments = new ArrayList<>();
+            for (Object entry : argumentList(args.get(0), "arg_parse", span)) {
+                arguments.add(text(entry, "arg_parse", span));
+            }
+            List<Option> options = new ArrayList<>();
+            for (Object entry : argumentList(args.get(1), "arg_parse", span)) {
+                options.add(Option.parse(text(entry, "arg_parse", span), span));
+            }
+            return parseArguments(arguments, options, span);
+        }));
+    }
+
+    /** One declared option: a flag, or a value of a named type that may be optional. */
+    private record Option(String name, String type, boolean flag, boolean optional) {
+
+        static Option parse(String specification, Span span) {
+            String trimmed = specification.trim();
+            if (trimmed.isEmpty()) {
+                throw new OqError("arg_parse() was given an empty option", span,
+                        "An option is \"name\" for a flag or \"name:type\" for a value.");
+            }
+            int colon = trimmed.indexOf(':');
+            if (colon < 0) return new Option(trimmed, "flag", true, false);
+            String name = trimmed.substring(0, colon).trim();
+            String type = trimmed.substring(colon + 1).trim();
+            boolean optional = type.endsWith("?");
+            if (optional) type = type.substring(0, type.length() - 1);
+            if (name.isEmpty()) {
+                throw new OqError("arg_parse() was given \"" + specification + "\" with no name",
+                        span, "Write the name before the colon: \"port:int\".");
+            }
+            if (!type.equals("text") && !type.equals("number") && !type.equals("int")) {
+                throw new OqError("arg_parse() got the unknown option type \"" + type + "\"", span,
+                        "The types are text, number and int.");
+            }
+            return new Option(name, type, false, optional);
+        }
+
+        /** The spelling a caller uses, with the leading dashes the parser accepts. */
+        String spelling() {
+            return "--" + name;
+        }
+    }
+
+    /**
+     * Walks the words once. Every failure names the token, because the caller's next action
+     * depends on which word was wrong rather than on the fact that something was.
+     */
+    private static OqMap parseArguments(List<String> words, List<Option> options, Span span) {
+        Map<String, Option> bySpelling = new LinkedHashMap<>();
+        for (Option option : options) {
+            if (bySpelling.put(option.spelling(), option) != null) {
+                throw new OqError("arg_parse() declared " + option.spelling() + " twice", span,
+                        "Each option name appears once.");
+            }
+        }
+        List<Object> flags = new ArrayList<>();
+        Map<String, Object> values = new LinkedHashMap<>();
+        List<Object> rest = new ArrayList<>();
+        boolean positionalOnly = false;
+        for (int i = 0; i < words.size(); i++) {
+            String word = words.get(i);
+            // `--` terminates option parsing. The CLI already hands `--` through to a program,
+            // so a parser that ignored it would make the process argument list incoherent.
+            if (!positionalOnly && word.equals("--")) {
+                positionalOnly = true;
+                continue;
+            }
+            if (positionalOnly || !word.startsWith("-") || word.equals("-")) {
+                rest.add(word);
+                continue;
+            }
+            Option option = bySpelling.get(word);
+            if (option == null) {
+                throw new OqError("arg_parse() got the unknown option " + word, span,
+                        "Declared options: " + describe(options) + ". Use -- to end option parsing.");
+            }
+            if (option.flag) {
+                if (!flags.contains(option.name)) flags.add(option.name);
+                continue;
+            }
+            if (i + 1 >= words.size()) {
+                throw new OqError("arg_parse() got " + word + " with no value", span,
+                        "Write " + word + " followed by a " + option.type + ".");
+            }
+            String raw = words.get(++i);
+            values.put(option.name, convert(raw, option, word, span));
+        }
+        for (Option option : options) {
+            if (option.flag || option.optional) continue;
+            if (!values.containsKey(option.name)) {
+                throw new OqError("arg_parse() is missing the required option " + option.spelling(),
+                        span, "Declared options: " + describe(options) + ".");
+            }
+        }
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+        result.put("flags", flags);
+        result.put("values", new OqMap(values));
+        result.put("rest", rest);
+        return new OqMap(result);
+    }
+
+    private static Object convert(String raw, Option option, String spelling, Span span) {
+        switch (option.type) {
+            case "text":
+                return raw;
+            case "int":
+                try {
+                    return Long.parseLong(raw);
+                } catch (NumberFormatException e) {
+                    throw optionTypeError(raw, option, spelling, "a whole number", span);
+                }
+            default:
+                try {
+                    double parsed = Double.parseDouble(raw);
+                    if (!Double.isFinite(parsed)) {
+                        throw optionTypeError(raw, option, spelling, "a finite number", span);
+                    }
+                    return parsed;
+                } catch (NumberFormatException e) {
+                    throw optionTypeError(raw, option, spelling, "a number", span);
+                }
+        }
+    }
+
+    private static OqError optionTypeError(String raw, Option option, String spelling,
+            String expected, Span span) {
+        return new OqError(spelling + " needs " + expected + ", got \"" + raw + "\"", span);
+    }
+
+    private static String describe(List<Option> options) {
+        if (options.isEmpty()) return "none";
+        StringBuilder sb = new StringBuilder();
+        for (Option option : options) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(option.spelling());
+            if (!option.flag) sb.append(':').append(option.type);
+        }
+        return sb.toString();
+    }
+
     private static void installTime(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("now", 0, (host, args, span) ->
                 java.time.Instant.now().toString()));
@@ -979,6 +1214,13 @@ public final class Stdlib {
      * different string from what the caller meant; the functions are about bytes, so the type
      * is checked.
      */
+    private static List<?> argumentList(Object value, String builtin, Span span) {
+        if (!(value instanceof List<?> list)) {
+            throw new OqError(builtin + "() needs a list, got " + Values.typeName(value), span);
+        }
+        return list;
+    }
+
     private static String text(Object value, String builtin, Span span) {
         if (!(value instanceof String)) {
             throw new OqError(builtin + "() needs text, got " + Values.typeName(value), span);
