@@ -32,8 +32,12 @@ public final class OqData {
         return typeName;
     }
 
-    public java.util.LinkedHashMap<String, Object> fields() {
-        return fields;
+    /**
+     * The fields in declaration order, read-only: {@link #set} is the only write path, so a
+     * caller cannot reach past the immutability check (ADR-0028).
+     */
+    public java.util.Map<String, Object> fields() {
+        return java.util.Collections.unmodifiableMap(fields);
     }
 
     public boolean has(String name) {
@@ -65,22 +69,21 @@ public final class OqData {
         fields.put(name, value);
     }
 
-    /** The same-type reconstruction a caller should write instead, with every field shown. */
+    /**
+     * The same-type reconstruction a caller should write instead, in declaration order and in
+     * positional form, because that is the only way the constructor accepts arguments. Every
+     * value is rendered with {@link Values#repr} so the line can be pasted back as source, except
+     * the field being replaced, shown as {@code ...} to mark the caller's own choice.
+     */
     private String rebuildHint(String changing) {
         StringBuilder hint = new StringBuilder("Build a new value instead: ").append(typeName).append('(');
         boolean first = true;
         for (java.util.Map.Entry<String, Object> field : fields.entrySet()) {
             if (!first) hint.append(", ");
             first = false;
-            hint.append(field.getKey()).append(": ");
-            if (field.getKey().equals(changing)) {
-                hint.append("...");
-            } else {
-                Object shown = field.getValue();
-                hint.append(shown instanceof String text ? "\"" + text + "\"" : Values.repr(shown));
-            }
+            hint.append(field.getKey().equals(changing) ? "..." : Values.repr(field.getValue()));
         }
-        return hint.append(")").toString();
+        return hint.append(')').toString();
     }
 
     /**

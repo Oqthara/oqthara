@@ -86,10 +86,17 @@ Two consequences are worth stating outright because they are the cases a reader 
 first:
 
 - An immutable `data` may still hold a mutable value. `data Box(items) immutable` fixes the
-  *field*, not its contents; `b.items.push(1)` still works and would still change the
-  rendered text. This is the same rule a tuple follows — `(list, 1)` is an immutable tuple
-  containing a mutable list — and changing it would require deep freezing, which §14.2 does
-  not ask for and which no other family implements.
+  *field*, not its contents; `b.items.push(1)` still works. This is the same rule a tuple
+  follows — `(list, 1)` is an immutable tuple containing a mutable list — and changing it
+  would require deep freezing, which §14.2 does not ask for and which no other family
+  implements.
+- Because the fields are only fixed, not frozen, an immutable `data` is **only as hashable
+  as its contents**. `Value.requireHashable` descends into the field values with the same
+  recursion the tuple and frozenset branches use, so `Box([1]) immutable` is refused as a
+  map key for exactly the reason `([1],)` is: the key could be mutated into
+  unreachability after it was stored. The recursion is what makes the summary in the
+  decision table — structural equality implies a structural hash implies usable as a key —
+  an *if and only if* rather than an implication that holds only for flat values.
 - An immutable `data` is *structurally* equal to a mutable `data` of the same type with the
   same fields only when both are the same declaration. Equal-but-differently-mutable values
   cannot arise, because mutability is a property of the type, not of the instance.
@@ -120,7 +127,10 @@ every `instanceof OqData` site in the runtime.
 ### Runtime enforcement
 
 `OqData.set` is the single write path; the interpreter's `FieldAssign` branch and
-`DataValues.put`-based compiled writes both reach it. The runtime therefore refuses there
+`DataValues.put`-based compiled writes both reach it, and `fields()` hands out an
+unmodifiable view so no caller can reach past the check. Writes that rebuild the value —
+`clone`, above all — must carry the modifier across, or they would launder an immutable
+value into a mutable one and break the promise that made it a legal key. The runtime therefore refuses there
 rather than in the interpreter, so neither backend can forget the rule. The refusal carries
 no message of its own because the two callers know different things: the interpreter has the
 span and the declared field list and can produce the full diagnostic with the rebuild hint.

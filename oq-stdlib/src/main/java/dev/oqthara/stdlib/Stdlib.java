@@ -1012,7 +1012,7 @@ public final class Stdlib {
         if (value instanceof OqData data) {
             LinkedHashMap<String, Object> fields = new LinkedHashMap<>();
             data.fields().forEach((k, v) -> fields.put(k, deepCopy(v)));
-            return new OqData(data.typeName(), fields);
+            return new OqData(data.typeName(), fields, data.immutable());
         }
         return value;
     }

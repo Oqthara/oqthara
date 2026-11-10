@@ -103,8 +103,11 @@ public final class Value {
             return;
         }
         if (value instanceof OqData data) {
-            if (data.immutable()) return;
-            throw new UnhashableValueException(Values.typeName(value), role, span);
+            if (!data.immutable()) throw new UnhashableValueException(Values.typeName(value), role, span);
+            // An immutable declaration fixes the fields, not their contents, so the value is
+            // only as hashable as what it holds -- the same rule the tuple branch applies.
+            for (Object field : data.fields().values()) requireHashable(field, role, span, depth + 1);
+            return;
         }
         if (value instanceof List<?> || value instanceof Map<?, ?> || value instanceof java.util.Set<?>) {
             throw new UnhashableValueException(Values.typeName(value), role, span);

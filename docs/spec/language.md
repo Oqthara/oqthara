@@ -799,11 +799,15 @@ is the only way to change an immutable record:
 
 ```
 error: Point is immutable, so field 'x' cannot be changed
-  help: Build a new value instead: Point(x: ..., y: 2)
+  help: Build a new value instead: Point(..., 2)
 ```
 
+The hint is written in positional form because that is the only form the constructor
+accepts, and every value is escaped so the line can be pasted back as source.
+
 `immutable` fixes the **field**, not its contents. A field may still hold a mutable value,
-and changing that value changes the record's rendering and its hash:
+and changing that value changes the record's rendering — and makes the record unusable as a
+key, because it is only as hashable as what it holds:
 
 ```
 data Box(items) immutable
@@ -814,8 +818,8 @@ print b          # Box(items: [1])
 
 This is the rule tuples already follow — `(list, 1)` is an immutable tuple holding a mutable
 list. Deep freezing would have to reach every nested value, and no family in the language
-does that. Treat an immutable record that holds a mutable collection as a mutable value: it
-cannot be used as a map key safely.
+does that. An immutable record that holds a mutable collection is therefore refused as a map
+key or set member, for the same reason a tuple holding one is refused.
 
 `immutable` is not a reserved word; `immutable = 7` still names a variable. See
 [ADR-0028](../adr/0028-data-evolution.md).

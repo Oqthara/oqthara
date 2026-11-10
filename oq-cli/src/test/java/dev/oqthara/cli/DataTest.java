@@ -123,8 +123,58 @@ class DataTest {
                 p = Point(1, 2)
                 p.x = 9
                 """);
-        assertTrue(stderr.contains("Build a new value instead: Point(x: ..., y: 2)"),
+        assertTrue(stderr.contains("Build a new value instead: Point(..., 2)"),
                 "expected a rebuild hint, got: " + stderr);
+    }
+
+    @Test
+    void theHintIsValidSourceEvenWhenAFieldNeedsEscaping() {
+        String stderr = failure("""
+                data Pair(label, count) immutable
+                p = Pair("say \\"hi\\"", 1)
+                p.count = 2
+                """);
+        assertTrue(stderr.contains("Build a new value instead: Pair(\"say \\\"hi\\\"\", ...)"),
+                "expected an escaped hint, got: " + stderr);
+    }
+
+    @Test
+    void aFieldHoldingAListIsNotHashableBecauseItCouldChange() {
+        String stderr = failure("""
+                data Box(items) immutable
+                m = {Box([1]): "a"}
+                """);
+        assertTrue(stderr.contains("a list cannot be used as a map key"),
+                "expected the inner value to be refused, got: " + stderr);
+    }
+
+    @Test
+    void cloneKeepsTheDeclarationImmutable() {
+        String stderr = failure("""
+                data Point(x) immutable
+                q = clone(Point(1))
+                q.x = 9
+                """);
+        assertTrue(stderr.contains("Point is immutable"),
+                "expected the copy to stay immutable, got: " + stderr);
+    }
+
+    @Test
+    void cloneCanCopyASetOfImmutableData() {
+        assertEquals("1\ntrue\n", run("""
+                data Point(x) immutable
+                t = clone(set([Point(1)]))
+                print length(t)
+                print Point(1) in t
+                """));
+    }
+
+    @Test
+    void aClonedImmutableValueStillEqualsTheOriginal() {
+        assertEquals("true\n", run("""
+                data Point(x, y) immutable
+                print clone(Point(1, 2)) == Point(1, 2)
+                """));
     }
 
     @Test
