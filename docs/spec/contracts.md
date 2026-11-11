@@ -75,17 +75,17 @@ expression, does it survive to the LSP hover, and does it survive into a built j
 hash consistent with it, a readable text form, and per-instance default expressions.
 
 ```
-data Point(x, y)
+data Point(x, y) immutable
 p = Point(1, 2)
 print p == Point(1, 2)      # true
 print p                     # Point(x: 1, y: 2)
-print length(set([P(1), P(1), P(2)]))   # 2 — equality and hash agree
+print length(set([Point(1, 2), Point(1, 2), Point(3, 4)]))   # 2 — equality and hash agree
 ```
 
 Two `data` behaviours are absent and both fail honestly rather than silently:
 
 ```
-x, y = p                    # error: cannot destructure P
+x, y = p                    # error: cannot destructure Point
 q = p.with(b = 9)           # error: expected ')' to close the argument list
 ```
 
