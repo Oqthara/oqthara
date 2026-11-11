@@ -109,6 +109,19 @@ documentation comment appears as `_Undocumented._` rather than being omitted, so
 the gap. The footer counts both, so "how much of this project is documented" is answerable from
 the generated page instead of by review.
 
+**D7. A method inside a class body carries its own documentation.** The class body accepts a
+multi-line literal in front of a `fun` and attaches it to that method, which lands in
+`MethodDecl.doc()` by the same rules as D1. Without this, a class with ten methods could be
+documented only as a whole, at the level of the class, and the methods themselves would be
+invisible to `oq doc --source`. Only a literal followed by `fun` is attachment; a literal
+before anything else in a class body remains the error it always was, because a class body
+holds nothing else a comment could describe.
+
+Methods are rendered one heading level below their class, so the page keeps a method with the
+class it belongs to. Two classes may declare a method of the same name, and a method heading
+alone would not say which one a reader is looking at. Methods count towards the documented and
+undocumented totals alongside top-level declarations.
+
 ## Alternatives considered
 
 | Alternative | Why not |

@@ -3,6 +3,7 @@ package dev.oqthara.lsp;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -125,6 +126,16 @@ class HoverTest {
         assertNotNull(hover);
         assertTrue(hover.contains("print("), hover);
         assertTrue(hover.contains("Standard library function."), hover);
+    }
+
+    @Test
+    void aVariadicThatAcceptsNothingRendersOneEllipsisRatherThanAStrayComma() {
+        // `print` accepts any number of arguments including none, so the minimum contributes no
+        // placeholder and the ellipsis must not be joined to an empty argument list.
+        String hover = Hover.hover(URI, "print 1\n", 0, 1);
+        assertNotNull(hover);
+        assertTrue(hover.contains("print(...)"), hover);
+        assertFalse(hover.contains("print(, ...)"), hover);
     }
 
     @Test

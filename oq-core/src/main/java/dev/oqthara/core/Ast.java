@@ -105,7 +105,11 @@ public final class Ast {
         }
     }
 
-    public record MethodDecl(String name, List<String> params, List<Stmt> body, Span span) {
+    public record MethodDecl(String name, List<String> params, List<Stmt> body, String doc,
+                             Span span) {
+        public MethodDecl(String name, List<String> params, List<Stmt> body, Span span) {
+            this(name, params, body, null, span);
+        }
     }
 
     /** {@code contract Name} followed by method signatures and {@code end}. No bodies. */

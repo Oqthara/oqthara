@@ -1913,8 +1913,9 @@ fun add(a, b)
 end
 ```
 
-The literal attaches to the `fun`, `data`, `class` or `contract` that follows it. It is
-not evaluated and does not become a statement of its own.
+The literal attaches to the `fun`, `data`, `class` or `contract` that follows it, and inside a
+class body to the `fun` that follows it. It is not evaluated and does not become a statement of
+its own.
 
 Only the multi-line form documents anything. A single-quoted string on the line before a
 declaration is a value, exactly as it always was, so nothing that used to work changes
@@ -1964,9 +1965,29 @@ oq doc --source src/
 oq doc --source src/ --out api.md
 ```
 
+A class's methods are rendered one heading level below the class, each from its own
+comment, so a method stays with the class it belongs to and a method name shared by two
+classes cannot be confused for one declaration:
+
+```
+"""A counter.
+
+@param value the starting value
+"""
+class Counter(value)
+  """Adds one.
+
+  @return the new value
+  """
+  fun increment()
+    return value + 1
+  end
+end
+```
+
 A declaration without a comment appears as `_Undocumented._`, and the footer counts
-documented and undocumented declarations, so the page shows what is missing rather than
-only what is present. See [ADR-0030](../adr/0030-docstrings.md).
+documented and undocumented declarations — methods included — so the page shows what is
+missing rather than only what is present. See [ADR-0030](../adr/0030-docstrings.md).
 
 ## Modules
 

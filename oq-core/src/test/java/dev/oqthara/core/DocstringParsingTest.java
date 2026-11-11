@@ -1,5 +1,6 @@
 package dev.oqthara.core;
 
+import dev.oqthara.runtime.OqError;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -7,6 +8,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DocstringParsingTest {
@@ -52,6 +54,35 @@ class DocstringParsingTest {
         Ast.ClassDecl circle = assertInstanceOf(Ast.ClassDecl.class, statements.get(0));
         assertEquals("A circle.", circle.doc());
         assertEquals(1, circle.methods().size());
+    }
+
+    @Test
+    void aDocumentedMethodKeepsItsDocNextToTheMethod() {
+        List<Ast.Stmt> statements = parse(
+                "\"\"\"A counter.\"\"\"\n"
+                + "class Counter(value)\n"
+                + "  \"\"\"Adds one.\n\n  @return the new value\n  \"\"\"\n"
+                + "  fun increment()\n"
+                + "    return value + 1\n"
+                + "  end\n"
+                + "  fun plain()\n"
+                + "    return value\n"
+                + "  end\n"
+                + "end\n");
+        Ast.ClassDecl counter = assertInstanceOf(Ast.ClassDecl.class, statements.get(0));
+        assertEquals(2, counter.methods().size());
+        Ast.MethodDecl increment = counter.methods().get(0);
+        // The literal keeps the indentation it was written with; Docstring.parse trims it.
+        assertTrue(increment.doc().startsWith("Adds one."), increment.doc());
+        assertTrue(increment.doc().contains("@return the new value"), increment.doc());
+        assertNull(counter.methods().get(1).doc());
+        assertEquals("A counter.", counter.doc(), "the class keeps its own docstring");
+    }
+
+    @Test
+    void aLiteralInAClassBodyThatPrecedesNoMethodIsStillAnError() {
+        assertThrows(OqError.class,
+                () -> parse("class K()\n  \"\"\"nothing to document\"\"\"\n  x = 1\nend\n"));
     }
 
     @Test

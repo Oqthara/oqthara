@@ -190,8 +190,11 @@ final class Hover {
         }
         if (min < 0) return "...";
         if (min == max) return args(min);
-        if (max == probe) return args(min) + ", ...";
-        return args(min) + ", ... up to " + max;
+        // A variadic that accepts nothing has no leading argument to separate the ellipsis
+        // from, so joining unconditionally would render `print(, ...)`.
+        String lead = min == 0 ? "..." : args(min) + ", ...";
+        if (max == probe) return lead;
+        return min == 0 ? "..., up to " + max : args(min) + ", ... up to " + max;
     }
 
     private static String args(int count) {

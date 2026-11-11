@@ -384,6 +384,12 @@ public final class Parser {
                 methods.add(methodDeclaration());
                 continue;
             }
+            if (check(Token.Kind.MULTILINE) && documentsAMethod()) {
+                String doc = (String) advance().literal();
+                skipSeparators();
+                methods.add(methodDeclaration(doc));
+                continue;
+            }
             if (check(Token.Kind.IDENT) && peek().lexeme().equals("init")) {
                 Token initKeyword = advance();
                 endStatement();
@@ -400,6 +406,10 @@ public final class Parser {
     }
 
     private Ast.MethodDecl methodDeclaration() {
+        return methodDeclaration(null);
+    }
+
+    private Ast.MethodDecl methodDeclaration(String doc) {
         Token keyword = advance();
         Token name = expect(Token.Kind.IDENT, "a method name");
         expect(Token.Kind.LPAREN, "after the method name");
@@ -414,7 +424,21 @@ public final class Parser {
         List<Ast.Stmt> body = block();
         expectKeyword("end", "to close this method");
         endStatement();
-        return new Ast.MethodDecl(name.lexeme(), params, body, keyword.span());
+        return new Ast.MethodDecl(name.lexeme(), params, body, doc, keyword.span());
+    }
+
+    /**
+     * Whether the multi-line literal at the cursor, inside a class body, is followed by a
+     * {@code fun}. Read without consuming, so a literal that documents nothing is still left to
+     * the class-body loop to reject with its own message.
+     */
+    private boolean documentsAMethod() {
+        int ahead = current + 1;
+        while (ahead < tokens.size() && tokens.get(ahead).is(Token.Kind.NEWLINE)) {
+            ahead++;
+        }
+        return ahead < tokens.size() && tokens.get(ahead).is(Token.Kind.KEYWORD)
+                && tokens.get(ahead).lexeme().equals("fun");
     }
 
     private Ast.Stmt contractStatement(Token keyword) {
