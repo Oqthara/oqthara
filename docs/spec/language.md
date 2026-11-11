@@ -2221,5 +2221,41 @@ where a value is required is refused rather than passed as `null`:
 error: '<lambda>' returned nothing, which boolean cannot hold
 ```
 
-The direction back out of Java is not yet supported: a Java method that returns a lambda yields
-an object Oqthara can call as a method, not a value it can hold as a `fun`.
+### Objects Java returns
+
+A value Java hands back is an ordinary Java object, and its methods are called the same way as
+any other receiver's. Most of the JDK's own function objects live in package-private classes,
+which reflection reports as inaccessible even though the interface is public; the bridge resolves
+the method on the public supertype so the call works:
+
+```
+use java.util.Comparator
+
+ascending = Comparator.naturalOrder()
+descending = Comparator.reverseOrder()
+print ascending.compare(1, 2)    # -1
+print descending.compare(1, 2)   # 1
+```
+
+The direction back out of Java is still not complete: such an object is not a `fun`, so it cannot
+stand where a function value is expected. `map` needs an Oqthara function, and a Java object is
+refused by name rather than by denying that it can be called at all:
+
+```text
+error: '<callback>' is not a function
+
+  help: It is java NaturalOrderComparator, a Java object: call its methods with '.', but it is not a fun.
+```
+
+Such an object is still a Java reference, so it can be handed back to Java anywhere that type is
+wanted — which is what makes the reverse comparator useful at all:
+
+```
+use java.util.Comparator
+use java.util.Collections
+
+descending = Comparator.reverseOrder()
+xs = [1, 3, 2]
+Collections.sort(xs, descending)
+print xs                          # [3, 2, 1]
+```

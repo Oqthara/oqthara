@@ -91,7 +91,7 @@ public final class Callables {
         // A null callee means the name was not a function at runtime, which is the same
         // situation the interpreter reports when a variable shadows a function.
         throw new OqError("'" + name + "' is not a function", span,
-                "It is " + Values.typeName(callee) + ", which cannot be called.");
+                Values.notCallableHelp(callee));
     }
 
     /** One mutable list, because {@code nothing} is {@code null} and is a real argument. */

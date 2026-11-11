@@ -344,9 +344,19 @@ earlier entry described two independent failures and blamed dispatch for skippin
 non-`Class<?>` receiver. That was wrong — `xs.ensureCapacity(100)` and `Collections.sort(xs)`
 both reach reflection — and the correction is recorded in ADR-0032 D5. The direction *out of*
 Java remains closed: a method that takes a `Function` and hands one back on return yields a JDK
-proxy object that Oqthara can call as a method but cannot hold as a `fun` value, and a Java lambda
+object that Oqthara can call through its methods but cannot hold as a `fun` value, and a Java lambda
 never becomes a value the language can pass to `map`. Nothing in the standard library needs that
 shape today, which is why this is Low rather than Medium.
+
+The first half of that sentence was itself untrue until it was measured. Calling such a value did
+not work: `Comparator.naturalOrder()` answers a package-private `Comparators$NaturalOrderComparator`
+and `Function.identity()` answers a hidden lambda class, and reflection reports the *declaring*
+class's accessibility rather than the interface's, so `compare` and `apply` were both refused with
+"cannot access a member of class ... with modifiers public". The same signature is now resolved on a
+public supertype, and both calls work; `JavaBridgeAccessibilityTest` pins them. The help text was
+corrected with it — `map(xs, Comparator.naturalOrder())` used to say the value "cannot be called",
+which contradicted the method call that had just succeeded, and now says that it is a Java object
+whose methods are callable but which cannot stand where a `fun` is expected.
 
 *Mitigation.* None available at the language level. The gap is named precisely, with the two distinct
 causes distinguished, so it is not mistaken for a missing method.

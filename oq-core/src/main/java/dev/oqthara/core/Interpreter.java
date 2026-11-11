@@ -684,7 +684,7 @@ public final class Interpreter implements OqHost {
             return JavaBridge.construct(type, args, span, workingDirectory, this);
         }
         throw new OqError("'" + name + "' is not a function", span,
-                "It is " + Values.typeName(callee) + ", which cannot be called.");
+                Values.notCallableHelp(callee));
     }
 
     private Object evaluateMethod(Ast.MethodCall call, Env env) {

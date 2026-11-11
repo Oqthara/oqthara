@@ -112,12 +112,57 @@ public final class JavaBridge {
             return NOT_FOUND;
         }
         try {
-            return normalize(best.invoke(receiver, bestArgs));
+            return normalize(accessible(best, receiver.getClass()).invoke(receiver, bestArgs));
         } catch (InvocationTargetException e) {
             throw wrap(e.getTargetException(), span);
         } catch (IllegalAccessException e) {
             throw new OqError("cannot call " + name + ": " + e.getMessage(), span);
         }
+    }
+
+    /**
+     * Re-resolves a method on a public type when the receiver's own class is not public.
+     *
+     * <p>{@code getMethods()} returns declarations owned by the class that writes them, and the
+     * JDK implements most of its callbacks in package-private classes: {@code
+     * Comparator.naturalOrder()} answers a {@code Comparators$NaturalOrderComparator} and {@code
+     * Function.identity()} answers a hidden lambda class. Both are legal values whose interface is
+     * public, but {@code Method.invoke} checks the <em>declaring</em> class's accessibility, so
+     * calling {@code compare} or {@code apply} on such a value raised "cannot access a member of
+     * class ... with modifiers public". The same signature looked up on a public supertype is a
+     * different {@code Method} object that passes the check and dispatches to the same override.
+     */
+    private static Method accessible(Method method, Class<?> receiverType) {
+        if (Modifier.isPublic(method.getDeclaringClass().getModifiers())
+                && Modifier.isPublic(receiverType.getModifiers())) {
+            return method;
+        }
+        Method found = publicDeclaration(receiverType, method);
+        return found != null ? found : method;
+    }
+
+    private static Method publicDeclaration(Class<?> type, Method method) {
+        List<Class<?>> pending = new ArrayList<>();
+        if (type != null) pending.add(type);
+        for (int i = 0; i < pending.size(); i++) {
+            Class<?> candidate = pending.get(i);
+            if (Modifier.isPublic(candidate.getModifiers())) {
+                try {
+                    Method found = candidate.getMethod(method.getName(), method.getParameterTypes());
+                    // getMethod answers the most specific declaration, which can still be one this
+                    // package cannot reach, so the declaring class is what decides.
+                    if (Modifier.isPublic(found.getDeclaringClass().getModifiers())) return found;
+                } catch (NoSuchMethodException e) {
+                    // Keep walking: the public declaration may sit on a further supertype.
+                }
+            }
+            Class<?> parent = candidate.getSuperclass();
+            if (parent != null && !pending.contains(parent)) pending.add(parent);
+            for (Class<?> face : candidate.getInterfaces()) {
+                if (!pending.contains(face)) pending.add(face);
+            }
+        }
+        return null;
     }
 
     public static Object callStatic(Class<?> type, String name, List<Object> args, Span span,
@@ -149,7 +194,7 @@ public final class JavaBridge {
             return NOT_FOUND;
         }
         try {
-            return normalize(best.invoke(null, bestArgs));
+            return normalize(accessible(best, type).invoke(null, bestArgs));
         } catch (InvocationTargetException e) {
             throw wrap(e.getTargetException(), span);
         } catch (IllegalAccessException e) {
