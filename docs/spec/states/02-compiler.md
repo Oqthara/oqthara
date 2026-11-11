@@ -203,10 +203,10 @@ reserved for a future lowering that can degrade gracefully.
 |---|---|
 | `K1` | `ErrorMessageContractTest.everyErrorHasAPositionOrAnExplicitReason`; `LexerTest.tracksLineAndColumn` |
 | `K2` | `BuildJarTest.jarErrorsUseTheOriginalFileName`; `BytecodeCompilerTest` fallback cases |
-| `K3`, `K4` | `LoweringTest` refusal cases; `BytecodeCompilerTest.aVariableShadowingABuiltinIsRefusedNotSilentlyCompiled`, `.anArityTheBuiltinRejectsIsRefusedNotCompiled` |
+| `K3`, `K4` | `LoweringTest` refusal cases; `BytecodeCompilerTest.aVariableShadowingABuiltinDispatchesThroughTheValue`, `.anArityTheBuiltinRejectsIsRefusedNotCompiled` |
 | `K5` | `BytecodeCompilerTest.aTryExpressionProducesTheSameValueInBothCodepaths`; nested-`try` cases |
-| `K6` | `BytecodeCompilerTest.aVariableShadowingABuiltinIsRefusedNotSilentlyCompiled`, `.aCallBeforeTheShadowingAssignmentStillCompiles` |
-| `K7` | `BytecodeCompilerTest.aCapturingLambdaFallsBackInsteadOfBindingAStaleValue` |
+| `K6` | `BytecodeCompilerTest.aVariableShadowingABuiltinDispatchesThroughTheValue`, `.aCallBeforeTheShadowingAssignmentStillCompiles` |
+| `K7` | `BytecodeCompilerTest.aCapturingLambdaFallsBackWhenTheVariableChangesAfterwards` |
 | `K8` | absence — `oq-core` contains no type checker; recorded in §8's contract |
 | `K9` | `BuildJarTest.generatedClassIsAValidClassFile` |
 | `K10` | `BuildJarTest.jarContainsManifestProgramAndSource`; `BytecodeCompilerTest.compiledJarContainsNoEmbeddedSource` |
