@@ -100,7 +100,7 @@ no shutdown hook that drains tasks.
 | ID | From | Event | Guard | Action | To |
 |---|---|---|---|---|---|
 | `E27` | `R2` | `use java.pkg.Class` | the class loads | register it for construction and static calls | `R4` |
-| `E28` | `R4` | a Java method returns `int`, `short`, `byte`, `long`, `BigInteger`, `float`, `BigDecimal` or `char` | — | `JavaBridge.normalize` widens to `number`, `decimal` or `text` | `R4`-return |
+| `E28` | `R4` | a Java method returns `int`, `short`, `byte`, `long`, `float`, `char`, or a `BigInteger` that fits a `long` | — | `JavaBridge.normalize` widens to `number` or `text` | `R4`-return |
 | `E29` | `R4` | a Java method returns `void` | — | `null`, which is `nothing` | `R4`-return |
 | `E30` | `R4` | a Java method returns an unmapped type | — | the object is used as-is and reports `java <SimpleName>` | `R4`-return |
 | `E31` | `R8` | the JDK throws `UnsupportedOperationException` | — | convert to an `OqError` naming the refusal | `RX` |
@@ -120,6 +120,15 @@ LocalDate.now()      -> java LocalDate
 There is no conversion layer to inspect because there is no conversion: the JDK class hierarchy is
 doing the work. That is convenient, and it is exactly why `E31` matters — a JDK collection that
 refuses mutation raises a Java exception where the language promised a mutable `list`.
+
+`E28` carries a deliberate exception to that. `BigDecimal`, and a `BigInteger` too wide for a
+`long`, stay as Java objects rather than narrowing to a `double`, because narrowing either one
+discards the exactness that is the only reason to choose it. Writing
+`BigDecimal("0.1").add(BigDecimal("0.2"))` and getting a `decimal` back would report 16 significant
+digits as if they were the whole answer. Such a value therefore does not take part in Oq
+arithmetic: `x + 1` on a `BigDecimal` is `cannot add java BigDecimal and number`, and a program
+that wants to mix them converts explicitly. [ADR-0045](../../adr/0045-exact-java-numbers.md) records
+the measurements and the decision.
 
 ### Resource budgets
 

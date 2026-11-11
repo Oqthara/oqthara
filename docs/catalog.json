@@ -272,6 +272,12 @@
       "slug": "docs/adr/0044-signature-help"
     },
     {
+      "path": "docs/adr/0045-exact-java-numbers.md",
+      "title": "ADR-0045 — Exact Java numbers keep their type",
+      "section": "adr",
+      "slug": "docs/adr/0045-exact-java-numbers"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

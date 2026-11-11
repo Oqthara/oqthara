@@ -235,14 +235,18 @@ public final class JavaBridge {
         if (value instanceof Integer i) return (long) i;
         if (value instanceof Short s) return (long) s;
         if (value instanceof Byte b) return (long) b;
+        // A BigInteger or BigDecimal is the caller's explicit request for exact arithmetic, so
+        // narrowing either to a double discards the very property it was chosen for. A value that
+        // fits stays a number, as the spec says; anything wider stays the Java object, keeping its
+        // precision and its methods (ADR-0045).
         if (value instanceof java.math.BigInteger big) {
             try {
                 return big.longValueExact();
             } catch (ArithmeticException e) {
-                return big.doubleValue();
+                return big;
             }
         }
-        if (value instanceof java.math.BigDecimal dec) return dec.doubleValue();
+        if (value instanceof java.math.BigDecimal dec) return dec;
         if (value instanceof Float f) return f.doubleValue();
         if (value instanceof Character c) return String.valueOf(c);
         return value;
