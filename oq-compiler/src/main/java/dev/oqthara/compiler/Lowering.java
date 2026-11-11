@@ -49,6 +49,29 @@ public final class Lowering {
      * must dispatch through the value at run time, not to a builtin or a `fun` of that name.
      */
     private final Set<String> callableNames = new java.util.LinkedHashSet<>();
+    /**
+     * Every local name declared in each lexical scope of the function being lowered.
+     *
+     * <p>The interpreter resolves a callee by evaluating it: {@code evaluateCall} reads the
+     * name from the environment first, so a variable of that name always wins over a builtin
+     * or a {@code fun}. Mirroring that exactly needs the set of locals live at each call site,
+     * which is what this deque tracks. A call whose callee is any of these names must dispatch
+     * through {@code Ir.CallValue}; every other name keeps the static {@code Ir.Call} path.
+     */
+    private final java.util.Deque<Set<String>> localScopes = new java.util.ArrayDeque<>();
+    /**
+     * Names the function being lowered stores <em>more than once</em>, or updates with a
+     * compound assignment.
+     *
+     * <p>A captured value is a copy taken when the function value is created, while the
+     * interpreter reads the binding at call time. Capturing a variable that is stored again
+     * would freeze the old value and silently print a different answer, so a lambda that reads
+     * such a name is refused rather than compiled. This is computed from the whole function
+     * body before lowering starts, because the store that matters may appear after the lambda
+     * that reads it. A variable stored exactly once is indistinguishable from a shared binding
+     * at every call, which makes capturing it safe.
+     */
+    private Set<String> reassigned = Set.of();
 
     public static Ir.Program lower(Ast.Program program) {
         return lowerWithReport(program).program();
@@ -65,6 +88,7 @@ public final class Lowering {
             lowering.code.add(new Ir.Refuse(collision));
         }
         lowering.pushTypes(program.statements());
+        lowering.reassigned = reassignedIn(program.statements());
         for (Ast.Stmt stmt : program.statements()) {
             lowering.statement(stmt);
         }
@@ -155,10 +179,32 @@ public final class Lowering {
             }
         }
         typeScopes.push(types);
+        localScopes.push(new java.util.LinkedHashSet<>());
     }
 
     private void popTypes() {
         typeScopes.pop();
+        localScopes.pop();
+    }
+
+    /** Records that {@code name} is a local binding visible from this point on. */
+    private void bindLocal(String name) {
+        localScopes.peek().add(name);
+    }
+
+    /**
+     * True when {@code name} resolves to a local binding here.
+     *
+     * <p>Scope hoisting matters: Oqthara lets a {@code fun} be used before its declaration, so
+     * the whole scope is consulted rather than only the names bound so far. A call to a name
+     * that is local must dispatch through the stored value, because that is what the
+     * interpreter does for every call it evaluates.
+     */
+    private boolean isLocal(String name) {
+        for (Set<String> scope : localScopes) {
+            if (scope.contains(name)) return true;
+        }
+        return false;
     }
 
     private DataType lookupType(String name) {
@@ -176,12 +222,14 @@ public final class Lowering {
                 // as assignment: assignment updates an existing binding instead of shadowing.
                 expression(decl.value());
                 if (decl.value() instanceof Ast.Lambda) callableNames.add(decl.name());
+                bindLocal(decl.name());
                 code.add(new Ir.Declare(decl.name(), !decl.mutable()));
             }
             case Ast.Assign assign -> {
                 expression(assign.value());
                 if (assign.value() instanceof Ast.Lambda) callableNames.add(assign.name());
                 else callableNames.remove(assign.name());
+                bindLocal(assign.name());
                 code.add(new Ir.Store(assign.name()));
             }
             case Ast.Destructure destructure -> destructure(destructure);
@@ -528,34 +576,383 @@ public final class Lowering {
      * value. A method named {@code lambda$N} lives next to the program's own functions, so the
      * body is ordinary emitted bytecode and there is no second execution path.
      *
-     * <p>Only a lambda that captures nothing is compiled. Capturing would mean copying the
-     * enclosing variable's current value into the created function, and a lambda that reads a
-     * variable assigned later must see the later value; refusing is honest, silently binding
-     * the old value is not.
+     * <p>A lambda may capture values from the enclosing function: the captured values become
+     * the generated method's leading parameters and the enclosing side pushes them in the same
+     * order when it creates the function value. What cannot be reproduced is a lambda that
+     * <em>assigns</em> a captured variable, because the capture is a copy, so that case is
+     * refused instead of silently freezing the enclosing binding.
+     */
+    /**
+     * The names a lambda reads from the enclosing function, in first-read order.
+     *
+     * <p>Computed from the AST because the captured values must become the generated method's
+     * leading parameters: their names must be known before lowering the body, since the body's
+     * slot plan starts after them. Only names the enclosing function can actually supply are
+     * captured; a builtin such as {@code print} stays a name reference and is never captured.
+     */
+    private List<String> freeVariables(Ast.Lambda value) {
+        Set<String> reads = new java.util.LinkedHashSet<>();
+        Set<String> bounds = new java.util.LinkedHashSet<>(value.params());
+        Ast.Lambda whole = value;
+        if (whole.body() != null) {
+            readNames(whole.body(), reads);
+        } else {
+            for (Ast.Stmt stmt : whole.blockBody()) {
+                readNames(stmt, reads, bounds);
+            }
+        }
+        reads.removeAll(bounds);
+        List<String> free = new ArrayList<>();
+        for (String name : reads) {
+            // A name stored again after this point is a moving binding. Capturing its current
+            // value would freeze it, so the lambda is refused instead of printing a wrong
+            // answer; see the `reassigned` field.
+            if (reassigned.contains(name)) return null;
+            if (isLocal(name) || callableNames.contains(name)) free.add(name);
+        }
+        // Captured values travel as arguments, so a lambda that assigns one would update its
+        // own parameter and leave the enclosing binding untouched. The interpreter shares the
+        // binding, so it would observe the new value; freezing it here would silently produce
+        // different output. Refusing keeps the disagreement visible (ADR-0037 D4).
+        Set<String> assigned = new java.util.LinkedHashSet<>();
+        if (value.body() != null) {
+            assignedIn(value.body(), assigned);
+        } else {
+            for (Ast.Stmt stmt : value.blockBody()) assignedNames(stmt, assigned);
+        }
+        for (String name : free) {
+            if (assigned.contains(name)) {
+                return null;
+            }
+        }
+        return free;
+    }
+
+    /** Collects the names {@code stmt} assigns, treating every nested statement too. */
+    private void assignedNames(Ast.Stmt stmt, Set<String> assigned) {
+        switch (stmt) {
+            case Ast.Assign assign -> assigned.add(assign.name());
+            case Ast.CompoundAssign assign -> assigned.add(assign.name());
+            case Ast.Destructure destructure -> assigned.addAll(destructure.names());
+            case Ast.If conditional -> {
+                for (Ast.Branch branch : conditional.branches()) {
+                    for (Ast.Stmt inner : branch.body()) assignedNames(inner, assigned);
+                }
+                for (Ast.Stmt inner : conditional.elseBranch()) assignedNames(inner, assigned);
+            }
+            case Ast.While loop -> {
+                for (Ast.Stmt inner : loop.body()) assignedNames(inner, assigned);
+            }
+            case Ast.ForEach loop -> {
+                for (Ast.Stmt inner : loop.body()) assignedNames(inner, assigned);
+            }
+            case Ast.ForRange loop -> {
+                for (Ast.Stmt inner : loop.body()) assignedNames(inner, assigned);
+            }
+            case Ast.TryStmt attempt -> {
+                for (Ast.Stmt inner : attempt.body()) assignedNames(inner, assigned);
+                for (Ast.Stmt inner : attempt.handler()) assignedNames(inner, assigned);
+            }
+            case Ast.ExprStmt exprStmt -> assignedIn(exprStmt.expr(), assigned);
+            default -> {
+            }
+        }
+    }
+
+    /** Collects assignments that appear inside an expression, such as a `try` expression. */
+    private void assignedIn(Ast.Expr expr, Set<String> assigned) {
+        switch (expr) {
+            case Ast.TryExpr attempt -> {
+                for (Ast.Stmt inner : attempt.body()) assignedNames(inner, assigned);
+                for (Ast.Stmt inner : attempt.handler()) assignedNames(inner, assigned);
+            }
+            case Ast.Lambda nested -> {
+                if (nested.body() != null) assignedIn(nested.body(), assigned);
+                else for (Ast.Stmt inner : nested.blockBody()) assignedNames(inner, assigned);
+            }
+            case Ast.Grouping grouping -> assignedIn(grouping.expr(), assigned);
+            default -> {
+            }
+        }
+    }
+
+    /** Collects every name {@code expr} reads, recursing through nested expressions. */
+    private void readNames(Ast.Expr expr, Set<String> reads) {
+        switch (expr) {
+            case Ast.Var var -> reads.add(var.name());
+            case Ast.ListLit list -> list.items().forEach(item -> readNames(item, reads));
+            case Ast.TupleLit tuple -> tuple.items().forEach(item -> readNames(item, reads));
+            case Ast.SetLit set -> set.items().forEach(item -> readNames(item, reads));
+            case Ast.MapLit map -> {
+                for (Ast.Entry entry : map.entries()) {
+                    readNames(entry.key(), reads);
+                    readNames(entry.value(), reads);
+                }
+            }
+            case Ast.Unary unary -> readNames(unary.operand(), reads);
+            case Ast.Binary binary -> {
+                readNames(binary.left(), reads);
+                readNames(binary.right(), reads);
+            }
+            case Ast.Logical logical -> {
+                readNames(logical.left(), reads);
+                readNames(logical.right(), reads);
+            }
+            case Ast.Call call -> {
+                readNames(call.callee(), reads);
+                call.args().forEach(arg -> readNames(arg, reads));
+            }
+            case Ast.MethodCall method -> {
+                readNames(method.receiver(), reads);
+                method.args().forEach(arg -> readNames(arg, reads));
+            }
+            case Ast.Index index -> {
+                readNames(index.target(), reads);
+                readNames(index.index(), reads);
+            }
+            case Ast.Slice slice -> {
+                readNames(slice.target(), reads);
+                if (slice.from() != null) readNames(slice.from(), reads);
+                if (slice.to() != null) readNames(slice.to(), reads);
+                if (slice.step() != null) readNames(slice.step(), reads);
+            }
+            case Ast.Field field -> readNames(field.target(), reads);
+            case Ast.Grouping grouping -> readNames(grouping.expr(), reads);
+            case Ast.InExpr in -> {
+                readNames(in.item(), reads);
+                readNames(in.container(), reads);
+            }
+            case Ast.RangeExpr range -> {
+                readNames(range.from(), reads);
+                readNames(range.to(), reads);
+            }
+            case Ast.StringLit text -> {
+                for (Ast.StringPart part : text.parts()) {
+                    if (part instanceof Ast.ExprPart exprPart) readNames(exprPart.expr(), reads);
+                }
+            }
+            case Ast.Lambda nested -> {
+                // A nested lambda's reads are already free names of this one unless its own
+                // parameters shadow them, so collect them with that shadowing applied.
+                Set<String> nestedBounds = new java.util.LinkedHashSet<>(nested.params());
+                if (nested.body() != null) readNames(nested.body(), reads);
+                else for (Ast.Stmt stmt : nested.blockBody()) readNames(stmt, reads, nestedBounds);
+            }
+            case Ast.TryExpr attempt -> {
+                Set<String> inner = new java.util.LinkedHashSet<>();
+                for (Ast.Stmt stmt : attempt.body()) readNames(stmt, reads, inner);
+                for (Ast.Stmt stmt : attempt.handler()) readNames(stmt, reads, inner);
+            }
+            default -> {
+            }
+        }
+    }
+
+    /** Collects the names a statement reads, tracking what it binds as it goes. */
+    private void readNames(Ast.Stmt stmt, Set<String> reads, Set<String> bounds) {
+        switch (stmt) {
+            case Ast.VarDecl decl -> {
+                readNames(decl.value(), reads);
+                bounds.add(decl.name());
+            }
+            case Ast.Assign assign -> {
+                readNames(assign.value(), reads);
+                if (!bounds.contains(assign.name())) reads.add(assign.name());
+            }
+            case Ast.CompoundAssign assign -> {
+                readNames(assign.value(), reads);
+                if (!bounds.contains(assign.name())) reads.add(assign.name());
+            }
+            case Ast.Destructure destructure -> {
+                readNames(destructure.value(), reads);
+                bounds.addAll(destructure.names());
+            }
+            case Ast.If conditional -> {
+                for (Ast.Branch branch : conditional.branches()) {
+                    readNames(branch.condition(), reads);
+                    for (Ast.Stmt inner : branch.body()) readNames(inner, reads, bounds);
+                }
+                for (Ast.Stmt inner : conditional.elseBranch()) readNames(inner, reads, bounds);
+            }
+            case Ast.While loop -> {
+                readNames(loop.condition(), reads);
+                for (Ast.Stmt inner : loop.body()) readNames(inner, reads, bounds);
+            }
+            case Ast.ForEach loop -> {
+                readNames(loop.iterable(), reads);
+                Set<String> inner = new java.util.LinkedHashSet<>(bounds);
+                inner.add(loop.name());
+                for (Ast.Stmt step : loop.body()) readNames(step, reads, inner);
+            }
+            case Ast.ForRange loop -> {
+                readNames(loop.from(), reads);
+                readNames(loop.to(), reads);
+                Set<String> inner = new java.util.LinkedHashSet<>(bounds);
+                inner.add(loop.name());
+                for (Ast.Stmt step : loop.body()) readNames(step, reads, inner);
+            }
+            case Ast.Return ret -> {
+                if (ret.value() != null) readNames(ret.value(), reads);
+            }
+            case Ast.ExprStmt exprStmt -> readNames(exprStmt.expr(), reads);
+            case Ast.Command command -> command.args().forEach(arg -> readNames(arg, reads));
+            case Ast.IndexAssign assign -> {
+                readNames(assign.target(), reads);
+                readNames(assign.index(), reads);
+                readNames(assign.value(), reads);
+            }
+            case Ast.FieldAssign assign -> {
+                readNames(assign.target(), reads);
+                readNames(assign.value(), reads);
+            }
+            case Ast.TryStmt attempt -> {
+                Set<String> inner = new java.util.LinkedHashSet<>(bounds);
+                inner.add(attempt.errorName());
+                for (Ast.Stmt step : attempt.body()) readNames(step, reads, inner);
+                for (Ast.Stmt step : attempt.handler()) readNames(step, reads, inner);
+            }
+            case Ast.FuncDecl function -> {
+                // Separate method, refuses enclosing reads; not part of this lambda's capture.
+            }
+            default -> {
+            }
+        }
+    }
+
+    /**
+     * The names a lambda reads from the enclosing function, in first-read order.
+     *
+     * <p>Computed from the AST because the captured values must become the generated method's
+     * leading parameters: their names must be known before lowering the body, since the body's
+     * slot plan starts after them. Only names the enclosing function can actually supply are
+     * captured; a builtin such as {@code print} stays a name reference and is never captured.
      */
     private void lambda(Ast.Lambda value, int captures) {
         String name = "lambda$" + lambdaCounter++;
         List<Ir.Instr> saved = code;
         code = Ir.list();
-        List<String> params = new ArrayList<>(value.params());
-        // Parameters already occupy their slots, exactly as for a `fun`; declaring them again
-        // would allocate a second slot and emit a store with nothing on the stack.
+        // Captured values are the method's leading parameters, so they must be part of the
+        // parameter list before the body is emitted: the body's own slot plan follows it.
+        List<String> captured = freeVariables(value);
+        if (captured == null) {
+            // A lambda that assigns a captured variable cannot be compiled faithfully, because
+            // captured values are passed by value. Refuse rather than freeze the binding.
+            functions.add(new Ir.Function(name, value.params(), List.of()));
+            code = saved;
+            code.add(new Ir.Refuse(
+                    "a lambda that captures a variable which changes afterwards is not compiled"));
+            return;
+        }
+        List<String> params = new ArrayList<>(captured);
+        params.addAll(value.params());
+        // The lambda's own scope starts with its parameters; a captured name is a parameter
+        // too, so neither may be re-declared by the body.
+        pushTypes(List.of());
+        localScopes.peek().addAll(params);
         if (value.body() != null) {
             expression(value.body());
             code.add(new Ir.Return());
         } else {
-            block(value.blockBody());
+            for (Ast.Stmt stmt : value.blockBody()) {
+                statement(stmt);
+            }
             code.add(new Ir.Const(null));
             code.add(new Ir.Return());
         }
+        popTypes();
         functions.add(new Ir.Function(name, List.copyOf(params), List.copyOf(code)));
         code = saved;
-        code.add(new Ir.Lambda(name, params.size(), captures));
+        // The enclosing side pushes one value per captured name, in the same order the
+        // generated method declares them, which is what makes the pairing positional.
+        for (String variable : captured) {
+            code.add(new Ir.Load(variable));
+        }
+        code.add(new Ir.Lambda(name, value.params().size(), captured.size()));
     }
 
     /** The text a failed call reports, matching the interpreter's own message. */
     private static String describeCallee(Ast.Expr callee) {
         return callee instanceof Ast.Var var ? var.name() : "<value>";
+    }
+
+    /**
+     * The names stored more than once in {@code body}, or updated by a compound assignment.
+     *
+     * <p>Nested functions and lambdas are skipped: they are lowered as their own methods with
+     * their own bindings, so a store inside them does not touch this function's variables.
+     */
+    private static Set<String> reassignedIn(List<Ast.Stmt> body) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        Set<String> compound = new LinkedHashSet<>();
+        for (Ast.Stmt stmt : body) {
+            countStores(stmt, counts, compound, false);
+        }
+        Set<String> result = new LinkedHashSet<>(compound);
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            if (entry.getValue() > 1) result.add(entry.getKey());
+        }
+        return result;
+    }
+
+    private static void countStores(
+            Ast.Stmt stmt, Map<String, Integer> counts, Set<String> compound, boolean inLoop) {
+        switch (stmt) {
+            case Ast.VarDecl decl -> store(decl.name(), counts, compound, inLoop);
+            case Ast.Assign assign -> store(assign.name(), counts, compound, inLoop);
+            case Ast.CompoundAssign assign -> compound.add(assign.name());
+            case Ast.Destructure destructure -> {
+                for (String name : destructure.names()) store(name, counts, compound, inLoop);
+            }
+            case Ast.If conditional -> {
+                for (Ast.Branch branch : conditional.branches()) {
+                    for (Ast.Stmt inner : branch.body()) {
+                        countStores(inner, counts, compound, inLoop);
+                    }
+                }
+                for (Ast.Stmt inner : conditional.elseBranch()) {
+                    countStores(inner, counts, compound, inLoop);
+                }
+            }
+            case Ast.While loop -> {
+                for (Ast.Stmt inner : loop.body()) countStores(inner, counts, compound, true);
+            }
+            case Ast.ForEach loop -> {
+                for (Ast.Stmt inner : loop.body()) countStores(inner, counts, compound, true);
+                // The loop variable is rebound on every iteration.
+                compound.add(loop.name());
+            }
+            case Ast.ForRange loop -> {
+                for (Ast.Stmt inner : loop.body()) countStores(inner, counts, compound, true);
+                compound.add(loop.name());
+            }
+            case Ast.TryStmt attempt -> {
+                for (Ast.Stmt inner : attempt.body()) countStores(inner, counts, compound, inLoop);
+                for (Ast.Stmt inner : attempt.handler()) countStores(inner, counts, compound, inLoop);
+            }
+            case Ast.ExprStmt exprStmt -> countStoresIn(exprStmt.expr(), counts, compound, inLoop);
+            default -> {
+            }
+        }
+    }
+
+    private static void store(
+            String name, Map<String, Integer> counts, Set<String> compound, boolean inLoop) {
+        counts.merge(name, 1, Integer::sum);
+        // A store inside a loop runs once per iteration, so the value changes after creation.
+        if (inLoop) compound.add(name);
+    }
+
+    private static void countStoresIn(
+            Ast.Expr expr, Map<String, Integer> counts, Set<String> compound, boolean inLoop) {
+        switch (expr) {
+            case Ast.TryExpr attempt -> {
+                for (Ast.Stmt inner : attempt.body()) countStores(inner, counts, compound, inLoop);
+                for (Ast.Stmt inner : attempt.handler()) countStores(inner, counts, compound, inLoop);
+            }
+            case Ast.Grouping grouping -> countStoresIn(grouping.expr(), counts, compound, inLoop);
+            default -> {
+            }
+        }
     }
 
     private Ir.Function function(String name, List<String> params, List<Ast.Stmt> body) {
@@ -565,9 +962,15 @@ public final class Lowering {
         // here can be caught by a caller's `try`, and the span it reports must be this
         // function's own source line.
         pushTypes(body);
+        // A function's own parameters are bindings of its outermost scope, so a lambda inside
+        // it may capture them.
+        localScopes.peek().addAll(params);
+        Set<String> savedReassigned = reassigned;
+        reassigned = reassignedIn(body);
         for (Ast.Stmt stmt : body) {
             statement(stmt);
         }
+        reassigned = savedReassigned;
         popTypes();
         code.add(new Ir.Const(null));
         code.add(new Ir.Return());
@@ -844,9 +1247,10 @@ public final class Lowering {
                     DataType type = lookupType(var.name());
                     if (type != null) {
                         constructor(call, type);
-                    } else if (callableNames.contains(var.name())) {
-                        // The name holds a function value, so the call goes through the value.
-                        // A builtin or a `fun` of the same name must not win on name alone.
+                    } else if (callableNames.contains(var.name()) || isLocal(var.name())) {
+                        // The name resolves to a value in scope, so the call dispatches through
+                        // that value. Calling it statically would let a builtin or a `fun` of
+                        // the same name win over a variable that must shadow it.
                         code.add(new Ir.Load(var.name()));
                         emitCallArguments(call.args());
                         mark(call.span());

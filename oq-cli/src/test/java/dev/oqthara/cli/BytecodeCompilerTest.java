@@ -50,6 +50,21 @@ class BytecodeCompilerTest {
         return runJar(jar, dir);
     }
 
+    /**
+     * Compiles and runs a program that is expected to fail, returning everything the run
+     * wrote to the error stream. The interpreter reports an uncaught error on stderr, so a
+     * test comparing the two backends must compare that stream rather than stdout.
+     */
+    private String compileAndRunError(String source, Path dir) throws Exception {
+        dev.oqthara.compiler.Ir.Program program = Lowering.lower(Parser.parse("<t>", source));
+        String reason = BytecodeCompiler.whyNot(program);
+        assertNull(reason, "expected the program to be compilable, refused because: " + reason);
+        byte[] compiled = BytecodeCompiler.compile(program, "oq.generated.Program");
+        Path jar = dir.resolve("err.jar");
+        JarBuilder.build(jar, "oq.generated.Program", source, "prog.oq", compiled);
+        return runJarError(jar, dir);
+    }
+
     @Test
     void compilesIntegerArithmetic(@TempDir Path dir) throws Exception {
         assertEquals("14\n20\n2\n", compileAndRun("print 2 + 3 * 4\nprint (2 + 3) * 4\nprint 10 - 8", dir));
@@ -457,12 +472,16 @@ class BytecodeCompilerTest {
 
     @Test
     void unsupportedConstructsAreRefusedWithAReason() {
-        // A lambda now compiles, but the *capturing* form still does not, and `use` does not.
+        // A lambda compiles whether or not it captures, but `use` still does not.
         assertTrue(BytecodeCompiler.canCompile(ir("xs = [1, 2]\nprint xs.map(x -> x)")));
-        String captureReason = BytecodeCompiler.whyNot(
-                ir("n = 2\nf = x -> x + n\nprint f(1)"));
-        assertNotNull(captureReason, "a capturing lambda must fall back");
-        assertTrue(captureReason.contains("enclosing scope"), captureReason);
+        assertTrue(BytecodeCompiler.canCompile(ir("n = 2\nf = x -> x + n\nprint f(1)")));
+
+        // A lambda that captures a variable stored again afterwards cannot be compiled: the
+        // capture is a copy, so it would freeze a value the interpreter still reads live.
+        String movingReason = BytecodeCompiler.whyNot(
+                ir("n = 2\nf = x -> x + n\nn = 5\nprint f(1)"));
+        assertNotNull(movingReason, "a lambda capturing a moving variable must fall back");
+        assertTrue(movingReason.contains("changes afterwards"), movingReason);
 
         assertFalse(BytecodeCompiler.canCompile(ir("x = 1\nfun f()\n  return x\nend\nprint f()")));
         assertTrue(BytecodeCompiler.whyNot(ir("x = 1\nfun f()\n  return x\nend\nprint f()"))
@@ -498,12 +517,44 @@ class BytecodeCompilerTest {
     }
 
     @Test
-    void aCapturingLambdaFallsBackInsteadOfBindingAStaleValue(@TempDir Path dir) throws Exception {
+    void aCapturingLambdaCompilesAndMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        // A captured value becomes the generated method's leading parameter, pushed by the
+        // enclosing side in the same order. The interpreter shares the binding, but a variable
+        // that is never stored again is indistinguishable from a copy.
+        String source = """
+                n = 2
+                f = x -> x + n
+                print f(1)
+                """;
+        assertEquals("3\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("3\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void aClosureFactoryCompilesAndMatchesTheInterpreter(@TempDir Path dir) throws Exception {
+        // The regression this guards: a function parameter captured by the lambda it returns.
+        // Each call must capture its own parameter, so two instances stay independent.
+        String source = """
+                fun make_adder(n)
+                  return x -> x + n
+                end
+                add2 = make_adder(2)
+                add10 = make_adder(10)
+                print add2(1)
+                print add10(100)
+                """;
+        assertEquals("3\n110\n",
+                OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("3\n110\n", compileAndRun(source, dir));
+    }
+
+    @Test
+    void aCapturingLambdaFallsBackWhenTheVariableChangesAfterwards(@TempDir Path dir) throws Exception {
         // Capturing would copy the enclosing value at creation time, and the interpreter
         // reads it at call time; silently binding the old value would be a wrong answer.
-        String source = "n = 2\nf = x -> x + n\nprint f(1)";
+        String source = "n = 2\nf = x -> x + n\nn = 5\nprint f(1)";
         assertNotNull(BytecodeCompiler.whyNot(ir(source)));
-        assertEquals("3\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("6\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
     }
 
     @Test
@@ -741,19 +792,23 @@ class BytecodeCompilerTest {
     }
 
     @Test
-    void aVariableShadowingABuiltinIsRefusedNotSilentlyCompiled(@TempDir Path dir) throws Exception {
+    void aVariableShadowingABuiltinDispatchesThroughTheValue(@TempDir Path dir) throws Exception {
         // The interpreter looks the callee up in its environment, so `abs = 5` makes a later
-        // `abs(1)` fail with "'abs' is not a function". Emitting the builtin would print 1.
-        String shadowedBuiltin = "abs = 5\nprint abs(1)";
-        String reason = BytecodeCompiler.whyNot(ir(shadowedBuiltin));
-        assertNotNull(reason, "a call through a shadowing variable must be refused");
-        assertTrue(reason.contains("abs"), reason);
-        assertEquals(1, OqRunner.run("<t>", shadowedBuiltin, List.of(), "", dir).code());
-
-        String shadowedFunction = "fun f(x)\n  return x + 1\nend\nf = 5\nprint f(1)";
-        String reason2 = BytecodeCompiler.whyNot(ir(shadowedFunction));
-        assertNotNull(reason2, "a call through a variable shadowing a function must be refused");
-        assertTrue(reason2.contains("f"), reason2);
+        // `abs(1)` fail with "'abs' is not a function". Routing the call through the value
+        // reproduces that error instead of emitting the builtin, which would print 1.
+        // The jar prints the full source excerpt while OqRunner returns the diagnosis alone,
+        // so the comparison is on the diagnosis both report.
+        for (String source : List.of(
+                "abs = 5\nprint abs(1)",
+                "fun f(x)\n  return x + 1\nend\nf = 5\nprint f(1)")) {
+            String name = source.startsWith("abs") ? "'abs'" : "'f'";
+            String expected = OqRunner.run("<t>", source, List.of(), "", dir).stderr();
+            assertTrue(expected.contains(name + " is not a function"), expected);
+            assertTrue(expected.contains("It is number, which cannot be called."), expected);
+            String actual = compileAndRunError(source, dir);
+            assertTrue(actual.contains(name + " is not a function"), actual);
+            assertTrue(actual.contains("It is number, which cannot be called."), actual);
+        }
     }
 
     @Test
@@ -1207,8 +1262,14 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(196, compiled,
+        assertEquals(203, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
+        // Measured 2026-11-10: `scripts/verify-conformance.py` reported 203 compiled / 13
+        // fallback / 0 divergences over 229 programs (212 executable), up from 196 after
+        // lambda capture landed. The seven programs that moved were 105-nested-closures,
+        // 120-const-function, 178-function-callback-chain and four others that call a
+        // function through a binding. 019-closures still falls back by design: it assigns the
+        // captured `count`, so a copy would not reproduce the interpreter.
     }
 
     @Test
@@ -1437,6 +1498,11 @@ class BytecodeCompilerTest {
         ProcessResult result = runJarProcess(jar, dir);
         assertEquals(0, result.exit(), result.stderr());
         return result.stdout();
+    }
+
+    /** Runs a jar that is expected to fail, returning its whole error stream. */
+    private String runJarError(Path jar, Path dir) throws Exception {
+        return runJarProcess(jar, dir).stderr();
     }
 
     private ProcessResult runJarProcess(Path jar, Path dir) throws Exception {
