@@ -248,6 +248,12 @@
       "slug": "docs/adr/0040-database-support"
     },
     {
+      "path": "docs/adr/0041-statistics-identifiers-and-ordered-search.md",
+      "title": "ADR-0041: Descriptive statistics, identifiers and ordered search",
+      "section": "adr",
+      "slug": "docs/adr/0041-statistics-identifiers-and-ordered-search"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

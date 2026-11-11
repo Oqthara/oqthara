@@ -1081,6 +1081,72 @@ off. What is absent is a key *value*, because a key needs a lifetime and this la
 `close`: a key would live until the garbage collector decided otherwise, with no way to write
 "use it, then be sure it is gone".
 
+Statistics: `mean`, `median`, `variance`, `stdev`, `mode`, `percentile(items, p)`.
+Each accepts any iterable of numbers, so a list, a set or a range works.
+
+```
+print mean([1, 2, 3])              # 2
+print median([4, 1, 3, 2])         # 2.5
+print mode([3, 1, 1, 3])           # 1
+print percentile([1, 2, 3, 4], 50) # 2.5
+```
+
+`variance` and `stdev` are the **sample** forms: they divide by `n - 1`, not `n`. The
+difference is invisible on large inputs and material on small ones, so the two are not
+interchangeable and the language offers only one:
+
+```
+print variance([2, 4, 4, 4, 5, 5, 7, 9])   # 4.571428571429
+print stdev([2, 4, 4, 4, 5, 5, 7, 9])      # 2.138089935299
+```
+
+A sample variance of one item is undefined, so `variance([5])` is an error rather than `0`.
+Returning zero would be the wrong answer stated confidently; the population variance of a
+single value is genuinely zero, and that is a different question.
+
+Ties and boundaries are decided rather than left to chance. An even-length `median` is the mean
+of the two middle values. `mode` returns the **smallest** most-frequent value when several tie,
+so the call always has an answer. `percentile` interpolates linearly between closest ranks, so
+`percentile([1, 2, 3, 4], 50)` is `2.5` rather than `2` or `3`, and a `p` outside `0..100` is an
+error rather than being clamped into range — a clamp would turn a typo into a plausible answer.
+
+Identifiers: `uuid()` and `is_uuid(text)`. `uuid()` mints a version 4 (random) identifier in
+canonical lowercase `8-4-4-4-12` form. Version 1 is not offered because it embeds the host's
+MAC address and a timestamp; version 7 is not offered because a time-ordered identifier is
+guessable from the clock.
+
+```
+print uuid()                                  # ea2631a9-95a8-4304-829d-060fd002af6f
+print is_uuid("ea2631a9-95a8-4304-829d-060fd002af6f")   # true
+print is_uuid("{ea2631a9-95a8-4304-829d-060fd002af6f}") # false
+```
+
+`is_uuid` accepts the canonical hyphenated form and nothing else. Among the spellings it
+refuses are the three that `UUID.fromString` in Java would take: braces, a `urn:uuid:` prefix,
+and the 32-character form with no hyphens. A validator that accepted strings other systems
+reject would be worse than no validator.
+
+Ordered search: `heap_push(list, value)`, `heap_pop(list)`, `bisect_left(list, value)`,
+`bisect_right(list, value)`. These are functions over ordinary lists, not a heap type, so no
+second collection family was needed and the array stays inspectable.
+
+`heap_push` and `heap_pop` keep a binary min-heap in place and mutate the list, matching
+`push` and `pop`. The array is a heap, not a sorted list: `[1, 5, 3]` is a valid state and only
+repeated `heap_pop` yields sorted order.
+
+```
+items = []
+heap_push(items, 5)
+heap_push(items, 1)
+print heap_pop(items)   # 1
+print heap_pop(items)   # 5
+```
+
+`bisect_left` and `bisect_right` return the index where a value is or should be, differing only
+on duplicates: on `[1, 2, 2, 3]` the answer for `2` is `1` or `3`. Both assume the list is
+sorted and do not check, because verifying would turn an `O(log n)` primitive into `O(n)` and
+charge the correct caller for the incorrect one. An empty list is valid input and returns `0`.
+
 JSON: `json_parse(text)`, `json(value)`.
 
 CSV: `csv_parse(text)`, `csv_parse(text, delimiter)`, `csv_parse(text, delimiter, comments)`
