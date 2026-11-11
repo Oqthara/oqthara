@@ -1189,6 +1189,31 @@ the right reason.
 print walk("src")   # ["main", "main/Main.java", "test", "test/MainTest.java"]
 ```
 
+Patterns: `glob(directory, pattern)` returns every matching path under a directory as relative
+text, sorted, and `fnmatch(name, pattern)` tests one file name against one pattern. The dialect
+is Python's glob: `*` and `?` stay inside one path segment, `**` crosses segments, and `[abc]`
+is a character class.
+
+```oq
+# src is a.oq, x.txt, deep/b.oq
+print glob("src", "**/*.oq")   # ["a.oq", "deep/b.oq"]
+print glob("src", "*.oq")      # ["a.oq"]
+print fnmatch("main.oq", "*.oq")   # true
+```
+
+Paths come back relative to the argument directory, with `/` separators even on Windows, so a
+result can be joined back onto it and comparisons do not depend on the host. Recursion follows
+the pattern rather than a flag: only a pattern that can reach past one segment — one containing
+`**` or a separator — walks the tree, so `*.oq` deliberately lists one level and does not find
+`deep/b.oq`. Write `**/*.oq` for that.
+
+`**/` matches **zero or more** directories, so `**/*.oq` finds a top-level `a.oq`. Java's own
+`PathMatcher` requires at least one directory there and would silently skip that file;
+inheriting it would be a wrong answer rather than an error, so the pattern is translated to a
+regex here instead. Symbolic links are not followed, for the reason `walk` gives: following one
+can revisit a directory, and an entry cap would then trip for the wrong reason. A pattern that
+matches more entries than a list may hold is an error rather than a truncated result.
+
 Copying: `copy_file(source, target)` and `move_file(source, target)` refuse an existing target
 rather than overwriting it. Moving copies and then deletes the source, so a failure leaves the
 source intact rather than a half-written target behind.
