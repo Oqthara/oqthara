@@ -254,6 +254,12 @@
       "slug": "docs/adr/0041-statistics-identifiers-and-ordered-search"
     },
     {
+      "path": "docs/adr/0042-whole-value-compression.md",
+      "title": "ADR-0042 — Whole-value compression",
+      "section": "adr",
+      "slug": "docs/adr/0042-whole-value-compression"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
