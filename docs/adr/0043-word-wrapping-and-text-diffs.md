@@ -76,10 +76,14 @@ parameter nobody sets is a knob that only adds a way to get it wrong.
 `SequenceMatcher`, which prefers *the earliest* of several equally long matches; an LCS has no
 such preference, so when the input contains repeated lines the two can choose different
 alignments. `unified_diff(["1","1","2","2","3","3"], ["1","2","3"])` anchors the first `1`
-here and Python anchors the second. Both outputs are correct: the same 60-case random
-round-trip check that applies every diff confirms both reproduce `after` exactly and consume
-`before` exactly. The difference is which of two equally minimal edit scripts is written down,
-and that is worth stating because a reader who diffs the same pair with both tools will see it.
+here and Python anchors the second. Both outputs are correct: a sixty-case random check over a
+fixed seed, `TextWrapTest.everyDiffReproducesTheAfterSideFromTheBeforeSide`, applies every diff
+the way a patch tool does -- splicing each hunk at the offset its header names -- and confirms
+the result is `after` exactly; a second check,
+`aHunkHeaderAlwaysAgreesWithTheLinesUnderIt`, confirms each header's two counts match the lines
+beneath it, which is what a patch tool relies on to find the next hunk. The difference is which
+of two equally minimal edit scripts is written down, and that is worth stating because a reader
+who diffs the same pair with both tools will see it.
 
 **D6 — `dedent_text` and `indent_text` follow the common-prefix rule.** `dedent_text` removes
 the longest whitespace prefix shared by every non-blank line, leaving blank lines alone, so

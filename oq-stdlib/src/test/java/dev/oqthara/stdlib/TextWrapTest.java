@@ -13,6 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -285,6 +287,109 @@ class TextWrapTest {
         // Three leading lines plus the change, and three trailing after it.
         assertTrue(diff.contains("@@ -1,6 +1,6 @@"), diff.toString());
         assertTrue(diff.contains("@@ -23,7 +23,7 @@"), diff.toString());
+    }
+
+    @Test
+    void everyDiffReproducesTheAfterSideFromTheBeforeSide() {
+        // ADR-0043 D5 states this property and cites a sixty-case random check. A unified diff
+        // omits unchanged lines beyond its context, so the only faithful test is to apply it the
+        // way a patch tool does: splice each hunk at the line offset its header names, keeping
+        // the context and added lines and dropping the removed ones.
+        Random random = new Random(20261111L);
+        String[] alphabet = {"a", "b", "c", "d"};
+        for (int trial = 0; trial < 60; trial++) {
+            List<String> before = randomLines(random, alphabet);
+            List<String> after = randomLines(random, alphabet);
+            List<Object> args = new ArrayList<>(List.of(new ArrayList<>(before),
+                    new ArrayList<>(after)));
+            List<String> diff = list(call("unified_diff", args.toArray()));
+            assertEquals(after, apply(before, diff), "trial " + trial + " before=" + before
+                    + " after=" + after + " diff=" + diff);
+        }
+    }
+
+    @Test
+    void aHunkHeaderAlwaysAgreesWithTheLinesUnderIt() {
+        // The counts in `@@ -a,b +c,d @@` are what a patch tool trusts to find the next hunk, so
+        // a wrong count corrupts every hunk after it. Each hunk must also be exactly as wide as
+        // its header claims, on both sides.
+        Random random = new Random(424242L);
+        String[] alphabet = {"x", "y", "z"};
+        for (int trial = 0; trial < 60; trial++) {
+            List<String> before = randomLines(random, alphabet);
+            List<String> after = randomLines(random, alphabet);
+            List<Object> args = new ArrayList<>(List.of(new ArrayList<>(before),
+                    new ArrayList<>(after)));
+            List<String> diff = list(call("unified_diff", args.toArray()));
+            assertHunkCountsMatch(diff, before, after, trial);
+        }
+    }
+
+    private static void assertHunkCountsMatch(List<String> diff, List<String> before,
+            List<String> after, int trial) {
+        int index = 0;
+        while (index < diff.size()) {
+            String header = diff.get(index++);
+            if (!header.startsWith("@@")) continue;
+            var counts = Pattern.compile("@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@").matcher(header);
+            assertTrue(counts.matches(), "unparseable hunk header " + header);
+            int beforeCount = counts.group(2) == null ? 1 : Integer.parseInt(counts.group(2));
+            int afterCount = counts.group(4) == null ? 1 : Integer.parseInt(counts.group(4));
+            int seenBefore = 0;
+            int seenAfter = 0;
+            while (index < diff.size() && !diff.get(index).startsWith("@@")
+                    && !diff.get(index).startsWith("---")) {
+                String line = diff.get(index++);
+                if (line.startsWith(" ")) {
+                    seenBefore++;
+                    seenAfter++;
+                } else if (line.startsWith("-")) {
+                    seenBefore++;
+                } else if (line.startsWith("+")) {
+                    seenAfter++;
+                }
+            }
+            assertEquals(beforeCount, seenBefore, "trial " + trial + " header " + header);
+            assertEquals(afterCount, seenAfter, "trial " + trial + " header " + header);
+        }
+    }
+
+    private static List<String> randomLines(Random random, String[] alphabet) {
+        int length = random.nextInt(7);
+        List<String> lines = new ArrayList<>(length);
+        for (int i = 0; i < length; i++) lines.add(alphabet[random.nextInt(alphabet.length)]);
+        return lines;
+    }
+
+    /** Applies a unified diff to {@code before} the way a patch tool does. */
+    private static List<String> apply(List<String> before, List<String> diff) {
+        List<String> rebuilt = new ArrayList<>();
+        int consumed = 0;
+        int index = 0;
+        while (index < diff.size()) {
+            String header = diff.get(index++);
+            if (!header.startsWith("@@")) continue;
+            var counts = Pattern.compile("@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@").matcher(header);
+            assertTrue(counts.matches(), "unparseable hunk header " + header);
+            int beforeStart = Integer.parseInt(counts.group(1)) - 1;
+            // lines before the hunk are unchanged and are copied verbatim
+            while (consumed < beforeStart) rebuilt.add(before.get(consumed++));
+            while (index < diff.size() && !diff.get(index).startsWith("@@")
+                    && !diff.get(index).startsWith("---")) {
+                String line = diff.get(index++);
+                if (line.startsWith(" ")) {
+                    rebuilt.add(line.substring(1));
+                    consumed++;
+                } else if (line.startsWith("-")) {
+                    consumed++;
+                } else if (line.startsWith("+")) {
+                    rebuilt.add(line.substring(1));
+                }
+            }
+        }
+        // anything after the last hunk is unchanged
+        while (consumed < before.size()) rebuilt.add(before.get(consumed++));
+        return rebuilt;
     }
 
     @Test
