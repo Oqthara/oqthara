@@ -3,6 +3,7 @@ package dev.oqthara.cli;
 import dev.oqthara.core.Ast;
 import dev.oqthara.core.Diagnostics;
 import dev.oqthara.core.Interpreter;
+import dev.oqthara.core.Modules;
 import dev.oqthara.core.Parser;
 import dev.oqthara.compiler.Backends;
 import dev.oqthara.compiler.Ir;

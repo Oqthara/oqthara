@@ -22,11 +22,21 @@ correct about which declaration a call reaches.
 
 ## Decision
 
-**D1. Hover resolves lexically.** The identifier under the cursor is matched against
-declaration names in the same file, at top level and inside class and contract bodies.
-Shadowing, `use "oq:name"` imports and module declarations are not followed. The answer
-therefore describes the declaration the reader can see rather than the one the program
-would call, and the specification says so rather than leaving it to be discovered.
+**D1. Hover resolves lexically, then follows imports.** The identifier under the cursor is
+matched against declaration names in the same file first, at top level and inside class and
+contract bodies. Shadowing is not modelled: a local declaration always wins, so the answer
+describes the declaration the reader can see rather than the one the program would call.
+
+Failing that, `use "oq:name"` imports are followed through `Modules.resolveModule`, the same
+method the interpreter uses, so a name imported from a module is described as richly as a
+local one. Following is transitive and stops at the interpreter's own depth limit of fifty,
+because a name beyond it is one the program could not call either. It happens only for a
+document with a `file:` URI: the search order is defined relative to the importing file's
+directory and an untitled buffer has none, so there is nothing to resolve against.
+
+Any resolution failure — a module that moved, one that no longer parses, a cycle — leaves the
+hover empty rather than raising. A hover is a hint, and an editor asking about a half-typed
+file must not receive a fault for asking.
 
 **D2. Declarations and builtins are described from different sources.** A declaration is
 rendered from its `Docstring` in the same shape `oq doc --source` uses, so the editor and

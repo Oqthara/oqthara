@@ -1810,9 +1810,13 @@ A position that names nothing declared returns `null`, which is how the protocol
 "show nothing"; an empty string would open an empty popup.
 
 Resolution is lexical: the identifier under the cursor is matched against declarations in
-the same file. Shadowing, `use` imports and module declarations are not followed, so the
+the same file first, and shadowing is not modelled, so a local declaration wins and the
 answer describes the declaration the reader can see rather than the one the program would
-call.
+call. A name the file does not declare is then looked for in the modules it imports with
+`use`, following those transitively through the same resolver the interpreter uses and
+stopping at its depth limit of fifty. Following needs a document the editor saved to disk,
+because the search order starts at the importing file's directory. A name nothing declares
+still returns `null`, including when a module has moved or no longer parses.
 
 ```bash
 ./gradlew :oq-lsp:standaloneJar
