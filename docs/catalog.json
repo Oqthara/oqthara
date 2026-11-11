@@ -290,6 +290,12 @@
       "slug": "docs/adr/0047-naming-the-expected-token"
     },
     {
+      "path": "docs/adr/0048-runtime-manager.md",
+      "title": "ADR-0048: Runtime Manager and distribution",
+      "section": "adr",
+      "slug": "docs/adr/0048-runtime-manager"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
