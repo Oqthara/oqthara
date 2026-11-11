@@ -1726,7 +1726,7 @@ $ oq build hello.oq
 compiled hello.oq (0 functions, 5 main instructions)
 backend=classfile (self-contained writer, JDK 21)
 codepath: compiled bytecode
-wrote hello.jar (103 classes, 0 skipped)
+wrote hello.jar (337 classes, 0 skipped)
 run it with: java -jar hello.jar
 
 $ java -jar hello.jar

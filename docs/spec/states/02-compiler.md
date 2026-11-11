@@ -94,7 +94,7 @@ both available. That is why `K6` and `K7` are enforced in `BytecodeCompiler` and
 | `C21` | `S7` | `Ir.Call` at emit time | the name has no user function, and matches a builtin | emit a builtin call | `S7` |
 | `C22` | `S7` | `Ir.Call` at emit time | the name has known arities but none equals `argc` | refuse `call to 'f' with N argument(s), but the function declares M parameter(s)` | `S6` |
 | `C23` | `S7` | `Ir.Call` at emit time | the name is a variable binding here, not a function | refuse `'x' is a variable here, not a function, so this call is not compiled` | `S6` |
-| `C24` | `S7` | a bare function name is used as a value | the name is a known function | refuse `function 'f' is used as a value, which is not compiled yet` | `S6` |
+| `C24` | `S7` | a bare function name is used as a value | the name is a known function | emit a `runtime.CompiledFunction` for it, so it can be stored, passed and called | `S7` |
 | `C25` | `S7` | a name is read | the name is a top-level variable of `main` and the reader is a function body | refuse `'x' is read from an enclosing scope; only functions that use their own parameters and locals are compiled` | `S6` |
 | `C26` | `S7` | a variable is allocated a local slot | slot index stays `<= 255` | allocate | `S7` |
 | `C27` | `S7` | a variable is allocated a local slot | slot index would exceed `255` | refuse `too many variables for one method` | `S6` |
@@ -161,7 +161,7 @@ diagnostic — never exit 70.
 | 200 nested parentheses | `error: expression is nested too deeply` |
 | `use java.time.LocalDate` under `oq build` | not an error: `codepath: interpreter launcher ('use' imports a Java class, which is not compiled yet)` |
 | a top-level variable read inside a `fun` | `codepath: interpreter launcher ('x' is read from an enclosing scope; only functions that use their own parameters and locals are compiled)` |
-| a function name used as a value | `codepath: interpreter launcher (function 'f' is used as a value, which is not compiled yet)` |
+| a function name used as a value | not a refusal: it compiles, and `f = double` then `f(4)` prints `8` in the jar and under `oq run` |
 | a variable shadowing a function, then called | `error: 'abs' is not a function`, help naming the value's type |
 | two `fun f(a)` | `error: 'f' is already defined with 1 parameter` |
 | a name declared twice in one scope | `codepath: interpreter launcher ('x' is declared twice in the same scope, which the interpreter refuses, so this is not compiled)` |

@@ -20,14 +20,18 @@ There are two ways to run a program, and they are not the same machine.
 | Fallback | `oq build` on an unsupported construct | a launcher jar that embeds the source and *re-interprets* it |
 
 The third row is the one that makes the contract subtle. A build that cannot compile a construct
-does not fail. It prints a `codepath:` line to stderr, writes a jar, and exits 0. That jar
-contains the original source embedded as a resource and runs it through the interpreter at
-startup, so a program that looks compiled may be interpreted. Measured:
+does not fail. It prints a `codepath:` line to standard output, writes a jar, and exits 0. That
+jar contains the original source embedded as a resource and runs it through the interpreter at
+startup, so a program that looks compiled may be interpreted. Measured with `aband.oq`, which is
+`use java.time.LocalDate` followed by `print "main done"`:
 
 ```
-$ oq build aband.oq -o aband.jar
-codepath: interpreter launcher (function 'boom' is used as a value, which is not compiled yet)
-wrote /tmp/bt/aband.jar (106 classes, 0 skipped)
+$ oq build aband.oq
+compiled aband.oq (0 functions, 6 main instructions)
+backend=classfile (self-contained writer, JDK 21)
+codepath: interpreter launcher ('use' imports a Java class, which is not compiled yet)
+wrote aband.jar (337 classes, 0 skipped)
+run it with: java -jar aband.jar
 $ java -jar aband.jar
 main done
 ```
@@ -180,7 +184,7 @@ Measured consequences worth knowing before writing code that spans the boundary:
 |---|---|---|
 | The value of the program | stdout | stdout |
 | Which backend ran | the absence of a jar | `Oqthara-Backend` in the manifest |
-| Whether the compiler gave up | — | the `codepath:` line on stderr |
+| Whether the compiler gave up | — | the `codepath:` line on standard output |
 | Resource exhaustion | step, output, waiting and depth diagnostics | output and waiting diagnostics, or the JVM dying |
 | Oqthara's own failure | exit 70 | exit 70 |
 | The source line of a failure | quoted with a caret | absent (`U4`) |
@@ -206,9 +210,9 @@ as a compiled jar.
 ## 7.4.10 Open defects this contract exposed
 
 **A build that falls back still exits 0.** `U5` says the fallback is honest — it prints a
-`codepath:` line and labels the manifest — but a build script that ignores stderr cannot tell a
-compiled artifact from an interpreted one. `oq build --strict`, or a non-zero exit under a flag,
-is the obvious repair and is not implemented.
+`codepath:` line and labels the manifest — but a build script that reads only the exit status
+cannot tell a compiled artifact from an interpreted one. `oq build --strict`, or a non-zero exit
+under a flag, is the obvious repair and is not implemented.
 
 **Nothing in the language can express the step ceiling.** A program cannot discover that it is
 being budgeted, cannot raise its own ceiling, and cannot ask how many steps it has used. That is
