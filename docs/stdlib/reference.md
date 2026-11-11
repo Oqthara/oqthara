@@ -22,6 +22,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `await` | built-in |
 | `base64_decode` | built-in |
 | `base64_encode` | built-in |
+| `bisect_left` | built-in |
+| `bisect_right` | built-in |
 | `ceil` | built-in |
 | `clamp` | built-in |
 | `clone` | built-in |
@@ -50,6 +52,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `format` | built-in |
 | `frozenset` | built-in |
 | `glob` | built-in |
+| `heap_pop` | built-in |
+| `heap_push` | built-in |
 | `hex_decode` | built-in |
 | `hex_encode` | built-in |
 | `hmac_sha256` | built-in |
@@ -62,6 +66,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `is_nothing` | built-in |
 | `is_number` | built-in |
 | `is_text` | built-in |
+| `is_uuid` | built-in |
 | `join` | built-in |
 | `json` | built-in |
 | `json_parse` | built-in |
@@ -83,8 +88,11 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `matches` | built-in |
 | `max` | built-in |
 | `md5` | built-in |
+| `mean` | built-in |
+| `median` | built-in |
 | `memory_mb` | built-in |
 | `min` | built-in |
+| `mode` | built-in |
 | `move_file` | built-in |
 | `mutex` | built-in |
 | `now` | built-in |
@@ -94,6 +102,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `path_name` | built-in |
 | `path_parent` | built-in |
 | `pbkdf2_sha256` | built-in |
+| `percentile` | built-in |
 | `pop` | built-in |
 | `pow` | built-in |
 | `print` | built-in |
@@ -126,6 +135,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `spawn` | built-in |
 | `split` | built-in |
 | `sqrt` | built-in |
+| `stdev` | built-in |
 | `sum` | built-in |
 | `text` | built-in |
 | `timestamp` | built-in |
@@ -139,7 +149,9 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `url_encode` | built-in |
 | `url_join` | built-in |
 | `url_parse` | built-in |
+| `uuid` | built-in |
 | `values` | built-in |
+| `variance` | built-in |
 | `walk` | built-in |
 | `write` | built-in |
 | `write_bytes` | built-in |
