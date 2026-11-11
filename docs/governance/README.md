@@ -268,7 +268,7 @@ in the roadmap, so the deferred set is explicit rather than accidental.
 
 ```
 $ printf 'print (1, 2)\n' | ... before this decision
-error: expected to close the expression
+error: expected ')' to close the expression
   help: Found ',' instead.
 ```
 

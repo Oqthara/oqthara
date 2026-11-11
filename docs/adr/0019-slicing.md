@@ -7,7 +7,7 @@ Status: accepted
 The language has no slice syntax. `xs[1:3]` fails to parse:
 
 ```
-error: expected to close the index
+error: expected ']' to close the index
   --> probe.oq:1:11
    1 | print [1,2,3][0:2]
 ```
