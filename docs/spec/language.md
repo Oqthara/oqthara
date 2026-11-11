@@ -141,6 +141,13 @@ print 2 ** 10      # 1024
 Division produces a whole number when it is exact and a decimal otherwise. There is
 no separate integer division operator.
 
+A whole number is a 64-bit signed value, so the range is `-9223372036854775808` to
+`9223372036854775807`. Both ends are writable directly. The lowest value's magnitude
+is one past the highest, so it is the one whole number whose magnitude would overflow
+on its own; it is accepted when a minus applies to it and refused otherwise. Arithmetic
+that leaves the range wraps rather than raising an error, so `9223372036854775807 + 1`
+is `-9223372036854775808`.
+
 Built-in functions: `abs`, `floor`, `ceil`, `round`, `round(value, places)`, `sqrt`,
 `pow`, `min`, `max`, `clamp`, `random`.
 

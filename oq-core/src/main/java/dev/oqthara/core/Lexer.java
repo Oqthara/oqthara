@@ -348,8 +348,10 @@ public final class Lexer {
             try {
                 tokens.add(new Token(Token.Kind.NUMBER, text, Long.parseLong(text), span));
             } catch (NumberFormatException e) {
-                throw new OqError("number " + text + " is too large", span,
-                        "The largest supported whole number is " + Long.MAX_VALUE + ".");
+                // The magnitude may still be usable once a unary minus applies, as in
+                // Long.MIN_VALUE, whose magnitude is one past Long.MAX_VALUE. The parser
+                // rebuilds it from the lexeme and refuses it if no minus arrives.
+                tokens.add(new Token(Token.Kind.NUMBER, text, null, span));
             }
         }
     }

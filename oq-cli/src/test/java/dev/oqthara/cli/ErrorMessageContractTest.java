@@ -322,4 +322,20 @@ class ErrorMessageContractTest {
         goodError("[1, 2].reduce(0, (a, x) -> a + x)", "needs a function as argument 1");
         goodError("[1, 2].sort(0)", "needs a function as argument 1");
     }
+
+    /**
+     * {@code Long.MIN_VALUE}'s magnitude is one past {@code Long.MAX_VALUE}, so it is
+     * reachable only through the one minus that makes it valid. Both ends of the range
+     * are whole numbers a program can write, and everything past either end is refused
+     * by name rather than wrapping.
+     */
+    @Test
+    void theWholeNumberRangeIsClosedAtBothEnds() {
+        assertEquals("-9223372036854775808\n", ok("print -9223372036854775808"));
+        assertEquals("9223372036854775807\n", ok("print 9223372036854775807"));
+        assertEquals("-9223372036854775807\n", ok("print -9223372036854775808 + 1"));
+        goodError("print 9223372036854775808", "9223372036854775808 is too large");
+        goodError("print -9223372036854775809", "9223372036854775809 is too large");
+        goodError("print [9223372036854775808]", "9223372036854775808 is too large");
+    }
 }
