@@ -757,6 +757,35 @@ def cited_test_methods_exist() -> None:
     note(f"{checked} cited test methods resolve on their class")
 
 
+# 13c. A quoted test count (`ClassTest` (39 tests)) must match the class.
+#
+# The count is a measurement, so it rots whenever a test is added and the sentence is not
+# re-read. Two exist today and both happened to be right; this keeps them that way.
+def quoted_test_counts_agree() -> None:
+    counts: dict[str, int] = {}
+    for path in list(ROOT.glob("**/src/test/java/**/*.java")) + list(
+        ROOT.glob("**/src/fuzz/java/**/*.java")
+    ):
+        counts[path.stem] = len(re.findall(r"@Test\b", path.read_text(encoding="utf-8")))
+
+    checked = 0
+    for path in sorted(ROOT.glob("docs/**/*.md")):
+        relative = path.relative_to(ROOT)
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            for klass, quoted in re.findall(
+                r"`([A-Za-z]+Tests?)` \((\d+) tests?\)", line
+            ):
+                if klass not in counts:
+                    continue
+                checked += 1
+                if int(quoted) != counts[klass]:
+                    problems.append(
+                        f"{relative}:{number} says {klass} has {quoted} tests, "
+                        f"but it declares {counts[klass]}"
+                    )
+    note(f"{checked} quoted test counts match their class")
+
+
 def read_text_utf8(path: pathlib.Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -776,6 +805,7 @@ CHECKS = (
     requirement_matrix_figures_match_the_inventory,
     cited_tests_exist,
     cited_test_methods_exist,
+    quoted_test_counts_agree,
 )
 
 
