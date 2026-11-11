@@ -46,8 +46,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `file_size` | built-in |
 | `filter` | built-in |
 | `floor` | built-in |
+| `fnmatch` | built-in |
 | `format` | built-in |
 | `frozenset` | built-in |
+| `glob` | built-in |
 | `hex_decode` | built-in |
 | `hex_encode` | built-in |
 | `hmac_sha256` | built-in |
