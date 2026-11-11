@@ -70,6 +70,11 @@ def evaluate(observed, divergences):
     if observed["compiled"] < BASELINE["compiled"]:
         problems.append(
             f"compiled conformance regressed: {observed['compiled']} < {BASELINE['compiled']}")
+    tally = observed["compiled"] + observed.get("fallback", 0)
+    if tally > observed["executable"]:
+        problems.append(
+            f"compiled and fallback exceed the executable corpus: {tally} > {observed['executable']}"
+            " (a case that cannot run is being counted in the compiler tally)")
     if divergences:
         problems.append(f"{len(divergences)} divergence(s)")
     return problems
@@ -121,13 +126,17 @@ def check_program(program, cases, jar, case_root):
         divergences.append(f"{name}: oq build failed: {build_out.strip()[:300]}")
         return compiled, fallback, divergences
 
-    if "codepath: compiled bytecode" in build_out:
-        # The recorded 182/197 baseline counts compilable programs that must run, exactly
-        # as BytecodeCompilerTest does by skipping .err cases.
-        if not expected_err.exists():
+    # `compiled` counts only programs that must run, as BytecodeCompilerTest does by
+    # skipping .err cases. `fallback` is narrowed the same way so that the two are
+    # disjoint halves of the executable set: a .err case that happens to build reaches
+    # the interpreter for bytecode that cannot be produced, which says nothing about how
+    # much of the corpus the compiler covers. Counting it inflated compiled + fallback
+    # past the executable total.
+    if not expected_err.exists():
+        if "codepath: compiled bytecode" in build_out:
             compiled = 1
-    else:
-        fallback = 1
+        else:
+            fallback = 1
 
     jar_path = build_dir / (stem + ".jar")
     if not jar_path.exists():
@@ -254,8 +263,9 @@ def main(argv=None):
         for problem in problems:
             print(f"error: {problem}")
         return 1
-    print(f"ok: {compiled} compiled, {fallback} fallback, 0 divergences "
-          f"across {len(programs)} programs ({len(executable)} executable)")
+    print(f"ok: {compiled} compiled, {fallback} fallback "
+          f"({compiled + fallback} of {len(executable)} executable), "
+          f"0 divergences across {len(programs)} programs")
     return 0
 
 
