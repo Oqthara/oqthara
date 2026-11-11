@@ -35,14 +35,29 @@ public final class JarBuilder {
             "dev/oqthara/cli/Modules",
             "dev/oqthara/cli/OqRunner",
             "dev/oqthara/cli/Details",
-            // A built jar must be standalone, and the SQLite driver is the first dependency
-            // outside dev.oqthara that a program can reach. Without these the jar compiles and
-            // then fails at run time with "the SQLite driver is missing from this build".
+    };
+
+    /**
+     * The SQLite driver, and the SLF4J API and no-op binding it logs through. Kept separately
+     * because together they are 97% of a built jar's bytes and almost no program needs them.
+     */
+    private static final String[] DATABASE_PREFIXES = {
             "org/sqlite/",
-            // sqlite-jdbc logs through SLF4J, so the API and the no-op binding the stdlib adds
-            // have to travel with it; the API alone fails with ClassNotFoundException.
             "org/slf4j/",
     };
+
+    /**
+     * The builtins that reach the driver.
+     */
+    private static final String[] DATABASE_BUILTINS = {
+            "db_query",
+            "db_execute",
+            "db_transaction",
+    };
+
+    /** The keyword that loads a JVM class by name; see {@link #needsDatabaseDriver(String)}. */
+    private static final java.util.regex.Pattern USE_KEYWORD =
+            java.util.regex.Pattern.compile("\\buse\\b");
 
     private JarBuilder() {
     }
@@ -60,6 +75,17 @@ public final class JarBuilder {
      */
     public static Result build(Path output, String mainClass, String source, String sourceName,
                                byte[] compiledClass) throws IOException {
+        return build(output, mainClass, source, sourceName, compiledClass, true);
+    }
+
+    /**
+     * As above, but with the database decision supplied by the caller rather than fixed to
+     * bundling. The five-argument overload stays unconditional because {@code oq build} builds one
+     * jar per invocation and pays 1.4 s whether or not the program can reach the driver; the
+     * callers that build hundreds of jars pass {@link #needsDatabaseDriver(String)} here.
+     */
+    public static Result build(Path output, String mainClass, String source, String sourceName,
+                               byte[] compiledClass, boolean withDatabase) throws IOException {
         Path parent = output.toAbsolutePath().getParent();
         if (parent != null) Files.createDirectories(parent);
 
@@ -88,7 +114,7 @@ public final class JarBuilder {
             jar.closeEntry();
             written.add(mainClass.replace('.', '/') + ".class");
 
-            for (ClassSource classSource : classSources()) {
+            for (ClassSource classSource : classSources(withDatabase)) {
                 skipped += classSource.copyInto(jar, written);
             }
             classes = written.size();
@@ -118,8 +144,41 @@ public final class JarBuilder {
         return true;
     }
 
-    private static boolean wanted(String entry) {
+    /**
+     * Whether a program can reach {@code org.sqlite.JDBC}, decided from its text.
+     *
+     * <p>This is sound rather than a heuristic, and the argument is worth recording because the
+     * obvious version of it is wrong. "Does the program call a {@code db_*} builtin" is <em>not</em>
+     * sufficient: {@code use java.sql.DriverManager} compiles to {@code Class.forName}, so a
+     * program can reach the driver without naming any builtin. What closes the gap is that
+     * {@code use} is the <em>only</em> route from Oqthara to an arbitrary JVM class — the
+     * interpreter calls {@code Class.forName} in exactly one place, {@code loadClass}, reached
+     * only from a {@code UseStmt}. So a program with neither a database builtin nor a {@code use}
+     * statement cannot obtain a connection, and may safely ship without the driver.
+     *
+     * <p>The {@code use} test is a bare word match rather than a line match, because a statement
+     * may follow a semicolon: {@code print 1; use java.sql.DriverManager} is one line and does
+     * load the driver. Matching the word anywhere also catches a {@code use} inside a string or a
+     * comment, which costs 1.4 s and is the harmless direction to be wrong in.
+     *
+     * <p>This exists for callers that build a large number of small programs. It is deliberately
+     * not wired into {@code oq build}, which builds one jar per invocation and has not been shown
+     * to care about the 1.4 s.
+     */
+    public static boolean needsDatabaseDriver(String source) {
+        if (source == null) return false;
+        for (String builtin : DATABASE_BUILTINS) {
+            if (source.contains(builtin)) return true;
+        }
+        return USE_KEYWORD.matcher(source).find();
+    }
+
+    private static boolean wanted(String entry, boolean withDatabase) {
         for (String prefix : PREFIXES) {
+            if (entry.startsWith(prefix)) return true;
+        }
+        if (!withDatabase) return false;
+        for (String prefix : DATABASE_PREFIXES) {
             if (entry.startsWith(prefix)) return true;
         }
         return false;
@@ -135,24 +194,24 @@ public final class JarBuilder {
         int copyInto(JarOutputStream jar, Set<String> written) throws IOException;
     }
 
-    private static List<ClassSource> classSources() {
+    private static List<ClassSource> classSources(boolean withDatabase) {
         List<ClassSource> sources = new ArrayList<>();
         String classPath = System.getProperty("java.class.path", "");
         for (String element : classPath.split(java.io.File.pathSeparator)) {
             if (element.isBlank()) continue;
             Path path = Path.of(element);
             if (Files.isDirectory(path)) {
-                sources.add(directorySource(path));
+                sources.add(directorySource(path, withDatabase));
             } else if (element.endsWith(".jar") && Files.isRegularFile(path)) {
-                sources.add(jarSource(path));
+                sources.add(jarSource(path, withDatabase));
             }
         }
         Path ownLocation = locateOwnClasses();
         if (ownLocation != null) {
             if (Files.isDirectory(ownLocation)) {
-                sources.add(directorySource(ownLocation));
+                sources.add(directorySource(ownLocation, withDatabase));
             } else {
-                sources.add(jarSource(ownLocation));
+                sources.add(jarSource(ownLocation, withDatabase));
             }
         }
         return sources;
@@ -168,7 +227,7 @@ public final class JarBuilder {
         }
     }
 
-    private static ClassSource directorySource(Path root) {
+    private static ClassSource directorySource(Path root, boolean withDatabase) {
         return (jar, written) -> {
             List<String> entries;
             try (Stream<Path> stream = Files.walk(root)) {
@@ -182,7 +241,7 @@ public final class JarBuilder {
                     skipped++;
                     continue;
                 }
-                if (!wanted(entry) || written.contains(entry)) continue;
+                if (!wanted(entry, withDatabase) || written.contains(entry)) continue;
                 jar.putNextEntry(new JarEntry(entry));
                 jar.write(Files.readAllBytes(root.resolve(entry)));
                 jar.closeEntry();
@@ -196,7 +255,7 @@ public final class JarBuilder {
      * Copies a jar's wanted entries in a single pass over the archive. The builder shares one
      * {@code written} set across all sources, so the first source to supply an entry wins.
      */
-    private static ClassSource jarSource(Path jarPath) {
+    private static ClassSource jarSource(Path jarPath, boolean withDatabase) {
         return (jar, written) -> {
             try (ZipInputStream zip = new ZipInputStream(Files.newInputStream(jarPath))) {
                 ZipEntry entry;
@@ -208,7 +267,7 @@ public final class JarBuilder {
                         skipped++;
                         continue;
                     }
-                    if (!wanted(name) || written.contains(name)) continue;
+                    if (!wanted(name, withDatabase) || written.contains(name)) continue;
                     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
                     zip.transferTo(buffer);
                     jar.putNextEntry(new JarEntry(name));

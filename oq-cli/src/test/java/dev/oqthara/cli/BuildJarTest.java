@@ -163,6 +163,54 @@ class BuildJarTest {
     }
 
     @Test
+    void onlyProgramsThatCanReachTheDriverCarryIt() throws Exception {
+        // A program that names no database builtin and has no `use` statement cannot reach
+        // java.sql.DriverManager: `use` is the interpreter's only route to an arbitrary JVM
+        // class. Such a jar must therefore leave out 13.5 MB of native libraries it cannot call.
+        Path work = root().resolve("build/jar-cost");
+        Files.createDirectories(work);
+
+        Path plain = work.resolve("no-driver.jar");
+        long start = System.nanoTime();
+        JarBuilder.build(plain, "oq.generated.Program", "print 2 + 3", "plain.oq", null, false);
+        long plainMillis = (System.nanoTime() - start) / 1_000_000;
+        assertFalse(carriesDriver(plain), "a program that cannot reach the driver must not carry it");
+        assertTrue(Files.size(plain) < 2_000_000,
+                "a driver-free jar should be small, was " + Files.size(plain) + " B");
+        assertEquals("5\n", runJar(plain, work).stdout());
+
+        Path withDriver = work.resolve("with-driver.jar");
+        JarBuilder.build(withDriver, "oq.generated.Program", "print 2 + 3", "plain.oq", null, true);
+        assertTrue(carriesDriver(withDriver), "an explicit request must bundle the driver");
+
+        // The whole point: not copying the driver has to be the cheap path by a wide margin.
+        assertTrue(plainMillis * 2 < 1_500, "a driver-free jar took " + plainMillis + " ms");
+    }
+
+    private static boolean carriesDriver(Path jar) throws Exception {
+        try (JarFile file = new JarFile(jar.toFile())) {
+            return file.stream().anyMatch(entry -> entry.getName().startsWith("org/sqlite/"));
+        }
+    }
+
+    @Test
+    void theDatabasePredicateIsConservativeAboutUseStatements() {
+        // Soundness argument, in the form of the cases that would break a naive
+        // "does it call db_query" test.
+        assertTrue(JarBuilder.needsDatabaseDriver("rows = db_query(\"select 1\")"));
+        assertTrue(JarBuilder.needsDatabaseDriver("db_execute(\"create table t (a)\")\n"));
+        assertTrue(JarBuilder.needsDatabaseDriver("db_transaction(f)\n"));
+        // `use` loads a class by name, so it reaches the driver without naming a builtin.
+        assertTrue(JarBuilder.needsDatabaseDriver("use java.sql.DriverManager\nprint 1\n"));
+        assertTrue(JarBuilder.needsDatabaseDriver("  use java.time.LocalDate\nprint 1\n"));
+        // A statement can share a line, so the keyword is not necessarily at line start.
+        assertTrue(JarBuilder.needsDatabaseDriver("print 1; use java.sql.DriverManager\n"));
+        // And the programs that make up the bulk of the corpus get the small jar.
+        assertFalse(JarBuilder.needsDatabaseDriver("print 2 + 3\n"));
+        assertFalse(JarBuilder.needsDatabaseDriver("let unusable = 1\nprint unusable\n"));
+    }
+
+    @Test
     void unsafeJarEntryNamesAreRejected() {
         // Reviewer finding B: zip-slip protection.
         assertTrue(JarBuilder.isSafeEntryName("dev/oqthara/core/Interpreter.class"));
@@ -222,7 +270,8 @@ class BuildJarTest {
         for (Path program : programs) {
             String source = Files.readString(program);
             Path jar = work.resolve(program.getFileName().toString().replace(".oq", ".jar"));
-            JarBuilder.build(jar, "oq.generated.Program", source, program.getFileName().toString());
+            JarBuilder.build(jar, "oq.generated.Program", source, program.getFileName().toString(),
+                    null, JarBuilder.needsDatabaseDriver(source));
             ProcessResult viaJar = runJar(jar, root());
             OqRunner.Result viaInterpreter = OqRunner.run(program.getFileName().toString(),
                     source, List.of(), "", root());

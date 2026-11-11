@@ -54,6 +54,11 @@ The number must be the next unused one. Do not delete a passing case.
 ./gradlew build           # everything CI runs
 ```
 
+A full `./gradlew build` takes about three minutes with a warm cache and no up-to-date tasks.
+Most of that is one test class: `oq-cli`'s conformance test builds and runs a jar per compilable
+program, and `HostBuiltinLimitsTest` deliberately waits out two 30-second command timeouts. A
+long build is not a hang. `--profile` writes a per-task report under `build/reports/profile/`.
+
 ## Commit messages
 
 Conventional Commits: `feat(parser): ...`, `fix(cli): ...`, `docs: ...`,
