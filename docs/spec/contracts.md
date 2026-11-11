@@ -86,7 +86,7 @@ Two `data` behaviours are absent and both fail honestly rather than silently:
 
 ```
 x, y = p                    # error: cannot destructure P
-q = p.with(b = 9)           # error: expected to close the argument list
+q = p.with(b = 9)           # error: expected ')' to close the argument list
 ```
 
 Destructuring of a `data` value was deferred by ADR-0013 and copy-with-changes does not exist.

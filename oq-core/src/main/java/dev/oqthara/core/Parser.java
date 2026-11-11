@@ -1302,9 +1302,63 @@ public final class Parser {
         return false;
     }
 
+    /**
+     * Two kinds of phrase are passed as {@code what}. A noun phrase names what the caller must
+     * type ("a parameter name") and is used as the whole message. A purpose clause says what the
+     * token is for ("to close the parameter list", "after the function name") and is missing the
+     * token itself, so the symbol is named in front of it; without that the message read
+     * "expected to close the parameter list" and never said what was expected.
+     */
     private Token expect(Token.Kind kind, String what) {
         if (check(kind)) return advance();
-        throw error(peek(), "expected " + what, "Found " + describe(peek()) + " instead.");
+        String expected = isPurposeClause(what) ? "expected " + symbol(kind) + " " + what : "expected " + what;
+        throw error(peek(), expected, "Found " + describe(peek()) + " instead.");
+    }
+
+    private static boolean isPurposeClause(String what) {
+        return what.startsWith("to ")
+                || what.startsWith("after ")
+                || what.startsWith("before ")
+                || what.startsWith("between ");
+    }
+    private static String symbol(Token.Kind kind) {
+        return switch (kind) {
+            case LPAREN -> "'('";
+            case RPAREN -> "')'";
+            case LBRACKET -> "'['";
+            case RBRACKET -> "']'";
+            case LBRACE -> "'{'";
+            case RBRACE -> "'}'";
+            case COMMA -> "','";
+            case COLON -> "':'";
+            case DOT -> "'.'";
+            case PIPE -> "'|'";
+            case SEMICOLON -> "';'";
+            case PLUS -> "'+'";
+            case MINUS -> "'-'";
+            case STAR -> "'*'";
+            case SLASH -> "'/'";
+            case PERCENT -> "'%'";
+            case STARSTAR -> "'**'";
+            case ASSIGN -> "'='";
+            case PLUS_ASSIGN -> "'+='";
+            case MINUS_ASSIGN -> "'-='";
+            case STAR_ASSIGN -> "'*='";
+            case SLASH_ASSIGN -> "'/='";
+            case EQEQ -> "'=='";
+            case NOTEQ -> "'!='";
+            case LT -> "'<'";
+            case LE -> "'<='";
+            case GT -> "'>'";
+            case GE -> "'>='";
+            case IDENT -> "a name";
+            case KEYWORD -> "a keyword";
+            case STRING -> "text";
+            case MULTILINE -> "text";
+            case NUMBER -> "a number";
+            case NEWLINE -> "the end of the line";
+            case EOF -> "the end of the file";
+        };
     }
 
     private void expectKeyword(String keyword, String reason) {

@@ -284,6 +284,12 @@
       "slug": "docs/adr/0046-whole-number-range"
     },
     {
+      "path": "docs/adr/0047-naming-the-expected-token.md",
+      "title": "ADR-0047: A parser diagnostic names the token it expected",
+      "section": "adr",
+      "slug": "docs/adr/0047-naming-the-expected-token"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

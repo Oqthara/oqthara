@@ -71,6 +71,43 @@ class ErrorMessageContractTest {
         goodError("f = (a, -> a", "expected");
     }
 
+    /**
+     * A parser diagnostic that says "expected" must name what was expected. The purpose clauses
+     * handed to the parser ("to close the parameter list") used to be appended to "expected" on
+     * their own, so the message read "expected to close the parameter list" and never said which
+     * token was missing.
+     */
+    @Test
+    void everyExpectedTokenIsNamed() {
+        goodError("fun f(items = [])", "expected ')' to close the parameter list");
+        goodError("fun f(items = [])\nend", "expected ')' to close the parameter list");
+        goodError("fun f", "expected '(' after the function name");
+        goodError("f = fun(a) > a", "expected '-' before '>' in an anonymous function");
+        goodError("f = (a) -> > a", "expected");
+        goodError("x = [1, 2", "expected ']' to close the list");
+        goodError("x = {1: 2", "expected '}' to close the map");
+        goodError("x = {1: 2, 3}", "expected ':' between a map key and its value");
+        goodError("print (1, 2", "expected ')' to close the tuple");
+        goodError("print [1, 2][0:2", "expected ']' to close the slice");
+
+        for (String source : java.util.List.of(
+                "fun f(items = [])",
+                "fun f",
+                "x = [1, 2",
+                "x = {1: 2",
+                "print (1, 2")) {
+            String stderr = run(source).stderr();
+            assertFalse(stderr.contains("expected to "),
+                    "the expected token is unnamed for: " + source + "\n" + stderr);
+            assertFalse(stderr.contains("expected after "),
+                    "the expected token is unnamed for: " + source + "\n" + stderr);
+            assertFalse(stderr.contains("expected before "),
+                    "the expected token is unnamed for: " + source + "\n" + stderr);
+            assertFalse(stderr.contains("expected between "),
+                    "the expected token is unnamed for: " + source + "\n" + stderr);
+        }
+    }
+
     @Test
     void standardLibraryErrorsAreActionable() {
         goodError("json_parse(\"nope\")", "invalid JSON");

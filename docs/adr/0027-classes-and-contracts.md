@@ -31,12 +31,12 @@ off the source.
 | `p.nope` | `error: type Point has no field named 'nope'` + `help: Available fields: x, y` |
 | `p.sum()` | `error: type Point has no method 'sum'` |
 | `p.x()` | `1` — field then call, not a method |
-| `fun P.norm()` | `error: expected after the function name` |
+| `fun P.norm()` | `error: expected '(' after the function name` |
 | `class Point` | `error: unexpected 'Point' after a statement` |
 | `data P(y = x + 1)` before `x` exists | `error: 'x' is not defined` at the *declaration* |
 | default reads a name defined later | evaluated at **construction**, so `x = 10`, `x = 20`, `P()` gives `21` |
 | `data Bag(items = [])`, two instances | independent lists; a mutable default does not leak |
-| `fun f(items = [])` | `error: expected to close the parameter list` — `fun` has no defaults |
+| `fun f(items = [])` | `error: expected ')' to close the parameter list` — `fun` has no defaults |
 
 Three consequences follow, and they constrain the design:
 
