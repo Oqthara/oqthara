@@ -40,7 +40,11 @@ final class Patterns {
         interpreter.defineBuiltin(NativeFunction.of("fnmatch", 2, (host, args, span) -> {
             String name = Values.display(args.get(0));
             String pattern = Values.display(args.get(1));
-            return new Glob(pattern, span).matches(Paths.get(name));
+            // Matched as text, not through Paths.get: on Windows a name holding '|' or '?'
+            // is not a legal path, so Paths.get throws InvalidPathException before the pattern
+            // is consulted. fnmatch asks whether two strings match, and a name does not have to
+            // be a path on this host to be worth testing.
+            return new Glob(pattern, span).matchesText(name);
         }));
         interpreter.defineBuiltin(NativeFunction.of("glob", 2, (host, args, span) -> {
             Path directory = resolve(host, args.get(0));
@@ -113,8 +117,18 @@ final class Patterns {
         }
 
         boolean matches(Path relative) {
-            String text = relative.toString().replace(java.io.File.separatorChar, '/');
-            return pattern.matcher(text).matches();
+            return matchesText(relative.toString());
+        }
+
+        /**
+         * Matches a name against the pattern without treating it as a path on this host.
+         *
+         * <p>{@code fnmatch} takes a bare file name, and on Windows some names that a pattern can
+         * describe -- {@code a|b}, {@code a?b} -- are not legal paths at all, so converting the
+         * name to a {@link Path} would reject it before the pattern was ever consulted.
+         */
+        boolean matchesText(String name) {
+            return pattern.matcher(name.replace(java.io.File.separatorChar, '/')).matches();
         }
 
         /**

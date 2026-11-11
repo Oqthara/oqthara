@@ -117,6 +117,28 @@ class GlobTest {
         assertEquals(Boolean.TRUE, call("fnmatch", "a|b", "a|b"));
     }
 
+    /**
+     * `fnmatch` asks whether two strings match; it does not require the name to be a legal path
+     * on the host. Windows refuses `|` and `?` in a file name, so converting the name to a
+     * {@link java.nio.file.Path} threw `InvalidPathException` before the pattern was consulted.
+     * This passed on macOS and Linux and failed only on Windows, which is why the names are
+     * checked as literals rather than by creating files.
+     */
+    @Test
+    void aNameThatIsIllegalOnThisHostStillMatches() {
+        assertEquals(Boolean.TRUE, call("fnmatch", "a|b", "a|b"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a?b", "a?b"));
+        // `?` is the single-character wildcard, so `axb` matches `a?b` -- that is the dialect,
+        // not a bug. What matters here is that the name is not rejected before matching.
+        assertEquals(Boolean.TRUE, call("fnmatch", "axb", "a?b"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a<b>c", "a<b>c"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a\"b", "a\"b"));
+        // A NUL byte is rejected by Paths.get on every platform, not only Windows, so this line
+        // fails wherever the name is routed through a Path. Without it the test would only
+        // discriminate on Windows, where `|` and `?` are illegal file-name characters.
+        assertEquals(Boolean.TRUE, call("fnmatch", "a\u0000b", "a\u0000b"));
+    }
+
     // --- bad patterns ------------------------------------------------------------------------
 
     @Test
