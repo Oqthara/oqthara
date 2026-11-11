@@ -2,6 +2,7 @@ package dev.oqthara.cli;
 
 import dev.oqthara.core.Ast;
 import dev.oqthara.core.Interpreter;
+import dev.oqthara.core.Modules;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.Span;

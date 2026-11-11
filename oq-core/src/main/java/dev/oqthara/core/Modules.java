@@ -1,8 +1,5 @@
-package dev.oqthara.cli;
+package dev.oqthara.core;
 
-import dev.oqthara.core.Ast;
-import dev.oqthara.core.Interpreter;
-import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.Span;
 
@@ -20,12 +17,12 @@ import java.util.Set;
  * parsed and whose top-level functions and data types are hoisted into the importing
  * program. Modules are loaded once, and cycles are rejected with a clear message.
  */
-final class Modules {
+public final class Modules {
     private Modules() {
     }
 
     /** Resolves module imports relative to a directory, used by embedded jars. */
-    static Ast.Program resolveAgainst(Ast.Program program, Path base) {
+    public static Ast.Program resolveAgainst(Ast.Program program, Path base) {
         Set<Path> loaded = new LinkedHashSet<>();
         List<Ast.Stmt> statements = new ArrayList<>();
         collect(program, base, loaded, statements, 0);
@@ -41,7 +38,7 @@ final class Modules {
      * order, once) is semantically equivalent to resolving the imports at run time. The
      * import lines themselves are blanked out, keeping line numbers of the main file intact.
      */
-    static String flatten(Path entry, String source) {
+    public static String flatten(Path entry, String source) {
         Ast.Program program = Parser.parse(entry.getFileName().toString(), source);
         Set<Path> loaded = new LinkedHashSet<>();
         loaded.add(entry.toAbsolutePath().normalize());
@@ -85,7 +82,7 @@ final class Modules {
         return result.endsWith("\n") ? result.substring(0, result.length() - 1) : result;
     }
 
-    static Ast.Program resolve(Path entry, Ast.Program program) {
+    public static Ast.Program resolve(Path entry, Ast.Program program) {
         Set<Path> loaded = new LinkedHashSet<>();
         loaded.add(entry.toAbsolutePath().normalize());
         List<Ast.Stmt> statements = new ArrayList<>();
@@ -130,11 +127,19 @@ final class Modules {
     /**
      * Resolves one {@code use "oq:name"} to the file that defines it.
      *
-     * <p>Package-private rather than private so {@code oq doc --source} follows an import
-     * through this exact method: a documenter with its own copy of the search order would
-     * eventually disagree with the interpreter about where a module lives.
+     * <p>Public so every reader of an import follows it through this exact method. {@code oq
+     * doc --source} uses it to document a module reached only by import, and {@code oq-lsp}
+     * uses it to answer a hover over a name the current file imports. A second copy of the
+     * search order would eventually disagree with the interpreter about where a module lives,
+     * and the disagreement would show up as a documented name that cannot be called.
+     *
+     * @param name the module name as written, with or without the {@code .oq} suffix
+     * @param base the directory of the importing file, or null to search only the working
+     *             directory
+     * @param span the import statement, so a failure points at the {@code use} line
+     * @throws OqError when no file in the search order defines the module
      */
-    static Path resolveModule(String name, Path base, Span span) {
+    public static Path resolveModule(String name, Path base, Span span) {
         List<Path> candidates = new ArrayList<>();
         String fileName = name.endsWith(".oq") ? name : name + ".oq";
         if (base != null) {
@@ -155,7 +160,7 @@ final class Modules {
      * Runs module resolution for a program that is about to be executed. Returns the
      * merged program so the interpreter never sees an import statement.
      */
-    static Ast.Program load(Interpreter interpreter, Path entry, Ast.Program program) {
+    public static Ast.Program load(Interpreter interpreter, Path entry, Ast.Program program) {
         return resolve(entry, program);
     }
 }

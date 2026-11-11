@@ -3,13 +3,21 @@ package dev.oqthara.lsp;
 import dev.oqthara.core.Ast;
 import dev.oqthara.core.Docstring;
 import dev.oqthara.core.Interpreter;
+import dev.oqthara.core.Modules;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqCallable;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Answers {@code textDocument/hover} from the document's own declarations and, failing
@@ -20,13 +28,22 @@ import java.util.Map;
  * editor.
  *
  * <p>Resolution is lexical, not semantic: the identifier under the cursor is matched
- * against declaration names in the same file. Shadowing, {@code use} imports and module
- * declarations are not followed, so the answer describes the declaration the reader can
- * see rather than the one the program would actually call.
+ * against declaration names in the same file first. Shadowing is not modelled, so the answer
+ * describes the declaration the reader can see rather than the one the program would actually
+ * call.
+ *
+ * <p>Failing that, {@code use "oq:name"} imports <em>are</em> followed, through the same
+ * {@code Modules.resolveModule} the interpreter uses, so a name imported from a module is
+ * described as richly as one declared locally. Following only happens for a document that
+ * came from a {@code file:} URI, because the search order is defined relative to the importing
+ * file's directory and an untitled buffer has none.
  */
 final class Hover {
     private Hover() {
     }
+
+    /** Matches the interpreter's limit, so a hover never walks a cycle the loader would refuse. */
+    private static final int MAX_IMPORT_DEPTH = 50;
 
     /** Built once; installing the standard library has no side effects on the host. */
     private static volatile Map<String, OqCallable> builtins;
@@ -53,6 +70,8 @@ final class Hover {
         }
         String declared = describeDeclaration(program, word.text());
         if (declared != null) return declared;
+        String imported = describeImported(uri, program, word.text());
+        if (imported != null) return imported;
         return describeBuiltin(word.text());
     }
 
@@ -67,6 +86,66 @@ final class Hover {
             if (rendered != null) return rendered;
         }
         return null;
+    }
+
+    /**
+     * Describes a name the document imports rather than declares.
+     *
+     * <p>Imports are walked in the order the interpreter would load them and in dependency
+     * order, so a module that imports another is searched before the importer's own list is
+     * exhausted. A name found in more than one module resolves to the first, which is what
+     * "loaded once, in order" means; the reply does not claim to disambiguate shadowing.
+     *
+     * <p>Any failure -- an untitled buffer, a module that moved, a module that no longer
+     * parses -- yields null rather than an error. A hover is a hint, and an editor asking
+     * about a half-typed file must not receive a fault for asking.
+     */
+    private static String describeImported(String uri, Ast.Program program, String name) {
+        Path base = directoryOf(uri);
+        if (base == null) return null;
+        Set<Path> seen = new LinkedHashSet<>();
+        return searchImports(program, base, name, seen, 0);
+    }
+
+    private static String searchImports(Ast.Program program, Path base, String name,
+                                        Set<Path> seen, int depth) {
+        if (depth > MAX_IMPORT_DEPTH) return null;
+        for (Ast.Stmt statement : program.statements()) {
+            if (!(statement instanceof Ast.ImportStmt importStmt)) continue;
+            Path file;
+            try {
+                file = Modules.resolveModule(importStmt.path(), base, importStmt.span())
+                        .toAbsolutePath().normalize();
+            } catch (RuntimeException e) {
+                continue;
+            }
+            if (!seen.add(file)) continue;
+            Ast.Program module;
+            try {
+                module = Parser.parse(file.getFileName().toString(),
+                        Files.readString(file, StandardCharsets.UTF_8));
+            } catch (RuntimeException | IOException e) {
+                continue;
+            }
+            String described = describeDeclaration(module, name);
+            if (described != null) return described;
+            String nested = searchImports(module, file.getParent(), name, seen, depth + 1);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    /**
+     * The directory an imported module is resolved against, or null when the document has no
+     * file of its own.
+     */
+    private static Path directoryOf(String uri) {
+        if (uri == null || !uri.startsWith("file:")) return null;
+        try {
+            return Path.of(URI.create(uri)).toAbsolutePath().normalize().getParent();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     private static String describe(Ast.Stmt statement, String name) {

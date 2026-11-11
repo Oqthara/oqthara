@@ -1,5 +1,6 @@
 package dev.oqthara.cli;
 
+import dev.oqthara.core.Modules;
 import dev.oqthara.compiler.ClassFileWriter;
 import dev.oqthara.compiler.JarBuilder;
 import org.junit.jupiter.api.Test;

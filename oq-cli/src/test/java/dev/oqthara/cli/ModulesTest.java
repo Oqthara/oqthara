@@ -1,5 +1,6 @@
 package dev.oqthara.cli;
 
+import dev.oqthara.core.Modules;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
