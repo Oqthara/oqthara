@@ -748,10 +748,29 @@ public final class Parser {
         }
         enterNesting();
         try {
+            if (op.kind() == Token.Kind.MINUS && check(Token.Kind.NUMBER)) {
+                Token magnitude = peek();
+                if (magnitude.literal() == null) {
+                    advance();
+                    return new Ast.NumberLit(minMagnitude(magnitude), op.span());
+                }
+            }
             return new Ast.Unary(op.kind(), unary(), op.span());
         } finally {
             nesting--;
         }
+    }
+
+    /**
+     * Negates a whole number too large for a {@code long}. Only {@code Long.MIN_VALUE}
+     * is representable, because its magnitude is exactly one past {@code Long.MAX_VALUE}.
+     */
+    private Object minMagnitude(Token magnitude) {
+        if (magnitude.lexeme().equals(Long.toString(Long.MIN_VALUE).substring(1))) {
+            return Long.MIN_VALUE;
+        }
+        throw error(magnitude, "number " + magnitude.lexeme() + " is too large",
+                "The smallest supported whole number is " + Long.MIN_VALUE + ".");
     }
 
     private Ast.Expr postfix() {
@@ -864,10 +883,24 @@ public final class Parser {
         }
     }
 
+    /**
+     * A whole-number token carries a parsed {@code Long} unless its magnitude is too
+     * large. The one such magnitude that is still usable is {@code Long.MIN_VALUE}'s,
+     * which only a unary minus makes valid, so an unparsed token is refused here —
+     * the caller that accepted a minus has already replaced it with the negation.
+     */
+    private Object wholeNumber(Token token) {
+        if (token.literal() != null) {
+            return token.literal();
+        }
+        throw error(token, "number " + token.lexeme() + " is too large",
+                "The largest supported whole number is " + Long.MAX_VALUE + ".");
+    }
+
     private Ast.Expr primaryInner() {
         if (match(Token.Kind.NUMBER)) {
             Token token = previous();
-            return new Ast.NumberLit(token.literal(), token.span());
+            return new Ast.NumberLit(wholeNumber(token), token.span());
         }
         if (match(Token.Kind.STRING) || match(Token.Kind.MULTILINE)) {
             Token token = previous();

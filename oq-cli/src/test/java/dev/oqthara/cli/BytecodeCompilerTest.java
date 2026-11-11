@@ -92,6 +92,16 @@ class BytecodeCompilerTest {
         assertEquals("-3\n5\n", compileAndRun("print -5 + 2\nprint -(-5)", dir));
     }
 
+    /**
+     * {@code Long.MIN_VALUE} has no positive counterpart, so only the literal minus makes
+     * it writable. A compiled program has to reach the same value the interpreter does.
+     */
+    @Test
+    void compilesTheSmallestWholeNumber(@TempDir Path dir) throws Exception {
+        assertEquals("-9223372036854775808\n9223372036854775807\n",
+                compileAndRun("print -9223372036854775808\nprint 9223372036854775807", dir));
+    }
+
     @Test
     void divisionByZeroReportsTheSameMessage(@TempDir Path dir) throws Exception {
         dev.oqthara.compiler.Ir.Program program = ir("print 1 / 0");

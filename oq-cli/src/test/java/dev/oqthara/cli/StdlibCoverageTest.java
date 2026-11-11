@@ -220,13 +220,12 @@ class StdlibCoverageTest {
         // arbitrary precision is a deliberate decision rather than a silent change.
         assertEquals("-9223372036854775808\n", ok("print 9223372036854775807 + 1"));
         assertEquals("true\n", ok("print 9223372036854775807 + 1 == -9223372036854775807 - 1"));
-        // Long.MIN_VALUE has no literal of its own: the lexer reads the digits first, so
-        // `-9223372036854775808` is a unary minus applied to a literal that already overflowed.
-        // It is reachable by arithmetic, which is what the line above shows. Recorded here
-        // because the error names the literal and not the negation, which reads as a bug.
-        OqRunner.Result min = run("print -9223372036854775808");
-        assertEquals(1, min.code(), min.stderr());
-        assertTrue(min.stderr().contains("9223372036854775808 is too large"), min.stderr());
+        // Long.MIN_VALUE is writable directly, because a whole number whose magnitude is one
+        // past Long.MAX_VALUE is accepted when a minus applies to it and refused otherwise.
+        assertEquals("-9223372036854775808\n", ok("print -9223372036854775808"));
+        OqRunner.Result tooBig = run("print 9223372036854775808");
+        assertEquals(1, tooBig.code(), tooBig.stderr());
+        assertTrue(tooBig.stderr().contains("9223372036854775808 is too large"), tooBig.stderr());
     }
 
     @Test

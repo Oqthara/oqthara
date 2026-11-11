@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -71,5 +72,16 @@ class LexerTest {
         List<Token> tokens = Lexer.lex("test", "[1,\n2]");
         long newlines = tokens.stream().filter(t -> t.is(Token.Kind.NEWLINE)).count();
         assertEquals(2, newlines);
+    }
+
+    @Test
+    void leavesAnOversizedWholeNumberUnparsedForTheParser() {
+        // Its magnitude is one past Long.MAX_VALUE, so only a unary minus can make it
+        // usable. The lexer must not refuse it outright, because it cannot see whether
+        // a minus follows.
+        List<Token> tokens = Lexer.lex("test", "9223372036854775808");
+        assertEquals(Token.Kind.NUMBER, tokens.get(0).kind());
+        assertNull(tokens.get(0).literal());
+        assertEquals("9223372036854775808", tokens.get(0).lexeme());
     }
 }

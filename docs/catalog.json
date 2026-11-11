@@ -278,6 +278,12 @@
       "slug": "docs/adr/0045-exact-java-numbers"
     },
     {
+      "path": "docs/adr/0046-whole-number-range.md",
+      "title": "ADR-0046: A whole-number literal at the low end of the range",
+      "section": "adr",
+      "slug": "docs/adr/0046-whole-number-range"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
