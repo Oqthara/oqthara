@@ -133,4 +133,24 @@ class ParserTest {
         Ast.Program program = Parser.parse("test", "\n\nx = 1");
         assertEquals(3, program.statements().get(0).span().line());
     }
+
+    @Test
+    void commandFormIsLimitedToTheThreeReservedNames() {
+        for (String name : List.of("print", "write", "assert")) {
+            Ast.Program program = Parser.parse("test", name + " 1");
+            assertInstanceOf(Ast.Command.class, program.statements().get(0), name);
+        }
+    }
+
+    @Test
+    void everyOtherBuiltinRequiresParentheses() {
+        // `write_text` is an alias of `write` reachable only in function form. The spec once
+        // showed `write_text "x"`; this pins the boundary the spec now states.
+        OqError error = assertThrows(OqError.class, () -> Parser.parse("test", "write_text \"x\""));
+        assertTrue(error.getMessage().contains("unexpected text after a statement"),
+                error.getMessage());
+
+        Ast.Program program = Parser.parse("test", "write_text(\"x\")");
+        assertInstanceOf(Ast.ExprStmt.class, program.statements().get(0));
+    }
 }

@@ -1026,12 +1026,18 @@ specifiers and no placeholders. Use string interpolation for that.
 
 Output: `print` writes its arguments separated by single spaces and ends the line.
 `write` writes its arguments with no separator and no newline. Both accept any number
-of arguments and return `nothing`.
+of arguments and return `nothing`. `write_text` is an alias of `write`: it writes the
+same output, takes the same arguments and returns `nothing` too.
+
+`print`, `write` and `assert` are the only three names that may be called as a command
+statement, without parentheses. Every other builtin requires them, `write_text`
+included. A command statement ends at the end of the line, so `write_text "x"` reports
+`unexpected text after a statement`; it is `write_text("x")`.
 
 ```
 print "a", "b"     # a b
 write "a", "b"     # ab, cursor stays on the line
-write_text "x"     # same as write
+write_text("x")    # x, cursor stays on the line
 ```
 
 Files: `read`, `read_lines`, `save`, `append`, `exists`, `list_files`, `delete`,
