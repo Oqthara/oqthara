@@ -37,8 +37,9 @@ What it does **not** ship, stated plainly because the gaps are the point of this
 ## Decision
 
 This ADR records the architecture the Runtime Manager must have. It does **not** claim any of it
-is implemented; each numbered item below is a requirement with an acceptance test, and the
-requirement matrix tracks the workstream as `PARTIAL` until they pass.
+is implemented; each numbered item below is a requirement, and the requirement matrix records the
+workstream as `PARTIAL` overall, with `Managed runtime` specifically `NOT STARTED` until the
+first item below passes its test.
 
 **D1. The runtime is selected, never assumed.** A single resolution order is defined and
 documented: an explicit `OQ_JAVA` override, then a project-local pin, then a managed runtime
@@ -81,9 +82,12 @@ runtime is used. If none exists, the diagnostic says which runtime was looked fo
 would have been installed, and that the network was unreachable — not a generic failure.
 
 **D9. Oqthara compatibility is a separate question from JDK availability.** Java 21 LTS is the
-floor because `build.gradle.kts:51-52` targets it. The manager must prove that a candidate
-runtime can run the language's own conformance corpus, not merely that the vendor published it.
-A vendor's release date is not a compatibility statement.
+floor because `build.gradle.kts:51-52` targets it. A vendor's release date is not a compatibility
+statement, so the manager validates a candidate by running the jar built from the release being
+installed: `--version`, then a small fixed set of conformance programs chosen because they
+exercise the bytecode backend, the standard library and the JNI database path. It is not the full
+corpus — 212 executable files is too much to run before every install — and the ADR says so
+rather than implying a stronger check than exists.
 
 This is not hypothetical. [ADR-0002](0002-ci-split.md) records that the build failed on JDK 25
 with `Unsupported class file major version 69`, because the Gradle release in use at the time
