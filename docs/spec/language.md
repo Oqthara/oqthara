@@ -144,6 +144,17 @@ no separate integer division operator.
 Built-in functions: `abs`, `floor`, `ceil`, `round`, `round(value, places)`, `sqrt`,
 `pow`, `min`, `max`, `clamp`, `random`.
 
+`round` breaks a tie *upward*, toward positive infinity: `round(0.5)` is `1`,
+`round(2.5)` is `3`, and `round(-1.5)` is `-1` rather than `-2`. It is not banker's
+rounding, which would give `2` and `-2`, and it is not rounding away from zero, which
+would make `round(-1.5)` equal `-2`.
+
+The tie rule is stated for the whole number, but the underlying value is a binary
+double, so `round(1.005, 2)` is `1.0` and not `1.01`: the stored double is a little
+below `1.005`, and a tie is never reached. A result that must not depend on how a
+double is stored needs exact decimal arithmetic, which the standard library does not
+yet provide.
+
 Lists compare lexicographically, so a sort key can itself be a list:
 
 ```
