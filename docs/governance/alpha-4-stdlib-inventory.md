@@ -61,32 +61,32 @@ count — even the reference produced when it was written already listed 98.
 
 ### Where each global is registered
 
-Installation is one call, `Stdlib.install` at `Stdlib.java:103`, which delegates to one
+Installation is one call, `Stdlib.install` at `Stdlib.java:102`, which delegates to one
 private installer per section. Each row below gives the installer's declaration line, so a
 name can be located by section and then by the line numbers in the following table.
 
 | Section | Installer | Registrations | Unique names |
 |---|---|---|---|
-| Core | `Stdlib.java:125` | 26 | 21 |
-| Text | `Stdlib.java:234` | 10 | 10 |
-| Collections | `Stdlib.java:285` | 14 | 14 |
-| Math | `Stdlib.java:364` | 14 | 12 |
-| Files | `Stdlib.java:440` | 13 | 13 |
-| File operations | `Stdlib.java:555` | 7 | 7 |
+| Core | `Stdlib.java:126` | 26 | 21 |
+| Text | `Stdlib.java:235` | 10 | 10 |
+| Collections | `Stdlib.java:286` | 14 | 14 |
+| Math | `Stdlib.java:365` | 14 | 12 |
+| Files | `Stdlib.java:441` | 13 | 13 |
+| File operations | `Stdlib.java:556` | 7 | 7 |
 | Patterns | `Patterns.java:39` | 2 | 2 |
 | Statistics, identifiers, ordered search | `Statistics.java:32` | 12 | 12 |
 | Compression | `Compression.java:49` | 6 | 6 |
-| JSON | `Stdlib.java:689` | 4 | 4 |
-| Encoding | `Stdlib.java:706` | 11 | 11 |
-| Logging | `Stdlib.java:821` | 6 | 6 |
-| Arguments | `Stdlib.java:868` | 1 | 1 |
-| CSV | `Stdlib.java:1018` | 5 | 2 |
-| Dates | `Stdlib.java:1175` | 2 | 2 |
-| Time | `Stdlib.java:1202` | 6 | 6 |
-| URLs | `Stdlib.java:1260` | 6 | 6 |
-| HTTP | `Stdlib.java:1443` | 2 | 2 |
-| Concurrency | `Stdlib.java:1598` | 6 | 5 |
-| Process | `Stdlib.java:1664` | 4 | 4 |
+| JSON | `Stdlib.java:690` | 4 | 4 |
+| Encoding | `Stdlib.java:707` | 11 | 11 |
+| Logging | `Stdlib.java:822` | 6 | 6 |
+| Arguments | `Stdlib.java:869` | 1 | 1 |
+| CSV | `Stdlib.java:1019` | 5 | 2 |
+| Dates | `Stdlib.java:1176` | 2 | 2 |
+| Time | `Stdlib.java:1203` | 6 | 6 |
+| URLs | `Stdlib.java:1261` | 6 | 6 |
+| HTTP | `Stdlib.java:1444` | 2 | 2 |
+| Concurrency | `Stdlib.java:1599` | 6 | 5 |
+| Process | `Stdlib.java:1665` | 4 | 4 |
 | Database | `DatabaseModule.java:44` | 3 | 3 |
 | **Total** | | **160** | **149** |
 
