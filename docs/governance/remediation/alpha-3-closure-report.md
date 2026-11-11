@@ -178,6 +178,14 @@ $ python3 scripts/verify-conformance.py
 ok: 192 compiled, 19 fallback, 0 divergences across 223 programs (207 executable)
 ```
 
+> This block is the output captured at closure (`e32215f`), and it is preserved unedited: this
+> report is a record of the closure decision, so its evidence is dated on purpose. The corpus has
+> grown since, and the same command now prints
+> `ok: 203 compiled, 13 fallback, 0 divergences across 229 programs (212 executable)`. The
+> property being evidenced — convergence of the interpreter and the compiled jar, with zero
+> divergences — still holds; only the denominators moved. Run the command for current figures
+> rather than quoting this one.
+
 The two drift directions are both closed:
 
 | Constant | Old semantics | Problem | New semantics |
