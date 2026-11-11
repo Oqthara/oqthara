@@ -205,6 +205,34 @@ class JavaInteropTest {
     }
 
     @Test
+    void aFunctionReturnedByJavaStaysCallable() {
+        // Comparator.naturalOrder() answers a package-private Comparators$NaturalOrderComparator.
+        // Reflection reports that class's accessibility rather than the interface's, so the call
+        // was refused with "cannot access a member of class ... with modifiers public" even
+        // though the same call compiles in Java.
+        assertEquals("-1\n1\n", ok("""
+                use java.util.Comparator
+
+                ascending = Comparator.naturalOrder()
+                descending = Comparator.reverseOrder()
+                print ascending.compare(1, 2)
+                print descending.compare(1, 2)
+                """));
+    }
+
+    @Test
+    void aJavaObjectIsNotDescribedAsUncallable() {
+        // The value's methods do work, so saying it "cannot be called" contradicts the line
+        // above it. The help names the real distinction: callable by method, not a fun.
+        fails("""
+                use java.util.Comparator
+
+                xs = [1, 2]
+                print map(xs, Comparator.naturalOrder())
+                """, "a Java object: call its methods with '.', but it is not a fun");
+    }
+
+    @Test
     void aFunctionStoredAsAValueIsNotTurnedIntoACallback() {
         // add(Object) takes any reference, so the function already fits and no proxy is made.
         assertEquals("1\n", ok("""

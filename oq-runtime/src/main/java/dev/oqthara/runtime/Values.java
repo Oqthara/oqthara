@@ -74,6 +74,24 @@ public final class Values {
         return "java " + value.getClass().getSimpleName();
     }
 
+    /**
+     * Explains why a value cannot be called, saying what the value is and what can be done.
+     *
+     * <p>Saying only "which cannot be called" is wrong for a Java object: its methods are
+     * callable, and a value returned by Java such as {@code Comparator.naturalOrder()} answers to
+     * {@code compare} perfectly well. What such a value cannot do is stand where the language
+     * expects a {@code fun}, so the help names that difference instead of implying the object is
+     * inert.
+     */
+    public static String notCallableHelp(Object value) {
+        String name = typeName(value);
+        if (name.startsWith("java ")) {
+            return "It is " + name + ", a Java object: call its methods with '.', but it is not"
+                    + " a fun.";
+        }
+        return "It is " + name + ", which cannot be called.";
+    }
+
     public static String display(Object value) {
         if (value == null) return "nothing";
         if (value instanceof String s) return s;
