@@ -74,7 +74,7 @@ name can be located by section and then by the line numbers in the following tab
 | File operations | `Stdlib.java:555` | 7 | 7 |
 | Patterns | `Patterns.java:39` | 2 | 2 |
 | Statistics, identifiers, ordered search | `Statistics.java:32` | 12 | 12 |
-| Compression | `Compression.java:44` | 6 | 6 |
+| Compression | `Compression.java:49` | 6 | 6 |
 | JSON | `Stdlib.java:689` | 4 | 4 |
 | Encoding | `Stdlib.java:706` | 11 | 11 |
 | Logging | `Stdlib.java:821` | 6 | 6 |
@@ -125,8 +125,8 @@ lines is one name and three registrations.
 `bisect_left`:57, `bisect_right`:59, all in `Statistics.java`. One registration per name, so the
 section adds 12 to both columns. Specified by [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md).
 
-**Compression** (6) — `zlib_compress`:47, `zlib_decompress`:49, `gzip_compress`:51,
-`gzip_decompress`:53, `zip_compress`:55, `zip_decompress`:57, all in `Compression.java`.
+**Compression** (6) — `zlib_compress`:50, `zlib_decompress`:52, `gzip_compress`:55,
+`gzip_decompress`:57, `zip_compress`:60, `zip_decompress`:62, all in `Compression.java`.
 One registration per name, so the section adds 6 to both columns. Specified by
 [ADR-0042](../adr/0042-whole-value-compression.md), whose reason for existing is the output cap:
 the defence counts the bytes actually produced rather than trusting a length field, because a
