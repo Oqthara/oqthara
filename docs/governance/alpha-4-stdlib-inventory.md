@@ -24,7 +24,8 @@ document that promises is a document that cannot be checked.
   `DatabaseModule.java`, `Patterns.java` and `MethodResolverImpl.java`, then reconciled
   name-for-name against
   the generated surface in [`docs/stdlib/reference.md`](../stdlib/reference.md). The two agree
-  exactly, in both directions, with zero drift: 143 global names and 193 method names on each
+  exactly, in both directions, with zero drift: 149 global names and 193 documented method
+  entries on each
   side. Every name cited in this document was found by grep in the files named against it.
 - **Python side measured from the index.** Parsed the table of contents of
   <https://docs.python.org/3/library/index.html>, consulted 2026-11-10. That page yields 34
@@ -875,9 +876,9 @@ This is the documented position, not an inference:
 **I agree with this position, and the inventory strengthens the case for it.** Three
 observations from measuring the surface support the decision rather than merely deferring to it:
 
-1. **The constraint has cost far less than it looks.** Of the 71 absent modules, only a handful
+1. **The constraint has cost far less than it looks.** Of the 63 absent modules, only a handful
    are blocked by resource lifetime — sockets, listeners, memory mapping, `dbm`, a scoped temp
-   file, a signal handler, a queue. The other sixty-odd are blocked by nothing but work: they
+   file, a signal handler, a queue. The other fifty-odd are blocked by nothing but work: they
    are pure functions over values that already fit the per-call shape. The missing `close` is
    therefore not the reason the library is narrow; it is the reason a small, specific set of
    domains must wait, and it has been used correctly to avoid the domains where a half-measure
@@ -888,10 +889,11 @@ observations from measuring the surface support the decision rather than merely 
    `begin`/`commit`/`rollback` triple. That is a resource-owning domain delivered with no
    `close`, and it is the template for `tempfile` and for any archive that must write rather
    than return bytes.
-3. **Two of the highest-value proposals pass the test unchanged.** Compression (rank 2) and
-   filesystem patterns (rank 1) are byte-in/byte-out and pattern-in/names-out respectively.
-   Neither needs a handle, so neither is blocked. The constraint therefore does not stand
-   between the language and its most valuable next domains — which is the strongest evidence
+3. **Both of the top-ranked proposals shipped unchanged.** Filesystem patterns (rank 1) and
+   compression (rank 2) are pattern-in/names-out and byte-in/byte-out respectively. Neither
+   needs a handle, so neither was blocked, and both landed with the cap or the refusal that
+   makes them safe. The constraint therefore did not stand between the language and its most
+   valuable next domains — which is the strongest evidence
    that it is well placed.
 
 What I would add, and what this document is for: the three ADRs state the rule, but until now
@@ -908,4 +910,4 @@ absent set is large, cheap and honest, and the blocked set is small, expensive a
 
 ---
 
-**Last verified:** `b5813d1` (merge of PR #84), 2026-11-10.
+**Last verified:** `ab33b07` (merge of PR #92) plus PR #93, 2026-11-10.
