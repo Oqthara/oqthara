@@ -53,6 +53,18 @@ public final class OqRunner {
             err.print(message);
             err.flush();
             return new Result(1, normalize(outBytes), normalize(errBytes));
+        } catch (StackOverflowError overflow) {
+            // `oq run` and a built jar both catch this and report it as a program failure
+            // (EmbeddedMain.renderFailure); `oq test` did not, so on a small thread stack a
+            // runaway recursion escaped as a raw stack trace and the runner reported success.
+            // The depth guard in Interpreter is supposed to fire first, but its ceiling is a
+            // count of Oqthara calls and the Java frames per call are what a smaller stack
+            // actually limits, so the two do not have to agree on Windows or a 512k stack.
+            out.flush();
+            err.print("error: the program recursed too deeply\n"
+                    + "  help: check that a recursive function has a stopping condition.");
+            err.flush();
+            return new Result(1, normalize(outBytes), normalize(errBytes));
         } finally {
             out.flush();
             err.flush();

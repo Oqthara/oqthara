@@ -8,8 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,6 +58,35 @@ class StepBudgetTest {
         assertTrue(result.stderr().contains("program ran for too long")
                         || result.stderr().contains("too deep"),
                 result.stderr());
+    }
+
+    /**
+     * The depth guard counts Oqthara calls, but the JVM runs out of Java stack first when the
+     * thread stack is small. Windows CI on JDK 25 hit that: the overflow escaped as a raw stack
+     * trace and the runner still reported success. Running the recursion on a deliberately small
+     * stack forces that path on every platform, so the catch cannot be dropped without this test
+     * failing.
+     */
+    @Test
+    void aStackOverflowIsReportedAsAFailureNotASuccess() throws Exception {
+        AtomicReference<OqRunner.Result> result = new AtomicReference<>();
+        // 256 KiB is far below the default main-thread stack, so the JVM overflows before the
+        // interpreter's own 800-call depth guard can fire.
+        Thread thread = new Thread(null, () -> result.set(OqRunner.run("""
+                fun down(n)
+                  return down(n + 1)
+                end
+                down(0)
+                """)), "oq-small-stack", 256 * 1024);
+        thread.start();
+        thread.join(Duration.ofSeconds(60).toMillis());
+        assertFalse(thread.isAlive(), "the recursion must finish rather than hang");
+        OqRunner.Result overflowed = result.get();
+        assertNotNull(overflowed, "the run must produce a result");
+        assertNotEquals(0, overflowed.code(), "runaway recursion must fail");
+        assertTrue(overflowed.stderr().contains("too deep"), overflowed.stderr());
+        assertFalse(overflowed.stderr().contains("\tat dev.oqthara"),
+                "a stack trace must never be the diagnostic: " + overflowed.stderr());
     }
 
     /** A writing loop hits the 16 MiB output ceiling, so it cannot run forever. */
