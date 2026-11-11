@@ -30,6 +30,9 @@ import java.util.Map;
 import java.util.Set;
 
 public final class Interpreter implements OqHost {
+    /** Marks a call the host makes on a value a standard-library method was handed. */
+    private static final String CALLBACK = "<callback>";
+
     private final PrintStream out;
     private final PrintStream err;
     private final BufferedReader in;
@@ -683,8 +686,11 @@ public final class Interpreter implements OqHost {
         if (callee instanceof Class<?> type) {
             return JavaBridge.construct(type, args, span, workingDirectory, this);
         }
-        throw new OqError("'" + name + "' is not a function", span,
-                Values.notCallableHelp(callee));
+        // A callback reaches here from a standard-library higher-order method, which knows the
+        // value it was handed but not the name the caller wrote, so quoting a placeholder as
+        // though it were an identifier would misrepresent the program's own text.
+        String subject = name.equals(CALLBACK) ? "this value" : "'" + name + "'";
+        throw new OqError(subject + " is not a function", span, Values.notCallableHelp(callee));
     }
 
     private Object evaluateMethod(Ast.MethodCall call, Env env) {
@@ -1131,7 +1137,7 @@ public final class Interpreter implements OqHost {
 
     @Override
     public Object call(Object callee, List<Object> args, Span span) {
-        return invoke(callee, args, span, "<callback>");
+        return invoke(callee, args, span, CALLBACK);
     }
 
     @Override
