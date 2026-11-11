@@ -233,6 +233,55 @@ class JavaInteropTest {
     }
 
     @Test
+    void aBigDecimalReturnedByJavaKeepsAllOfItsDigits() {
+        // A double has 53 bits of mantissa. This sum needs 120, and the digits below the
+        // decimal point are exactly what BigDecimal was chosen for, so a narrowing conversion
+        // would answer a different number without saying so (ADR-0045).
+        assertEquals("123456789012345678901234567890.123456790\njava BigDecimal\n",
+                ok("""
+                        use java.math.BigDecimal
+
+                        a = BigDecimal("123456789012345678901234567890.123456789")
+                        sum = a.add(BigDecimal("0.000000001"))
+                        print sum
+                        print type_of(sum)
+                        """));
+    }
+
+    @Test
+    void aBigDecimalReturnedByJavaStillOffersItsOwnMethods() {
+        assertEquals("0.30\n1\n", ok("""
+                use java.math.BigDecimal
+
+                sum = BigDecimal("0.1").add(BigDecimal("0.2"))
+                print sum.setScale(2).toPlainString()
+                print sum.scale()
+                """));
+    }
+
+    @Test
+    void aBigIntegerTooWideForANumberStaysExact() {
+        assertEquals("123456789012345678901234567891\njava BigInteger\n", ok("""
+                use java.math.BigInteger
+
+                n = BigInteger("123456789012345678901234567890")
+                print n.add(BigInteger("1"))
+                print type_of(n.add(BigInteger("1")))
+                """));
+    }
+
+    @Test
+    void aBigIntegerThatFitsANumberIsStillANumber() {
+        assertEquals("43\nnumber\n", ok("""
+                use java.math.BigInteger
+
+                n = BigInteger("42").add(BigInteger("1"))
+                print n
+                print type_of(n)
+                """));
+    }
+
+    @Test
     void aFunctionStoredAsAValueIsNotTurnedIntoACallback() {
         // add(Object) takes any reference, so the function already fits and no proxy is made.
         assertEquals("1\n", ok("""
