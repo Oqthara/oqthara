@@ -48,19 +48,19 @@ final class Compression {
 
     static void install(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("zlib_compress", 1, (host, args, span) ->
-                HexFormat.of().formatHex(deflate(hex(args.get(0), "zlib_compress", span), span))));
+                HexFormat.of().formatHex(deflate(hex(args.get(0), "zlib_compress", span), span))).named("data"));
         interpreter.defineBuiltin(NativeFunction.of("zlib_decompress", 1, (host, args, span) ->
                 HexFormat.of().formatHex(inflate(hex(args.get(0), "zlib_decompress", span),
-                        "zlib_decompress", span))));
+                        "zlib_decompress", span))).named("hex"));
         interpreter.defineBuiltin(NativeFunction.of("gzip_compress", 1, (host, args, span) ->
-                HexFormat.of().formatHex(gzip(utf8(args.get(0), "gzip_compress", span), span))));
+                HexFormat.of().formatHex(gzip(utf8(args.get(0), "gzip_compress", span), span))).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("gzip_decompress", 1, (host, args, span) ->
                 HexFormat.of().formatHex(gunzip(hex(args.get(0), "gzip_decompress", span),
-                        "gzip_decompress", span))));
+                        "gzip_decompress", span))).named("hex"));
         interpreter.defineBuiltin(NativeFunction.of("zip_compress", 1, (host, args, span) ->
-                HexFormat.of().formatHex(zip(args.get(0), span))));
+                HexFormat.of().formatHex(zip(args.get(0), span))).named("entries"));
         interpreter.defineBuiltin(NativeFunction.of("zip_decompress", 1, (host, args, span) ->
-                entries(unzip(hex(args.get(0), "zip_decompress", span), span))));
+                entries(unzip(hex(args.get(0), "zip_decompress", span), span))).named("hex"));
     }
 
     /**

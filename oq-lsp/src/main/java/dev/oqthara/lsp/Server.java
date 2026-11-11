@@ -124,6 +124,7 @@ public final class Server {
             }
             case "textDocument/formatting" -> sendResult(id, formatting(params));
             case "textDocument/hover" -> sendResult(id, hover(params));
+            case "textDocument/signatureHelp" -> sendResult(id, signatureHelp(params));
             default -> sendError(id, -32601, "method not found: " + method);
         }
     }
@@ -133,6 +134,9 @@ public final class Server {
         capabilities.put("textDocumentSync", 1L);
         capabilities.put("documentFormattingProvider", true);
         capabilities.put("hoverProvider", true);
+        capabilities.put("signatureHelpProvider", Map.of(
+                "triggerCharacters", List.of("(", ","),
+                "retriggerCharacters", List.of(",")));
         Map<String, Object> serverInfo = new LinkedHashMap<>();
         serverInfo.put("name", "oq-lsp");
         serverInfo.put("version", "0.1.0-alpha.3");
@@ -185,6 +189,47 @@ public final class Server {
                 (int) (long) character);
         if (wordRange != null) hover.put("range", wordRange);
         return hover;
+    }
+
+    /**
+     * Returns signature help, or null when the position is not inside a described call. The
+     * protocol accepts null as "nothing to show"; an empty signature list would draw an empty
+     * popup in every editor.
+     */
+    private Object signatureHelp(Map<String, Object> params) {
+        String uri = uri(params);
+        if (uri == null) return null;
+        String source = documents.get(uri);
+        if (source == null) return null;
+        Map<String, Object> position = asMap(params.get("position"));
+        if (position == null) return null;
+        Long line = asLong(position.get("line"));
+        Long character = asLong(position.get("character"));
+        if (line == null || character == null) return null;
+        SignatureHelp.Reply reply = SignatureHelp.signatureHelp(uri, source,
+                (int) (long) line, (int) (long) character);
+        if (reply == null) return null;
+
+        List<Map<String, Object>> signatures = new ArrayList<>();
+        for (SignatureHelp.Signature signature : reply.signatures()) {
+            Map<String, Object> rendered = new LinkedHashMap<>();
+            rendered.put("label", signature.label());
+            List<Map<String, Object>> parameters = new ArrayList<>();
+            int offset = signature.label().indexOf('(') + 1;
+            for (String parameter : signature.parameters()) {
+                Map<String, Object> label = new LinkedHashMap<>();
+                label.put("label", List.of((long) offset, (long) (offset + parameter.length())));
+                parameters.add(label);
+                offset += parameter.length() + 2;
+            }
+            if (!parameters.isEmpty()) rendered.put("parameters", parameters);
+            signatures.add(rendered);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("signatures", signatures);
+        result.put("activeSignature", 0L);
+        result.put("activeParameter", (long) reply.activeParameter());
+        return result;
     }
 
     private void publishDiagnostics(String uri, String text) throws IOException {

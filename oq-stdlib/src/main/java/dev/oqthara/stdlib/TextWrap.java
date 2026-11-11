@@ -28,24 +28,24 @@ final class TextWrap {
             String text = text(args.get(0), "wrap_text", span);
             int width = width(args.get(1), "wrap_text", span);
             return new ArrayList<Object>(wrap(text, width));
-        }));
+        }).named("text", "width"));
         interpreter.defineBuiltin(NativeFunction.of("fill_text", 2, (host, args, span) -> {
             String text = text(args.get(0), "fill_text", span);
             int width = width(args.get(1), "fill_text", span);
             return String.join("\n", wrap(text, width));
-        }));
+        }).named("text", "width"));
         interpreter.defineBuiltin(NativeFunction.of("dedent_text", 1, (host, args, span) ->
-                dedent(text(args.get(0), "dedent_text", span))));
+                dedent(text(args.get(0), "dedent_text", span))).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("indent_text", 2, (host, args, span) -> {
             String text = text(args.get(0), "indent_text", span);
             String prefix = text(args.get(1), "indent_text", span);
             return indent(text, prefix);
-        }));
+        }).named("text", "prefix"));
         interpreter.defineBuiltin(NativeFunction.of("shorten_text", 2, (host, args, span) -> {
             String text = text(args.get(0), "shorten_text", span);
             int width = width(args.get(1), "shorten_text", span);
             return shorten(text, width, span);
-        }));
+        }).named("text", "width"));
         interpreter.defineBuiltin(NativeFunction.variadic("unified_diff", 2, 4,
                 (host, args, span) -> {
                     List<String> before = lines(args.get(0), "unified_diff", span);
@@ -53,7 +53,7 @@ final class TextWrap {
                     String beforeLabel = args.size() > 2 ? text(args.get(2), "unified_diff", span) : "";
                     String afterLabel = args.size() > 3 ? text(args.get(3), "unified_diff", span) : "";
                     return new ArrayList<Object>(diff(before, after, beforeLabel, afterLabel));
-                }));
+                }).named("before", "after", "before_label", "after_label"));
     }
 
     /** The placeholder appended to a shortened string, chosen to be unmistakable in output. */

@@ -1796,10 +1796,11 @@ parses, so the extension cannot drift from the language.
 
 `oq-lsp` is a minimal stdio Language Server (JSON-RPC 2.0 with `Content-Length` framing).
 It publishes parse diagnostics on open and change, returns whole-document formatting
-edits in the same canonical style as `oq fmt`, and answers hover with a declaration's
-signature and its documentation comment. It supports `initialize`,
-`textDocument/didOpen`, `textDocument/didChange`, `textDocument/didClose`,
-`textDocument/formatting`, `textDocument/hover`, `shutdown` and `exit`; unknown requests
+edits in the same canonical style as `oq fmt`, answers hover with a declaration's
+signature and its documentation comment, and answers signature help with the parameters of
+the call being typed. It supports `initialize`, `textDocument/didOpen`,
+`textDocument/didChange`, `textDocument/didClose`, `textDocument/formatting`,
+`textDocument/hover`, `textDocument/signatureHelp`, `shutdown` and `exit`; unknown requests
 get a JSON-RPC "method not found" error and unknown notifications are ignored.
 
 A hover returns markdown holding the declaration's signature in an `oq` code block,
@@ -1818,13 +1819,37 @@ stopping at its depth limit of fifty. Following needs a document the editor save
 because the search order starts at the importing file's directory. A name nothing declares
 still returns `null`, including when a module has moved or no longer parses.
 
+Signature help resolves the call the cursor is inside, in the same lexical order as hover:
+declarations in the file, then `use` imports, then builtins. Each candidate is rendered as a
+label holding its parameter names, together with the offset range of each name inside that
+label, and the reply names the active parameter by index — the two together are what let an
+editor bold the argument being written rather than the whole signature. The active parameter
+counts the top-level commas already typed and is clamped to the widest candidate, so it never
+runs off the end when a call is half-written. A builtin that publishes no names renders its
+arity alone, as `now()` or `write_text(...)`, rather than inventing labels. Opening
+parentheses in text, in comments and inside an interpolation are not calls and get no answer.
+
+Two forms deliberately get no answer. A method call (`x.slice(`) is not answered because the
+receiver's type is not knowable from the text before the dot and the same method name means
+different things to different receivers, so a signature there would be a guess. A declaration
+header (`fun add(`) is not answered because it describes parameters being defined rather than
+arguments being passed.
+
+Unlike hover, signature help does not require the document to parse. Typing an opening
+parenthesis leaves the file unbalanced, so when parsing fails the server falls back to
+reading `fun` headers textually, skipping headers whose parameter list has not closed. That
+fallback supplies the signatures a call is matched against; the call itself is read from the
+text either way, so `print add(` is answered from a half-written file. Every answer is still
+taken from the source rather than inferred from an argument count.
+
 ```bash
 ./gradlew :oq-lsp:standaloneJar
 java -jar oq-lsp/build/libs/oq-lsp.jar   # speak LSP on stdin/stdout
 ```
 
 Editors only need a command that starts that process; capabilities are `textDocumentSync`
-(full), `documentFormattingProvider` and `hoverProvider`.
+(full), `documentFormattingProvider`, `hoverProvider`, and `signatureHelpProvider` with
+`(` and `,` as both trigger and retrigger characters.
 
 ## Installation
 
