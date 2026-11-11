@@ -55,14 +55,19 @@ jobs:
           ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
           python3 scripts/verify-conformance.py
       - name: Upload test reports
-        if: always()
+        # Every matrix leg produces the same report tree, so the four uploads differ only in
+        # which JVM generated them. Keep this uploading after ordinary test failures (that is
+        # when the reports matter most) but not after a cancelled run, where there is nothing
+        # worth keeping. The per-module JaCoCo trees are omitted because jacocoAggregate
+        # contains every one of their 449 files; uploading both duplicates 5.1 MB per leg.
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: reports-${{ matrix.os }}-${{ matrix.java }}
           path: |
             */build/reports/tests/test
-            */build/reports/jacoco/test/html
             build/reports/jacoco/jacocoAggregate
+          compression-level: 1
           retention-days: 7
 
   classfile:

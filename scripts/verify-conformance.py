@@ -11,8 +11,16 @@ corpus clean and still exercises relative `read()` exactly as the suite does.
 
 A program with a sibling .err must fail with the same message on both backends. Every
 other program must print byte-identical stdout through both backends.
+
+Each program is exercised in its own directory so the cases cannot observe each other, and
+independent cases run concurrently. Concurrency changes only scheduling: every program is
+still built and run, and the counts, divergence list and exit code are aggregated from
+results keyed by program name, so the verdict does not depend on completion order.
 """
+import argparse
+import concurrent.futures
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -67,94 +75,168 @@ def evaluate(observed, divergences):
     return problems
 
 
-def main():
+def check_program(program, cases, jar, case_root):
+    """Exercise one program through both backends inside its own scratch tree.
+
+    Returns `(compiled, fallback, divergences)` for that program. The caller aggregates by
+    name, so the result cannot depend on the order cases happen to finish in.
+    """
+    name = program.name
+    stem = program.stem
+    work = case_root / "work"
+    build_dir = case_root / "build"
+    work.mkdir(parents=True)
+    build_dir.mkdir(parents=True)
+
+    for fixture in FIXTURES:
+        if (cases / fixture).exists():
+            shutil.copy2(cases / fixture, work / fixture)
+    shutil.copy2(program, work / name)
+
+    # `oq build` writes its jar beside the source, so the build directory holds this one
+    # program: a sibling from another case can never change what gets compiled.
+    for fixture in FIXTURES:
+        if (cases / fixture).exists():
+            shutil.copy2(cases / fixture, build_dir / fixture)
+    shutil.copy2(program, build_dir / name)
+
+    local = work / name
+    expected_err = cases / (stem + ".err")
+    divergences = []
+    compiled = 0
+    fallback = 0
+
+    interpreted = run(["java", "-jar", str(jar), "run", str(local)], work)
+    interpreted = (interpreted.returncode,
+                   normalize(interpreted.stdout), normalize(interpreted.stderr))
+
+    built = run(["java", "-jar", str(jar), "build", str(build_dir / name)], build_dir)
+    build_out = normalize(built.stdout + built.stderr)
+    if built.returncode != 0:
+        # A program that does not parse cannot be built, and that is correct. It is only
+        # acceptable when the corpus says this case must fail and `oq run` agrees, so an
+        # unexpected build failure can never pass as a divergence.
+        if expected_err.exists() and interpreted[0] != 0:
+            return compiled, fallback, divergences
+        divergences.append(f"{name}: oq build failed: {build_out.strip()[:300]}")
+        return compiled, fallback, divergences
+
+    if "codepath: compiled bytecode" in build_out:
+        # The recorded 182/197 baseline counts compilable programs that must run, exactly
+        # as BytecodeCompilerTest does by skipping .err cases.
+        if not expected_err.exists():
+            compiled = 1
+    else:
+        fallback = 1
+
+    jar_path = build_dir / (stem + ".jar")
+    if not jar_path.exists():
+        divergences.append(f"{name}: oq build produced no jar: {build_out.strip()[:300]}")
+        return compiled, fallback, divergences
+
+    jarred = run(["java", "-jar", str(jar_path)], build_dir)
+    jarred = (jarred.returncode,
+              normalize(jarred.stdout), normalize(jarred.stderr))
+
+    if expected_err.exists():
+        fragment = expected_err.read_text(encoding="utf-8").strip()
+        for label, result in (("oq run", interpreted), ("java -jar", jarred)):
+            if result[0] == 0:
+                divergences.append(f"{name}: {label} exited 0 but an error was expected")
+            elif fragment not in result[2]:
+                divergences.append(
+                    f"{name}: {label} error message mismatch\n"
+                    f"  expected to contain: {fragment}\n"
+                    f"  actual: {result[2].strip()[:400]}")
+        # A compiled jar embeds no source, so its caret block is intentionally absent; only
+        # the message and exit code are compared for error cases.
+        if interpreted[0] != jarred[0]:
+            divergences.append(
+                f"{name}: exit codes differ (run={interpreted[0]}, jar={jarred[0]})")
+        return compiled, fallback, divergences
+
+    if interpreted[1] != jarred[1]:
+        divergences.append(
+            f"{name}: stdout differs\n"
+            f"  oq run:    {interpreted[1]!r}\n"
+            f"  java -jar: {jarred[1]!r}\n"
+            f"  build: {build_out.strip()[:200]}")
+    if interpreted[0] != jarred[0]:
+        divergences.append(
+            f"{name}: exit codes differ (run={interpreted[0]}, jar={jarred[0]})")
+    return compiled, fallback, divergences
+
+
+def default_jobs():
+    """Return a conservative default for concurrent cases.
+
+    Each case runs up to three JVMs in sequence, so the useful ceiling is well below the
+    core count; four captures most of the gain without turning the suite into a memory
+    spike on a shared runner.
+    """
+    return max(1, min(4, os.cpu_count() or 1))
+
+
+def collect(programs, cases, jar, scratch, jobs):
+    """Run every program and return its result indexed by program name.
+
+    A worker that raises is recorded as a divergence instead of aborting the run, so one
+    broken case reports itself rather than taking the other 228 with it.
+    """
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = {
+            pool.submit(check_program, program, cases, jar,
+                        scratch / f"case-{program.stem}"): program
+            for program in programs
+        }
+        for future in concurrent.futures.as_completed(futures):
+            program = futures[future]
+            try:
+                results[program.name] = future.result()
+            except Exception as exc:  # noqa: BLE001 - reported as a divergence below
+                results[program.name] = (0, 0, [f"{program.name}: verifier raised {exc!r}"])
+    return results
+
+
+def aggregate(programs, results):
+    """Fold per-program results into totals, in corpus order.
+
+    Completion order is deliberately ignored: iterating `programs` means the counts and the
+    divergence list are identical at every concurrency level, so a run is reproducible and a
+    diff between two runs is a real difference rather than a scheduling artefact.
+    """
+    compiled = 0
+    fallback = 0
+    divergences = []
+    for program in programs:
+        case_compiled, case_fallback, case_divergences = results.get(
+            program.name, (0, 0, [f"{program.name}: no result recorded"]))
+        compiled += case_compiled
+        fallback += case_fallback
+        divergences.extend(case_divergences)
+    return compiled, fallback, divergences
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Compare `oq run` against `java -jar`.")
+    parser.add_argument(
+        "--jobs", type=int, default=default_jobs(),
+        help="cases to run concurrently (default: %(default)s)")
+    args = parser.parse_args(argv)
+    if args.jobs < 1:
+        parser.error("--jobs must be at least 1")
+
     if not JAR.exists():
         print(f"error: {JAR} is missing; run ./gradlew :oq-cli:standaloneJar")
         return 2
 
     programs, executable = measure_corpus(CASES)
-    divergences = []
-    compiled = 0
-    fallback = 0
 
     with tempfile.TemporaryDirectory() as scratch:
-        work = pathlib.Path(scratch)
-        for fixture in FIXTURES:
-            if (CASES / fixture).exists():
-                shutil.copy2(CASES / fixture, work / fixture)
+        results = collect(programs, CASES, JAR, pathlib.Path(scratch), args.jobs)
 
-        for program in programs:
-            name = program.name
-            local = work / name
-            shutil.copy2(program, local)
-            build_dir = work / f"build-{program.stem}"
-            build_dir.mkdir()
-            # The fixture files live beside the program in the scratch root.
-            for fixture in FIXTURES:
-                if (CASES / fixture).exists():
-                    shutil.copy2(CASES / fixture, build_dir / fixture)
-            shutil.copy2(program, build_dir / name)
-
-            expected_err = CASES / (program.stem + ".err")
-
-            interpreted = run(["java", "-jar", str(JAR), "run", str(local)], work)
-            interpreted = (interpreted.returncode,
-                           normalize(interpreted.stdout), normalize(interpreted.stderr))
-
-            built = run(["java", "-jar", str(JAR), "build", str(build_dir / name)], build_dir)
-            build_out = normalize(built.stdout + built.stderr)
-            if built.returncode != 0:
-                # A program that does not parse cannot be built, and that is correct. It is
-                # only acceptable when the corpus says this case must fail and `oq run`
-                # agrees, so an unexpected build failure can never pass as a divergence.
-                if expected_err.exists() and interpreted[0] != 0:
-                    continue
-                divergences.append(f"{name}: oq build failed: {build_out.strip()[:300]}")
-                continue
-
-            if "codepath: compiled bytecode" in build_out:
-                # The recorded 182/197 baseline counts compilable programs that must run,
-                # exactly as BytecodeCompilerTest does by skipping .err cases.
-                if not expected_err.exists():
-                    compiled += 1
-            else:
-                fallback += 1
-
-            jar_path = build_dir / (program.stem + ".jar")
-            if not jar_path.exists():
-                divergences.append(f"{name}: oq build produced no jar: {build_out.strip()[:300]}")
-                continue
-
-            jarred = run(["java", "-jar", str(jar_path)], build_dir)
-            jarred = (jarred.returncode,
-                      normalize(jarred.stdout), normalize(jarred.stderr))
-
-            if expected_err.exists():
-                fragment = expected_err.read_text(encoding="utf-8").strip()
-                for label, result in (("oq run", interpreted), ("java -jar", jarred)):
-                    if result[0] == 0:
-                        divergences.append(f"{name}: {label} exited 0 but an error was expected")
-                    elif fragment not in result[2]:
-                        divergences.append(
-                            f"{name}: {label} error message mismatch\n"
-                            f"  expected to contain: {fragment}\n"
-                            f"  actual: {result[2].strip()[:400]}")
-                # A compiled jar embeds no source, so its caret block is intentionally
-                # absent; only the message and exit code are compared for error cases.
-                if interpreted[0] != jarred[0]:
-                    divergences.append(
-                        f"{name}: exit codes differ (run={interpreted[0]}, jar={jarred[0]})")
-                continue
-
-            if interpreted[1] != jarred[1]:
-                divergences.append(
-                    f"{name}: stdout differs\n"
-                    f"  oq run:    {interpreted[1]!r}\n"
-                    f"  java -jar: {jarred[1]!r}\n"
-                    f"  build: {build_out.strip()[:200]}")
-            if interpreted[0] != jarred[0]:
-                divergences.append(
-                    f"{name}: exit codes differ (run={interpreted[0]}, jar={jarred[0]})")
+    compiled, fallback, divergences = aggregate(programs, results)
 
     summary = {
         "programs": len(programs),
@@ -162,6 +244,7 @@ def main():
         "compiled": compiled,
         "fallback": fallback,
         "divergenceCount": len(divergences),
+        "jobs": args.jobs,
         "baseline": BASELINE,
         "divergences": divergences[:20],
     }
