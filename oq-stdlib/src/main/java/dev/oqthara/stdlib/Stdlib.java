@@ -106,6 +106,7 @@ public final class Stdlib {
         installMath(interpreter);
         installFiles(interpreter);
         installFileOps(interpreter);
+        Patterns.install(interpreter);
         installJson(interpreter);
         installEncoding(interpreter);
         installCsv(interpreter);
@@ -1743,7 +1744,7 @@ public final class Stdlib {
      * transfers cannot be free. {@code host} is an {@link Interpreter} for every path that runs
      * user code; a compiled program and a bare method resolver have no counter to charge.
      */
-    private static void chargeTransfer(OqHost host, long bytes) {
+    static void chargeTransfer(OqHost host, long bytes) {
         if (bytes <= 0) return;
         // A per-byte step multiplier made the documented per-call ceiling unreachable: at 256
         // steps per byte the 50,000,000 budget ran out at 195,312 bytes, so `read` refused a

@@ -46,7 +46,8 @@ class BytecodeCompilerTest {
         assertNull(reason, "expected the program to be compilable, refused because: " + reason);
         byte[] compiled = BytecodeCompiler.compile(program, "oq.generated.Program");
         Path jar = dir.resolve("prog.jar");
-        JarBuilder.build(jar, "oq.generated.Program", source, "prog.oq", compiled);
+        JarBuilder.build(jar, "oq.generated.Program", source, "prog.oq", compiled,
+                JarBuilder.needsDatabaseDriver(source));
         return runJar(jar, dir);
     }
 
@@ -61,7 +62,8 @@ class BytecodeCompilerTest {
         assertNull(reason, "expected the program to be compilable, refused because: " + reason);
         byte[] compiled = BytecodeCompiler.compile(program, "oq.generated.Program");
         Path jar = dir.resolve("err.jar");
-        JarBuilder.build(jar, "oq.generated.Program", source, "prog.oq", compiled);
+        JarBuilder.build(jar, "oq.generated.Program", source, "prog.oq", compiled,
+                JarBuilder.needsDatabaseDriver(source));
         return runJarError(jar, dir);
     }
 

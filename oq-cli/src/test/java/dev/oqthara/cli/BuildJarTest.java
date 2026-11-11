@@ -122,6 +122,29 @@ class BuildJarTest {
     }
 
     @Test
+    void aModuleReachedByUseKeepsTheDriver(@TempDir Path dir) throws Exception {
+        // A module is reached with a `use "..."` line, and the predicate's USE_KEYWORD matches
+        // any `use`, so a program whose database access lives in a module is already classified
+        // as needing the driver. That is worth pinning: it is the reason `oq build` does not
+        // have to flatten the entry before deciding, and it would stop being true if module
+        // loading ever moved to a different keyword.
+        Path helper = dir.resolve("dbhelper.oq");
+        Files.writeString(helper, "use java.sql.DriverManager\nfun stored()\n  return 1\nend\n");
+        Path entry = dir.resolve("app.oq");
+        Files.writeString(entry, "use \"oq:dbhelper\"\nprint stored()");
+
+        String raw = Files.readString(entry);
+        assertFalse(raw.contains("java.sql"), "the entry must not name the driver itself");
+        assertTrue(JarBuilder.needsDatabaseDriver(raw),
+                "the `use` that loads the module must already count as reaching the driver");
+
+        Path jar = dir.resolve("app.jar");
+        JarBuilder.build(jar, "oq.generated.Program", Modules.flatten(entry, raw), "app.oq", null,
+                JarBuilder.needsDatabaseDriver(raw));
+        assertTrue(carriesDriver(jar), "the module's Java use must still bring the driver along");
+    }
+
+    @Test
     void nonBmpTextSurvivesTheConstantPool(@TempDir Path dir) throws Exception {
         // Reviewer finding A: the constant pool needs modified UTF-8, not plain UTF-8.
         String source = "print \"party: \uD83C\uDF89\"\nprint \"dash: \u2014\"";
@@ -160,6 +183,62 @@ class BuildJarTest {
         assertTrue(Files.size(jar) > 10_000_000, "the jar should carry the driver");
         // The quadratic version needed ~19 s here; the single-pass one needs ~1.4 s.
         assertTrue(millis < 8_000, "building a jar took " + millis + " ms");
+    }
+
+    @Test
+    void onlyProgramsThatCanReachTheDriverCarryIt() throws Exception {
+        // A program that names no database builtin and has no `use` statement cannot reach
+        // java.sql.DriverManager: `use` is the interpreter's only route to an arbitrary JVM
+        // class. Such a jar must therefore leave out 13.5 MB of native libraries it cannot call.
+        Path work = root().resolve("build/jar-cost");
+        Files.createDirectories(work);
+
+        Path plain = work.resolve("no-driver.jar");
+        long start = System.nanoTime();
+        JarBuilder.build(plain, "oq.generated.Program", "print 2 + 3", "plain.oq", null, false);
+        long plainMillis = (System.nanoTime() - start) / 1_000_000;
+        assertFalse(carriesDriver(plain), "a program that cannot reach the driver must not carry it");
+        assertTrue(Files.size(plain) < 2_000_000,
+                "a driver-free jar should be small, was " + Files.size(plain) + " B");
+        assertEquals("5\n", runJar(plain, work).stdout());
+
+        Path withDriver = work.resolve("with-driver.jar");
+        long driverStart = System.nanoTime();
+        JarBuilder.build(withDriver, "oq.generated.Program", "print 2 + 3", "plain.oq", null, true);
+        long driverMillis = (System.nanoTime() - driverStart) / 1_000_000;
+        assertTrue(carriesDriver(withDriver), "an explicit request must bundle the driver");
+
+        // The whole point: not copying the driver has to be the cheap path by a wide margin.
+        // Compare the two builds in this same run rather than against a wall-clock constant:
+        // an absolute bound measures the machine, and a loaded CI worker would fail the test
+        // for being slow rather than for being quadratic.
+        assertTrue(driverMillis > plainMillis * 2, "copying the driver took only " + driverMillis
+                + " ms against " + plainMillis + " ms without it; the comparison cannot tell"
+                + " the two paths apart, so this test proves nothing");
+        assertTrue(plainMillis < 3_000, "a driver-free jar took " + plainMillis + " ms");
+    }
+
+    private static boolean carriesDriver(Path jar) throws Exception {
+        try (JarFile file = new JarFile(jar.toFile())) {
+            return file.stream().anyMatch(entry -> entry.getName().startsWith("org/sqlite/"));
+        }
+    }
+
+    @Test
+    void theDatabasePredicateIsConservativeAboutUseStatements() {
+        // Soundness argument, in the form of the cases that would break a naive
+        // "does it call db_query" test.
+        assertTrue(JarBuilder.needsDatabaseDriver("rows = db_query(\"select 1\")"));
+        assertTrue(JarBuilder.needsDatabaseDriver("db_execute(\"create table t (a)\")\n"));
+        assertTrue(JarBuilder.needsDatabaseDriver("db_transaction(f)\n"));
+        // `use` loads a class by name, so it reaches the driver without naming a builtin.
+        assertTrue(JarBuilder.needsDatabaseDriver("use java.sql.DriverManager\nprint 1\n"));
+        assertTrue(JarBuilder.needsDatabaseDriver("  use java.time.LocalDate\nprint 1\n"));
+        // A statement can share a line, so the keyword is not necessarily at line start.
+        assertTrue(JarBuilder.needsDatabaseDriver("print 1; use java.sql.DriverManager\n"));
+        // And the programs that make up the bulk of the corpus get the small jar.
+        assertFalse(JarBuilder.needsDatabaseDriver("print 2 + 3\n"));
+        assertFalse(JarBuilder.needsDatabaseDriver("let unusable = 1\nprint unusable\n"));
     }
 
     @Test
@@ -222,7 +301,8 @@ class BuildJarTest {
         for (Path program : programs) {
             String source = Files.readString(program);
             Path jar = work.resolve(program.getFileName().toString().replace(".oq", ".jar"));
-            JarBuilder.build(jar, "oq.generated.Program", source, program.getFileName().toString());
+            JarBuilder.build(jar, "oq.generated.Program", source, program.getFileName().toString(),
+                    null, JarBuilder.needsDatabaseDriver(source));
             ProcessResult viaJar = runJar(jar, root());
             OqRunner.Result viaInterpreter = OqRunner.run(program.getFileName().toString(),
                     source, List.of(), "", root());

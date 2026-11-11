@@ -53,6 +53,26 @@ SLF4J and the jar then failed with `ClassNotFoundException: org.slf4j.LoggerFact
 that a jar built from `examples/database.oq` exits 0 and prints the same seven lines the
 interpreter does.
 
+**Bundling is a caller's decision, not an inference.** Copying the driver cost 1.4 s of the
+~1.7 s a built jar takes, because the 13.5 MB is already-compressed native libraries and
+deflating them again buys almost nothing. Paying that for a program that cannot reach the
+driver is waste, and the waste was concentrated: one test
+(`BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`) builds a jar per
+conformance program, so 203 jars made it 283 s of a 9m 27s build. `JarBuilder.build` therefore
+now takes a `withDatabase` decision. It is supplied rather than inferred, because the obvious
+inference is unsound: "does the program call a `db_*` builtin" misses
+`use java.sql.DriverManager`, which the interpreter turns into `Class.forName`. What makes the
+predicate in `JarBuilder.needsDatabaseDriver` sound is that `use` is the interpreter's *only*
+route to an arbitrary JVM class — `Class.forName` appears in exactly one place, `loadClass`,
+reached only from a `UseStmt` — so a program with neither a database builtin nor the word `use`
+cannot obtain a connection. The word test is deliberately loose: `use` after a semicolon is one
+line, and a false positive costs the 1.4 s while a false negative ships a jar that compiles and
+then fails at run time. `oq build` does not use the predicate at all — it builds one jar per
+invocation and keeps the unconditional default, so the CLI's behaviour is unchanged at 13,863,341
+B and 1.74 s on a trivial program. The predicate is used by the tests that build hundreds of
+jars, which is where the measurement changed: the conformance test fell from 283 s to 56 s and
+`./gradlew build` from 9m 27s to 2m 54s with all 52 tasks executed.
+
 Carrying the driver also exposed a quadratic cost in `JarBuilder` itself. Reading one entry out
 of a zip means inflating every entry before it, and the builder asked for entries one at a time,
 so the 143 driver and SLF4J classes cost 143 passes over the driver archive: ~19 s per built jar
