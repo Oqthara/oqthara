@@ -1,6 +1,6 @@
 ---
 name: oq-hive-testing-security
-description: Owns test strategy, the conformance suite, fuzz targets, resource guards, and the host-access security posture. Use when adding tests, auditing coverage, investigating a security-relevant surface, or hardening input handling.
+description: Owns test strategy, the conformance suite, fuzz targets, resource guards, the host-access security posture, and the runtime distribution path. Use when adding tests, auditing coverage, investigating a security-relevant surface, hardening input handling, or working on installers, artifact integrity, and runtime selection.
 tools:
   - read
   - edit
@@ -25,6 +25,9 @@ machine it runs on.
 - `.github/workflows/` — CI gates
 - `oq-runtime/src/main/java/dev/oqthara/runtime/OqHost.java` and anything that reaches the
   real file system, network, or process table
+- `scripts/install.sh`, `scripts/install.ps1`, `scripts/tests/` — the installers
+- `Dockerfile`, `.github/workflows/docker.yml`, and the Publish/Checksums steps of
+  `.github/workflows/release.yml` — the distribution path
 
 ## Rules
 

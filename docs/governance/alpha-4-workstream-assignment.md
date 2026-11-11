@@ -24,7 +24,7 @@ This closes the `§4.1 workstream assignment` row of
 | 6 | JavaBridge | `oq-hive-development` | `oq-hive-testing-security`, `oq-hive-architecture-governance` | `oq-core/src/main/java/dev/oqthara/core/JavaBridge.java`; `oq-core/src/test/java/dev/oqthara/core/JavaBridgeVarargsTest.java`, `JavaBridgeFieldTest.java`; `docs/adr/0032-static-fields-and-varargs.md`; `docs/spec/language.md` "Interoperability with Java" | Covered |
 | 7 | Core Language Features | `oq-hive-development` | `oq-hive-language-syntax` | `docs/adr/0027-classes-and-contracts.md`, `0028-data-evolution.md`, `0029-closures-and-modules.md`, `0030-docstrings.md`; `oq-cli/src/test/java/dev/oqthara/cli/ClassTest.java`, `DataTest.java`; `conformance/228-classes-and-contracts.oq`, `conformance/229-immutable-data.oq` | Covered |
 | 8 | Standard Library | `oq-hive-development` | `oq-hive-testing-security`, `oq-hive-architecture-governance` | `oq-stdlib/src/main/java/dev/oqthara/stdlib/{Stdlib,Builtins,DatabaseModule,Json,MethodResolverImpl}.java`; `docs/stdlib/reference.md`; `oq-cli/src/main/java/dev/oqthara/cli/DocGenerator.java`; `docs/adr/0033-encoding-and-hashing.md` through `0040-database-support.md`; `examples/urls.oq`, `hashing.oq`, `concurrency.oq`, `database.oq` | Covered |
-| 9 | Runtime Manager & Distribution | **Unowned** | — | Artefacts exist with no owning role: `Dockerfile`, `.github/workflows/docker.yml`, `.github/workflows/release.yml`, `scripts/install.sh`, `scripts/install.ps1`, `scripts/tests/`, `packageApp` in `oq-cli/build.gradle.kts` | **Unowned** |
+| 9 | Runtime Manager & Distribution | `oq-hive-testing-security` | `oq-hive-development` | `Dockerfile`, `.github/workflows/docker.yml`, `.github/workflows/release.yml`, `scripts/install.sh`, `scripts/install.ps1`, `scripts/tests/`, `packageApp` in `oq-cli/build.gradle.kts`; [ADR-0048](../adr/0048-runtime-manager.md) | Covered (ownership resolved 2026-11-11) |
 | 10 | Security Engineering | `oq-hive-testing-security` | `oq-hive-architecture-governance` | `SECURITY.md`; `docs/spec/fuzzing.md`; `oq-core/src/fuzz/java/dev/oqthara/core/`, `oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/`; `oq-runtime/src/main/java/dev/oqthara/runtime/OqHost.java`, `OutputBudget.java`, `WaitedBudget.java`; `.github/workflows/codeql.yml`; `docs/governance/alpha-4-threat-model.md` | Covered |
 | 11 | QA & Conformance | `oq-hive-testing-security` | `oq-hive-review-escalation` | `conformance/`; `scripts/verify-conformance.py`; `scripts/gen_conformance.py`; `oq-cli/src/test/java/dev/oqthara/cli/ConformanceTest.java`, `ExamplesRunTest.java`; `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`; `.circleci/config.yml` | Covered |
 | 12 | Developer Experience & Website | `oq-hive-development` (CLI/LSP only) | — | `oq-cli/src/main/java/dev/oqthara/cli/{Main,OqRunner,Formatter,Repl,DocGenerator,Scaffold,Modules}.java`; `oq-lsp/src/main/java/dev/oqthara/lsp/{Main,Server,Hover,Formatter}.java`; `editors/vscode/`; `docs/reference/cli.md`; **no owner** for `scripts/dispatch-site-content.mjs`, `.github/workflows/site-content-dispatch.yml`, `docs/adr/0008-react-website.md`, `0011-standalone-website-repository.md` | **Partly unowned** |
@@ -38,7 +38,7 @@ a governance requirement, not one of the twelve workstreams.
 The six roles were written for the code, not for the shipping. Two workstreams fall outside every
 one of them, and one is split between two roles without either owning it.
 
-### Workstream 9 — Runtime Manager & Distribution is unowned
+### Workstream 9 — Runtime Manager & Distribution (ownership resolved 2026-11-11)
 
 No agent file mentions JDK runtime selection, platform installers, update, rollback, or artifact
 integrity. `oq-hive-development` names `oq-cli` and the Gradle build, and its scope therefore
@@ -54,11 +54,21 @@ bundled JRE — both installers require a pre-existing `java`), a signed artifac
 SHA-256 published next to the jar in the same release, never a signature), an update or rollback
 path (re-running the installer is the only upgrade), and version pinning beyond `OQ_VERSION`.
 
-**Proposal.** Give workstream 9 to `oq-hive-testing-security`, with `oq-hive-development`
-supporting. Supply chain is already the security role's remit — it owns `.github/workflows/` and
-the host-access posture — and an installer is a supply-chain artefact before it is a packaging
+**Decision (2026-11-11).** Workstream 9 is assigned to `oq-hive-testing-security`, with
+`oq-hive-development` supporting, exactly as proposed. The ownership decision was taken under the
+post-website execution order, which required workstream 9 ownership to be settled before any
+Runtime Manager implementation began.
+
+Supply chain is already the security role's remit — it owns `.github/workflows/` and the
+host-access posture — and an installer is a supply-chain artefact before it is a packaging
 convenience. `oq-hive-development` keeps `packageApp` and the jar layout because they are Gradle
 work.
+
+The assignment is reflected in `.github/agents/oq-hive-testing-security.agent.md` in the same
+change that updated this document, so accountability moved in one step rather than being
+described in one place and applied in another. The remaining distance between what the workstream
+names and what the repository contains is implementation work tracked as a `PARTIAL` row in the
+requirement matrix, not an unassigned artefact.
 
 ### Workstream 12 — Developer Experience & Website is split and partly unowned
 
