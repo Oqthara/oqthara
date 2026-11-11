@@ -681,7 +681,7 @@ public final class Interpreter implements OqHost {
             }
         }
         if (callee instanceof Class<?> type) {
-            return JavaBridge.construct(type, args, span, workingDirectory);
+            return JavaBridge.construct(type, args, span, workingDirectory, this);
         }
         throw new OqError("'" + name + "' is not a function", span,
                 "It is " + Values.typeName(callee) + ", which cannot be called.");
@@ -710,14 +710,16 @@ public final class Interpreter implements OqHost {
             return invokeInstanceMethod(instance, call.method(), args, call.span());
         }
         if (receiver instanceof Class<?> type) {
-            Object result = JavaBridge.callStatic(type, call.method(), args, call.span(), workingDirectory);
+            Object result = JavaBridge.callStatic(type, call.method(), args, call.span(),
+                    workingDirectory, this);
             if (result == JavaBridge.NOT_FOUND) {
                 throw new OqError("Java class " + type.getSimpleName() + " has no static method '"
                         + call.method() + "'", call.span());
             }
             return result;
         }
-        Object result = JavaBridge.callMethod(receiver, call.method(), args, call.span(), workingDirectory);
+        Object result = JavaBridge.callMethod(receiver, call.method(), args, call.span(),
+                workingDirectory, this);
         if (result == JavaBridge.NOT_FOUND) {
             // `xs.next()` and `xs.has_next()` are the two mistakes the iterator protocol
             // (ADR-0020) makes easy, because "iterate this" and "advance this" read alike.

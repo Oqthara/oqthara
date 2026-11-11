@@ -152,4 +152,69 @@ class JavaInteropTest {
                 print list.size()
                 """));
     }
+
+    @Test
+    void aJavaMethodThatWantsAConsumerAcceptsAFunction() {
+        assertEquals("""
+                1
+                2
+                3
+                """, ok("""
+                use java.util.ArrayList
+
+                xs = ArrayList([1, 2, 3])
+                xs.forEach(fun(x)
+                    print x
+                end)
+                """));
+    }
+
+    @Test
+    void aJavaMethodThatWantsAComparatorAcceptsAFunction() {
+        assertEquals("[1, 2, 3]\n", ok("""
+                use java.util.Collections
+
+                xs = [3, 1, 2]
+                Collections.sort(xs, (a, b) -> a - b)
+                print xs
+                """));
+    }
+
+    @Test
+    void aCallbackCannotStandInForAFunctionalInterfaceItDoesNotFit() {
+        // Two parameters cannot be a Consumer. The method is not missing, so the message must
+        // name the interface and the arity rather than claim forEach does not exist.
+        fails("""
+                xs = [1, 2, 3]
+                xs.forEach(fun(a, b)
+                    print a
+                end)
+                """, "wants a Consumer, which takes 1 argument");
+    }
+
+    @Test
+    void aCallbackReturnsAValueTheInterfaceCannotHold() {
+        // removeIf wants a boolean. Returning text is a fault in the program, and letting the
+        // proxy hand Java a null would move the failure somewhere far less legible.
+        fails("""
+                xs = [1, 2, 3]
+                xs.removeIf(fun(x)
+                    print x
+                end)
+                """, "returned nothing, which boolean cannot hold");
+    }
+
+    @Test
+    void aFunctionStoredAsAValueIsNotTurnedIntoACallback() {
+        // add(Object) takes any reference, so the function already fits and no proxy is made.
+        assertEquals("1\n", ok("""
+                use java.util.ArrayList
+
+                xs = ArrayList()
+                xs.add(fun(x)
+                    print x
+                end)
+                print xs.size()
+                """));
+    }
 }

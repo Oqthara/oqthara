@@ -52,21 +52,38 @@ scored, so `String.valueOf(5)` reaches the `int` overload rather than the `Objec
 `Integer.valueOf("5")` reaches the string one. Choosing an overload is a matter of fit, not of
 declaration order.
 
-**D5 — What is still not reachable is stated, not implied.** Callbacks are the remaining gap,
-and it has two independent causes, both verified at the CLI rather than inferred:
+**D5 — The callback gap had one cause, and D5's first recording of it was wrong.** D5 originally
+recorded two independent failures with two different causes. That was incorrect, and the probe
+that disproves it is short:
 
-- `list.forEach(x -> print x)` fails with `type list has no method 'forEach'`, because method
-  dispatch consults the Oqthara method table before Java reflection, and skips that table only
-  for a `Class<?>` receiver.
-- `Collections.sort(xs, cmp)` — a static call that does reach reflection — fails with
-  `Java class Collections has no static method 'sort'`, because `tryConvert` has no rule that
-  turns a function value into a Java functional interface such as `Comparator`. Naming the
-  function in a `fun` does not help; the value is still an Oqthara function at the boundary.
+```
+xs = [1, 2, 3]
+xs.ensureCapacity(100)          # succeeds, prints nothing
+Collections.sort(xs)            # succeeds, prints [1, 2, 3]
+```
 
-This ADR changes neither. Reordering dispatch would let `ArrayList`'s own declarations answer
-`list.map`, and building a proxy for a functional interface is a feature in its own right, not
-a repair. The matrix records both forms as the remaining gap instead of claiming interop is
-complete.
+Both are list method calls and both reach Java reflection. Dispatch therefore does consult the
+Oqthara method table first, but it does **not** skip reflection for a non-`Class<?>` receiver:
+`Interpreter.invoke` falls through to `JavaBridge.callMethod` whenever `Methods.resolve` returns
+null. The consequent failures were one cause seen twice — `tryConvert` had no rule turning an
+Oqthara function into a Java functional interface — and the `type list has no method 'forEach'`
+diagnostic was the bridge reporting `NOT_FOUND` after every overload had been rejected for that
+single reason.
+
+The repair lives in `JavaBridge`: a function argument that meets an interface with exactly one
+abstract method becomes a `java.lang.reflect.Proxy` that calls back through the host that
+created it. The host matters, because a closure must be resolved in the environment it captured
+and a compiled closure is a different class from an interpreted one; both implement
+`OqCallable`, so the proxy is backend-agnostic. Arguments arriving from Java are normalized, so
+a callback over a `List<Integer>` is handed `long` and never an `Integer`, and a return value the
+interface cannot hold is refused with the function and the wanted type named rather than being
+passed as `null`.
+
+Two limits are stated rather than implied. A function whose declared arity does not match the
+interface's single abstract method is declined, and the resulting diagnostic names the interface
+and both counts instead of claiming the method does not exist. A callback that stands where no
+functional interface is wanted — `list.add(fn)` — is left alone, because the value already fits
+and wrapping it would change what the program stored.
 
 ## Rejected alternatives
 
