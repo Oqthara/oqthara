@@ -17,6 +17,10 @@ jobs:
   test:
     name: ${{ matrix.os }} / JDK ${{ matrix.java }}
     runs-on: ${{ matrix.os }}
+    # A bounded job cannot turn a hung step into an hour-long runner occupation: the
+    # artifact-upload fault that motivated this cap stalled one job for 45 minutes after
+    # its tests had already passed. Generous against the ~5 minute worst leg.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +77,7 @@ jobs:
   classfile:
     name: Bytecode backend (JDK 25)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -92,6 +97,7 @@ jobs:
   package:
     name: Standalone jar
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -111,6 +117,7 @@ jobs:
   installers:
     name: ${{ matrix.os }} / installer tests
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
