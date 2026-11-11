@@ -540,6 +540,91 @@ def requirement_matrix_figures_match_the_inventory() -> None:
     note(f"{matrix} figures agree with the inventory and the generated reference")
 
 
+# Words that make a test name a statement about absence rather than a claim of evidence:
+# a proposal, a recorded removal, or a note that the class has yet to be written.
+ABSENT_MARKERS = (
+    "proposed",
+    "asks for",
+    "no longer exists",
+    "does not exist",
+)
+
+# Recorded retirement: a name that appears on a line saying it was removed, deleted or is gone.
+# An ADR is a dated record and is not rewritten when a later ADR removes what it described, so a
+# superseded mention is correct history rather than a false claim. Deriving the retired names from
+# the corpus means ADR-0008 may keep saying the site test existed, because ADR-0011 states that it
+# was removed -- and a name no ADR retires is still reported.
+RETIREMENT_MARKERS = ("removed", "deleted", "no longer", "is gone", "was dropped")
+
+
+def retired_test_names(documents: dict[pathlib.Path, str]) -> set[str]:
+    retired: set[str] = set()
+    for text in documents.values():
+        for line in text.splitlines():
+            lowered = line.lower()
+            if any(marker in lowered for marker in RETIREMENT_MARKERS):
+                retired.update(re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\b", line))
+    return retired
+
+
+def cited_tests_exist() -> None:
+    """A document must not present a test class as evidence unless the class exists.
+
+    The inventory once cited two classes before they were written, and ADR-0043 cited a third,
+    which is a document claiming evidence it does not have -- the same defect as a stale tally
+    and harder to notice, because the name looks like proof.
+
+    Not every capitalised `...Test` is a claim. Three kinds of mention are legitimate and are
+    not reported:
+
+    * a `Test |` row of the inventory, which says what a missing module *would need* -- those
+      rows are proposals by construction and the module they describe is absent;
+    * a sentence that says a test was removed, or names a path, in an ADR recording history;
+    * a name inside a fenced code block, which is sample output rather than a citation.
+
+    Everything else must resolve to a file under a test or fuzz source set.
+    """
+    declared: set[str] = set()
+    for pattern in ("**/src/test/java/**/*.java", "**/src/fuzz/java/**/*.java"):
+        for path in ROOT.glob(pattern):
+            declared.add(path.stem)
+
+    documents = {path: read_text_utf8(path) for path in sorted(ROOT.glob("docs/**/*.md"))}
+    retired = retired_test_names(documents)
+    cited = 0
+    for path, text in documents.items():
+        relative = path.relative_to(ROOT)
+        in_fence = False
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            names = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\b", line)
+            if not names:
+                continue
+            if line.startswith("| Test |"):
+                continue
+            lowered = line.lower()
+            if any(marker in lowered for marker in ABSENT_MARKERS):
+                continue
+            if re.search(r"[\w/.-]+\.java\b", line):
+                continue
+            for name in names:
+                cited += 1
+                if name in declared or name in retired:
+                    continue
+                problems.append(
+                    f"{relative}:{number} cites {name}, "
+                    f"which no test or fuzz source set declares")
+    note(f"{cited} test-class citations in docs resolve to a declared class")
+
+
+def read_text_utf8(path: pathlib.Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -551,6 +636,7 @@ CHECKS = (
     contract_register_is_complete,
     stdlib_inventory_tallies_agree,
     requirement_matrix_figures_match_the_inventory,
+    cited_tests_exist,
 )
 
 

@@ -133,4 +133,8 @@ is bounded by the input length: every output line is at least one character of i
 an amplification, and it needs no cap.
 
 **Verification.** Every example in this ADR was run against the built CLI before being written
-down, and `TextWrapTest` and `DiffTest` pin the behaviours the decisions claim.
+down, and the 35 cases in `TextWrapTest` pin the behaviours the decisions claim: the wrap width
+for every case from one character upward, the break-long-words rule, `fill_text`'s newline join,
+`dedent_text` and `indent_text` on mixed and absent indentation, `shorten`'s marker, each diff
+operation against a known pair, the header counts, and the two seeded property checks named in
+D5.
