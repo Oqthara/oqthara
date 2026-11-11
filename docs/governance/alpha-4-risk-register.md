@@ -293,7 +293,7 @@ table · `SECURITY.md` "Scope" · `oq-runtime/src/main/java/dev/oqthara/runtime/
 |---|---|---|---|---|---|---|
 | R-012 | Standard-library breadth has no denominator | High | Low | Low | 8 | Open |
 | R-013 | `data` cannot carry methods or implement contracts | High | Low | Low | 7 | Accepted |
-| R-014 | JavaBridge has no callbacks in either direction | High | Medium | Medium | 6 | Open |
+| R-014 | A Java callback cannot return an Oqthara function to its caller | Medium | Low | Low | 6 | Open |
 | R-015 | Local and UTC time are easy to confuse | Medium | Low | Low | 8 | Mitigated |
 | R-016 | XML is deliberately absent | Medium | Low | Low | 8 | Accepted |
 
@@ -335,13 +335,18 @@ The decision is recorded, and `§14.2` remains `PARTIAL` for this reason.
 *Evidence.* `docs/governance/alpha-4-requirement-matrix.md` `§14.2` · `docs/adr/0028-data-evolution.md`
 · `docs/adr/0013-destructuring.md` · `oq-cli/src/test/java/dev/oqthara/cli/DataTest.java`.
 
-**R-014 — JavaBridge has no callbacks in either direction.**
-Reflection reaches any public member of any class on the classpath, but no conversion turns an
-Oqthara function into a Java functional interface, and no Java lambda arrives as a callable value.
-`list.forEach(x -> print x)` fails with `type list has no method 'forEach'` because dispatch consults
-the Oqthara method table first, and `Collections.sort(xs, cmp)` fails with `has no static method
-'sort'` because a function value has no conversion to a `Comparator`. There is no workaround, which
-the matrix states rather than suggesting one.
+**R-014 — A Java callback cannot return an Oqthara function to its caller.**
+The direction *into* Java is closed: a function argument that meets an interface with exactly one
+abstract method becomes a `java.lang.reflect.Proxy` that calls back through the host that created
+it, so `xs.forEach(fun(x) print x end)` and `Collections.sort(xs, (a, b) -> a - b)` both work on
+both backends, and a callback over a `List<Integer>` is handed `long` rather than `Integer`. The
+earlier entry described two independent failures and blamed dispatch for skipping reflection on a
+non-`Class<?>` receiver. That was wrong — `xs.ensureCapacity(100)` and `Collections.sort(xs)`
+both reach reflection — and the correction is recorded in ADR-0032 D5. The direction *out of*
+Java remains closed: a method that takes a `Function` and hands one back on return yields a JDK
+proxy object that Oqthara can call as a method but cannot hold as a `fun` value, and a Java lambda
+never becomes a value the language can pass to `map`. Nothing in the standard library needs that
+shape today, which is why this is Low rather than Medium.
 
 *Mitigation.* None available at the language level. The gap is named precisely, with the two distinct
 causes distinguished, so it is not mistaken for a missing method.

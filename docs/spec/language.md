@@ -2138,3 +2138,42 @@ print String.join("-", "x", "y", "z")    # x-y-z
 When several overloads match, the one whose parameter types fit the arguments most exactly is
 chosen, so `String.valueOf(5)` reaches the `int` overload rather than the `Object` one.
 Arguments are converted by the table above before the choice is made.
+
+### Callbacks
+
+A Java method that wants a functional interface accepts a `fun`. The parameter is the
+interface's own single abstract method, so `forEach` wants a `Consumer` and `sort` wants a
+`Comparator`:
+
+```
+use java.util.Collections
+
+xs = [3, 1, 2]
+xs.forEach(fun(x)
+  print x
+end)
+Collections.sort(xs, (a, b) -> a - b)
+print xs                 # [1, 2, 3]
+```
+
+The function keeps its own captures: it is called back in the environment it was declared in,
+not in a copy of it, so a callback can read and write the enclosing bindings exactly as any
+other `fun` can. Values Java passes in arrive as Oqthara values, so a callback over a list of
+`Integer` is handed a `number`.
+
+The arity has to fit. A function taking two parameters cannot stand where a `Consumer` — one
+parameter — is wanted:
+
+```text
+error: 'forEach' wants a Consumer, which takes 1 argument, but '<lambda>' takes 2
+```
+
+A value a callback returns must also fit the interface's return type, and returning nothing
+where a value is required is refused rather than passed as `null`:
+
+```text
+error: '<lambda>' returned nothing, which boolean cannot hold
+```
+
+The direction back out of Java is not yet supported: a Java method that returns a lambda yields
+an object Oqthara can call as a method, not a value it can hold as a `fun`.

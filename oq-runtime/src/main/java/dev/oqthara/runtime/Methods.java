@@ -74,6 +74,9 @@ public final class Methods {
      * Delegates to {@code dev.oqthara.core.JavaBridge}, the interpreter's own interop code,
      * so overload selection and argument conversion are identical on both backends. The
      * runtime module cannot depend on the interpreter module, which is why this is reflective.
+     *
+     * <p>{@link #HOST} is passed along because a Java method may want a functional interface: a
+     * compiled closure is an {@link OqCallable}, and the bridge needs a host to run it.
      */
     private static Object interop(Object receiver, String name, Object[] args, Span span) {
         Class<?> bridge = bridge();
@@ -81,15 +84,15 @@ public final class Methods {
         try {
             if (receiver instanceof Class<?> type) {
                 Object result = bridge.getMethod("callStatic", Class.class, String.class,
-                                List.class, Span.class, Path.class)
-                        .invoke(null, type, name, list, span, Path.of("."));
+                                List.class, Span.class, Path.class, OqHost.class)
+                        .invoke(null, type, name, list, span, Path.of("."), HOST);
                 if (result != notFound(bridge)) return result;
                 throw new OqError("Java class " + type.getSimpleName()
                         + " has no static method '" + name + "'", span);
             }
             Object result = bridge.getMethod("callMethod", Object.class, String.class, List.class,
-                            Span.class, Path.class)
-                    .invoke(null, receiver, name, list, span, Path.of("."));
+                            Span.class, Path.class, OqHost.class)
+                    .invoke(null, receiver, name, list, span, Path.of("."), HOST);
             if (result != notFound(bridge)) return result;
         } catch (InvocationTargetException e) {
             Throwable cause = e.getTargetException();
