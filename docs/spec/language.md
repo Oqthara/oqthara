@@ -1307,6 +1307,35 @@ print read_bytes("a.bin")      # 00ff10
 write_bytes("b.bin", "00ff10")
 ```
 
+Compression: `zlib_compress(hex)` and `zlib_decompress(hex)` for raw DEFLATE,
+`gzip_compress(text)` and `gzip_decompress(hex)` for the gzip container, and
+`zip_compress(files)` with `zip_decompress(hex)` for an archive, where `files` is a map of entry
+names to hex content. Every input and output is lowercase hex, the same spelling `read_bytes`
+uses, and every call consumes a complete value and returns a complete value — there is no stream
+and no handle.
+
+```oq
+packed = gzip_compress("hello hello")
+print gzip_decompress(packed) == hex_encode("hello hello")   # true
+bundle = zip_compress({"a.txt": hex_encode("aaa")})
+print zip_decompress(bundle)      # {"a.txt": "616161"}
+```
+
+Decompression is capped at 16 MiB of output, and the cap is enforced by counting the bytes
+actually produced rather than by reading a length from the input, because a hostile producer
+writes whatever length it likes. Input that expands past the cap raises
+`zlib_decompress() exceeded 16777216 bytes of output` — a named error, not an out-of-memory
+failure — and the whole of a zip archive counts against one total, so a thousand entries just
+under the limit cannot add up to an attack. Compressed input that ends early raises
+`zlib_decompress() needs more input` rather than returning a partial value.
+
+Entry names given to `zip_compress` may not be absolute, may not contain a `..` segment, a
+backslash or a NUL, and are refused with `zip_compress() refused entry name: <name>`. The name
+is refused rather than rewritten: a name that had to be changed to be safe is not the name the
+caller asked for, and storing a quietly different one is the wrong-answer failure mode this
+language treats as a defect. `tar` is not provided; zip covers the archive case and needs no
+separate reader.
+
 Neither copying nor reading is confined to the working directory. Oqthara is not a sandbox —
 see the note below.
 

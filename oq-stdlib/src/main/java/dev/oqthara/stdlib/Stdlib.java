@@ -107,6 +107,7 @@ public final class Stdlib {
         installFiles(interpreter);
         installFileOps(interpreter);
         Patterns.install(interpreter);
+        Compression.install(interpreter);
         Statistics.install(interpreter);
         installJson(interpreter);
         installEncoding(interpreter);

@@ -52,6 +52,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `format` | built-in |
 | `frozenset` | built-in |
 | `glob` | built-in |
+| `gzip_compress` | built-in |
+| `gzip_decompress` | built-in |
 | `heap_pop` | built-in |
 | `heap_push` | built-in |
 | `hex_decode` | built-in |
@@ -157,6 +159,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `write_bytes` | built-in |
 | `write_text` | built-in |
 | `zip` | built-in |
+| `zip_compress` | built-in |
+| `zip_decompress` | built-in |
+| `zlib_compress` | built-in |
+| `zlib_decompress` | built-in |
 
 ## Methods on values
 
