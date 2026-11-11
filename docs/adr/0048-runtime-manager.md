@@ -86,10 +86,16 @@ runtime can run the language's own conformance corpus, not merely that the vendo
 A vendor's release date is not a compatibility statement.
 
 This is not hypothetical. [ADR-0002](0002-ci-split.md) records that the build failed on JDK 25
-with `Unsupported class file major version 69` because Gradle 8.x cannot parse that class-file
-format. A newer JVM was present, available and published by its vendor, and Oqthara could not
-build on it. Any resolution rule that ranks "newest LTS" above "known-compatible" would select
-it and break the build, which is why D1 validates rather than merely locates.
+with `Unsupported class file major version 69`, because the Gradle release in use at the time
+could not parse that class-file format. A JVM that was current, published and available from its
+vendor could not build Oqthara. Any rule that ranks "newest" above "known-compatible" would have
+selected it, which is why D1 validates rather than merely locates.
+
+That specific failure has since been fixed by a Gradle upgrade, and CI builds and tests on JDK 25
+today, so ADR-0002 is evidence of the *class* of failure and not of a current incompatibility.
+The floor stays at 21 regardless: `build.gradle.kts:58` sets `options.release = 21`, so the
+artefacts target 21 and must run on a 21 runtime even when built by a newer one. Compiling on a
+JVM and targeting its floor are different questions, and the manager answers the second.
 
 **D10. Documented limitations are part of the contract.** R-006 (SQLite multiplies artifact size)
 and R-007 (the JNI driver makes Alpine/musl unsupported) already record the platform consequence:
