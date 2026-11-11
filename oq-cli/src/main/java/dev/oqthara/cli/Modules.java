@@ -127,7 +127,14 @@ final class Modules {
         }
     }
 
-    private static Path resolveModule(String name, Path base, Span span) {
+    /**
+     * Resolves one {@code use "oq:name"} to the file that defines it.
+     *
+     * <p>Package-private rather than private so {@code oq doc --source} follows an import
+     * through this exact method: a documenter with its own copy of the search order would
+     * eventually disagree with the interpreter about where a module lives.
+     */
+    static Path resolveModule(String name, Path base, Span span) {
         List<Path> candidates = new ArrayList<>();
         String fileName = name.endsWith(".oq") ? name : name + ".oq";
         if (base != null) {
