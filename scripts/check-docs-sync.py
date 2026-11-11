@@ -140,6 +140,66 @@ def keyword_budget_is_honest() -> None:
     note(f"design.md keyword count ({design_current}) matches the lexer")
 
 
+def command_form_matches_the_spec() -> None:
+    # The spec said "Both accept any number of arguments" of two names, then its example
+    # called a third, `write_text`, in command form -- which the parser rejects. Nothing
+    # caught it because the whitelist lived only in Parser.COMMANDS and the spec never
+    # named it. Read the set out of the parser rather than restating it here, for the same
+    # reason keyword_budget_is_honest parses Lexer.KEYWORDS: a copy here would drift too.
+    parser = read("oq-core/src/main/java/dev/oqthara/core/Parser.java")
+    block = re.search(r"COMMANDS\s*=\s*Set\.of\((.*?)\);", parser, re.S)
+    if not block:
+        problems.append("could not read Parser.COMMANDS")
+        return
+    commands = set(re.findall(r'"([^"]+)"', block.group(1)))
+    if not commands:
+        problems.append("Parser.COMMANDS is empty")
+        return
+
+    spec = read("docs/spec/language.md")
+    # The sentence wraps in the source, so joining the paragraph keeps the check independent
+    # of where a line happens to break.
+    joined = " ".join(spec.split())
+    match = re.search(r"((?:`[a-z_]+`[ ,and]*)+\s)are the only (\w+) names that may be "
+                      r"called as a command statement", joined)
+    if not match:
+        problems.append("docs/spec/language.md does not state which names take command form")
+        return
+    documented = set(re.findall(r"`([a-z_]+)`", match.group(1)))
+    if documented != commands:
+        problems.append(
+            "the spec's command-form names disagree with Parser.COMMANDS: "
+            f"the spec says {sorted(documented)}, the parser allows {sorted(commands)}")
+    words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+    if words.get(match.group(2)) != len(commands):
+        problems.append(
+            f"the spec says {match.group(2)} names take command form, but Parser.COMMANDS "
+            f"has {len(commands)}")
+
+    # Every command-form example must use one of those names. The failing example called
+    # `write_text "x"`; checking the examples catches a wrong name in prose the set
+    # comparison above cannot see.
+    for name in re.findall(r"^([a-z_]+) [\"']", spec, re.M):
+        if name not in commands and name in _builtin_names():
+            problems.append(
+                f"docs/spec/language.md calls `{name}` in command form, but only "
+                f"{sorted(commands)} take command form; use `{name}(...)`")
+    note(f"command form limited to {', '.join(sorted(commands))}, as the spec states")
+
+
+def _builtin_names() -> set[str]:
+    stdlib_dir = ROOT / "oq-stdlib" / "src" / "main" / "java" / "dev" / "oqthara" / "stdlib"
+    names: set[str] = set()
+    for source in stdlib_dir.glob("*.java"):
+        names |= set(
+            re.findall(
+                r'NativeFunction\.(?:of|variadic)\(\s*"([a-z_][a-z_0-9]*)"',
+                source.read_text(encoding="utf-8"),
+            )
+        )
+    return names
+
+
 # 3. Every CLI command in the help text must be documented in docs/reference/cli.md.
 def documented_commands_exist() -> None:
     main = read("oq-cli/src/main/java/dev/oqthara/cli/Main.java")
@@ -628,6 +688,7 @@ def read_text_utf8(path: pathlib.Path) -> str:
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
+    command_form_matches_the_spec,
     documented_commands_exist,
     catalog_is_current,
     backend_counts_are_measured,
