@@ -34,10 +34,10 @@ reviewed in one diff. Properties that follow from this:
 - Names are display-only. `call` never reads them, so a wrong name cannot change what a
   program does. Only what a user reads.
 
-**D2. Every builtin is named or explicitly has nothing to name.** Of 167 global builtins, 150
-carry names. The other 17 are three unbounded variadics (`print`, `write`, `write_text`),
-thirteen zero-arity functions (`now`, `cwd`, `random`, `mutex` and so on), and one internal
-wrapper that is not user-facing. Method builtins are out of scope for the count and for the
+**D2. Every builtin is named or explicitly has nothing to name.** The table holds 155 distinct
+names across 166 registrations, nine of them overloaded; 150 registrations carry names. The
+other 16 are three unbounded variadics (`print`, `write`, `write_text`) and thirteen
+zero-arity functions (`now`, `cwd`, `random`, `mutex` and so on). Method builtins are out of scope for the count and for the
 feature, per D4. `ParameterNamesTest` enforces this structurally rather than by inspection: a
 name list must match the arity it labels, names must be distinct, and an unnamed builtin must
 be one whose arity explains the absence. A fixed-arity builtin cannot quietly ship unnamed, and
