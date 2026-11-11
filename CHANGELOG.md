@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`oq java` reports which JVM Oqthara will use, and ADR-0048 D1 is implemented.** The order is
+  fixed: an explicit `OQ_JAVA`, then a `.oq/java` project pin found by walking up from the working
+  directory, then a managed runtime under `OQ_HOME` or `~/.oq`, then `java` on `PATH`. The first
+  executable that exists *and* reports Java 21 or newer wins. A candidate below the floor is
+  recorded and skipped rather than ending the search, so a stray JDK 17 in `OQ_JAVA` cannot hide a
+  working JDK 21, and the failure message names every origin checked and why each was refused.
+  `oq java --json` prints the same decision machine-readably. Resolution reads only the
+  environment and the filesystem, so it is complete and tested without installing anything; it
+  does not download, extract or install, and those decisions remain unimplemented.
 - **Examples for the modules added this round, and a test that runs them.** `urls.oq`,
   `hashing.oq`, `concurrency.oq` and `database.oq` demonstrate URL handling, hashing and PBKDF2,
   the mutex and `await`, and SQLite with transaction rollback and a refused injection. §17.9

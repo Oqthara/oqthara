@@ -69,6 +69,7 @@ public final class Main {
                 case "doc" -> DocGenerator.run(out, err, rest(args));
                 case "test" -> TestRunner.run(out, err, rest(args));
                 case "build" -> build(rest(args));
+                case "java" -> javaRuntime(rest(args));
                 default -> {
                     if (command.startsWith("-")) {
                         err.println("Unknown option: " + command);
@@ -98,6 +99,7 @@ public final class Main {
                       oq fmt <file.oq>           format a program
                       oq test [dir]              run test_*.oq files
                       oq build <file.oq>         compile a program to a runnable jar
+                      oq java [--json]           show which Java runtime Oqthara will use
                       oq new <name>              create a new project
                       oq doc [root]              generate the stdlib reference
                       oq doc --source <path>     document your own declarations
@@ -201,6 +203,86 @@ public final class Main {
             } catch (IOException e) {
                 return null;
             }
+        }
+
+        /**
+         * Reports the runtime that {@code oq} would use, and where it looked.
+         *
+         * <p>This is the observable face of ADR-0048 D1. Without it, resolution is an invisible
+         * decision until something fails, and the failure happens far from the cause.
+         */
+        int javaRuntime(String[] args) {
+            boolean json = false;
+            for (String arg : args) {
+                switch (arg) {
+                    case "--json" -> json = true;
+                    case "--help", "-h" -> {
+                        out.println("""
+                                Usage: oq java [--json]
+
+                                Shows the Java runtime Oqthara would use, and every place it looked.
+
+                                  --json   machine-readable output
+
+                                The order is: OQ_JAVA, then a .oq/java project pin, then a managed
+                                runtime under OQ_HOME (or ~/.oq), then java on PATH. The first
+                                executable that exists and is Java 21 or newer wins.""");
+                        return 0;
+                    }
+                    default -> {
+                        err.println("Unknown option: " + arg);
+                        err.println("Try: oq java [--json]");
+                        return 2;
+                    }
+                }
+            }
+            RuntimeResolver.Inputs inputs = RuntimeResolver.inputsFrom(
+                    Path.of("").toAbsolutePath(), System.getenv());
+            RuntimeResolver.Resolution resolution =
+                    RuntimeResolver.resolve(inputs, RuntimeResolver.processProbe());
+            if (json) {
+                out.println(jsonRuntime(resolution));
+                return resolution.found() ? 0 : 1;
+            }
+            if (!resolution.found()) {
+                err.println(RuntimeResolver.explainFailure(resolution));
+                return 1;
+            }
+            out.println(resolution.chosen().describe());
+            for (RuntimeResolver.Candidate skipped : resolution.rejected()) {
+                out.println("  skipped " + skipped.describe());
+            }
+            return 0;
+        }
+
+        private static String jsonRuntime(RuntimeResolver.Resolution resolution) {
+            StringBuilder json = new StringBuilder("{\"found\":")
+                    .append(resolution.found());
+            if (resolution.found()) {
+                RuntimeResolver.Candidate chosen = resolution.chosen();
+                json.append(",\"origin\":\"").append(chosen.origin().name().toLowerCase())
+                        .append("\",\"location\":\"").append(escapeJson(chosen.location()))
+                        .append("\",\"major\":").append(chosen.major().getAsInt());
+            }
+            json.append(",\"rejected\":[");
+            for (int i = 0; i < resolution.rejected().size(); i++) {
+                RuntimeResolver.Candidate skipped = resolution.rejected().get(i);
+                if (i > 0) {
+                    json.append(',');
+                }
+                json.append("{\"origin\":\"").append(skipped.origin().name().toLowerCase())
+                        .append("\",\"location\":\"").append(escapeJson(skipped.location()))
+                        .append("\",\"reason\":\"").append(escapeJson(skipped.rejection()))
+                        .append("\"}");
+            }
+            return json.append("]}").toString();
+        }
+
+        private static String escapeJson(String value) {
+            if (value == null) {
+                return "";
+            }
+            return value.replace("\\", "\\\\").replace("\"", "\\\"");
         }
 
         int build(String[] args) {

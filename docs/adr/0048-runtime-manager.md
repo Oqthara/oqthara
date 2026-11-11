@@ -1,6 +1,6 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (plan only; no part of it is implemented)
+- **Status:** Proposed (D1 implemented; acquisition, extraction and locking are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -46,6 +46,15 @@ documented: an explicit `OQ_JAVA` override, then a project-local pin, then a man
 installed by `oq`, then `java` on `PATH`. The first entry that exists *and* validates wins.
 Resolution is a pure function of the environment plus the on-disk pin, so it is testable without
 installing anything.
+
+*Implemented, 2026-11-12.* `RuntimeResolver` in `oq-cli` realises D1 and nothing more than D1:
+it reads the environment, walks up for `.oq/java`, and probes each candidate's `-version` banner
+for a major version at or above the 21 floor. A candidate that exists but is below the floor is
+recorded and skipped rather than terminating the search, because a wrong answer at a
+higher-priority origin must not shadow a correct one below it. `oq java` reports the decision and
+`oq java --json` reports it machine-readably. Because resolution touches no network and no
+archive, it is complete and tested before any acquisition code exists — which is the reason this
+decision was listed first.
 
 **D2. A managed runtime is downloaded only when nothing suitable is found.** The manager
 supports exactly the platforms it can test on, and the list is enumerated rather than implied:
