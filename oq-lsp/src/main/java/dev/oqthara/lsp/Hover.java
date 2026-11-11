@@ -2,22 +2,14 @@ package dev.oqthara.lsp;
 
 import dev.oqthara.core.Ast;
 import dev.oqthara.core.Docstring;
-import dev.oqthara.core.Interpreter;
-import dev.oqthara.core.Modules;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqCallable;
 
-import java.io.IOException;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * Answers {@code textDocument/hover} from the document's own declarations and, failing
@@ -41,12 +33,6 @@ import java.util.Set;
 final class Hover {
     private Hover() {
     }
-
-    /** Matches the interpreter's limit, so a hover never walks a cycle the loader would refuse. */
-    private static final int MAX_IMPORT_DEPTH = 50;
-
-    /** Built once; installing the standard library has no side effects on the host. */
-    private static volatile Map<String, OqCallable> builtins;
 
     /**
      * Returns a markdown hover for the identifier at {@code line}/{@code character}, or null
@@ -101,51 +87,9 @@ final class Hover {
      * about a half-typed file must not receive a fault for asking.
      */
     private static String describeImported(String uri, Ast.Program program, String name) {
-        Path base = directoryOf(uri);
+        Path base = Symbols.directoryOf(uri);
         if (base == null) return null;
-        Set<Path> seen = new LinkedHashSet<>();
-        return searchImports(program, base, name, seen, 0);
-    }
-
-    private static String searchImports(Ast.Program program, Path base, String name,
-                                        Set<Path> seen, int depth) {
-        if (depth > MAX_IMPORT_DEPTH) return null;
-        for (Ast.Stmt statement : program.statements()) {
-            if (!(statement instanceof Ast.ImportStmt importStmt)) continue;
-            Path file;
-            try {
-                file = Modules.resolveModule(importStmt.path(), base, importStmt.span())
-                        .toAbsolutePath().normalize();
-            } catch (RuntimeException e) {
-                continue;
-            }
-            if (!seen.add(file)) continue;
-            Ast.Program module;
-            try {
-                module = Parser.parse(file.getFileName().toString(),
-                        Files.readString(file, StandardCharsets.UTF_8));
-            } catch (RuntimeException | IOException e) {
-                continue;
-            }
-            String described = describeDeclaration(module, name);
-            if (described != null) return described;
-            String nested = searchImports(module, file.getParent(), name, seen, depth + 1);
-            if (nested != null) return nested;
-        }
-        return null;
-    }
-
-    /**
-     * The directory an imported module is resolved against, or null when the document has no
-     * file of its own.
-     */
-    private static Path directoryOf(String uri) {
-        if (uri == null || !uri.startsWith("file:")) return null;
-        try {
-            return Path.of(URI.create(uri)).toAbsolutePath().normalize().getParent();
-        } catch (RuntimeException e) {
-            return null;
-        }
+        return Symbols.searchImports(program, base, module -> describeDeclaration(module, name));
     }
 
     private static String describe(Ast.Stmt statement, String name) {
@@ -217,7 +161,7 @@ final class Hover {
      * against; a name the table does not hold returns null.
      */
     private static String describeBuiltin(String name) {
-        OqCallable callable = builtins().get(name);
+        OqCallable callable = Symbols.builtins().get(name);
         if (callable == null) return null;
         StringBuilder text = new StringBuilder();
         if (callable instanceof dev.oqthara.runtime.OverloadedFunction overload) {
@@ -257,22 +201,6 @@ final class Hover {
             text.append("arg").append(i);
         }
         return text.toString();
-    }
-
-    private static Map<String, OqCallable> builtins() {
-        Map<String, OqCallable> current = builtins;
-        if (current == null) {
-            synchronized (Hover.class) {
-                current = builtins;
-                if (current == null) {
-                    Interpreter interpreter = Interpreter.headless();
-                    dev.oqthara.stdlib.Stdlib.install(interpreter);
-                    current = Map.copyOf(interpreter.builtins());
-                    builtins = current;
-                }
-            }
-        }
-        return current;
     }
 
     /**

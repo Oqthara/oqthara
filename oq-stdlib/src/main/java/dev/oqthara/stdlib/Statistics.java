@@ -31,33 +31,36 @@ final class Statistics {
 
     static void install(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("mean", 1, (host, args, span) ->
-                mean(statisticsItems(args.get(0), "mean", span), span)));
+                mean(statisticsItems(args.get(0), "mean", span), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("median", 1, (host, args, span) ->
-                median(sorted(statisticsItems(args.get(0), "median", span)), span)));
+                median(sorted(statisticsItems(args.get(0), "median", span)), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("variance", 1, (host, args, span) ->
-                normalize(sampleVariance(statisticsItems(args.get(0), "variance", span), span))));
+                normalize(sampleVariance(statisticsItems(args.get(0), "variance", span), span))).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("stdev", 1, (host, args, span) ->
                 normalize(Math.sqrt(
-                        sampleVariance(statisticsItems(args.get(0), "stdev", span), span)))));
+                        sampleVariance(statisticsItems(args.get(0), "stdev", span), span)))).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("mode", 1, (host, args, span) ->
-                mode(sorted(statisticsItems(args.get(0), "mode", span)), span)));
+                mode(sorted(statisticsItems(args.get(0), "mode", span)), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("percentile", 2, (host, args, span) ->
                 percentile(sorted(statisticsItems(args.get(0), "percentile", span)),
-                        Values.asDouble(requireNumber(args.get(1), "percentile", span)), span)));
+                        Values.asDouble(requireNumber(args.get(1), "percentile", span)), span))
+                        .named("items", "percent"));
 
         interpreter.defineBuiltin(NativeFunction.of("uuid", 0, (host, args, span) ->
                 UUID.randomUUID().toString()));
         interpreter.defineBuiltin(NativeFunction.of("is_uuid", 1, (host, args, span) ->
-                isCanonicalUuid(Values.display(args.get(0)))));
+                isCanonicalUuid(Values.display(args.get(0)))).named("value"));
 
         interpreter.defineBuiltin(NativeFunction.of("heap_push", 2, (host, args, span) ->
-                heapPush(args.get(0), args.get(1), span)));
+                heapPush(args.get(0), args.get(1), span)).named("heap", "item"));
         interpreter.defineBuiltin(NativeFunction.of("heap_pop", 1, (host, args, span) ->
-                heapPop(args.get(0), span)));
+                heapPop(args.get(0), span)).named("heap"));
         interpreter.defineBuiltin(NativeFunction.of("bisect_left", 2, (host, args, span) ->
-                (long) bisect(ordered(args.get(0), "bisect_left", span), args.get(1), false, span)));
+                (long) bisect(ordered(args.get(0), "bisect_left", span), args.get(1), false, span))
+                        .named("items", "value"));
         interpreter.defineBuiltin(NativeFunction.of("bisect_right", 2, (host, args, span) ->
-                (long) bisect(ordered(args.get(0), "bisect_right", span), args.get(1), true, span)));
+                (long) bisect(ordered(args.get(0), "bisect_right", span), args.get(1), true, span))
+                        .named("items", "value"));
     }
 
     /**

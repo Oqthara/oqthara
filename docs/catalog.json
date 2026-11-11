@@ -266,6 +266,12 @@
       "slug": "docs/adr/0043-word-wrapping-and-text-diffs"
     },
     {
+      "path": "docs/adr/0044-signature-help.md",
+      "title": "ADR-0044: Signature help in the language server",
+      "section": "adr",
+      "slug": "docs/adr/0044-signature-help"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

@@ -65,7 +65,7 @@ final class DatabaseModule {
                     }
                 }
             });
-        }));
+        }).named("path", "sql", "parameters"));
 
         interpreter.defineBuiltin(NativeFunction.of("db_execute", 3, (host, args, span) -> {
             String path = requirePath(args.get(0), "db_execute", span);
@@ -84,7 +84,7 @@ final class DatabaseModule {
                     return new OqMap(result);
                 }
             });
-        }));
+        }).named("path", "sql", "parameters"));
 
         interpreter.defineBuiltin(NativeFunction.of("db_transaction", 2, (host, args, span) -> {
             String path = requirePath(args.get(0), "db_transaction", span);
@@ -121,7 +121,7 @@ final class DatabaseModule {
                 }
                 return value;
             });
-        }));
+        }).named("path", "body"));
     }
 
     private interface SqlWork {

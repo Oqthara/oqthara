@@ -53,6 +53,10 @@ class ServerTest {
         assertEquals("oq-lsp", at(initialize, "result", "serverInfo", "name"));
         assertEquals(1L, at(initialize, "result", "capabilities", "textDocumentSync"));
         assertEquals(Boolean.TRUE, at(initialize, "result", "capabilities", "documentFormattingProvider"));
+        assertEquals(Boolean.TRUE, at(initialize, "result", "capabilities", "hoverProvider"));
+        // An object rather than true: the editor needs to know which characters reopen the popup.
+        assertNotNull(at(initialize, "result", "capabilities", "signatureHelpProvider"),
+                "signature help must be advertised to the editor");
 
         List<Map<String, Object>> diagnostics = diagnosticsFor(messages, URI);
         OqError expected = parseError(BROKEN);
@@ -193,6 +197,45 @@ class ServerTest {
 
         Map<String, Object> empty = byId(messages, 3L);
         assertNull(empty.get("result"), "a position that resolves to nothing returns null");
+    }
+
+    @Test
+    void signatureHelpTravelsOverTheWireWithParameterRanges() throws Exception {
+        String source = """
+                fun add(a, b)
+                  return a + b
+                end
+
+                print add(1, 
+                """.stripTrailing() + "\n";
+
+        ByteArrayOutputStream requests = new ByteArrayOutputStream();
+        writeFrame(requests, request(1, "initialize", "{}"));
+        writeFrame(requests, notification("initialized", "{}"));
+        writeFrame(requests, notification("textDocument/didOpen", document(source)));
+        writeFrame(requests, request(2, "textDocument/signatureHelp", hoverParams(4, 12)));
+        writeFrame(requests, request(3, "textDocument/signatureHelp", hoverParams(0, 9)));
+        writeFrame(requests, request(4, "shutdown", "{}"));
+        writeFrame(requests, notification("exit", "{}"));
+
+        ByteArrayOutputStream responses = new ByteArrayOutputStream();
+        Server server = new Server(new ByteArrayInputStream(requests.toByteArray()), responses);
+        assertEquals(0, server.run());
+
+        List<Map<String, Object>> messages = readAll(responses.toByteArray());
+        Map<String, Object> result = byId(messages, 2L);
+        assertEquals("add(a, b)", at(result, "result", "signatures", "0", "label"));
+        assertEquals(1L, at(result, "result", "activeParameter"),
+                "the cursor is past the comma, so the second parameter is active");
+        assertEquals(0L, at(result, "result", "activeSignature"));
+        // Each parameter is reported as a label range, which is how an editor highlights one.
+        assertEquals(4L, at(result, "result", "signatures", "0", "parameters", "0", "label", "0"));
+        assertEquals(5L, at(result, "result", "signatures", "0", "parameters", "0", "label", "1"));
+        assertEquals(7L, at(result, "result", "signatures", "0", "parameters", "1", "label", "0"));
+
+        Map<String, Object> declaration = byId(messages, 3L);
+        assertNull(declaration.get("result"),
+                "the declaration header is not a call, so there is nothing to show there");
     }
 
     private static String hoverParams(int line, int character) {

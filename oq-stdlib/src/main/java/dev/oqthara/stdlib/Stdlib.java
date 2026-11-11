@@ -163,23 +163,30 @@ public final class Stdlib {
             host.out().print(prompt);
             host.out().flush();
             return readLineBounded(host, span);
-        }));
-        interpreter.defineBuiltin(NativeFunction.of("text", 1, (host, args, span) -> Values.display(args.get(0))));
-        interpreter.defineBuiltin(NativeFunction.of("repr", 1, (host, args, span) -> Values.repr(args.get(0))));
-        interpreter.defineBuiltin(NativeFunction.of("number", 1, (host, args, span) -> toNumber(args.get(0), span)));
-        interpreter.defineBuiltin(NativeFunction.of("type_of", 1, (host, args, span) -> Values.typeName(args.get(0))));
-        interpreter.defineBuiltin(NativeFunction.of("is_nothing", 1, (host, args, span) -> args.get(0) == null));
-        interpreter.defineBuiltin(NativeFunction.of("is_number", 1, (host, args, span) -> Values.isNumber(args.get(0))));
-        interpreter.defineBuiltin(NativeFunction.of("is_text", 1, (host, args, span) -> args.get(0) instanceof String));
+        }).named("prompt"));
+        interpreter.defineBuiltin(NativeFunction.of("text", 1, (host, args, span) -> Values.display(args.get(0)))
+                .named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("repr", 1, (host, args, span) -> Values.repr(args.get(0)))
+                .named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("number", 1, (host, args, span) -> toNumber(args.get(0), span))
+                .named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("type_of", 1, (host, args, span) -> Values.typeName(args.get(0)))
+                .named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("is_nothing", 1,
+                (host, args, span) -> args.get(0) == null).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("is_number", 1, (host, args, span) -> Values.isNumber(args.get(0)))
+                .named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("is_text", 1,
+                (host, args, span) -> args.get(0) instanceof String).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("length", 1, (host, args, span) ->
-                Values.length(args.get(0), span)));
+                Values.length(args.get(0), span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("range", 1, (host, args, span) -> {
             long n = wholeNumber(args.get(0), "range", span);
             return new OqRange(0, Math.max(0, n), false);
-        }));
+        }).named("stop"));
         interpreter.defineBuiltin(NativeFunction.of("range", 2, (host, args, span) ->
                 new OqRange(wholeNumber(args.get(0), "range", span),
-                        wholeNumber(args.get(1), "range", span), false)));
+                        wholeNumber(args.get(1), "range", span), false)).named("start", "stop"));
         interpreter.defineBuiltin(NativeFunction.of("range", 3, (host, args, span) -> {
             long step = wholeNumber(args.get(2), "range", span);
             if (step == 0) {
@@ -188,30 +195,31 @@ public final class Stdlib {
             }
             return new OqRange(wholeNumber(args.get(0), "range", span),
                     wholeNumber(args.get(1), "range", span), false, step);
-        }));
+        }).named("start", "stop", "step"));
         interpreter.defineBuiltin(NativeFunction.of("error", 1, (host, args, span) -> {
             throw new OqError(Values.display(args.get(0)), span);
-        }));
+        }).named("message"));
         interpreter.defineBuiltin(NativeFunction.of("assert", 1, (host, args, span) -> {
             if (!Values.truthy(args.get(0))) {
                 throw new OqError("assertion failed", span,
                         "The value was " + Values.repr(args.get(0)) + " but it must be true.");
             }
             return null;
-        }));
+        }).named("condition"));
         interpreter.defineBuiltin(NativeFunction.of("assert", 2, (host, args, span) -> {
             if (!Values.truthy(args.get(0))) {
                 throw new OqError("assertion failed: " + Values.display(args.get(1)), span);
             }
             return null;
-        }));
-        interpreter.defineBuiltin(NativeFunction.of("args", 0, (host, args, span) -> new ArrayList<Object>(host.programArgs())));
+        }).named("condition", "message"));
+        interpreter.defineBuiltin(NativeFunction.of("args", 0,
+                (host, args, span) -> new ArrayList<Object>(host.programArgs())));
         interpreter.defineBuiltin(NativeFunction.of("exit", 0, (host, args, span) -> {
             throw new ExitSignal(0);
         }));
         interpreter.defineBuiltin(NativeFunction.of("exit", 1, (host, args, span) -> {
             throw new ExitSignal((int) Values.asLong(args.get(0)));
-        }));
+        }).named("code"));
         // Read the collection directly rather than delegating to a `sort` method. Only a list
         // has one, so `sort_by(set([3, 1]), fn)` used to fail with "set has no method 'sort'",
         // which named a method the caller never wrote.
@@ -225,16 +233,18 @@ public final class Stdlib {
             items.sort((a, b) -> Values.compare(
                     host.call(key, List.of(a), span), host.call(key, List.of(b), span), span));
             return items;
-        }));
+        }).named("items", "key"));
         interpreter.defineBuiltin(NativeFunction.of("map", 2, (host, args, span) ->
-                invokeMethod(host, args.get(0), "map", List.of(args.get(1)), span)));
+                invokeMethod(host, args.get(0), "map", List.of(args.get(1)), span)).named("items", "function"));
         interpreter.defineBuiltin(NativeFunction.of("filter", 2, (host, args, span) ->
-                invokeMethod(host, args.get(0), "filter", List.of(args.get(1)), span)));
-        interpreter.defineBuiltin(NativeFunction.of("clone", 1, (host, args, span) -> deepCopy(args.get(0))));
+                invokeMethod(host, args.get(0), "filter", List.of(args.get(1)), span)).named("items", "predicate"));
+        interpreter.defineBuiltin(NativeFunction.of("clone", 1, (host, args, span) -> deepCopy(args.get(0)))
+                .named("value"));
     }
 
     private static void installText(Interpreter interpreter) {
-        interpreter.defineBuiltin(NativeFunction.of("format", 1, (host, args, span) -> Values.display(args.get(0))));
+        interpreter.defineBuiltin(NativeFunction.of("format", 1, (host, args, span) -> Values.display(args.get(0)))
+                .named("value"));
         interpreter.defineBuiltin(NativeFunction.variadic("join", 1, (host, args, span) -> {
             Object first = args.get(0);
             Iterable<?> items = Values.iterable(first, span);
@@ -247,22 +257,23 @@ public final class Stdlib {
                 firstItem = false;
             }
             return sb.toString();
-        }));
+        }).named("items", "separator"));
         interpreter.defineBuiltin(NativeFunction.of("upper", 1, (host, args, span) ->
-                Values.display(args.get(0)).toUpperCase(Locale.ROOT)));
+                Values.display(args.get(0)).toUpperCase(Locale.ROOT)).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("lower", 1, (host, args, span) ->
-                Values.display(args.get(0)).toLowerCase(Locale.ROOT)));
+                Values.display(args.get(0)).toLowerCase(Locale.ROOT)).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("trim", 1, (host, args, span) ->
-                Values.display(args.get(0)).strip()));
+                Values.display(args.get(0)).strip()).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("contains", 2, (host, args, span) ->
-                Values.contains(args.get(0), args.get(1), span)));
+                Values.contains(args.get(0), args.get(1), span)).named("container", "item"));
         interpreter.defineBuiltin(NativeFunction.of("split", 2, (host, args, span) -> {
             String text = Values.display(args.get(0));
             String separator = Values.display(args.get(1));
             return new ArrayList<Object>(List.of(text.split(Pattern.quote(separator), -1)));
-        }));
+        }).named("text", "separator"));
         interpreter.defineBuiltin(NativeFunction.of("replace", 3, (host, args, span) ->
-                Values.display(args.get(0)).replace(Values.display(args.get(1)), Values.display(args.get(2)))));
+                Values.display(args.get(0)).replace(Values.display(args.get(1)), Values.display(args.get(2))))
+                        .named("text", "old", "new"));
         interpreter.defineBuiltin(NativeFunction.of("regex", 2, (host, args, span) -> {
             Pattern pattern = compilePattern(args.get(0), span);
             Matcher matcher = pattern.matcher(Values.display(args.get(1)));
@@ -279,9 +290,10 @@ public final class Stdlib {
                 }
             }
             return matches;
-        }));
+        }).named("pattern", "text"));
         interpreter.defineBuiltin(NativeFunction.of("matches", 2, (host, args, span) ->
-                compilePattern(args.get(0), span).matcher(Values.display(args.get(1))).find()));
+                compilePattern(args.get(0), span).matcher(Values.display(args.get(1))).find())
+                        .named("pattern", "text"));
     }
 
     private static void installCollections(Interpreter interpreter) {
@@ -290,13 +302,13 @@ public final class Stdlib {
                 throw new OqError("keys() needs a map, got " + Values.typeName(args.get(0)), span);
             }
             return new ArrayList<Object>(map.keySet());
-        }));
+        }).named("map"));
         interpreter.defineBuiltin(NativeFunction.of("values", 1, (host, args, span) -> {
             if (!(args.get(0) instanceof Map<?, ?> map)) {
                 throw new OqError("values() needs a map, got " + Values.typeName(args.get(0)), span);
             }
             return new ArrayList<Object>(map.values());
-        }));
+        }).named("map"));
         interpreter.defineBuiltin(NativeFunction.of("push", 2, (host, args, span) -> {
             if (!(args.get(0) instanceof List<?> raw)) {
                 throw new OqError("push() needs a list, got " + Values.typeName(args.get(0)), span);
@@ -305,39 +317,39 @@ public final class Stdlib {
             List<Object> list = (List<Object>) raw;
             list.add(args.get(1));
             return list;
-        }));
+        }).named("list", "item"));
         interpreter.defineBuiltin(NativeFunction.of("pop", 1, (host, args, span) ->
-                invokeMethod(host, args.get(0), "pop", List.of(), span)));
+                invokeMethod(host, args.get(0), "pop", List.of(), span)).named("list"));
         // sum/min/max/sorted each need a collection, and every family already reports its own
         // length and iterates, so they read through iterableList rather than a per-type method.
         // `sum` on a set or range previously failed with "set has no method 'sum'".
         interpreter.defineBuiltin(NativeFunction.of("sum", 1, (host, args, span) ->
-                sumOf(Values.iterableList(args.get(0), span), span)));
+                sumOf(Values.iterableList(args.get(0), span), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("sort", 1, (host, args, span) ->
-                invokeMethod(host, args.get(0), "sort", List.of(), span)));
+                invokeMethod(host, args.get(0), "sort", List.of(), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("reverse", 1, (host, args, span) ->
-                invokeMethod(host, args.get(0), "reverse", List.of(), span)));
+                invokeMethod(host, args.get(0), "reverse", List.of(), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("unique", 1, (host, args, span) ->
-                invokeMethod(host, args.get(0), "unique", List.of(), span)));
+                invokeMethod(host, args.get(0), "unique", List.of(), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.variadic("set", 0, 1, (host, args, span) -> {
             if (args.isEmpty()) return new OqSet();
             if (args.get(0) instanceof OqSet set) return set;
             Set<Object> result = new OqSet();
             for (Object item : Values.iterable(args.get(0), span)) result.add(item);
             return result;
-        }));
+        }).named("items"));
         interpreter.defineBuiltin(NativeFunction.variadic("frozenset", 0, 1, (host, args, span) -> {
             if (args.isEmpty()) return new OqFrozenSet();
             if (args.get(0) instanceof OqFrozenSet frozen) return frozen;
             List<?> items = Values.iterableList(args.get(0), span);
             return new OqFrozenSet(items);
-        }));
+        }).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("list", 1, (host, args, span) -> {
             if (args.get(0) instanceof List<?> list) return list;
             List<Object> result = new ArrayList<>();
             for (Object item : Values.iterable(args.get(0), span)) result.add(item);
             return result;
-        }));
+        }).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("enumerate", 1, (host, args, span) -> {
             List<Object> result = new ArrayList<>();
             long index = 0;
@@ -348,7 +360,7 @@ public final class Stdlib {
                 result.add(pair);
             }
             return result;
-        }));
+        }).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("zip", 2, (host, args, span) -> {
             List<?> a = Values.iterableList(args.get(0), span);
             List<?> b = Values.iterableList(args.get(1), span);
@@ -358,9 +370,10 @@ public final class Stdlib {
                 result.add(new ArrayList<Object>(List.of(a.get(i), b.get(i))));
             }
             return result;
-        }));
+        }).named("first", "second"));
         interpreter.defineBuiltin(NativeFunction.of("range_list", 2, (host, args, span) ->
-                new OqRange(Values.asLong(args.get(0)), Values.asLong(args.get(1)), false).toList()));
+                new OqRange(Values.asLong(args.get(0)), Values.asLong(args.get(1)), false).toList())
+                        .named("start", "stop"));
     }
 
     private static void installMath(Interpreter interpreter) {
@@ -375,18 +388,18 @@ public final class Stdlib {
             }
             if (value instanceof Double d) return Math.abs(d);
             throw new OqError("abs() needs a number, got " + Values.typeName(value), span);
-        }));
+        }).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("floor", 1, (host, args, span) ->
-                whole(Math.floor(asNumber(args.get(0), "floor", span)), "floor", span)));
+                whole(Math.floor(asNumber(args.get(0), "floor", span)), "floor", span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("ceil", 1, (host, args, span) ->
-                whole(Math.ceil(asNumber(args.get(0), "ceil", span)), "ceil", span)));
+                whole(Math.ceil(asNumber(args.get(0), "ceil", span)), "ceil", span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("round", 1, (host, args, span) -> {
             double value = asNumber(args.get(0), "round", span);
             requireWhole(value, "round", span);
             // Beyond the long range the double is already integral (spacing > 1), so the
             // value itself is the rounded result. Math.round would saturate at Long.MAX_VALUE.
             return Values.fitsInLong(value) ? (Object) Math.round(value) : (Object) value;
-        }));
+        }).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("round", 2, (host, args, span) -> {
             double value = asNumber(args.get(0), "round", span);
             long places = Values.asLong(args.get(1));
@@ -405,25 +418,25 @@ public final class Stdlib {
             double rounded = Values.fitsInLong(scaled) ? Math.round(scaled) / factor : value;
             if (places == 0) return whole(rounded, "round", span);
             return rounded;
-        }));
+        }).named("value", "places"));
         interpreter.defineBuiltin(NativeFunction.of("sqrt", 1, (host, args, span) ->
-                Math.sqrt(asNumber(args.get(0), "sqrt", span))));
+                Math.sqrt(asNumber(args.get(0), "sqrt", span))).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("pow", 2, (host, args, span) ->
-                Values.power(args.get(0), args.get(1), span)));
+                Values.power(args.get(0), args.get(1), span)).named("base", "exponent"));
         // One argument means "the extreme of this collection"; two or more mean "among these
         // values". The arity decides, so `min([3, 1])` is 1 and `min(3, 1)` is 1 as well.
         interpreter.defineBuiltin(NativeFunction.variadic("min", 1, (host, args, span) ->
-                extremeOf(args, span, "min", -1)));
+                extremeOf(args, span, "min", -1)).named("values"));
         interpreter.defineBuiltin(NativeFunction.variadic("max", 1, (host, args, span) ->
-                extremeOf(args, span, "max", 1)));
+                extremeOf(args, span, "max", 1)).named("values"));
         interpreter.defineBuiltin(NativeFunction.of("sorted", 1, (host, args, span) ->
-                sortedCopy(Values.iterableList(args.get(0), span), span, 1)));
+                sortedCopy(Values.iterableList(args.get(0), span), span, 1)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("clamp", 3, (host, args, span) -> {
             Object value = args.get(0);
             if (Values.compare(value, args.get(1), span) < 0) return args.get(1);
             if (Values.compare(value, args.get(2), span) > 0) return args.get(2);
             return value;
-        }));
+        }).named("value", "low", "high"));
         interpreter.defineBuiltin(NativeFunction.of("random", 0, (host, args, span) ->
                 ThreadLocalRandom.current().nextDouble()));
         interpreter.defineBuiltin(NativeFunction.of("random", 2, (host, args, span) -> {
@@ -431,19 +444,19 @@ public final class Stdlib {
             long to = Values.asLong(args.get(1));
             if (to <= from) return from;
             return ThreadLocalRandom.current().nextLong(from, to);
-        }));
+        }).named("from", "to"));
         interpreter.defineBuiltin(NativeFunction.of("random_item", 1, (host, args, span) -> {
             List<?> items = Values.iterableList(args.get(0), span);
             if (items.isEmpty()) return null;
             return items.get(ThreadLocalRandom.current().nextInt(items.size()));
-        }));
+        }).named("items"));
     }
 
     private static void installFiles(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("read", 1, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             return readBounded(host, path, span, "the file");
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("read_lines", 1, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             // Same cap and same charge as `read`, so splitting a file into lines is not a way
@@ -454,7 +467,7 @@ public final class Stdlib {
             List<Object> lines = new ArrayList<>();
             text.lines().forEach(lines::add);
             return lines;
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("save", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             String text = Values.display(args.get(1));
@@ -467,7 +480,7 @@ public final class Stdlib {
             } catch (IOException e) {
                 throw new OqError("cannot write file '" + path + "'", span, e.getMessage());
             }
-        }));
+        }).named("path", "text"));
         interpreter.defineBuiltin(NativeFunction.of("append", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             String text = Values.display(args.get(1));
@@ -481,9 +494,9 @@ public final class Stdlib {
             } catch (IOException e) {
                 throw new OqError("cannot append to file '" + path + "'", span, e.getMessage());
             }
-        }));
+        }).named("path", "text"));
         interpreter.defineBuiltin(NativeFunction.of("exists", 1, (host, args, span) ->
-                Files.exists(resolve(host, args.get(0)))));
+                Files.exists(resolve(host, args.get(0)))).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("list_files", 1, (host, args, span) -> {
             Path dir = resolve(host, args.get(0));
             try (var stream = Files.list(dir)) {
@@ -508,14 +521,14 @@ public final class Stdlib {
             } catch (IOException e) {
                 throw new OqError("cannot list directory '" + dir + "'", span, e.getMessage());
             }
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("delete", 1, (host, args, span) -> {
             try {
                 return Files.deleteIfExists(resolve(host, args.get(0)));
             } catch (IOException e) {
                 throw new OqError("cannot delete '" + args.get(0) + "'", span, e.getMessage());
             }
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("make_dir", 1, (host, args, span) -> {
             try {
                 Files.createDirectories(resolve(host, args.get(0)));
@@ -523,24 +536,25 @@ public final class Stdlib {
             } catch (IOException e) {
                 throw new OqError("cannot create directory '" + args.get(0) + "'", span, e.getMessage());
             }
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("file_size", 1, (host, args, span) -> {
             try {
                 return Files.size(resolve(host, args.get(0)));
             } catch (IOException e) {
                 throw new OqError("cannot read size of '" + args.get(0) + "'", span, e.getMessage());
             }
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("path_join", 2, (host, args, span) ->
-                Path.of(Values.display(args.get(0))).resolve(Values.display(args.get(1))).toString()));
+                Path.of(Values.display(args.get(0))).resolve(Values.display(args.get(1))).toString())
+                        .named("base", "name"));
         interpreter.defineBuiltin(NativeFunction.of("path_name", 1, (host, args, span) -> {
             Path path = Path.of(Values.display(args.get(0)));
             return path.getFileName() == null ? "" : path.getFileName().toString();
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("path_parent", 1, (host, args, span) -> {
             Path parent = Path.of(Values.display(args.get(0))).getParent();
             return parent == null ? "" : parent.toString();
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("cwd", 0, (host, args, span) ->
                 host.workingDirectory().toAbsolutePath().toString()));
     }
@@ -556,9 +570,9 @@ public final class Stdlib {
      */
     private static void installFileOps(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("is_file", 1, (host, args, span) ->
-                Files.isRegularFile(resolve(host, args.get(0)))));
+                Files.isRegularFile(resolve(host, args.get(0)))).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("is_dir", 1, (host, args, span) ->
-                Files.isDirectory(resolve(host, args.get(0)))));
+                Files.isDirectory(resolve(host, args.get(0)))).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("read_bytes", 1, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             try (java.io.InputStream stream = Files.newInputStream(path)) {
@@ -574,7 +588,7 @@ public final class Stdlib {
             } catch (IOException e) {
                 throw new OqError("cannot read file '" + path + "'", span, e.getMessage());
             }
-        }));
+        }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("write_bytes", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
             byte[] bytes = bytesOfHex(Values.display(args.get(1)), span);
@@ -586,12 +600,12 @@ public final class Stdlib {
             } catch (IOException e) {
                 throw new OqError("cannot write file '" + path + "'", span, e.getMessage());
             }
-        }));
+        }).named("path", "hex"));
         interpreter.defineBuiltin(NativeFunction.of("copy_file", 2, (host, args, span) -> {
             Path source = resolve(host, args.get(0));
             Path target = resolve(host, args.get(1));
             return copyCharged(host, source, target, span);
-        }));
+        }).named("source", "target"));
         interpreter.defineBuiltin(NativeFunction.of("move_file", 2, (host, args, span) -> {
             Path source = resolve(host, args.get(0));
             Path target = resolve(host, args.get(1));
@@ -606,7 +620,7 @@ public final class Stdlib {
                 throw new OqError("copied '" + target + "' but could not remove '" + source + "'", span,
                         "Both files now exist. (" + e.getMessage() + ")");
             }
-        }));
+        }).named("source", "target"));
         interpreter.defineBuiltin(NativeFunction.of("walk", 1, (host, args, span) -> {
             Path root = resolve(host, args.get(0));
             if (!Files.isDirectory(root)) {
@@ -635,7 +649,7 @@ public final class Stdlib {
             }
             chargeTransfer(host, found.size());
             return found;
-        }));
+        }).named("path"));
     }
 
     /** Copies one file, refusing an existing target and billing the bytes moved. */
@@ -690,11 +704,13 @@ public final class Stdlib {
 
     private static void installJson(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("json_parse", 1, (host, args, span) ->
-                Json.parse(Values.display(args.get(0)), span)));
-        interpreter.defineBuiltin(NativeFunction.of("json", 1, (host, args, span) -> Json.write(args.get(0))));
-        interpreter.defineBuiltin(NativeFunction.of("json_write", 1, (host, args, span) -> Json.write(args.get(0))));
+                Json.parse(Values.display(args.get(0)), span)).named("text"));
+        interpreter.defineBuiltin(NativeFunction.of("json", 1, (host, args, span) -> Json.write(args.get(0)))
+                .named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("json_write", 1, (host, args, span) -> Json.write(args.get(0)))
+                .named("value"));
         interpreter.defineBuiltin(NativeFunction.of("json_pretty", 1, (host, args, span) ->
-                Json.writePretty(args.get(0))));
+                Json.writePretty(args.get(0))).named("value"));
     }
 
     /**
@@ -707,21 +723,21 @@ public final class Stdlib {
      */
     private static void installEncoding(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("hex_encode", 1, (host, args, span) ->
-                HexFormat.of().formatHex(utf8(args.get(0), "hex_encode", span))));
+                HexFormat.of().formatHex(utf8(args.get(0), "hex_encode", span))).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("hex_decode", 1, (host, args, span) ->
-                decodeHex(text(args.get(0), "hex_decode", span), span)));
+                decodeHex(text(args.get(0), "hex_decode", span), span)).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("base64_encode", 1, (host, args, span) ->
-                Base64.getEncoder().encodeToString(utf8(args.get(0), "base64_encode", span))));
+                Base64.getEncoder().encodeToString(utf8(args.get(0), "base64_encode", span))).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("base64_decode", 1, (host, args, span) ->
-                decodeBase64(text(args.get(0), "base64_decode", span), span)));
+                decodeBase64(text(args.get(0), "base64_decode", span), span)).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("sha256", 1, (host, args, span) ->
-                digest("SHA-256", args.get(0), "sha256", span)));
+                digest("SHA-256", args.get(0), "sha256", span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("sha1", 1, (host, args, span) ->
-                digest("SHA-1", args.get(0), "sha1", span)));
+                digest("SHA-1", args.get(0), "sha1", span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("md5", 1, (host, args, span) ->
-                digest("MD5", args.get(0), "md5", span)));
+                digest("MD5", args.get(0), "md5", span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("hmac_sha256", 2, (host, args, span) ->
-                hmac(args.get(0), args.get(1), span)));
+                hmac(args.get(0), args.get(1), span)).named("key", "message"));
         interpreter.defineBuiltin(NativeFunction.of("secure_random_hex", 1, (host, args, span) -> {
             long count = wholeNumber(args.get(0), "secure_random_hex", span);
             if (count < 0 || count > 4096) {
@@ -731,7 +747,7 @@ public final class Stdlib {
             byte[] bytes = new byte[(int) count];
             RANDOM.nextBytes(bytes);
             return HexFormat.of().formatHex(bytes);
-        }));
+        }).named("bytes"));
         interpreter.defineBuiltin(NativeFunction.of("secure_equal", 2, (host, args, span) -> {
             // MessageDigest.isEqual is the JVM's constant-time comparison. Writing the loop here
             // was rejected: a hand-written xor accumulator is only correct if the compiler does
@@ -739,9 +755,9 @@ public final class Stdlib {
             byte[] left = utf8(args.get(0), "secure_equal", span);
             byte[] right = utf8(args.get(1), "secure_equal", span);
             return MessageDigest.isEqual(left, right);
-        }));
+        }).named("left", "right"));
         interpreter.defineBuiltin(NativeFunction.of("pbkdf2_sha256", 3, (host, args, span) ->
-                pbkdf2(args.get(0), args.get(1), args.get(2), span)));
+                pbkdf2(args.get(0), args.get(1), args.get(2), span)).named("password", "salt", "iterations"));
     }
 
     /** The largest iteration count {@code pbkdf2_sha256} accepts, so a call cannot look hung. */
@@ -825,13 +841,13 @@ public final class Stdlib {
         // generator finds builtins by matching the literal in this file, so a computed name
         // would make the four functions exist and be undocumented at the same time.
         interpreter.defineBuiltin(NativeFunction.of("log_debug", 1, (host, args, span) ->
-                writeLog(host, Level.DEBUG, args.get(0))));
+                writeLog(host, Level.DEBUG, args.get(0))).named("message"));
         interpreter.defineBuiltin(NativeFunction.of("log_info", 1, (host, args, span) ->
-                writeLog(host, Level.INFO, args.get(0))));
+                writeLog(host, Level.INFO, args.get(0))).named("message"));
         interpreter.defineBuiltin(NativeFunction.of("log_warn", 1, (host, args, span) ->
-                writeLog(host, Level.WARN, args.get(0))));
+                writeLog(host, Level.WARN, args.get(0))).named("message"));
         interpreter.defineBuiltin(NativeFunction.of("log_error", 1, (host, args, span) ->
-                writeLog(host, Level.ERROR, args.get(0))));
+                writeLog(host, Level.ERROR, args.get(0))).named("message"));
         interpreter.defineBuiltin(NativeFunction.of("log_level", 1, (host, args, span) -> {
             String requested = text(args.get(0), "log_level", span);
             Level chosen = Level.named(requested);
@@ -841,7 +857,7 @@ public final class Stdlib {
             }
             level = chosen;
             return null;
-        }));
+        }).named("level"));
         interpreter.defineBuiltin(NativeFunction.of("log_enabled", 1, (host, args, span) -> {
             String requested = text(args.get(0), "log_enabled", span);
             Level chosen = Level.named(requested);
@@ -850,7 +866,7 @@ public final class Stdlib {
                         "Use debug, info, warn, error or none.");
             }
             return chosen.rank >= level().rank;
-        }));
+        }).named("level"));
     }
 
     /**
@@ -878,7 +894,7 @@ public final class Stdlib {
                 options.add(Option.parse(text(entry, "arg_parse", span), span));
             }
             return parseArguments(arguments, options, span);
-        }));
+        }).named("arguments", "options"));
     }
 
     /** One declared option: a flag, or a value of a named type that may be optional. */
@@ -1019,17 +1035,18 @@ public final class Stdlib {
      */
     private static void installCsv(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("csv_parse", 1, (host, args, span) ->
-                csvParse(text(args.get(0), "csv_parse", span), ',', false, span)));
+                csvParse(text(args.get(0), "csv_parse", span), ',', false, span)).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("csv_parse", 2, (host, args, span) ->
                 csvParse(text(args.get(0), "csv_parse", span),
-                        csvDelimiter(args.get(1), span), false, span)));
+                        csvDelimiter(args.get(1), span), false, span)).named("text", "delimiter"));
         interpreter.defineBuiltin(NativeFunction.of("csv_parse", 3, (host, args, span) ->
                 csvParse(text(args.get(0), "csv_parse", span),
-                        csvDelimiter(args.get(1), span), Values.truthy(args.get(2)), span)));
+                        csvDelimiter(args.get(1), span), Values.truthy(args.get(2)), span))
+                                .named("text", "delimiter", "comments"));
         interpreter.defineBuiltin(NativeFunction.of("csv_write", 1, (host, args, span) ->
-                csvWrite(args.get(0), ',', span)));
+                csvWrite(args.get(0), ',', span)).named("rows"));
         interpreter.defineBuiltin(NativeFunction.of("csv_write", 2, (host, args, span) ->
-                csvWrite(args.get(0), csvDelimiter(args.get(1), span), span)));
+                csvWrite(args.get(0), csvDelimiter(args.get(1), span), span)).named("rows", "delimiter"));
     }
 
     /**
@@ -1176,9 +1193,9 @@ public final class Stdlib {
      */
     private static void installDates(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("date_parse", 1, (host, args, span) ->
-                dateParse(text(args.get(0), "date_parse", span), span)));
+                dateParse(text(args.get(0), "date_parse", span), span)).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("instant_parse", 1, (host, args, span) ->
-                instantParse(text(args.get(0), "instant_parse", span), span)));
+                instantParse(text(args.get(0), "instant_parse", span), span)).named("text"));
     }
 
     private static String dateParse(String source, Span span) {
@@ -1231,7 +1248,7 @@ public final class Stdlib {
             // An offset, not a zone name: the output has to be unambiguous on its own, and a
             // reader that has to look up a zone to read a timestamp is not receiving a timestamp.
             return instant.atZone(zone).toOffsetDateTime().toString();
-        }));
+        }).named("instant", "zone"));
         interpreter.defineBuiltin(NativeFunction.of("sleep", 1, (host, args, span) -> {
             long millis = (long) (Values.asDouble(args.get(0)) * 1000);
             if (millis > MAX_SLEEP_MILLIS) {
@@ -1249,7 +1266,7 @@ public final class Stdlib {
                 Thread.currentThread().interrupt();
             }
             return null;
-        }));
+        }).named("seconds"));
     }
 
     /**
@@ -1283,11 +1300,11 @@ public final class Stdlib {
             fields.put("query", uri.getRawQuery());
             fields.put("fragment", uri.getRawFragment());
             return new OqData("Url", fields);
-        }));
+        }).named("url"));
         interpreter.defineBuiltin(NativeFunction.of("url_encode", 1, (host, args, span) -> {
             String text = Values.display(args.get(0));
             return java.net.URLEncoder.encode(text, StandardCharsets.UTF_8);
-        }));
+        }).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("url_decode", 1, (host, args, span) -> {
             String text = Values.display(args.get(0));
             try {
@@ -1296,7 +1313,7 @@ public final class Stdlib {
                 throw new OqError("invalid percent-encoding in '" + text + "'", span,
                         e.getMessage() + ". A literal % must be written %25.");
             }
-        }));
+        }).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("query_parse", 1, (host, args, span) -> {
             String text = Values.display(args.get(0));
             // A leading ? is what a caller most often has in hand, from url_parse or from a line
@@ -1315,7 +1332,7 @@ public final class Stdlib {
                 pairs.add(new OqData("QueryPair", pair));
             }
             return pairs;
-        }));
+        }).named("query"));
         interpreter.defineBuiltin(NativeFunction.of("query_encode", 1, (host, args, span) -> {
             List<?> pairs = Values.iterableList(args.get(0), span);
             StringBuilder out = new StringBuilder();
@@ -1355,9 +1372,9 @@ public final class Stdlib {
                 out.append(java.net.URLEncoder.encode(value, StandardCharsets.UTF_8));
             }
             return out.toString();
-        }));
+        }).named("pairs"));
         interpreter.defineBuiltin(NativeFunction.of("url_join", 2, (host, args, span) ->
-                urlJoin(Values.display(args.get(0)), Values.display(args.get(1)), span)));
+                urlJoin(Values.display(args.get(0)), Values.display(args.get(1)), span)).named("base", "reference"));
     }
 
     /** Decodes one query component, naming the whole query when the component is malformed. */
@@ -1444,9 +1461,10 @@ public final class Stdlib {
 
     private static void installHttp(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("http_get", 1, (host, args, span) ->
-                http(host, "GET", Values.display(args.get(0)), null, span)));
+                http(host, "GET", Values.display(args.get(0)), null, span)).named("url"));
         interpreter.defineBuiltin(NativeFunction.of("http_post", 2, (host, args, span) ->
-                http(host, "POST", Values.display(args.get(0)), Values.display(args.get(1)), span)));
+                http(host, "POST", Values.display(args.get(0)), Values.display(args.get(1)), span))
+                        .named("url", "body"));
     }
 
     private static Object http(OqHost host, String method, String url, String body, Span span) {
@@ -1605,14 +1623,14 @@ public final class Stdlib {
                             () -> host.call(callback, List.of(), span),
                             TaskRunner.EXECUTOR);
             return new dev.oqthara.runtime.OqTask(future);
-        }));
+        }).named("function"));
         interpreter.defineBuiltin(NativeFunction.of("await", 1, (host, args, span) -> {
             if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
                 throw new OqError("await() needs a task from spawn(), got "
                         + Values.typeName(args.get(0)), span);
             }
             return task.await(span);
-        }));
+        }).named("task"));
         interpreter.defineBuiltin(NativeFunction.of("await", 2, (host, args, span) -> {
             if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
                 throw new OqError("await() needs a task from spawn(), got "
@@ -1626,14 +1644,14 @@ public final class Stdlib {
                                 + MAX_SLEEP_MILLIS / 1000 + " seconds per call.");
             }
             return task.awaitWithin(millis, span);
-        }));
+        }).named("task", "seconds"));
         interpreter.defineBuiltin(NativeFunction.of("done", 1, (host, args, span) -> {
             if (!(args.get(0) instanceof dev.oqthara.runtime.OqTask task)) {
                 throw new OqError("done() needs a task from spawn(), got "
                         + Values.typeName(args.get(0)), span);
             }
             return task.isDone();
-        }));
+        }).named("task"));
         interpreter.defineBuiltin(NativeFunction.of("mutex", 0, (host, args, span) ->
                 new dev.oqthara.runtime.OqMutex()));
         interpreter.defineBuiltin(NativeFunction.of("par_map", 2, (host, args, span) -> {
@@ -1660,12 +1678,12 @@ public final class Stdlib {
                 }
             }
             return results;
-        }));
+        }).named("items", "function"));
     }
 
     private static void installProcess(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("env", 1, (host, args, span) ->
-                System.getenv(Values.display(args.get(0)))));
+                System.getenv(Values.display(args.get(0)))).named("name"));
         interpreter.defineBuiltin(NativeFunction.of("run_command", 1, (host, args, span) -> {
             String command = Values.display(args.get(0));
             try {
@@ -1717,7 +1735,7 @@ public final class Stdlib {
             } catch (java.util.concurrent.ExecutionException e) {
                 throw new OqError("cannot read command output: " + command, span, e.getMessage());
             }
-        }));
+        }).named("command"));
         interpreter.defineBuiltin(NativeFunction.of("cpu_count", 0, (host, args, span) ->
                 (long) Runtime.getRuntime().availableProcessors()));
         interpreter.defineBuiltin(NativeFunction.of("memory_mb", 0, (host, args, span) ->
