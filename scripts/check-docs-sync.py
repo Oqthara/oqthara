@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+DOCS = ROOT / "docs"
 problems: list[str] = []
 checked: list[str] = []
 
@@ -285,6 +286,38 @@ def backend_counts_are_measured() -> None:
         f"BytecodeCompilerTest ({asserted_compiled}) and conformance/ ({measured_total} "
         f"executable of {len(programs)} .oq files)"
     )
+
+
+# 5b. Every quoted `wrote <jar> (N classes, 0 skipped)` line must agree.
+#
+# N counts the runtime classes copied into a jar, so it grows whenever a runtime class is
+# added, and it is not derivable without running a build. What can be checked here is that the
+# documents do not disagree with each other: before this check existed they quoted 99, 103 and
+# 106 for the same build, which is only possible if at least two were wrong.
+def quoted_jar_class_counts_agree() -> None:
+    counts: dict[str, list[str]] = {}
+    for path in sorted(DOCS.glob("**/*.md")):
+        for match in re.finditer(r"wrote (\S+\.jar) \((\d+) classes, (\d+) skipped\)", path.read_text(encoding="utf-8")):
+            jar, count, skipped = match.group(1), int(match.group(2)), int(match.group(3))
+            if skipped != 0:
+                problems.append(
+                    f"{path.relative_to(ROOT)} quotes {jar} as '{count} classes, {skipped} skipped'; "
+                    "every measured build reports 0 skipped"
+                )
+            counts.setdefault(str(count), []).append(f"{path.relative_to(ROOT)} ({jar})")
+
+    if len(counts) > 1:
+        detail = "; ".join(
+            f"{count}: " + ", ".join(sorted(where)) for count, where in sorted(counts.items())
+        )
+        problems.append(
+            f"documents quote {len(counts)} different jar class counts for the same build "
+            f"({detail})"
+        )
+        return
+    if counts:
+        count = next(iter(counts))
+        note(f"{sum(len(v) for v in counts.values())} quoted jar class counts all agree on {count}")
 
 
 # 6. The version must agree across the CLI, the build and the changelog.
@@ -692,6 +725,7 @@ CHECKS = (
     documented_commands_exist,
     catalog_is_current,
     backend_counts_are_measured,
+    quoted_jar_class_counts_agree,
     version_is_consistent,
     cited_builtins_exist,
     contract_register_is_complete,
