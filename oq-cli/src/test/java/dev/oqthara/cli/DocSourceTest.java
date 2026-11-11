@@ -227,6 +227,18 @@ class DocSourceTest {
     }
 
     @Test
+    void aNestedHeadingUsesForwardSlashesWhateverTheHostSeparator(@TempDir Path dir)
+            throws Exception {
+        Files.createDirectories(dir.resolve("lib"));
+        Files.writeString(dir.resolve("lib/helper.oq"), "fun doubleIt(n)\n  return n\nend\n");
+        Result result = doc(dir);
+        assertEquals(0, result.code(), result.err());
+        assertTrue(result.out().contains("## lib/helper.oq"), result.out());
+        assertFalse(result.out().contains("lib\\helper.oq"),
+                "a heading must not carry the host separator: " + result.out());
+    }
+
+    @Test
     void thePageStatesThatItIsGenerated(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("g.oq");
         Files.writeString(file, "\"\"\"G.\"\"\"\nfun g()\n  return 1\nend\n");

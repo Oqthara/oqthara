@@ -6,6 +6,7 @@ import dev.oqthara.core.Lexer;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqError;
 
+import java.io.File;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -164,10 +165,13 @@ final class DocGenerator {
         Path root = Files.isDirectory(source) ? source.toAbsolutePath().normalize()
                 : source.toAbsolutePath().normalize().getParent();
         Path absolute = file.toAbsolutePath().normalize();
-        if (root != null && absolute.startsWith(root)) {
-            return root.relativize(absolute).toString();
-        }
-        return absolute.getFileName().toString();
+        Path shown = root != null && absolute.startsWith(root)
+                ? root.relativize(absolute)
+                : absolute.getFileName();
+        // Relative paths use the host's separator, so without this a page generated on Windows
+        // would head a module one way and a page generated on Linux another. A published page
+        // must not depend on where it was built.
+        return shown.toString().replace(File.separatorChar, '/');
     }
 
     /**
