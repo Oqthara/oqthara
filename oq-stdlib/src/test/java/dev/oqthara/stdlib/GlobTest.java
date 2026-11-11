@@ -254,8 +254,11 @@ class GlobTest {
     @Test
     void anUnreadableDirectoryIsAUserErrorNotAnInternalOne() throws IOException {
         // Files.walk reports a traversal failure as an UncheckedIOException, so the IOException
-        // branch never saw it and the failure surfaced as an internal error with exit 70. Root
-        // ignores the mode bits, so there is nothing to assert there.
+        // branch never saw it and the failure surfaced as an internal error with exit 70. Two
+        // hosts have nothing to assert: Windows has no POSIX permission bits at all, and root
+        // ignores them.
+        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"),
+                "this host has no POSIX permissions, so a directory cannot be made unreadable");
         Path locked = dir.resolve("locked");
         Files.createDirectories(locked);
         touch("a.oq");
