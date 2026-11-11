@@ -383,6 +383,109 @@ def contract_register_is_complete() -> None:
          f"({len(undocumented)} deliberately absent)")
 
 
+# 9. The stdlib inventory's coverage tallies must agree with its own per-domain chapters and
+#    with each other. This document carried three mutually inconsistent tallies for months
+#    because nothing checked them: a status table, a Total row and the sum of the per-domain
+#    rows each said something different, and none matched the chapters they were derived from.
+def stdlib_inventory_tallies_agree() -> None:
+    path = "docs/governance/alpha-4-stdlib-inventory.md"
+    lines = read(path).split("\n")
+
+    def number(cell: str) -> int:
+        return int(cell.strip().replace("*", ""))
+
+    # Derive the truth from the chapters: a [C]/[P]/[A]/[X] tag applies to every backticked
+    # name in its `;`-delimited clause. `test` counts once despite its eight submodules, which
+    # the chapter summarises rather than enumerates.
+    chapters: dict[int, list[int]] = {}
+    for index, line in enumerate(lines):
+        heading = re.match(r"^### (\d+)\. .+ — (\d+) modules?$", line)
+        if not heading:
+            continue
+        cell = next(
+            part.split("|")[2]
+            for part in lines[index + 1 : index + 8]
+            if part.startswith("| Modules |")
+        )
+        counts = [0, 0, 0, 0]
+        names = 0
+        for clause in cell.split(";"):
+            found = len(re.findall(r"`([^`]+)`", clause))
+            if "with its eight" in clause:
+                found = 1
+            tag = re.search(r"\[(?:all |both )?([CPAX])\]", clause)
+            names += found
+            if tag:
+                counts["CPAX".index(tag.group(1))] += found
+        chapters[int(heading.group(1))] = [names] + counts
+    if not chapters:
+        problems.append(f"{path} has no per-domain chapters to reconcile")
+        return
+
+    row_start = next(
+        (i for i, line in enumerate(lines) if line.startswith("| # | Domain | Modules")),
+        None,
+    )
+    if row_start is None:
+        problems.append(f"{path} has no per-domain table")
+        return
+
+    def mismatched(cells: list[int]) -> bool:
+        return cells != chapters.get(row_index, cells)
+
+    summed = [0, 0, 0, 0, 0]
+    total_row: list[int] | None = None
+    seen: list[int] = []
+    for line in lines[row_start + 2 :]:
+        if not line.startswith("|"):
+            break
+        cells = [part.strip() for part in line.split("|")]
+        if "**Total**" in line:
+            total_row = [number(cell) for cell in cells[3:8]]
+            break
+        row_index = int(cells[1])
+        seen.append(row_index)
+        values = [number(cell) for cell in cells[3:8]]
+        if values != chapters.get(row_index):
+            problems.append(
+                f"{path} per-domain row {row_index} says {values} but its chapter "
+                f"accounts for {chapters.get(row_index)}"
+            )
+        for position, value in enumerate(values):
+            summed[position] += value
+
+    absent = sorted(set(chapters) - set(seen))
+    if absent:
+        problems.append(f"{path} has chapters with no per-domain row: {absent}")
+    if total_row is None:
+        problems.append(f"{path} has no Total row to compare")
+        return
+    if total_row != summed:
+        problems.append(
+            f"{path} Total row says {total_row} but its per-domain rows sum to {summed}"
+        )
+
+    status_rows = re.findall(
+        r"^\| \*\*(?:Covered|Partly covered|Absent|Deliberately excluded)\*\* \| \*\*(\d+)\*\*",
+        read(path),
+        re.M,
+    )
+    if len(status_rows) != 4:
+        problems.append(f"{path} does not state four coverage status counts")
+        return
+    stated = [int(value) for value in status_rows]
+    if stated != summed[1:]:
+        problems.append(
+            f"{path} status table says {stated} but the chapters account for {summed[1:]}"
+        )
+        return
+    note(
+        f"{path} tallies agree: {summed[0]} modules, "
+        f"{summed[1]} covered / {summed[2]} partial / {summed[3]} absent / "
+        f"{summed[4]} excluded"
+    )
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -392,6 +495,7 @@ CHECKS = (
     version_is_consistent,
     cited_builtins_exist,
     contract_register_is_complete,
+    stdlib_inventory_tallies_agree,
 )
 
 

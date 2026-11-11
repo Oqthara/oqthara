@@ -13,7 +13,8 @@ code. It answers three questions with numbers rather than adjectives:
 3. Given both, how much of the reference surface is covered, partly covered, absent, and
    deliberately excluded — and which absences are worth closing first?
 
-Scope: the language as it exists at `b5813d1`. Nothing here is a commitment. Every forward
+Scope: the language as it exists at `5f7b868`, the merge of PR #93, together with the
+`textwrap`/`difflib` builtins added in PR #94. Nothing here is a commitment. Every forward
 statement is written as *proposed*, with acceptance criteria attached, because a planning
 document that promises is a document that cannot be checked.
 
@@ -296,7 +297,7 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `string` [P]; `string.templatelib`, `unicodedata` [A]; `difflib`, `textwrap` [C]; `stringprep`, `readline`, `rlcompleter` [X] |
+| Modules | `string`, `string.templatelib`, `re` [P]; `unicodedata` [A]; `difflib`, `textwrap` [C]; `stringprep`, `readline`, `rlcompleter` [X] |
 | Oqthara equivalent | Text method family (43 names, `MethodResolverImpl.java:649`): `upper`, `lower`, `trim`, `split`, `replace`, `words`, `lines`, `pad_start`, `pad_end`, `repeat`, `substring`, `find`, `starts_with`; globals `format`:237, `join`:238, `regex`:266, `matches`:283, `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39, `shorten_text`:44, `unified_diff`:49; string interpolation `"{expr}"` in source |
 | Missing | No character-class constants (`string.digits`); no `Template` substitution; no `SequenceMatcher` ratio or `get_close_matches`; no Unicode category or normalisation API; no `locale`-independent case folding |
 | JVM fit | Yes — `java.util.regex`, `java.text.Normalizer` and `Character` cover the mechanics; nothing here needs a host facility the JVM lacks |
@@ -326,7 +327,7 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `datetime`, `zoneinfo`, `collections`, `copy`, `pprint` [P]; `calendar`, `collections.abc`, `heapq`, `bisect`, `array`, `reprlib`, `enum`, `graphlib` [A]; `weakref`, `types` [X] |
+| Modules | `datetime`, `zoneinfo`, `collections`, `copy`, `pprint` [P]; `heapq`, `bisect` [C]; `calendar`, `collections.abc`, `array`, `reprlib`, `enum`, `graphlib` [A]; `weakref`, `types` [X] |
 | Oqthara equivalent | `now`:1205, `today`:1207, `datetime`:1209, `timestamp`:1211, `tz_convert`:1213, `date_parse`:1178, `instant_parse`:1180; `clone`:233 plus `.clone()`/`.copy()` on every collection family; `repr`:168, `format`:237, `json_pretty`:696; `heap_push`:53, `heap_pop`:55, `bisect_left`:57, `bisect_right`:59; list/map/set/frozenset/range families |
 | Missing | No date *arithmetic* (add a day, subtract two dates, a duration type); no formatting other than the fixed shapes; no `deque`, `Counter`, `defaultdict`, `OrderedDict` or named tuples; no topological sort; no enumerations or algebraic tags beyond `data`. Priority queues and binary search shipped in `Statistics.java` as `heap_push`/`heap_pop`/`bisect_left`/`bisect_right`, so they are no longer missing |
 | JVM fit | Yes — `java.time` is the strongest date/time library on any platform and `TreeMap`/`PriorityQueue` give `heapq` and ordered maps directly. The gap is a language-level one: with no `date` type there is nothing for arithmetic to return |
@@ -341,7 +342,7 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `math`, `random` [P]; `numbers`, `math.integer`, `cmath`, `decimal`, `fractions`, `statistics` [A] |
+| Modules | `math`, `random` [P]; `statistics` [C]; `numbers`, `math.integer`, `cmath`, `decimal`, `fractions` [A] |
 | Oqthara equivalent | `abs`:367, `floor`:379, `ceil`:381, `round`:390/388, `sqrt`:409, `pow`:411, `min`:415, `max`:417, `clamp`:421; number methods `is_even`, `is_odd`, `abs`, `ceil`, `floor`, `round`, `sqrt`; `random`:429/427, `random_item`:435; `mean`:33, `median`:35, `variance`:37, `stdev`:39, `mode`:42, `percentile`:44 |
 | Missing | No transcendental functions (trig, log, exp); no exact decimal arithmetic; no rational type; no seeding, no Gaussian, no shuffle; `statistics` shipped in full at six functions, so what remains absent is `fmean`/`geometric_mean`/`harmonic_mean`/`quantiles`/`multimode`/`NormalDist`/regression, all declined in [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md); no complex numbers; no numeric-tower distinction between int and float beyond `is_number` |
 | JVM fit | Yes, with one caveat. `BigDecimal` gives exact decimal and `StrictMath` gives the transcendentals, so the arithmetic is cheap. The caveat is semantic, not technical: Python's `decimal` has a *context* (precision, rounding, traps) and reproducing it faithfully is a design decision, not a wrapper |
@@ -371,14 +372,14 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `pathlib`, `os.path`, `stat`, `shutil` [P]; `filecmp`, `tempfile`, `glob`, `fnmatch` [A]; `linecache` [X] |
+| Modules | `pathlib` [P]; `glob`, `fnmatch` [C]; `os.path`, `stat`, `shutil` [P]; `filecmp`, `tempfile` [A]; `linecache` [X] |
 | Oqthara equivalent | `read`:443, `read_lines`:447, `save`:458, `append`:471, `exists`:485, `list_files`:487, `delete`:512, `make_dir`:519, `file_size`:527, `path_join`:534, `path_name`:536, `path_parent`:540, `cwd`:544, `is_file`:558, `is_dir`:560, `read_bytes`:562, `write_bytes`:578, `copy_file`:590, `move_file`:595, `walk`:610 |
-| Missing | No pattern matching over names (`*.txt`); no temporary directory or file; no recursive copy or delete; no permission, modification-time or ownership inspection; no symbolic-link control beyond `walk` refusing to follow them; no path value — paths are text |
+| Missing | No temporary directory or file; no recursive copy or delete; no permission, modification-time or ownership inspection; no symbolic-link control beyond `walk` refusing to follow them; no path value — paths are text. `glob`:49 and `fnmatch`:40 in `Patterns.java` cover name matching, with `**` recursion and `*` matching a leading dot (unlike a POSIX shell) |
 | JVM fit | Yes — `PathMatcher("glob:...")`, `Files.walkFileTree`, `Files.createTempDirectory` and `BasicFileAttributes` supply all of it. This is the cheapest high-value chapter on the list |
 | Lifetime | Per-call for everything above, and that is the whole reason it is cheap. `tempfile` is the exception worth naming: a temp *file* that the caller must delete is a lifetime, so a proposed version must be a scoped body (as ADR-0040 did for transactions) or return a directory the caller owns explicitly |
 | Security | The filesystem is trusted by [ADR-0036](../adr/0036-time-zones-and-filesystem.md) Decision 7 and `read("../../../etc/hosts")` is documented to work, so path traversal is a known and accepted property, not a bug. `delete` must never be recursive without an explicit flag, and `copy_file`/`move_file` refusing to overwrite is a safety property to preserve. A glob over an attacker-controlled directory can enumerate a very large tree, so it needs the `MAX_LIST_ENTRIES`-style cap that `list_files` already has |
 | Contract | Every path operation returns text joined with the platform separator and never a `Path` value; `walk` continues not to follow symlinks; glob must define its syntax (the `PathMatcher` dialect, not Python's `**`) and its ordering (sorted, deterministic) so output is reproducible |
-| Test | `GlobPatternTest` — `*.txt` matches at one level only, `**/*.txt` recurses, `?` matches exactly one character, and a dotfile is not matched by `*`; `TempDirOwnershipTest` (proposed) asserting a scoped body's directory is gone on normal return **and** on raise |
+| Test | `GlobTest` — 26 cases. `aStarMatchesWithinOneSegment`, `aGlobstarMatchesAcrossSeparators`, `aQuestionMarkMatchesExactlyOneCharacter`, `aDashInAClassIsARange`, `anUnclosedClassIsRefused` and `resultsUseForwardSlashesOnEveryPlatform` pin the dialect. `TempDirOwnershipTest` (proposed) asserting a scoped body's directory is gone on normal return **and** on raise |
 | Acc. | Documented dialect with a test per metacharacter; deterministic ordering; an entry cap that raises rather than truncating silently |
 | Excluded | `linecache` (source-line caching exists to feed tracebacks in a CPython-style debugger; Oqthara has no `linecache` consumer and adding a cache with no reader is dead surface) |
 
@@ -401,15 +402,15 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `compression` (namespace) [X]; `compression.zstd`, `zlib`, `gzip`, `bz2`, `lzma`, `zipfile`, `tarfile` [A] |
-| Oqthara equivalent | None. `read_bytes`:562 / `write_bytes`:578 with hex text is the only binary path |
-| Missing | Everything compressible. No deflate, no gzip envelope, no bzip2, no xz, no zip container, no tar container |
+| Modules | `compression` (namespace) [X]; `zlib`, `gzip`, `zipfile` [C]; `compression.zstd`, `bz2`, `lzma`, `tarfile` [A] |
+| Oqthara equivalent | `zlib_compress`/`zlib_decompress`, `gzip_compress`/`gzip_decompress`, `zip_compress`/`zip_decompress` ([ADR-0042](../adr/0042-whole-value-compression.md)), each a whole-value pair over lowercase hex. `zlib_compress` is hex-in because it is the raw byte path; `gzip_compress` is the one exception, taking text and encoding it as UTF-8 first, which is why `gzip_compress("hello")` needs no `hex_encode` while `zlib_compress` refuses odd-length input. Every decompressor is hex-in. `read_bytes`:562 / `write_bytes`:578 remain the only raw binary path |
+| Missing | bzip2, xz and tar containers. There is no deflate-level control, no zstd and no entry-at-a-time archive walk |
 | JVM fit | Yes, and unusually cheaply — `Deflater`/`Inflater`, `GZIPInputStream`, `ZipInputStream` and `ZipEntry` all operate on in-memory arrays, so a whole-value API needs no host I/O at all |
-| Lifetime | Per-call, *if* designed as byte-in/byte-out over hex text. A streaming or entry-at-a-time design would be blocked. This is the chapter where the ADR-0036 constraint costs least, and the reason it ranks second on the shortlist |
-| Security | Decompression is the textbook amplification attack: a small input can expand until memory is exhausted. Any proposed API needs a hard output cap with a named error, in the same style as the 16 MiB text cap, and must not trust a length field in the container. `tarfile` additionally needs path-traversal defence, because entry names can contain `..` |
-| Contract | Round-trip exactness on arbitrary bytes; a declared maximum output size that raises rather than truncating; deterministic output where the format allows it (gzip carries an mtime by default, which must be pinned or documented as unstable) |
-| Test | `CompressionBudgetTest` — a 1 KB highly compressible input whose declared output cap is 1 MB raises a named amplification error rather than allocating; `CompressionRoundTripTest` asserting hex → gzip → hex is byte-identical for random content. Proposed `tarfile`: `ArchiveTraversalRefusedTest` with an entry named `../../etc/passwd` |
-| Acc. | Round-trip on random data; amplification capped and tested; no API returns a stream |
+| Lifetime | Per-call, and that is what it shipped as: `zlib_*`, `gzip_*` and `zip_*` are byte-in/byte-out over hex text, with no streaming and no entry-at-a-time walk. This is the chapter where the ADR-0036 constraint cost least |
+| Security | Decompression is the textbook amplification attack: a small input can expand until memory is exhausted. The shipped API therefore carries a hard output cap with a named error and trusts no length field in the container, and zip entries have path-traversal defence because entry names can contain `..`. `tarfile` needs the same defence when it lands |
+| Contract | Round-trip exactness on arbitrary bytes; a declared maximum output size that raises rather than truncating; gzip output carries a pinned mtime so a round trip is byte-identical rather than merely decompressing to the same value |
+| Test | `CompressionTest` — 26 cases. `aHighlyCompressibleBombIsRefusedRatherThanAllocated` pins the amplification cap with a named error, `traversalEntryNamesAreRefused` and `absoluteEntryNamesAreRefused` cover the zip path-traversal defence for entry names that shipped ahead of `tarfile`, and `gzipOutputStartsWithTheFormatMagicNumber` pins the envelope. Every compression builtin is registered exactly once |
+| Acc. | Round-trip on random data for zlib, gzip and zip; amplification capped and tested; entry names sanitised; no API returns a stream |
 | Excluded | `compression` only — it is a namespace package with no members of its own |
 
 ### 9. File formats — 5 modules
@@ -536,15 +537,15 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `urllib.parse` [C]; `urllib.request`, `urllib.error` [P]; `urllib.robotparser`, `uuid`, `http.cookies`, `ipaddress` [A]; `webbrowser`, `wsgiref`, `urllib`, `http`, `http.client`, `ftplib`, `poplib`, `imaplib`, `smtplib`, `socketserver`, `http.server`, `http.cookiejar`, `xmlrpc`, `xmlrpc.client`, `xmlrpc.server` [X] |
-| Oqthara equivalent | `url_parse`:1263, `url_encode`:1287, `url_decode`:1291, `query_parse`:1300, `query_encode`:1319, `url_join`:1359; `http_get`:1446, `http_post`:1448 |
-| Missing | No UUID generation or parsing; no IP address arithmetic or validation; no cookie parsing; no robots.txt evaluation; no authentication, proxy or cookie jar support in the HTTP client; no FTP, POP3, IMAP, SMTP; no server of any kind |
+| Modules | `urllib.parse`, `uuid` [C]; `urllib.request`, `urllib.error` [P]; `urllib.robotparser`, `http.cookies`, `ipaddress` [A]; `webbrowser`, `wsgiref`, `urllib`, `http`, `http.client`, `ftplib`, `poplib`, `imaplib`, `smtplib`, `socketserver`, `http.server`, `http.cookiejar`, `xmlrpc`, `xmlrpc.client`, `xmlrpc.server` [X] |
+| Oqthara equivalent | `url_parse`:1263, `url_encode`:1287, `url_decode`:1291, `query_parse`:1300, `query_encode`:1319, `url_join`:1359; `http_get`:1446, `http_post`:1448; `uuid`, `is_uuid` (version 4, canonical lowercase only) |
+| Missing | No IP address arithmetic or validation; no cookie parsing; no robots.txt evaluation; no authentication, proxy or cookie jar support in the HTTP client; no FTP, POP3, IMAP, SMTP; no server of any kind; no UUID versions other than 4 and no name-based generation |
 | JVM fit | Yes for the four absent items — `UUID.randomUUID()`, `InetAddress` with `BigInteger` arithmetic, and cookie parsing is text. No for the fifteen excluded items, which need listeners, connection objects or XML |
 | Lifetime | Per-call for all four absent items: a UUID is a value, an IP address is a value, a cookie is a value, a robots rule set is a value. Per-call is precisely why they are cheap. Every excluded item is a connection, a listener or a jar — a lifetime |
 | Security | `url_join` escaping at segment level is the defence against path injection and must stay. `uuid` must use a cryptographic source for v4; a time-based v1 leaks host identity and clock, so it should not be offered. `http.cookies` must not scope cookies across hosts by default. `ipaddress` is a *validation* primitive: it is how a program rejects a host it did not intend to reach |
 | Contract | `url_parse` returns the same component keys for every scheme and never normalises case away from the declared one; `http_post` sets `Content-Type: application/json`; the client identifies itself as `oqthara/0.1`; a proposed `uuid` returns the canonical 8-4-4-4-12 lowercase form and v4 only; a proposed `ip_is_private` must state which ranges count |
-| Test | `UrlAndHttpTest` covers parsing, encoding and the client. Proposed: `UuidFormatTest` asserting the canonical shape and version nibble over 1000 generations plus uniqueness; `IpAddressClassifyTest` asserting `127.0.0.1`, `10.0.0.1`, `::1` and a public address classify as documented, and that `999.1.1.1` raises |
-| Acc. | Every URL component present for every scheme; UUID shape and version asserted over many samples; address parsing rejects rather than coerces |
+| Test | `UrlAndHttpTest` covers parsing, encoding and the client. `StatisticsTest` covers UUID: canonical lowercase shape and version nibble, uniqueness across generations, and `is_uuid` rejecting the brace and `urn:uuid:` forms `UUID.fromString` accepts. Proposed: `IpAddressClassifyTest` asserting `127.0.0.1`, `10.0.0.1`, `::1` and a public address classify as documented, and that `999.1.1.1` raises |
+| Acc. | Every URL component present for every scheme; UUID shape and version asserted, with the accepted spellings pinned to exactly one; address parsing rejects rather than coerces |
 | Excluded | `webbrowser` (launches a host GUI application — not a language facility), `wsgiref`, `socketserver`, `http.server` (servers need listeners and lifetimes; ADR-0037 Decision 4), `urllib`, `http`, `xmlrpc` (namespace packages), `http.client` (a connection object *is* a lifetime), `ftplib`, `poplib`, `imaplib`, `smtplib` (each is a stateful protocol session with a connection), `http.cookiejar` (a persisted jar plus a policy engine), `xmlrpc.client`, `xmlrpc.server` (XML, excluded above) |
 
 ### 18. Multimedia services — 2 modules
@@ -765,7 +766,7 @@ Per domain, in the chapter order used above:
 | 3 | Data types | 15 | 2 | 5 | 6 | 2 |
 | 4 | Numeric and mathematical | 8 | 1 | 2 | 5 | 0 |
 | 5 | Functional programming | 3 | 0 | 1 | 2 | 0 |
-| 6 | File and directory access | 9 | 1 | 4 | 3 | 1 |
+| 6 | File and directory access | 9 | 2 | 4 | 2 | 1 |
 | 7 | Data persistence | 6 | 1 | 0 | 0 | 5 |
 | 8 | Compression and archiving | 8 | 3 | 0 | 4 | 1 |
 | 9 | File formats | 5 | 1 | 0 | 3 | 1 |
@@ -790,7 +791,7 @@ Per domain, in the chapter order used above:
 | 28 | MS Windows services | 3 | 0 | 0 | 0 | 3 |
 | 29 | Unix-specific services | 10 | 0 | 0 | 1 | 9 |
 | 30 | Superseded modules | 2 | 0 | 0 | 0 | 2 |
-| | **Total** | **231** | **17** | **33** | **63** | **118** |
+| | **Total** | **231** | **20** | **33** | **60** | **118** |
 
 Two readings of this table matter, and only one of them is flattering:
 
@@ -917,4 +918,7 @@ absent set is large, cheap and honest, and the blocked set is small, expensive a
 
 ---
 
-**Last verified:** `ab33b07` (merge of PR #92) plus PR #93, 2026-11-10.
+**Last verified:** `5f7b868` (merge of PR #93) plus the `textwrap`/`difflib` builtins
+added in PR #94, 2026-11-11. The coverage tallies in the status table, the per-domain table and its
+Total row are now checked by `scripts/check-docs-sync.py`, which derives them from the
+per-domain chapters and fails when any of the three disagrees.
