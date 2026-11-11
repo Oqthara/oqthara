@@ -8,7 +8,9 @@ bytecode backend regresses, so the gate cannot rot into a step that always succe
 import pathlib
 import sys
 import tempfile
+import threading
 import unittest
+import unittest.mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -79,6 +81,103 @@ class MeasureCorpusTests(unittest.TestCase):
             programs, executable = verify.measure_corpus(pathlib.Path(tmp))
             self.assertEqual([], programs)
             self.assertEqual([], executable)
+
+
+class IsolationTests(unittest.TestCase):
+    """Pins that cases cannot observe each other, which is what makes running them
+    concurrently safe. A regression here would let a stray sibling file or a shared
+    working directory silently change another program's result."""
+
+    def test_each_case_gets_its_own_working_and_build_directories(self):
+        seen = []
+        lock = threading.Lock()
+
+        def fake_check(program, cases, jar, case_root):
+            with lock:
+                seen.append(case_root)
+            return 0, 0, []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            programs = [root / f"{n}.oq" for n in ("a", "b", "c", "d")]
+            for program in programs:
+                program.write_text("print 1\n")
+
+            with unittest.mock.patch.object(verify, "check_program", fake_check):
+                verify.collect(programs, root, root / "oq.jar", root, jobs=4)
+
+            self.assertEqual(4, len(set(seen)))
+            self.assertEqual({"case-a", "case-b", "case-c", "case-d"},
+                             {p.name for p in seen})
+
+    def test_worker_raising_is_reported_as_a_divergence(self):
+        def exploding(program, cases, jar, case_root):
+            raise RuntimeError("boom")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            program = root / "a.oq"
+            program.write_text("print 1\n")
+
+            with unittest.mock.patch.object(verify, "check_program", exploding):
+                results = verify.collect([program], root, root / "oq.jar", root, jobs=1)
+
+        self.assertIn("a.oq", results)
+        _, _, divergences = results["a.oq"]
+        self.assertEqual(1, len(divergences))
+        self.assertIn("verifier raised", divergences[0])
+        self.assertIn("boom", divergences[0])
+
+
+class DeterminismTests(unittest.TestCase):
+    """Pins that the verdict does not depend on scheduling. These call the real aggregate()
+    so a change that folds results in completion order fails here."""
+
+    @staticmethod
+    def _programs(names):
+        return [pathlib.Path(n) for n in names]
+
+    def test_aggregation_follows_corpus_order_not_completion_order(self):
+        names = [f"{i:03d}-case.oq" for i in range(6)]
+        completed = {name: (1, 0, [f"{name}: synthetic divergence"]) for name in names}
+
+        def as_result(order):
+            return {name: completed[name] for name in order}
+
+        forward = verify.aggregate(self._programs(names), as_result(names))
+        backward = verify.aggregate(self._programs(names), as_result(list(reversed(names))))
+        interleaved = verify.aggregate(
+            self._programs(names),
+            as_result([names[3], names[0], names[5], names[1], names[4], names[2]]))
+
+        self.assertEqual(forward, backward)
+        self.assertEqual(forward, interleaved)
+        self.assertEqual(6, forward[0])
+        self.assertEqual(names, [d.split(":")[0] for d in forward[2]])
+
+    def test_missing_result_is_a_divergence_not_a_silent_pass(self):
+        programs = self._programs(["a.oq", "b.oq"])
+        compiled, fallback, divergences = verify.aggregate(programs, {"a.oq": (1, 0, [])})
+
+        self.assertEqual(1, compiled)
+        self.assertEqual(1, len(divergences))
+        self.assertIn("b.oq", divergences[0])
+        self.assertIn("no result recorded", divergences[0])
+
+    def test_totals_sum_every_program(self):
+        programs = self._programs(["a.oq", "b.oq", "c.oq"])
+        results = {"a.oq": (1, 0, []), "b.oq": (0, 1, []), "c.oq": (0, 1, [])}
+
+        compiled, fallback, divergences = verify.aggregate(programs, results)
+
+        self.assertEqual((1, 2, []), (compiled, fallback, divergences))
+
+
+class DefaultJobsTests(unittest.TestCase):
+    def test_default_is_bounded(self):
+        # Concurrency must stay modest: each case runs up to three JVMs in sequence.
+        self.assertGreaterEqual(verify.default_jobs(), 1)
+        self.assertLessEqual(verify.default_jobs(), 4)
 
 
 if __name__ == "__main__":
