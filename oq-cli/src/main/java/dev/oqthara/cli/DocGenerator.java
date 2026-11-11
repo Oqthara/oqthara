@@ -122,12 +122,24 @@ final class DocGenerator {
                 List<String> entries = new ArrayList<>();
                 for (Ast.Stmt stmt : program.statements()) {
                     String entry = entry(stmt);
-                    if (entry != null) {
-                        entries.add(entry);
-                        if (docOf(stmt) == null) {
-                            undocumented++;
-                        } else {
-                            documented++;
+                    if (entry == null) {
+                        continue;
+                    }
+                    entries.add(entry);
+                    if (docOf(stmt) == null) {
+                        undocumented++;
+                    } else {
+                        documented++;
+                    }
+                    // A method is a declaration too, so it counts towards the totals the
+                    // footer reports rather than sitting outside them.
+                    if (stmt instanceof Ast.ClassDecl c) {
+                        for (Ast.MethodDecl method : c.methods()) {
+                            if (method.doc() == null) {
+                                undocumented++;
+                            } else {
+                                documented++;
+                            }
                         }
                     }
                 }
@@ -227,8 +239,17 @@ final class DocGenerator {
         }
         if (stmt instanceof Ast.ClassDecl c) {
             List<String> fields = c.fields().stream().map(Ast.FieldDef::name).toList();
-            return page("class " + c.name() + "(" + String.join(", ", fields) + ")", c.doc(),
-                    fields);
+            StringBuilder rendered = new StringBuilder(
+                    page("class " + c.name() + "(" + String.join(", ", fields) + ")", c.doc(),
+                            fields, 3));
+            // Methods sit under their class rather than beside it, because a method name alone
+            // does not say which class it belongs to and two classes may share a method name.
+            for (Ast.MethodDecl method : c.methods()) {
+                rendered.append(page("fun " + method.name() + "("
+                        + String.join(", ", method.params()) + ")", method.doc(),
+                        method.params(), 4));
+            }
+            return rendered.toString();
         }
         if (stmt instanceof Ast.ContractDecl k) {
             StringBuilder body = new StringBuilder();
@@ -248,8 +269,12 @@ final class DocGenerator {
     }
 
     private static String page(String heading, String doc, List<String> params) {
+        return page(heading, doc, params, 3);
+    }
+
+    private static String page(String heading, String doc, List<String> params, int level) {
         StringBuilder sb = new StringBuilder();
-        sb.append("### ").append(heading).append("\n\n");
+        sb.append("#".repeat(level)).append(' ').append(heading).append("\n\n");
         if (doc == null) {
             sb.append("_Undocumented._\n\n");
             return sb.toString();

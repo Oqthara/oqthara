@@ -97,6 +97,59 @@ class DocSourceTest {
     }
 
     @Test
+    void aClassRendersItsMethodsUnderItWithTheirOwnDocs(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("counter.oq");
+        Files.writeString(file, """
+                \"""A counter.\"""
+                class Counter(value)
+                  \"""Adds one.
+
+                  @return the new value
+                  \"""
+                  fun increment()
+                    return value + 1
+                  end
+                  fun plain()
+                    return value
+                  end
+                end
+                """);
+        Result result = doc(file);
+        assertEquals(0, result.code(), result.err());
+        String out = result.out();
+        assertTrue(out.contains("### class Counter(value)"), out);
+        assertTrue(out.contains("#### fun increment()"), out);
+        assertTrue(out.contains("#### fun plain()"), out);
+        assertTrue(out.contains("Adds one."), out);
+        assertTrue(out.contains("Returns: the new value"), out);
+        // The undocumented method is labelled, and both methods count in the footer.
+        assertTrue(out.contains("_Undocumented._"), out);
+        assertTrue(out.contains("2 documented, 1 undocumented."), out);
+    }
+
+    @Test
+    void aMethodHeadingFollowsItsClassRatherThanPrecedingIt(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("order.oq");
+        Files.writeString(file, """
+                class Box()
+                  \"""Inside.\"""
+                  fun inner()
+                    return 1
+                  end
+                end
+                \"""Outside.\"""
+                fun outer()
+                  return 2
+                end
+                """);
+        String out = doc(file).out();
+        int inner = out.indexOf("#### fun inner()");
+        int outer = out.indexOf("### fun outer()");
+        assertTrue(inner >= 0 && outer >= 0, out);
+        assertTrue(inner < outer, "a method must stay under its own class: " + out);
+    }
+
+    @Test
     void aDirectoryIsWalkedAndEveryFileIsHeaded(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("a.oq"), "\"\"\"First.\"\"\"\nfun a()\n  return 1\nend\n");
         Files.writeString(dir.resolve("b.oq"), "\"\"\"Second.\"\"\"\nfun b()\n  return 2\nend\n");
