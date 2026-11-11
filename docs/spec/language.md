@@ -1913,8 +1913,9 @@ fun add(a, b)
 end
 ```
 
-The literal attaches to the `fun`, `data`, `class` or `contract` that follows it. It is
-not evaluated and does not become a statement of its own.
+The literal attaches to the `fun`, `data`, `class` or `contract` that follows it, and inside a
+class body to the `fun` that follows it. It is not evaluated and does not become a statement of
+its own.
 
 Only the multi-line form documents anything. A single-quoted string on the line before a
 declaration is a value, exactly as it always was, so nothing that used to work changes
