@@ -214,7 +214,7 @@ is ever compiled, this reasoning expires and the slot must become a `ThreadLocal
 | `done(1)` | `error: done() needs a task from spawn(), got number` |
 | `sleep(25000)` | `error: cannot sleep for more than 10 seconds` |
 | seven `sleep(9)` calls | `error: the program waited for too long` after the seventh |
-| `run_command("sleep 100")` | `error: cannot run command: Cannot run program "sleep 100"` — no shell, no arguments |
+| `run_command("sleep 100")` | `error: cannot run command: Cannot run program "sleep 100"` followed by the JVM's own reason — no shell, no arguments |
 | `run_command("/tmp/slow.sh")` | `error: command timed out after 30 seconds: /tmp/slow.sh` |
 | `read("/nope/nothing.txt")` | `error: cannot read file '/nope/nothing.txt'` |
 | 128 nested parentheses | `error: expression is nested too deeply`, `The limit is 128 levels` |
@@ -253,7 +253,7 @@ shallow enough to parse and still be too deep to print.
 | `M10` | `StepBudgetTest.printLoopStopsAtTheOutputCeiling`, `.oversizedReadIsRefused`; `WaitedBudgetTest.theLimitIsOnTheTotalNotOneCall`; `HostBuiltinLimitsTest.exactlySixteenMebibytesIsAllowed`, `.oneBytePastSixteenMebibytesIsRefused` |
 | `M11`, `M12` | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
 | `M13` | `ConcurrencyTest.twoTasksBothComplete`, `.parMapPreservesOrder`; the shared-counter half is exercised there, the depth half is not |
-| `M14` | `ValueTest.equalNumbersHashAlike`, `.crossTypeLookup`, `.setCollapsesEqualValues`; `LanguageFeatureTest.equalNumbersHashAlike`, `.numericEqualityReachesInsideCollections` |
+| `M14` | `ValueTest.mapsFindKeysWrittenWithTheOtherNumericType`, `.setsCollapseEqualNumbersAndReportOneItem`, `.setsCollapseEqualTupleValuesOfDifferentNumericTypes`; `LanguageFeatureTest.equalNumbersHashAlike`, `.numericEqualityReachesInsideCollections` |
 | `E38`, `E39` | `HostBuiltinLimitsTest.runCommandTimeoutKillsTheWholeProcessTree`, `.runCommandTimeoutsACommandThatNeverClosesItsOutput`, `.runCommandOutputIsBounded`, `.runCommandDoesNotGoThroughAShell` |
 | `E35`, `E36` | `WaitedBudgetTest.waitingPastTheLimitIsRefused`, `.waitingUpToTheLimitIsAllowed`, `.theLimitIsOnTheTotalNotOneCall` |
 | `E40` | `StepBudgetTest.unboundedRecursionStopsWithADiagnostic` |

@@ -123,7 +123,7 @@ it is a defect, not a state.
 | `L8` | `break` and `continue` outside a loop are user errors, not exceptions. | `T29`, `T30` guards |
 | `L9` | Block depth never exceeds 800, so recursion fails with a diagnostic instead of a `StackOverflowError`. | `T16` |
 | `L10` | A failed task's error is catchable at `await` and the task is still reported done. | `T34`, `T36` |
-| `L11` | The value of a block is the value of its final expression statement, or `nothing`. | `T22`, spec §Blocks |
+| `L11` | The value of a `try` block is the value of its final expression statement, or `nothing`. A function body is not an expression and always returns `nothing` unless it reaches a `return`. | `T22`, spec §Errors |
 | `L12` | Both backends agree on values, stdout, message text, hint and exit status. The compiled jar omits the source excerpt, which it does not carry (`U4`). | §7.4, `U4` |
 
 ## Invalid transitions

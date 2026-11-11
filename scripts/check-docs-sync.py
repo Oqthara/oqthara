@@ -714,6 +714,49 @@ def cited_tests_exist() -> None:
     note(f"{cited} test-class citations in docs resolve to a declared class")
 
 
+# 13b. A cited test method must exist on the class it is attributed to.
+#
+# `cited_tests_exist` checks class names only, so `.aTestThatWasRenamed` slipped through: the
+# class resolved and the method did not, which reads as evidence and is not. This collects every
+# `ClassName.methodName` and every `ClassName.a`, `.b` continuation on one line, and resolves each
+# dotted name against the methods declared by that class.
+def cited_test_methods_exist() -> None:
+    methods: dict[str, set[str]] = {}
+    for path in list(ROOT.glob("**/src/test/java/**/*.java")) + list(
+        ROOT.glob("**/src/fuzz/java/**/*.java")
+    ):
+        declared = re.findall(r"(?:void|static void)\s+(\w+)\s*\(", path.read_text(encoding="utf-8"))
+        methods.setdefault(path.stem, set()).update(declared)
+
+    checked = 0
+    for path in sorted(ROOT.glob("docs/**/*.md")):
+        relative = path.relative_to(ROOT)
+        in_fence = False
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence or line.startswith("| Test |"):
+                continue
+            cited = [
+                (k, m)
+                for k, m in re.findall(
+                    r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\.(\w+)", line
+                )
+                if m not in {"java", "class", "md"}
+            ]
+            for klass, method in cited:
+                if klass not in methods:
+                    continue  # cited_tests_exist owns the unresolvable-class case
+                checked += 1
+                if method not in methods[klass]:
+                    problems.append(
+                        f"{relative}:{number} cites {klass}.{method}, which "
+                        f"{klass} does not declare"
+                    )
+    note(f"{checked} cited test methods resolve on their class")
+
+
 def read_text_utf8(path: pathlib.Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -732,6 +775,7 @@ CHECKS = (
     stdlib_inventory_tallies_agree,
     requirement_matrix_figures_match_the_inventory,
     cited_tests_exist,
+    cited_test_methods_exist,
 )
 
 
