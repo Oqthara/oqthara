@@ -338,4 +338,22 @@ class ErrorMessageContractTest {
         goodError("print -9223372036854775809", "9223372036854775809 is too large");
         goodError("print [9223372036854775808]", "9223372036854775808 is too large");
     }
+
+    /**
+     * A callback reaches the interpreter through the host interface, which knows the value but
+     * not the identifier the caller wrote. Quoting a placeholder there read like one of the
+     * program's own names, so the refusal describes the value instead.
+     */
+    @Test
+    void aRefusedCallbackIsNotGivenAPlaceholderName() {
+        goodError("use java.util.Comparator\nc = Comparator.naturalOrder()\nmap([1], c)",
+                "this value is not a function");
+        goodError("use java.util.Comparator\nc = Comparator.naturalOrder()\nmap([1], c)",
+                "java NaturalOrderComparator");
+        OqRunner.Result result = run("use java.util.Comparator\nc = Comparator.naturalOrder()\nmap([1], c)");
+        assertFalse(result.stderr().contains("<callback>"), result.stderr());
+        // A name the program did write is still quoted as written.
+        goodError("x = 5\nmap([1], x)", "this value is not a function");
+        goodError("x = 5\nx()", "'x' is not a function");
+    }
 }
