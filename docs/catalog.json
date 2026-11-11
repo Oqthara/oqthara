@@ -260,6 +260,12 @@
       "slug": "docs/adr/0042-whole-value-compression"
     },
     {
+      "path": "docs/adr/0043-word-wrapping-and-text-diffs.md",
+      "title": "ADR-0043 — Word wrapping and text diffs",
+      "section": "adr",
+      "slug": "docs/adr/0043-word-wrapping-and-text-diffs"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

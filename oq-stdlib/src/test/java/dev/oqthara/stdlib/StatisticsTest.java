@@ -334,6 +334,38 @@ class StatisticsTest {
         assertThrows(OqError.class, () -> call("bisect_left", 5L, 1L));
     }
 
+    // --- rounding ties ---------------------------------------------------------------------
+
+    /**
+     * The tie rule was implemented but never stated, which the inventory recorded as a contract
+     * gap. It is upward -- toward positive infinity -- not banker's rounding and not away from
+     * zero. All six expected values below came from the built CLI before they were written here,
+     * and the three that would differ under the two rejected rules are the point.
+     */
+    @Test
+    void roundingTiesGoUpwardNotToEvenAndNotAwayFromZero() {
+        assertEquals(1L, call("round", 0.5));
+        assertEquals(3L, call("round", 2.5));
+        assertEquals(2L, call("round", 1.5));
+        // Banker's rounding gives -2 and away-from-zero gives -2; the implementation gives -1.
+        assertEquals(-1L, call("round", -1.5));
+        assertEquals(-2L, call("round", -2.5));
+        assertEquals(0L, call("round", -0.5));
+    }
+
+    /**
+     * A named consequence of the value being a binary double rather than an exact decimal:
+     * {@code 1.005} is stored a little below the decimal it names, so no tie is reached and the
+     * result is {@code 1.0}. The spec states this and points at exact decimal arithmetic as the
+     * remedy. This test fails if that behaviour is ever silently "fixed" without changing the
+     * numeric model, which would be a different language.
+     */
+    @Test
+    void aDecimalThatABinaryFloatCannotHoldRoundsByItsStoredValue() {
+        assertEquals(1.0, number(call("round", 1.005, 2L)), 1e-12);
+        assertEquals(0.13, number(call("round", 0.125, 2L)), 1e-12);
+    }
+
     // --- registration ------------------------------------------------------------------------
 
     @Test

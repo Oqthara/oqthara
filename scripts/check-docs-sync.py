@@ -383,6 +383,248 @@ def contract_register_is_complete() -> None:
          f"({len(undocumented)} deliberately absent)")
 
 
+# 9. The stdlib inventory's coverage tallies must agree with its own per-domain chapters and
+#    with each other. This document carried three mutually inconsistent tallies for months
+#    because nothing checked them: a status table, a Total row and the sum of the per-domain
+#    rows each said something different, and none matched the chapters they were derived from.
+def stdlib_inventory_tallies_agree() -> None:
+    path = "docs/governance/alpha-4-stdlib-inventory.md"
+    lines = read(path).split("\n")
+
+    def number(cell: str) -> int:
+        return int(cell.strip().replace("*", ""))
+
+    # Derive the truth from the chapters: a [C]/[P]/[A]/[X] tag applies to every backticked
+    # name in its `;`-delimited clause. `test` counts once despite its eight submodules, which
+    # the chapter summarises rather than enumerates.
+    chapters: dict[int, list[int]] = {}
+    for index, line in enumerate(lines):
+        heading = re.match(r"^### (\d+)\. .+ — (\d+) modules?$", line)
+        if not heading:
+            continue
+        cell = next(
+            part.split("|")[2]
+            for part in lines[index + 1 : index + 8]
+            if part.startswith("| Modules |")
+        )
+        counts = [0, 0, 0, 0]
+        names = 0
+        for clause in cell.split(";"):
+            found = len(re.findall(r"`([^`]+)`", clause))
+            if "with its eight" in clause:
+                found = 1
+            tag = re.search(r"\[(?:all |both )?([CPAX])\]", clause)
+            names += found
+            if tag:
+                counts["CPAX".index(tag.group(1))] += found
+        chapters[int(heading.group(1))] = [names] + counts
+    if not chapters:
+        problems.append(f"{path} has no per-domain chapters to reconcile")
+        return
+
+    row_start = next(
+        (i for i, line in enumerate(lines) if line.startswith("| # | Domain | Modules")),
+        None,
+    )
+    if row_start is None:
+        problems.append(f"{path} has no per-domain table")
+        return
+
+    def mismatched(cells: list[int]) -> bool:
+        return cells != chapters.get(row_index, cells)
+
+    summed = [0, 0, 0, 0, 0]
+    total_row: list[int] | None = None
+    seen: list[int] = []
+    for line in lines[row_start + 2 :]:
+        if not line.startswith("|"):
+            break
+        cells = [part.strip() for part in line.split("|")]
+        if "**Total**" in line:
+            total_row = [number(cell) for cell in cells[3:8]]
+            break
+        row_index = int(cells[1])
+        seen.append(row_index)
+        values = [number(cell) for cell in cells[3:8]]
+        if values != chapters.get(row_index):
+            problems.append(
+                f"{path} per-domain row {row_index} says {values} but its chapter "
+                f"accounts for {chapters.get(row_index)}"
+            )
+        for position, value in enumerate(values):
+            summed[position] += value
+
+    absent = sorted(set(chapters) - set(seen))
+    if absent:
+        problems.append(f"{path} has chapters with no per-domain row: {absent}")
+    if total_row is None:
+        problems.append(f"{path} has no Total row to compare")
+        return
+    if total_row != summed:
+        problems.append(
+            f"{path} Total row says {total_row} but its per-domain rows sum to {summed}"
+        )
+
+    status_rows = re.findall(
+        r"^\| \*\*(?:Covered|Partly covered|Absent|Deliberately excluded)\*\* \| \*\*(\d+)\*\*",
+        read(path),
+        re.M,
+    )
+    if len(status_rows) != 4:
+        problems.append(f"{path} does not state four coverage status counts")
+        return
+    stated = [int(value) for value in status_rows]
+    if stated != summed[1:]:
+        problems.append(
+            f"{path} status table says {stated} but the chapters account for {summed[1:]}"
+        )
+        return
+    note(
+        f"{path} tallies agree: {summed[0]} modules, "
+        f"{summed[1]} covered / {summed[2]} partial / {summed[3]} absent / "
+        f"{summed[4]} excluded"
+    )
+
+
+def requirement_matrix_figures_match_the_inventory() -> None:
+    """The matrix quotes the inventory's counts, so a repaired tally must reach both files.
+
+    Twice now the inventory was corrected while the matrix kept the old numbers, and both
+    times the stale figure was found by reading rather than by a check. The matrix may cite
+    any of the four figures, so each one it does cite must equal the inventory's.
+    """
+    inventory = "docs/governance/alpha-4-stdlib-inventory.md"
+    matrix = "docs/governance/alpha-4-requirement-matrix.md"
+    inventory_text = read(inventory)
+    matrix_text = read(matrix)
+
+    status = re.findall(
+        r"^\| \*\*(?:Covered|Partly covered|Absent|Deliberately excluded)\*\* \| \*\*(\d+)\*\*",
+        inventory_text,
+        re.M,
+    )
+    if len(status) != 4:
+        problems.append(f"{matrix} check cannot read the inventory's status counts")
+        return
+    claimed = {
+        "covered": int(status[0]),
+        "absent": int(status[2]),
+    }
+
+    # A figure is only checked when the matrix actually cites it, so wording changes do not
+    # fail the build; a cited figure that is wrong always does.
+    for phrase, truth in (
+        (r"(\d+) modules? remain absent", claimed["absent"]),
+        (r"of which (\d+) are covered", claimed["covered"]),
+    ):
+        for found in re.findall(phrase, matrix_text):
+            # `of which N are covered` is a range; take the first number in the run.
+            value = int(found.split()[0])
+            if value != truth:
+                problems.append(
+                    f"{matrix} says {value} where the inventory says {truth} "
+                    f"(matched {phrase!r})"
+                )
+
+    builtins = re.search(r"(\d+) global (?:functions|builtins)", matrix_text)
+    if builtins:
+        reference = read("docs/stdlib/reference.md")
+        section = reference.split("## Global functions")[1].split("## Methods on values")[0]
+        actual = len(re.findall(r"^\| `[^`]+` \|", section, re.M))
+        if int(builtins.group(1)) != actual:
+            problems.append(
+                f"{matrix} says {builtins.group(1)} global functions, "
+                f"docs/stdlib/reference.md lists {actual}"
+            )
+
+    note(f"{matrix} figures agree with the inventory and the generated reference")
+
+
+# Words that make a test name a statement about absence rather than a claim of evidence:
+# a proposal, a recorded removal, or a note that the class has yet to be written.
+ABSENT_MARKERS = (
+    "proposed",
+    "asks for",
+    "no longer exists",
+    "does not exist",
+)
+
+# Recorded retirement: a name that appears on a line saying it was removed, deleted or is gone.
+# An ADR is a dated record and is not rewritten when a later ADR removes what it described, so a
+# superseded mention is correct history rather than a false claim. Deriving the retired names from
+# the corpus means ADR-0008 may keep saying the site test existed, because ADR-0011 states that it
+# was removed -- and a name no ADR retires is still reported.
+RETIREMENT_MARKERS = ("removed", "deleted", "no longer", "is gone", "was dropped")
+
+
+def retired_test_names(documents: dict[pathlib.Path, str]) -> set[str]:
+    retired: set[str] = set()
+    for text in documents.values():
+        for line in text.splitlines():
+            lowered = line.lower()
+            if any(marker in lowered for marker in RETIREMENT_MARKERS):
+                retired.update(re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\b", line))
+    return retired
+
+
+def cited_tests_exist() -> None:
+    """A document must not present a test class as evidence unless the class exists.
+
+    The inventory once cited two classes before they were written, and ADR-0043 cited a third,
+    which is a document claiming evidence it does not have -- the same defect as a stale tally
+    and harder to notice, because the name looks like proof.
+
+    Not every capitalised `...Test` is a claim. Three kinds of mention are legitimate and are
+    not reported:
+
+    * a `Test |` row of the inventory, which says what a missing module *would need* -- those
+      rows are proposals by construction and the module they describe is absent;
+    * a sentence that says a test was removed, or names a path, in an ADR recording history;
+    * a name inside a fenced code block, which is sample output rather than a citation.
+
+    Everything else must resolve to a file under a test or fuzz source set.
+    """
+    declared: set[str] = set()
+    for pattern in ("**/src/test/java/**/*.java", "**/src/fuzz/java/**/*.java"):
+        for path in ROOT.glob(pattern):
+            declared.add(path.stem)
+
+    documents = {path: read_text_utf8(path) for path in sorted(ROOT.glob("docs/**/*.md"))}
+    retired = retired_test_names(documents)
+    cited = 0
+    for path, text in documents.items():
+        relative = path.relative_to(ROOT)
+        in_fence = False
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            names = re.findall(r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\b", line)
+            if not names:
+                continue
+            if line.startswith("| Test |"):
+                continue
+            lowered = line.lower()
+            if any(marker in lowered for marker in ABSENT_MARKERS):
+                continue
+            if re.search(r"[\w/.-]+\.java\b", line):
+                continue
+            for name in names:
+                cited += 1
+                if name in declared or name in retired:
+                    continue
+                problems.append(
+                    f"{relative}:{number} cites {name}, "
+                    f"which no test or fuzz source set declares")
+    note(f"{cited} test-class citations in docs resolve to a declared class")
+
+
+def read_text_utf8(path: pathlib.Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -392,6 +634,9 @@ CHECKS = (
     version_is_consistent,
     cited_builtins_exist,
     contract_register_is_complete,
+    stdlib_inventory_tallies_agree,
+    requirement_matrix_figures_match_the_inventory,
+    cited_tests_exist,
 )
 
 

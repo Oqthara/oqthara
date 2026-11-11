@@ -6,14 +6,17 @@ import dev.oqthara.core.Lexer;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqError;
 
+import java.io.File;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -99,7 +102,14 @@ final class DocGenerator {
                     .append("page cannot describe a function the source does not have.\n\n");
             int undocumented = 0;
             int documented = 0;
-            for (Path file : files) {
+            // Modules reached only through `use` are documented too, so a page for a project
+            // describes the functions its programs can actually call. A module that is also
+            // under the walked directory is documented once, in walk order.
+            Set<Path> documentedFiles = new LinkedHashSet<>();
+            for (Path file : files) documentedFiles.add(file.toAbsolutePath().normalize());
+            List<Path> pending = new ArrayList<>(files);
+            for (int next = 0; next < pending.size(); next++) {
+                Path file = pending.get(next);
                 String text = Files.readString(file, StandardCharsets.UTF_8);
                 Ast.Program program;
                 try {
@@ -121,8 +131,11 @@ final class DocGenerator {
                     }
                 }
                 if (!entries.isEmpty()) {
-                    markdown.append("## ").append(file.getFileName()).append("\n\n");
+                    markdown.append("## ").append(heading(file, source)).append("\n\n");
                     entries.forEach(e -> markdown.append(e));
+                }
+                for (Path used : followedModules(program, file, err)) {
+                    if (documentedFiles.add(used)) pending.add(used);
                 }
             }
             markdown.append("---\n\n")
@@ -140,6 +153,49 @@ final class DocGenerator {
             err.println("Cannot generate documentation: " + e.getMessage());
             return 1;
         }
+    }
+
+    /**
+     * The heading for one file: its name when it sits directly under the documented path, and
+     * its path from there when a walk reached it in a subdirectory or an import reached it
+     * outside. Two modules named {@code util.oq} in different directories would otherwise
+     * produce two sections with one name.
+     */
+    private static String heading(Path file, Path source) {
+        Path root = Files.isDirectory(source) ? source.toAbsolutePath().normalize()
+                : source.toAbsolutePath().normalize().getParent();
+        Path absolute = file.toAbsolutePath().normalize();
+        Path shown = root != null && absolute.startsWith(root)
+                ? root.relativize(absolute)
+                : absolute.getFileName();
+        // Relative paths use the host's separator, so without this a page generated on Windows
+        // would head a module one way and a page generated on Linux another. A published page
+        // must not depend on where it was built.
+        return shown.toString().replace(File.separatorChar, '/');
+    }
+
+    /**
+     * The modules one file imports, resolved through {@link Modules#resolveModule} so that this
+     * shares the interpreter's search order rather than describing a different one.
+     *
+     * <p>An import that does not resolve is reported and skipped: a single missing module in a
+     * tree should not suppress the documentation of everything else, and the interpreter would
+     * reject the program anyway, so the message is a diagnostic rather than a silent omission.
+     */
+    private static List<Path> followedModules(Ast.Program program, Path file, PrintStream err) {
+        List<Path> resolved = new ArrayList<>();
+        Path base = file.toAbsolutePath().normalize().getParent();
+        for (Ast.Stmt stmt : program.statements()) {
+            if (!(stmt instanceof Ast.ImportStmt importStmt)) continue;
+            try {
+                resolved.add(Modules.resolveModule(importStmt.path(), base, importStmt.span())
+                        .toAbsolutePath().normalize());
+            } catch (OqError e) {
+                err.println("Skipping module import in " + file.getFileName() + ": "
+                        + e.getMessage());
+            }
+        }
+        return resolved;
     }
 
     private static String docOf(Ast.Stmt stmt) {

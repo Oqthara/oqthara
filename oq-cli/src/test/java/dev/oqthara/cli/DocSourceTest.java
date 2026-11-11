@@ -141,6 +141,104 @@ class DocSourceTest {
     }
 
     @Test
+    void aModuleReachedOnlyByUseIsDocumentedToo(@TempDir Path dir) throws Exception {
+        Path modules = dir.resolve("lib");
+        Files.createDirectories(modules);
+        Files.writeString(modules.resolve("helper.oq"), """
+                \"""Doubles.\"""
+                fun doubleIt(n)
+                  return n * 2
+                end
+                """);
+        Path main = dir.resolve("main.oq");
+        Files.writeString(main, """
+                use "oq:helper"
+                print doubleIt(2)
+                """);
+        Result result = doc(main);
+        assertEquals(0, result.code(), result.err());
+        assertTrue(result.out().contains("## lib/helper.oq"), result.out());
+        assertTrue(result.out().contains("### fun doubleIt(n)"), result.out());
+        assertTrue(result.out().contains("Doubles."), result.out());
+    }
+
+    @Test
+    void aModuleUnderTheWalkedDirectoryIsDocumentedOnce(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("lib"));
+        Files.writeString(dir.resolve("lib/helper.oq"), """
+                \"""Doubles.\"""
+                fun doubleIt(n)
+                  return n * 2
+                end
+                """);
+        Files.writeString(dir.resolve("main.oq"), """
+                use "oq:helper"
+                print doubleIt(2)
+                """);
+        Result result = doc(dir);
+        assertEquals(0, result.code(), result.err());
+        String out = result.out();
+        assertEquals(out.indexOf("## lib/helper.oq"), out.lastIndexOf("## lib/helper.oq"),
+                "the walked file and the imported file are the same file: " + out);
+        assertEquals(1, out.split("### fun doubleIt", -1).length - 1, out);
+        assertTrue(out.contains("1 documented, 0 undocumented."), out);
+    }
+
+    @Test
+    void anImportCycleDocumentsEachModuleOnceAndTerminates(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("a.oq"), "use \"oq:b\"\nfun af()\n  return 1\nend\n");
+        Files.writeString(dir.resolve("b.oq"), "use \"oq:a\"\nfun bf()\n  return 2\nend\n");
+        Path main = dir.resolve("main.oq");
+        Files.writeString(main, "use \"oq:a\"\nprint af()\n");
+        Result result = doc(main);
+        assertEquals(0, result.code(), result.err());
+        assertEquals(1, result.out().split("## a.oq", -1).length - 1, result.out());
+        assertEquals(1, result.out().split("## b.oq", -1).length - 1, result.out());
+    }
+
+    @Test
+    void anUnresolvableImportIsReportedAndTheRestIsStillDocumented(@TempDir Path dir)
+            throws Exception {
+        Path file = dir.resolve("main.oq");
+        Files.writeString(file, """
+                use "oq:absent"
+                \"""Kept.\"""
+                fun f()
+                  return 1
+                end
+                """);
+        Result result = doc(file);
+        assertEquals(0, result.code(), result.err());
+        assertTrue(result.err().contains("absent"), result.err());
+        assertTrue(result.out().contains("### fun f()"), result.out());
+        assertTrue(result.out().contains("1 documented, 0 undocumented."), result.out());
+    }
+
+    @Test
+    void twoModulesWithTheSameFileNameGetDistinctHeadings(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("a"));
+        Files.createDirectories(dir.resolve("b"));
+        Files.writeString(dir.resolve("a/util.oq"), "fun one()\n  return 1\nend\n");
+        Files.writeString(dir.resolve("b/util.oq"), "fun two()\n  return 2\nend\n");
+        Result result = doc(dir);
+        assertEquals(0, result.code(), result.err());
+        assertTrue(result.out().contains("## a/util.oq"), result.out());
+        assertTrue(result.out().contains("## b/util.oq"), result.out());
+    }
+
+    @Test
+    void aNestedHeadingUsesForwardSlashesWhateverTheHostSeparator(@TempDir Path dir)
+            throws Exception {
+        Files.createDirectories(dir.resolve("lib"));
+        Files.writeString(dir.resolve("lib/helper.oq"), "fun doubleIt(n)\n  return n\nend\n");
+        Result result = doc(dir);
+        assertEquals(0, result.code(), result.err());
+        assertTrue(result.out().contains("## lib/helper.oq"), result.out());
+        assertFalse(result.out().contains("lib\\helper.oq"),
+                "a heading must not carry the host separator: " + result.out());
+    }
+
+    @Test
     void thePageStatesThatItIsGenerated(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("g.oq");
         Files.writeString(file, "\"\"\"G.\"\"\"\nfun g()\n  return 1\nend\n");

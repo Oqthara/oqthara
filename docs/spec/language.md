@@ -144,6 +144,17 @@ no separate integer division operator.
 Built-in functions: `abs`, `floor`, `ceil`, `round`, `round(value, places)`, `sqrt`,
 `pow`, `min`, `max`, `clamp`, `random`.
 
+`round` breaks a tie *upward*, toward positive infinity: `round(0.5)` is `1`,
+`round(2.5)` is `3`, and `round(-1.5)` is `-1` rather than `-2`. It is not banker's
+rounding, which would give `2` and `-2`, and it is not rounding away from zero, which
+would make `round(-1.5)` equal `-2`.
+
+The tie rule is stated for the whole number, but the underlying value is a binary
+double, so `round(1.005, 2)` is `1.0` and not `1.01`: the stored double is a little
+below `1.005`, and a tie is never reached. A result that must not depend on how a
+double is stored needs exact decimal arithmetic, which the standard library does not
+yet provide.
+
 Lists compare lexicographically, so a sort key can itself be a list:
 
 ```
@@ -1335,6 +1346,54 @@ is refused rather than rewritten: a name that had to be changed to be safe is no
 caller asked for, and storing a quietly different one is the wrong-answer failure mode this
 language treats as a defect. `tar` is not provided; zip covers the archive case and needs no
 separate reader.
+
+Text layout: `wrap_text(text, width)` returns the text as a list of lines no longer than
+`width`, `fill_text(text, width)` returns the same thing joined by `\n`, and `shorten_text(text,
+width)` collapses whitespace and cuts at a word boundary with a ` [...]` marker. Wrapping is
+greedy and breaks only at whitespace: a run of spaces between two words becomes one space, and
+leading whitespace is kept so an already-indented string stays indented.
+
+```oq
+print wrap_text("The quick brown fox jumps", 10)   # ["The quick", "brown fox", "jumps"]
+print fill_text("The quick brown fox jumps", 10)
+print shorten_text("Hello  world  foo bar", 12)    # Hello [...]
+```
+
+A word longer than the width is split at exactly the width, so `wrap_text("abcdefghij", 4)` is
+`["abcd", "efgh", "ij"]`. A hyphen is not a break opportunity — `wrap_text("co-operate", 6)` is
+`["co-ope", "rate"]` and not `["co-", "operate"]`. Python's `textwrap` breaks on hyphens by
+default because it guesses at syllable boundaries; that guess is deliberately not made here, so
+porting code that relies on it will produce different lines.
+
+A width below 1 raises `wrap_text() needs a width of at least 1, got 0`, and a width that is not
+a whole number raises `wrap_text() needs a whole number for width, got 2.5`. `shorten_text`
+raises `shorten_text() cannot fit 6 characters of placeholder in a width of 4` rather than
+returning a string longer than the width it was asked to respect.
+
+```oq
+print dedent_text("  a\n    b")   # a\n  b
+print indent_text("a\n\nb", "> ")  # > a\n\n> b
+```
+
+`dedent_text(text)` removes the longest whitespace prefix every non-blank line shares, leaving
+blank lines blank; whitespace-only text becomes `""`. `indent_text(text, prefix)` prefixes every
+non-blank line and leaves blank lines empty, because prefixing a blank line adds trailing
+whitespace that a diff then reports.
+
+`unified_diff(before, after)` compares two lists of lines and returns the diff in unified format,
+with optional third and fourth arguments naming the two sides. It shows three lines of context
+and returns an empty list when nothing changed, so the result can be used as a condition.
+
+```oq
+print unified_diff(["a", "b", "c"], ["a", "x", "c"], "before", "after")
+# ["--- before", "+++ after", "@@ -1,3 +1,3 @@", " a", "-b", "+x", " c"]
+```
+
+An empty side of a hunk is written `-0,0` or `+0,0`, as in every unified diff. Both arguments
+must be lists of lines: passing text raises `unified_diff() needs a list of lines, got text`,
+because text is iterable as characters and diffing characters is never what the caller meant.
+The alignment is a longest common subsequence, so where several edits are equally minimal it may
+choose a different one than Python's `difflib`; both reproduce the after-side exactly.
 
 Neither copying nor reading is confined to the working directory. Oqthara is not a sandbox —
 see the note below.
