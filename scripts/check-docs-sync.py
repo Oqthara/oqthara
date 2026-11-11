@@ -486,6 +486,60 @@ def stdlib_inventory_tallies_agree() -> None:
     )
 
 
+def requirement_matrix_figures_match_the_inventory() -> None:
+    """The matrix quotes the inventory's counts, so a repaired tally must reach both files.
+
+    Twice now the inventory was corrected while the matrix kept the old numbers, and both
+    times the stale figure was found by reading rather than by a check. The matrix may cite
+    any of the four figures, so each one it does cite must equal the inventory's.
+    """
+    inventory = "docs/governance/alpha-4-stdlib-inventory.md"
+    matrix = "docs/governance/alpha-4-requirement-matrix.md"
+    inventory_text = read(inventory)
+    matrix_text = read(matrix)
+
+    status = re.findall(
+        r"^\| \*\*(?:Covered|Partly covered|Absent|Deliberately excluded)\*\* \| \*\*(\d+)\*\*",
+        inventory_text,
+        re.M,
+    )
+    if len(status) != 4:
+        problems.append(f"{matrix} check cannot read the inventory's status counts")
+        return
+    claimed = {
+        "covered": int(status[0]),
+        "absent": int(status[2]),
+    }
+
+    # A figure is only checked when the matrix actually cites it, so wording changes do not
+    # fail the build; a cited figure that is wrong always does.
+    for phrase, truth in (
+        (r"(\d+) modules? remain absent", claimed["absent"]),
+        (r"of which (\d+) are covered", claimed["covered"]),
+    ):
+        for found in re.findall(phrase, matrix_text):
+            # `of which N are covered` is a range; take the first number in the run.
+            value = int(found.split()[0])
+            if value != truth:
+                problems.append(
+                    f"{matrix} says {value} where the inventory says {truth} "
+                    f"(matched {phrase!r})"
+                )
+
+    builtins = re.search(r"(\d+) global (?:functions|builtins)", matrix_text)
+    if builtins:
+        reference = read("docs/stdlib/reference.md")
+        section = reference.split("## Global functions")[1].split("## Methods on values")[0]
+        actual = len(re.findall(r"^\| `[^`]+` \|", section, re.M))
+        if int(builtins.group(1)) != actual:
+            problems.append(
+                f"{matrix} says {builtins.group(1)} global functions, "
+                f"docs/stdlib/reference.md lists {actual}"
+            )
+
+    note(f"{matrix} figures agree with the inventory and the generated reference")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -496,6 +550,7 @@ CHECKS = (
     cited_builtins_exist,
     contract_register_is_complete,
     stdlib_inventory_tallies_agree,
+    requirement_matrix_figures_match_the_inventory,
 )
 
 
