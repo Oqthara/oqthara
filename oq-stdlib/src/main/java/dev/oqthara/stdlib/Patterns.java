@@ -88,6 +88,12 @@ final class Patterns {
             }
         } catch (OqError error) {
             throw error;
+        } catch (java.io.UncheckedIOException e) {
+            // Files.walk and Files.list report a traversal failure as an unchecked wrapper, so
+            // the IOException branch below never sees it and the failure would surface as an
+            // internal error with exit 70. walk() has the same shape on main; this is the
+            // corrected form for new code.
+            throw new OqError("cannot search '" + directory + "'", span, e.getCause().getMessage());
         } catch (IOException e) {
             throw new OqError("cannot search '" + directory + "'", span, e.getMessage());
         }
@@ -102,6 +108,11 @@ final class Patterns {
      * except a separator, {@code **} any run including separators, and {@code [abc]} a
      * character class. Everything else is literal, and every literal is quoted before it
      * reaches the regex engine, so a pattern cannot inject regex syntax.
+     *
+     * <p>Inside a class, {@code !} negates only as the first character, matching Python and
+     * {@code fnmatch(3)}; every other member is a literal, so {@code [^a]} is "a caret or an
+     * a" rather than a negated class, and {@code &&} is two ampersands rather than an
+     * intersection.
      */
     static final class Glob {
         private final Pattern pattern;
@@ -113,7 +124,16 @@ final class Patterns {
             }
             String normalised = source.replace(java.io.File.separatorChar, '/');
             this.recursive = normalised.contains("**") || normalised.indexOf('/') >= 0;
-            this.pattern = Pattern.compile(translate(normalised, span));
+            try {
+                this.pattern = Pattern.compile(translate(normalised, span));
+            } catch (java.util.regex.PatternSyntaxException e) {
+                // A class body the dialect accepts but the regex engine rejects, such as the
+                // reversed range in `[z-a]`. Without this the pattern escapes as an internal
+                // error and exits 70, so a script watching for the usual exit 1 sees a
+                // different class of failure for what is really a bad argument.
+                throw new OqError("bad pattern: " + e.getDescription(), span,
+                        "Character class ranges must run low to high, as in [a-z].");
+            }
         }
 
         boolean matches(Path relative) {
@@ -198,8 +218,12 @@ final class Patterns {
                             char member = body.charAt(j);
                             // Escape what would end or reopen the class; a `-` range passes
                             // through deliberately, since `[a-z]` is the reason the class is
-                            // useful.
-                            if (member == '\\' || member == ']' || member == '[') {
+                            // useful. `^` and `&` also pass through as literals in the dialect
+                            // -- `fnmatch("a", "[^a]")` is Python's false, not "a literal ^ or
+                            // a" -- but the regex engine gives both a meaning inside a class,
+                            // so they have to be quoted here to keep the dialect's promise.
+                            if (member == '\\' || member == ']' || member == '['
+                                    || member == '^' || member == '&') {
                                 regex.append('\\');
                             }
                             regex.append(member);

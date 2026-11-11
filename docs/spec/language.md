@@ -1214,6 +1214,20 @@ regex here instead. Symbolic links are not followed, for the reason `walk` gives
 can revisit a directory, and an entry cap would then trip for the wrong reason. A pattern that
 matches more entries than a list may hold is an error rather than a truncated result.
 
+Inside a class, only a leading `!` negates. Every other member is literal, so `[^a]` is "a caret
+or an a" and not a negated class, and `[a&&b]` is three characters with a repeated `&` rather
+than an intersection. Both spellings have a meaning in Java's regex engine that this dialect does
+not have, so they are quoted before the pattern reaches it:
+
+```oq
+print fnmatch("^", "[^a]")   # true
+print fnmatch("&", "[a&&b]") # true
+```
+
+A class the dialect accepts but a regex cannot express is a program error, not a fault in
+Oqthara. Ranges run low to high, so `[z-a]` reports `bad pattern:` and exits 1 like any other
+bad argument, rather than escaping as an internal error.
+
 Copying: `copy_file(source, target)` and `move_file(source, target)` refuse an existing target
 rather than overwriting it. Moving copies and then deletes the source, so a failure leaves the
 source intact rather than a half-written target behind.

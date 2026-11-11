@@ -122,6 +122,29 @@ class BuildJarTest {
     }
 
     @Test
+    void aModuleReachedByUseKeepsTheDriver(@TempDir Path dir) throws Exception {
+        // A module is reached with a `use "..."` line, and the predicate's USE_KEYWORD matches
+        // any `use`, so a program whose database access lives in a module is already classified
+        // as needing the driver. That is worth pinning: it is the reason `oq build` does not
+        // have to flatten the entry before deciding, and it would stop being true if module
+        // loading ever moved to a different keyword.
+        Path helper = dir.resolve("dbhelper.oq");
+        Files.writeString(helper, "use java.sql.DriverManager\nfun stored()\n  return 1\nend\n");
+        Path entry = dir.resolve("app.oq");
+        Files.writeString(entry, "use \"oq:dbhelper\"\nprint stored()");
+
+        String raw = Files.readString(entry);
+        assertFalse(raw.contains("java.sql"), "the entry must not name the driver itself");
+        assertTrue(JarBuilder.needsDatabaseDriver(raw),
+                "the `use` that loads the module must already count as reaching the driver");
+
+        Path jar = dir.resolve("app.jar");
+        JarBuilder.build(jar, "oq.generated.Program", Modules.flatten(entry, raw), "app.oq", null,
+                JarBuilder.needsDatabaseDriver(raw));
+        assertTrue(carriesDriver(jar), "the module's Java use must still bring the driver along");
+    }
+
+    @Test
     void nonBmpTextSurvivesTheConstantPool(@TempDir Path dir) throws Exception {
         // Reviewer finding A: the constant pool needs modified UTF-8, not plain UTF-8.
         String source = "print \"party: \uD83C\uDF89\"\nprint \"dash: \u2014\"";
@@ -180,11 +203,19 @@ class BuildJarTest {
         assertEquals("5\n", runJar(plain, work).stdout());
 
         Path withDriver = work.resolve("with-driver.jar");
+        long driverStart = System.nanoTime();
         JarBuilder.build(withDriver, "oq.generated.Program", "print 2 + 3", "plain.oq", null, true);
+        long driverMillis = (System.nanoTime() - driverStart) / 1_000_000;
         assertTrue(carriesDriver(withDriver), "an explicit request must bundle the driver");
 
         // The whole point: not copying the driver has to be the cheap path by a wide margin.
-        assertTrue(plainMillis * 2 < 1_500, "a driver-free jar took " + plainMillis + " ms");
+        // Compare the two builds in this same run rather than against a wall-clock constant:
+        // an absolute bound measures the machine, and a loaded CI worker would fail the test
+        // for being slow rather than for being quadratic.
+        assertTrue(driverMillis > plainMillis * 2, "copying the driver took only " + driverMillis
+                + " ms against " + plainMillis + " ms without it; the comparison cannot tell"
+                + " the two paths apart, so this test proves nothing");
+        assertTrue(plainMillis < 3_000, "a driver-free jar took " + plainMillis + " ms");
     }
 
     private static boolean carriesDriver(Path jar) throws Exception {

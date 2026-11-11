@@ -13,13 +13,16 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * {@code fnmatch} and {@code glob}, the first entries from the inventory's ranked list.
@@ -91,6 +94,24 @@ class GlobTest {
     }
 
     @Test
+    void onlyALeadingBangNegatesSoACaretIsALiteral() {
+        // `[^a]` is the spelling people reach for after `[!ab]`, but in this dialect -- as in
+        // Python and fnmatch(3) -- only `!` negates, so the caret is an ordinary member. The
+        // regex engine gives `^` meaning inside a class, so it has to be quoted in translate.
+        assertEquals(Boolean.FALSE, call("fnmatch", "b", "[^a]"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "^", "[^a]"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a", "[^a]"));
+    }
+
+    @Test
+    void anAmpersandInAClassIsALiteralNotAnIntersection() {
+        // Java regex reads `&&` as an intersection; the dialect has no such operator.
+        assertEquals(Boolean.TRUE, call("fnmatch", "&", "[a&&b]"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a", "[a&&b]"));
+        assertEquals(Boolean.FALSE, call("fnmatch", "c", "[a&&b]"));
+    }
+
+    @Test
     void aDashInAClassIsARange() {
         assertEquals(Boolean.TRUE, call("fnmatch", "m3.txt", "m[0-9].txt"));
         assertEquals(Boolean.FALSE, call("fnmatch", "mx.txt", "m[0-9].txt"));
@@ -159,6 +180,23 @@ class GlobTest {
         assertTrue(error.getMessage().contains("must stand alone"), error.getMessage());
     }
 
+    @Test
+    void aReversedRangeIsAUserErrorNotAnInternalOne() {
+        // The dialect accepts this class; the regex engine does not. Unwrapped, the
+        // PatternSyntaxException reached the CLI as an internal error with exit 70, so a
+        // caller checking for the usual failure exit saw a different class of failure.
+        OqError error = assertThrows(OqError.class, () -> call("fnmatch", "a", "[z-a]"));
+        assertTrue(error.getMessage().startsWith("bad pattern: "), error.getMessage());
+    }
+
+    @Test
+    void aCaretOnlyClassIsALiteralClass() {
+        // `[^]` used to reach the engine unquoted and fail as "Unclosed character class". With
+        // `^` quoted it is an ordinary one-member class, which is what the dialect says it is.
+        assertEquals(Boolean.TRUE, call("fnmatch", "^", "[^]"));
+        assertEquals(Boolean.FALSE, call("fnmatch", "x", "[^]"));
+    }
+
     // --- glob --------------------------------------------------------------------------------
 
     @Test
@@ -211,6 +249,26 @@ class GlobTest {
     void aDirectoryThatDoesNotExistIsRefused() {
         OqError error = assertThrows(OqError.class, () -> call("glob", "nope", "*"));
         assertTrue(error.getMessage().contains("not a directory"), error.getMessage());
+    }
+
+    @Test
+    void anUnreadableDirectoryIsAUserErrorNotAnInternalOne() throws IOException {
+        // Files.walk reports a traversal failure as an UncheckedIOException, so the IOException
+        // branch never saw it and the failure surfaced as an internal error with exit 70. Root
+        // ignores the mode bits, so there is nothing to assert there.
+        Path locked = dir.resolve("locked");
+        Files.createDirectories(locked);
+        touch("a.oq");
+        Set<PosixFilePermission> open = Files.getPosixFilePermissions(locked);
+        Files.setPosixFilePermissions(locked, Set.of());
+        try {
+            assumeTrue(!Files.isReadable(locked),
+                    "this host ignores directory permissions, so there is nothing to refuse");
+            OqError error = assertThrows(OqError.class, () -> call("glob", ".", "**/*.oq"));
+            assertTrue(error.getMessage().contains("cannot search"), error.getMessage());
+        } finally {
+            Files.setPosixFilePermissions(locked, open);
+        }
     }
 
     @Test
