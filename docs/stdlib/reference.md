@@ -38,6 +38,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `db_execute` | built-in |
 | `db_query` | built-in |
 | `db_transaction` | built-in |
+| `dedent_text` | built-in |
 | `delete` | built-in |
 | `done` | built-in |
 | `enumerate` | built-in |
@@ -46,6 +47,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `exists` | built-in |
 | `exit` | built-in |
 | `file_size` | built-in |
+| `fill_text` | built-in |
 | `filter` | built-in |
 | `floor` | built-in |
 | `fnmatch` | built-in |
@@ -61,6 +63,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `hmac_sha256` | built-in |
 | `http_get` | built-in |
 | `http_post` | built-in |
+| `indent_text` | built-in |
 | `input` | built-in |
 | `instant_parse` | built-in |
 | `is_dir` | built-in |
@@ -130,6 +133,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `set` | built-in |
 | `sha1` | built-in |
 | `sha256` | built-in |
+| `shorten_text` | built-in |
 | `sleep` | built-in |
 | `sort` | built-in |
 | `sort_by` | built-in |
@@ -145,6 +149,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `trim` | built-in |
 | `type_of` | built-in |
 | `tz_convert` | built-in |
+| `unified_diff` | built-in |
 | `unique` | built-in |
 | `upper` | built-in |
 | `url_decode` | built-in |
@@ -155,6 +160,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `values` | built-in |
 | `variance` | built-in |
 | `walk` | built-in |
+| `wrap_text` | built-in |
 | `write` | built-in |
 | `write_bytes` | built-in |
 | `write_text` | built-in |
