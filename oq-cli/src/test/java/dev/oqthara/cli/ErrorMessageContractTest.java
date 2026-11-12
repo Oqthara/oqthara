@@ -404,11 +404,15 @@ class ErrorMessageContractTest {
      * A callback reaches the interpreter through the host interface, which knows the value but
      * not the identifier the caller wrote. Quoting a placeholder there read like one of the
      * program's own names, so the refusal describes the value instead.
+     *
+     * <p>Since reverse interop the value is genuinely callable at its own arity, so the refusal
+     * names the argument count rather than denying the capability: a comparator is called with
+     * two arguments, and {@code map} supplies one.
      */
     @Test
     void aRefusedCallbackIsNotGivenAPlaceholderName() {
         goodError("use java.util.Comparator\nc = Comparator.naturalOrder()\nmap([1], c)",
-                "this value is not a function");
+                "with one method of 2 arguments");
         goodError("use java.util.Comparator\nc = Comparator.naturalOrder()\nmap([1], c)",
                 "java NaturalOrderComparator");
         OqRunner.Result result = run("use java.util.Comparator\nc = Comparator.naturalOrder()\nmap([1], c)");

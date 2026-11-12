@@ -158,6 +158,48 @@ class RuntimeResolverTest {
     }
 
     @Test
+    void failureMessageNamesWhereAManagedRuntimeWouldBeInstalled() {
+        // ADR-0048 D8: an offline failure has to say where the runtime it looked for belongs.
+        // Without the path, "no managed runtime" reads the same whether one was never installed
+        // or was installed somewhere else and this invocation is looking in the wrong home.
+        RuntimeResolver.Resolution nothing = RuntimeResolver.resolve(
+                inputs(null, null, null, null), probe(Map.of()));
+
+        String message = RuntimeResolver.explainFailure(nothing, "/home/someone/.oq");
+
+        assertTrue(message.contains(Path.of("/home/someone/.oq", "runtime", "java").toString()),
+                message);
+        assertTrue(message.contains("does not exist"), message);
+    }
+
+    @Test
+    void failureMessageOmitsTheManagedPathWhenNoHomeIsKnown() {
+        RuntimeResolver.Resolution nothing = RuntimeResolver.resolve(
+                inputs(null, null, null, null), probe(Map.of()));
+
+        String withoutHome = RuntimeResolver.explainFailure(nothing);
+
+        assertFalse(withoutHome.contains("would be installed at"), withoutHome);
+        assertTrue(withoutHome.contains("Put one on PATH") || withoutHome.contains("on PATH"),
+                withoutHome);
+    }
+
+    @Test
+    void managedHomeFallsBackFromOqHomeToUserHome() {
+        assertEquals(Path.of("/custom/oq"),
+                RuntimeResolver.managedHome(Map.of("OQ_HOME", "/custom/oq")).orElseThrow());
+        assertEquals(Path.of("/home/someone/.oq"),
+                RuntimeResolver.managedHome(Map.of("HOME", "/home/someone")).orElseThrow());
+        // The separator belongs to the running platform, so the expectation is built the same way
+        // rather than pinning a Windows separator into a test that also runs on POSIX.
+        assertEquals(Path.of("C:\\Users\\someone").resolve(".oq"),
+                RuntimeResolver.managedHome(Map.of("USERPROFILE", "C:\\Users\\someone"))
+                        .orElseThrow());
+        assertTrue(RuntimeResolver.managedHome(Map.of()).isEmpty(),
+                "no home variable names nothing rather than a guess");
+    }
+
+    @Test
     void projectPinIsFoundFromANestedDirectory(@TempDir Path root) throws Exception {
         Files.createDirectories(root.resolve(".oq"));
         Path java = root.resolve(".oq").resolve("java");

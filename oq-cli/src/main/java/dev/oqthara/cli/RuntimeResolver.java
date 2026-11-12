@@ -184,20 +184,29 @@ final class RuntimeResolver {
         return Optional.empty();
     }
 
-    /** Returns the managed runtime's {@code java}, if one has been installed and validated. */
-    static Optional<String> managedJava(java.util.Map<String, String> env) {
+    /** Where a managed runtime would be installed, or empty when no home can be determined. */
+    static Optional<Path> managedHome(java.util.Map<String, String> env) {
         String home = env.get("OQ_HOME");
         if (home == null || home.isBlank()) {
-            String userHome = env.get("HOME");
-            if (userHome == null || userHome.isBlank()) {
-                userHome = env.get("USERPROFILE");
+            home = env.get("HOME");
+            if (home == null || home.isBlank()) {
+                home = env.get("USERPROFILE");
             }
-            if (userHome == null || userHome.isBlank()) {
+            if (home == null || home.isBlank()) {
                 return Optional.empty();
             }
-            home = Path.of(userHome, ".oq").toString();
+            home = Path.of(home, ".oq").toString();
         }
-        Path java = Path.of(home, "runtime", "java");
+        return Optional.of(Path.of(home));
+    }
+
+    /** Returns the managed runtime's {@code java}, if one has been installed and validated. */
+    static Optional<String> managedJava(java.util.Map<String, String> env) {
+        Optional<Path> home = managedHome(env);
+        if (home.isEmpty()) {
+            return Optional.empty();
+        }
+        Path java = home.get().resolve("runtime").resolve("java");
         if (!Files.isRegularFile(java)) {
             return Optional.empty();
         }
@@ -271,8 +280,16 @@ final class RuntimeResolver {
      * <p>It names the floor, every origin that was checked and why each was refused, and the two
      * variables that would fix it. A diagnostic that omits the reason is why runtime problems get
      * reported as "install Java" when Java is already installed.
+     *
+     * <p>When called with the managed home it also names the directory a managed runtime would
+     * occupy (ADR-0048 D8). Without it the message says what to install but not where, which
+     * leaves the offline case indistinguishable from "the tool is not installed at all".
      */
     static String explainFailure(Resolution resolution) {
+        return explainFailure(resolution, null);
+    }
+
+    static String explainFailure(Resolution resolution, String managedHome) {
         StringBuilder message = new StringBuilder();
         message.append("no usable Java runtime found; Oqthara requires Java ")
                 .append(FLOOR).append(" or newer.\n");
@@ -284,6 +301,11 @@ final class RuntimeResolver {
             for (Candidate candidate : resolution.rejected()) {
                 message.append("  - ").append(candidate.describe()).append('\n');
             }
+        }
+        if (managedHome != null && !managedHome.isBlank()) {
+            message.append("A managed runtime would be installed at ")
+                    .append(Path.of(managedHome, "runtime", "java"))
+                    .append(", which does not exist.\n");
         }
         message.append("Set OQ_JAVA to a Java ").append(FLOOR)
                 .append("+ executable, or put one on PATH.");

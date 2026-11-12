@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -178,5 +179,111 @@ class JavaBridgeCallbackTest {
         List<Object> xs = new ArrayList<>(List.of(1L));
         assertSame(JavaBridge.NOT_FOUND, JavaBridge.callMethod(xs, "forEach",
                 List.of(function("cb", seen, 1, (args, s) -> null)), span, cwd));
+    }
+
+    @Test
+    void aJavaFunctionalInterfaceValueIsCallable() {
+        // The direction back: Comparator.naturalOrder() is a value whose compare() could be
+        // called with a dot but which could not be called at all, so map(xs, naturalOrder())
+        // was refused while the equivalent lambda worked.
+        Object comparator = java.util.Comparator.naturalOrder();
+        assertEquals(-1L, JavaBridge.callFunctional(comparator, List.of(1L, 2L), span, cwd,
+                recordingHost(new ArrayList<>())));
+        assertEquals(1L, JavaBridge.callFunctional(comparator, List.of(2L, 1L), span, cwd,
+                recordingHost(new ArrayList<>())));
+        // The explicit call and the bare call must reach the same method.
+        assertEquals(JavaBridge.callMethod(comparator, "compare", List.of(2L, 1L), span, cwd),
+                JavaBridge.callFunctional(comparator, List.of(2L, 1L), span, cwd,
+                        recordingHost(new ArrayList<>())));
+    }
+
+    @Test
+    void aDeclaredFunctionalInterfaceOutranksAnInheritedOne() {
+        // naturalOrder() is an enum, so it inherits Comparable from Enum and declares
+        // Comparator. A one-argument call used to select compareTo and die inside Java with a
+        // ClassCastException casting a Long to Enum; the declared interface is what the value
+        // is for, and it takes two arguments.
+        Object comparator = java.util.Comparator.naturalOrder();
+        OqError error = assertThrows(OqError.class, () -> JavaBridge.callFunctional(comparator,
+                List.of(1L), span, cwd, recordingHost(new ArrayList<>())));
+        assertEquals("wrong number of arguments", error.getMessage());
+        assertTrue(error.hint().contains("2 arguments"), error.hint());
+    }
+
+    @Test
+    void aFunctionalValueOfTheWrongAritySaysWhichCountWouldWork() {
+        Object comparator = java.util.Comparator.naturalOrder();
+        OqError error = assertThrows(OqError.class, () -> JavaBridge.callFunctional(comparator,
+                List.of(), span, cwd, recordingHost(new ArrayList<>())));
+        assertEquals("wrong number of arguments", error.getMessage());
+        assertTrue(error.hint().contains("2 rather than 0"), error.hint());
+    }
+
+    @Test
+    void valuesThatAreNotFunctionalInterfacesAreStillNotFound() {
+        // A long, a string and a class each answer NOT_FOUND so the caller reports them as not
+        // callable, rather than this path claiming every Java object is a function.
+        for (Object value : List.of(5L, "text", java.util.Comparator.class)) {
+            assertSame(JavaBridge.NOT_FOUND,
+                    JavaBridge.callFunctional(value, List.of(1L), span, cwd, null),
+                    String.valueOf(value));
+        }
+    }
+
+    /** Declares nothing functional itself and inherits {@code compareTo} from {@code Object}. */
+    private static final class MarkerOnly implements java.io.Serializable {
+        @Override
+        public String toString() {
+            return "a value that is not a function";
+        }
+    }
+
+    /**
+     * Declares a marker interface and inherits {@code Runnable} from {@code Thread}.
+     *
+     * <p>This is the shape that separates a correct guard from a reflexively tight one: the class's
+     * own interface list says only "serializable", while the interface that makes it callable lives
+     * on the superclass.
+     */
+    private static final class SavedThread extends Thread implements java.io.Serializable {
+        private int runs;
+
+        @Override
+        public void run() {
+            runs++;
+        }
+    }
+
+    @Test
+    void aDeclaredMarkerInterfaceDoesNotHideAnInheritedFunctionalOne() {
+        MarkerOnly value = new MarkerOnly();
+        assertSame(JavaBridge.NOT_FOUND,
+                JavaBridge.callFunctional(value, List.of(1L), span, cwd, null),
+                "a marker interface alone is not a functional interface");
+
+        // The value above proves too little on its own: no guard would make it callable, so both
+        // the tight and the correct rule answer the same. This one does distinguish them, because
+        // the interface that makes it callable is inherited rather than declared. Refusing as soon
+        // as any interface is declared would leave it uncallable while the equivalent lambda ran.
+        SavedThread thread = new SavedThread();
+        Object ran = JavaBridge.callFunctional(thread, List.of(), span, cwd, null);
+        assertNotSame(JavaBridge.NOT_FOUND, ran,
+                "an inherited Runnable makes the value callable even though the class declares "
+                        + "only Serializable");
+        assertNull(ran, "a void functional method answers nothing");
+        assertEquals(1, thread.runs, "the inherited abstract method is what a call runs");
+    }
+
+    @Test
+    void anInheritedFunctionalValueAtTheWrongAritySaysWhichCountWouldWork() {
+        // The count must come from the same interface the call was resolved against. Reporting
+        // only declared interfaces made this value read as "not a function" at every arity,
+        // which is a worse error than a wrong count because it names no fix.
+        SavedThread thread = new SavedThread();
+        OqError error = assertThrows(OqError.class, () -> JavaBridge.callFunctional(thread,
+                List.of(1L), span, cwd, null));
+        assertEquals("wrong number of arguments", error.getMessage());
+        assertTrue(error.hint().contains("0 rather than 1"), error.hint());
+        assertEquals(0, thread.runs, "a refused call runs nothing");
     }
 }

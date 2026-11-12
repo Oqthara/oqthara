@@ -222,14 +222,15 @@ class JavaInteropTest {
 
     @Test
     void aJavaObjectIsNotDescribedAsUncallable() {
-        // The value's methods do work, so saying it "cannot be called" contradicts the line
-        // above it. The help names the real distinction: callable by method, not a fun.
+        // The value's methods do work, and since reverse interop it is callable as a function too
+        // when the argument count matches. A comparator takes two, so map — which wants one —
+        // is refused for the count, not by denying that the object can be called at all.
         fails("""
                 use java.util.Comparator
 
                 xs = [1, 2]
                 print map(xs, Comparator.naturalOrder())
-                """, "a Java object: call its methods with '.', but it is not a fun");
+                """, "a Java object with one method of 2 arguments");
     }
 
     @Test
