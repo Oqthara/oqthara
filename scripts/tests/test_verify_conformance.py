@@ -34,6 +34,15 @@ class EvaluateTests(unittest.TestCase):
     def test_healthy_corpus_passes(self):
         self.assertEqual([], verify.evaluate(observe(), []))
 
+    def test_tallies_must_fit_inside_the_executable_set(self):
+        # compiled and fallback are disjoint halves of the executable corpus. Before this
+        # was enforced, four .err cases were counted as fallback and the summary reported
+        # 203 + 13 = 216 over an executable set of 212.
+        problems = verify.evaluate(
+            observe(executable=212, compiled=203) | {"fallback": 13}, [])
+        self.assertEqual(1, len(problems))
+        self.assertIn("exceed", problems[0])
+
     def test_compiled_regression_fails(self):
         problems = verify.evaluate(observe(compiled=verify.BASELINE["compiled"] - 1), [])
         self.assertEqual(1, len(problems))
