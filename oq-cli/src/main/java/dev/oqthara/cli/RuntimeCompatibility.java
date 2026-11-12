@@ -129,7 +129,9 @@ final class RuntimeCompatibility {
             }
 
             Result language = run(java, scratch, LANGUAGE.source());
-            if (!language.succeeded() || !language.output().equals(LANGUAGE.expectedOutput())) {
+            if (!language.succeeded()
+                    || !withPlatformLineEndings(language.output())
+                            .equals(LANGUAGE.expectedOutput())) {
                 failures.add(LANGUAGE.name() + " " + language.describe());
             }
 
@@ -206,8 +208,19 @@ final class RuntimeCompatibility {
         }
     }
 
-    private static void deleteRecursively(Path root) {
-        try (var walk = Files.walk(root)) {
+    /**
+     * Converts the platform's line separator to {@code \n} before comparing.
+     *
+     * <p>A JVM on Windows writes {@code \r\n} even when the program itself prints {@code \n},
+     * because the console and redirected streams translate it. Comparing raw bytes would refuse
+     * every working JVM on Windows at install time. The check still compares the full text and
+     * the exact number of lines; only the line terminator is normalised.
+     */
+    private static String withPlatformLineEndings(String output) {
+        return output.replace("\r\n", "\n").replace('\r', '\n');
+    }
+
+    private static void deleteRecursively(Path root) {        try (var walk = Files.walk(root)) {
             walk.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
                 try {
                     Files.deleteIfExists(path);

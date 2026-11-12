@@ -148,6 +148,17 @@ class RuntimeInstallerTest {
     }
 
     /**
+     * A launcher that exits non-zero, written so the platform will execute it.
+     *
+     * <p>A {@code #!/bin/sh} file named {@code java.exe} is not run as a script: Windows reports
+     * {@code CreateProcess error=216} because the executable format is wrong, so the test would
+     * prove nothing about the version check it is meant to exercise.
+     */
+    private static String failingLauncher() {
+        return JAVA.endsWith(".exe") ? "@echo off\r\nexit /b 1\r\n" : "#!/bin/sh\nexit 1\n";
+    }
+
+    /**
      * A runtime whose {@code bin/java} exits non-zero for everything, which is the JDK 25 case:
      * the version it reports is acceptable and it still cannot run the program.
      */
@@ -156,7 +167,7 @@ class RuntimeInstallerTest {
         try (OutputStream out = Files.newOutputStream(archive);
              ZipOutputStream zip = new ZipOutputStream(out)) {
             zip.putNextEntry(new ZipEntry(topLevel + "/bin/" + JAVA));
-            zip.write("#!/bin/sh\nexit 1\n".getBytes(StandardCharsets.UTF_8));
+            zip.write(failingLauncher().getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
             zip.putNextEntry(new ZipEntry(topLevel + "/release"));
             zip.write("JAVA_VERSION=\"21\"\n".getBytes(StandardCharsets.UTF_8));

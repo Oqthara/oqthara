@@ -211,7 +211,18 @@ class SafeArchiveTest {
 
         SafeArchive.extract(archive, out);
 
-        assertFalse(Files.isExecutable(out.resolve("lib/modules")));
+        Path modules = out.resolve("lib/modules");
+        int installed;
+        try {
+            installed = (int) Files.getAttribute(modules, "unix:mode");
+        } catch (UnsupportedOperationException | IllegalArgumentException e) {
+            // Not a POSIX filesystem. Windows has no execute bit to withhold: isExecutable
+            // reports true for any readable file, so asserting inexecutability there would test
+            // the platform rather than the extractor. The extractor only ever grants the bit,
+            // never clears it, so the guarantee this test states is a POSIX one.
+            return;
+        }
+        assertEquals(0, installed & 0x49, "no execute bit may be granted to an ordinary entry");
     }
 
     @Test

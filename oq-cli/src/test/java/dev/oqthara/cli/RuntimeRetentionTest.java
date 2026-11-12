@@ -34,7 +34,7 @@ class RuntimeRetentionTest {
              ZipOutputStream zip = new ZipOutputStream(out)) {
             for (String entry : new String[] {"bin/", "bin/" + JAVA, "release", "lib/"}) {
                 zip.putNextEntry(new ZipEntry(name + "/" + entry));
-                if (entry.endsWith("java")) {
+                if (entry.endsWith(JAVA)) {
                     zip.write("#!/bin/sh\n".getBytes(StandardCharsets.UTF_8));
                 } else if (entry.equals("release")) {
                     zip.write("JAVA_VERSION=\"21\"\n".getBytes(StandardCharsets.UTF_8));
