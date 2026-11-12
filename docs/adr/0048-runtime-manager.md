@@ -201,6 +201,12 @@ exercise the bytecode backend, the standard library and the JNI database path. I
 corpus — 212 executable files is too much to run before every install — and the ADR says so
 rather than implying a stronger check than exists.
 
+The compatibility check compares the program's text, not only its exit status, because a JVM
+that exits zero having printed the wrong thing has not run the program. It normalises the line
+terminator before comparing: a JVM on Windows writes `\r\n` even when the program prints `\n`,
+and a byte-exact comparison would refuse every working JVM there on first install. The full text
+and the number of lines are still compared.
+
 This is not hypothetical. [ADR-0002](0002-ci-split.md) records that the build failed on JDK 25
 with `Unsupported class file major version 69`, because the Gradle release in use at the time
 could not parse that class-file format. A JVM that was current, published and available from its
