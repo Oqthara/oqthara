@@ -65,6 +65,17 @@ subprojects {
         // so the test JVM must not depend on the platform default charset.
         systemProperty("file.encoding", "UTF-8")
         jvmArgs("-Dfile.encoding=UTF-8", "-Dsun.stdout.encoding=UTF-8", "-Dsun.stderr.encoding=UTF-8")
+        // The build cache is shared across the whole matrix, and Gradle's default key for a
+        // Test task is the classpath, the inputs, and the JVM - not the operating system. A
+        // green Linux run is therefore replayed as a green macOS run, which defeats the point
+        // of running the suite there: the tests that differ by platform (path separators,
+        // line endings, executable bits, process launch) are exactly the ones each leg exists
+        // to catch. Declaring the OS as an input gives each platform its own cache entries
+        // while still sharing within a platform across JDK versions where that is sound.
+        //
+        // Observed: the first macOS run executed every test task, and every later macOS run
+        // reported `FROM-CACHE` for six of seven, including oq-core and oq-stdlib.
+        inputs.property("operatingSystem", System.getProperty("os.name"))
         testLogging {
             events("failed", "skipped")
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

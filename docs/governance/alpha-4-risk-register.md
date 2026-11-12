@@ -405,6 +405,7 @@ defend.
 | R-018 | Fuzzing does not reach text, path resolution, CSV or semantic analysis | Medium | Medium | Medium | 11 | Open |
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
+| R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
 The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
@@ -428,6 +429,50 @@ not a required context, so a macOS installer regression would not block a merge.
 *Evidence.* `docs/adr/0049-macos-ci-on-github-actions.md` · `.github/workflows/ci.yml` (matrix) ·
 `scripts/apply-branch-protection.sh` (required contexts) · `scripts/check-circleci.py` (grouped
 requirements) · `scripts/tests/test_check_ci_gate.py`.
+
+**R-026 — The build cache replays a Linux test result as a macOS or Windows one.**
+`gradle.properties` enables the build cache, and `gradle/actions/setup-gradle@v6` in
+`.github/workflows/ci.yml` keeps a single remote cache for the whole matrix. Gradle derives a `Test`
+task's cache key from the classpath, the declared inputs, and the JVM — but not the operating
+system. Every leg of the matrix therefore competes for the same key, and whichever platform runs
+first donates its results to the others.
+
+The effect was visible in the logs. On `macos-latest / JDK 21`, run `43302389917` reported:
+
+```
+> Task :oq-runtime:test FROM-CACHE
+> Task :oq-core:test FROM-CACHE
+> Task :oq-compiler:test FROM-CACHE
+> Task :oq-stdlib:test FROM-CACHE
+> Task :oq-lsp:test FROM-CACHE
+> Task :bench-jmh:test FROM-CACHE
+> Task :oq-cli:test
+```
+
+Six of the seven test tasks replayed. Windows in the same run showed the identical pattern, and the
+`macos-latest / JDK 25` leg on pull request #132 finished in **25 seconds** — a duration incompatible
+with having executed a test suite. The first macOS run ever recorded (`43300234346`) genuinely
+executed `:oq-core:test`, `:oq-compiler:test` and `:oq-stdlib:test`, which dates the behaviour to
+the second run onward and confirms it is cache reuse rather than a job that never ran.
+
+This is a defect in the *evidence*, not in the tests. The macOS and Windows legs exist to catch
+platform-specific behaviour — path separators, line endings, executable bits, native library
+loading, process launch. A replayed Linux result demonstrates none of it, so a green platform leg
+carried no more information than the Ubuntu leg, while still costing macOS minutes.
+
+*Mitigation.* `build.gradle.kts` declares the operating system as an input of every `Test` task, so
+cache entries no longer cross platforms. Caching is kept, not disabled: a repeat run of the same
+platform on the same commit still hits, and the matrix legs now hold evidence specific to their
+platform.
+
+*Residual.* The cache key still ignores the JVM vendor and version beyond what Gradle infers, so two
+legs of the same OS that differ only by JDK may share entries. That is sound while both JDKs run the
+same bytecode, but it should be revisited if a JDK-specific failure is ever suspected. The
+`fuzz*` tasks registered in `build.gradle.kts` inherit the same `configureEach` block and are
+covered by the same input.
+
+*Evidence.* `build.gradle.kts` (`tasks.withType<Test>().configureEach`) · `gradle.properties` ·
+`.github/workflows/ci.yml` · run `43300234346` versus run `43302389917`.
 
 **R-017 — Conformance corpus is circular: tests and implementation share one author.**
 `conformance/` holds 229 cases, and `scripts/verify-conformance.py` compares the interpreter against
@@ -625,9 +670,9 @@ done.
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
-| Medium | 10 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020 |
+| Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020, R-026 |
 | Low | 11 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025 |
-| **Total** | **25** | |
+| **Total** | **26** | |
 
 ## Review cadence
 

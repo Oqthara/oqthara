@@ -302,6 +302,12 @@
       "slug": "docs/adr/0049-macos-ci-on-github-actions"
     },
     {
+      "path": "docs/adr/0050-platform-scoped-test-cache.md",
+      "title": "ADR-0050 — Test cache entries are scoped to the operating system",
+      "section": "adr",
+      "slug": "docs/adr/0050-platform-scoped-test-cache"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
