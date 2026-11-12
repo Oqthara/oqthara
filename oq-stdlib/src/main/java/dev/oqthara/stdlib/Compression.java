@@ -199,6 +199,14 @@ final class Compression {
      *
      * <p>The cap is on the archive's total rather than per entry: a thousand entries each just
      * under the limit is the same amplification attack as one entry over it.
+     *
+     * <p>Entry names are validated here as well as in {@code zip_compress}, and for a stronger
+     * reason. The writer validates names it was given by the program; the reader validates names
+     * it was given by whoever produced the archive, which is the untrusted direction. An archive
+     * from anywhere can name an entry {@code ../../etc/evil.txt}, and returning that name to the
+     * caller means any program that trusts the map — writing each entry to its key, the obvious
+     * use — writes outside the directory it intended. The name is refused rather than rewritten,
+     * on the rule that a name which had to be altered is not the name that was asked for.
      */
     private static Map<String, byte[]> unzip(byte[] input, Span span) {
         Map<String, byte[]> entries = new LinkedHashMap<>();
@@ -207,6 +215,12 @@ final class Compression {
             ZipEntry entry;
             byte[] buffer = new byte[CHUNK];
             while ((entry = zip.getNextEntry()) != null) {
+                String name = entry.getName();
+                if (!isSafeEntryName(name)) {
+                    throw new OqError("zip_decompress() refused entry name: " + name, span,
+                            "An entry name may not be absolute, contain a '..' segment, "
+                                    + "a backslash or a NUL. Nothing was returned.");
+                }
                 ByteArrayOutputStream content = new ByteArrayOutputStream();
                 int read;
                 while ((read = zip.read(buffer)) > 0) {
@@ -216,7 +230,7 @@ final class Compression {
                     }
                     content.write(buffer, 0, read);
                 }
-                entries.put(entry.getName(), content.toByteArray());
+                entries.put(name, content.toByteArray());
             }
         } catch (IOException e) {
             throw new OqError("zip_decompress() is not valid zip data: " + e.getMessage(), span,

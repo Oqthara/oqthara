@@ -73,9 +73,23 @@ writing: an absolute path, a `..` segment, a backslash, or a NUL byte is refused
 
 The refusal is unconditional rather than normalising the name. A name that had to be rewritten
 to be safe is a name the caller did not mean, and silently storing a different name than the one
-asked for is the kind of quiet wrong answer this project treats as a defect. This is the
-`ArchiveTraversalRefusedTest` case the inventory asks for, applied at the writing end where it can
-be enforced.
+asked for is the kind of quiet wrong answer this project treats as a defect.
+
+**The same rule applies when reading, and that is the direction that matters.** `zip_decompress`
+validates every entry name it encounters with the identical rule and raises
+`zip_decompress() refused entry name: <name>` rather than returning a map holding a name the
+writer would have refused. Validating only on write would protect nothing: a program does not
+choose the names in an archive it is handed. The obvious use of the result — write each entry's
+content to the path named by its key — turns a hostile archive into an arbitrary-file-write, and
+the map is the last place the check can happen. Nothing is returned when any entry is refused, so
+the failure mode is refusal rather than a partial map the caller might act on.
+
+This was a real defect until 2026-11-13. The writer refused the name and the reader accepted it
+from an archive built with `java.util.zip`, so `zip_decompress` returned `../../etc/evil.txt` at
+exit 0. The reader-side tests build their archives with `java.util.zip` rather than with
+`zip_compress`, precisely so a writer-side rule cannot make a reader-side test pass by
+construction; they also pin that names which merely *contain* dots (`..txt`, `a/b..c`) still
+round-trip, because a reader made stricter than the writer would be a new defect.
 
 **D5 — No stream, no handle, no partial value.** Every function consumes a complete value and
 returns a complete value. This is not a limitation to be worked around later; it is what makes
