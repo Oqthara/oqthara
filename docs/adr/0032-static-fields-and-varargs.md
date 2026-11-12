@@ -106,9 +106,12 @@ and wrapping it would change what the program stored.
   without a tail.
 - A varargs overload still loses a tie to an equal-scoring fixed one, so an added varargs
   method cannot silently capture existing calls.
-- Callbacks remain unavailable in both forms — a method on an Oqthara collection, and a
-  function passed to a Java method that wants a functional interface. There is no workaround to
-  offer yet, so the matrix names the gap and leaves it open rather than suggesting one.
+- Callbacks are available in both directions, which they were not when this ADR was written. An
+  Oqthara function passed to a Java method that wants a functional interface becomes a proxy
+  (ADR-0032's own follow-up, in `JavaBridgeCallbackTest`), and a Java value whose class declares
+  one abstract method is callable as a function in the other direction. This paragraph previously
+  said both forms were unavailable with no workaround to offer; it is corrected here rather than
+  left to misdescribe shipped behaviour.
 - The two defects were found by probing, not by tests. The regression tests added with this
   change pin the behaviours, but they do not explain why nothing caught them before: the suite
   had no interop case that read a static field or called a varargs method.

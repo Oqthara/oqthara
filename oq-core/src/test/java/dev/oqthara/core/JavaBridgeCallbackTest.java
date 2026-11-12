@@ -179,4 +179,53 @@ class JavaBridgeCallbackTest {
         assertSame(JavaBridge.NOT_FOUND, JavaBridge.callMethod(xs, "forEach",
                 List.of(function("cb", seen, 1, (args, s) -> null)), span, cwd));
     }
+
+    @Test
+    void aJavaFunctionalInterfaceValueIsCallable() {
+        // The direction back: Comparator.naturalOrder() is a value whose compare() could be
+        // called with a dot but which could not be called at all, so map(xs, naturalOrder())
+        // was refused while the equivalent lambda worked.
+        Object comparator = java.util.Comparator.naturalOrder();
+        assertEquals(-1L, JavaBridge.callFunctional(comparator, List.of(1L, 2L), span, cwd,
+                recordingHost(new ArrayList<>())));
+        assertEquals(1L, JavaBridge.callFunctional(comparator, List.of(2L, 1L), span, cwd,
+                recordingHost(new ArrayList<>())));
+        // The explicit call and the bare call must reach the same method.
+        assertEquals(JavaBridge.callMethod(comparator, "compare", List.of(2L, 1L), span, cwd),
+                JavaBridge.callFunctional(comparator, List.of(2L, 1L), span, cwd,
+                        recordingHost(new ArrayList<>())));
+    }
+
+    @Test
+    void aDeclaredFunctionalInterfaceOutranksAnInheritedOne() {
+        // naturalOrder() is an enum, so it inherits Comparable from Enum and declares
+        // Comparator. A one-argument call used to select compareTo and die inside Java with a
+        // ClassCastException casting a Long to Enum; the declared interface is what the value
+        // is for, and it takes two arguments.
+        Object comparator = java.util.Comparator.naturalOrder();
+        OqError error = assertThrows(OqError.class, () -> JavaBridge.callFunctional(comparator,
+                List.of(1L), span, cwd, recordingHost(new ArrayList<>())));
+        assertEquals("wrong number of arguments", error.getMessage());
+        assertTrue(error.hint().contains("2 arguments"), error.hint());
+    }
+
+    @Test
+    void aFunctionalValueOfTheWrongAritySaysWhichCountWouldWork() {
+        Object comparator = java.util.Comparator.naturalOrder();
+        OqError error = assertThrows(OqError.class, () -> JavaBridge.callFunctional(comparator,
+                List.of(), span, cwd, recordingHost(new ArrayList<>())));
+        assertEquals("wrong number of arguments", error.getMessage());
+        assertTrue(error.hint().contains("2 rather than 0"), error.hint());
+    }
+
+    @Test
+    void valuesThatAreNotFunctionalInterfacesAreStillNotFound() {
+        // A long, a string and a class each answer NOT_FOUND so the caller reports them as not
+        // callable, rather than this path claiming every Java object is a function.
+        for (Object value : List.of(5L, "text", java.util.Comparator.class)) {
+            assertSame(JavaBridge.NOT_FOUND,
+                    JavaBridge.callFunctional(value, List.of(1L), span, cwd, null),
+                    String.valueOf(value));
+        }
+    }
 }

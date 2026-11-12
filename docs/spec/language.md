@@ -2259,19 +2259,42 @@ print ascending.compare(1, 2)    # -1
 print descending.compare(1, 2)   # 1
 ```
 
-The direction back out of Java is still not complete: such an object is not a `fun`, so it cannot
-stand where a function value is expected. `map` needs an Oqthara function, and a Java object is
-refused by describing what it is rather than by denying that it can be called at all:
+A Java value whose class declares a single abstract method is callable as a function, so the
+direction back out of Java is complete for functional interfaces. Detection is by the same rule the
+forward conversion applies — one abstract method, not the `@FunctionalInterface` annotation, which
+`Comparator` and friends do not retain — and the call reuses the argument conversion and overload
+selection of an explicit method call, so the two forms cannot diverge:
 
-```text
-error: this value is not a function
+```
+use java.util.Comparator
+use java.util.function.Function
 
-  help: It is java NaturalOrderComparator, a Java object: call its methods with '.', but it is not a fun.
+ascending = Comparator.naturalOrder()
+print ascending(1, 2)            # -1, the same as ascending.compare(1, 2)
+print Function.identity()("x")   # x
 ```
 
-The refusal cannot name the caller's identifier, because a standard-library higher-order method knows
-only the value it was handed. It says `this value` rather than quoting a placeholder that reads like
-one of the program's own names; the help line carries the type, which is what distinguishes the cases.
+A class may satisfy more than one functional interface, and the interfaces the class *declares*
+are considered before ones it merely inherits: `Comparator.naturalOrder()` is an enum, so it
+inherits `Comparable` from `Enum` as well as declaring `Comparator`, and preferring the inherited
+one made a one-argument call reach `compareTo` and die inside Java with a `ClassCastException`
+casting a number to `Enum`. With nothing else to choose between them, the argument count decides
+which method a bare call means. Two different methods at the same count would be genuinely
+ambiguous and are refused rather than resolved by declaration order.
+
+A functional Java value called with the wrong number of arguments is not described as a non-function,
+because it is one at its own count. The refusal names the count that would have worked:
+
+```text
+error: wrong number of arguments
+
+  help: It is java NaturalOrderComparator, a Java object with one method of 2 arguments, so it is called with 2 rather than 1. Call its methods with '.' for anything else.
+```
+
+A Java object with no single abstract method is still refused as `this value is not a function`, and
+the help carries the type. That refusal cannot name the caller's identifier, because a
+standard-library higher-order method knows only the value it was handed, so it says `this value`
+rather than quoting a placeholder that reads like one of the program's own names.
 
 Such an object is still a Java reference, so it can be handed back to Java anywhere that type is
 wanted — which is what makes the reverse comparator useful at all:
