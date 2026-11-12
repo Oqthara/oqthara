@@ -1,7 +1,6 @@
 package dev.oqthara.cli;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
@@ -42,6 +41,7 @@ final class InstallLock implements AutoCloseable {
 
     /** One semaphore per canonical lock path, so threads in this process wait rather than throw. */
     private static final Map<Path, Semaphore> IN_PROCESS = new ConcurrentHashMap<>();
+
 
     private static final long POLL_MILLIS = 25;
 
@@ -117,6 +117,13 @@ final class InstallLock implements AutoCloseable {
         }
     }
 
+    /**
+     * Explains a timeout, naming the holder when this platform lets it be known.
+     *
+     * <p>The holder is named from the sibling note file, which any process can read on any
+     * platform. When no note is there the message says only that another installation is in
+     * progress, which is true and is all that is known.
+     */
     private static String describeTimeout(Path file, Duration timeout) {
         String holder = readHolderQuietly(file);
         String since = holder == null ? "" : " (held by " + holder + ")";
@@ -127,22 +134,30 @@ final class InstallLock implements AutoCloseable {
     /**
      * Records the holding process for a human reading a failure message. Never parsed to make
      * a decision, so an absent or stale value changes nothing.
+     *
+     * <p>Written to a sibling file rather than into the lock file, because the lock file is
+     * exactly the file another process cannot read. Windows locks are mandatory, so a holder's
+     * exclusive lock refuses a second handle's read and the holder would be invisible on the
+     * platform where a stuck installer most needs explaining. The sibling is never locked.
      */
     private void announceHolder() {
         String note = "pid=" + ProcessHandle.current().pid()
                 + " since=" + java.time.Instant.now() + "\n";
         try {
-            channel.truncate(0);
-            channel.write(ByteBuffer.wrap(note.getBytes(StandardCharsets.UTF_8)), 0);
-            channel.force(false);
+            Files.writeString(holderNote(file), note, StandardCharsets.UTF_8);
         } catch (IOException ignored) {
             // Diagnostics only. Holding the lock is what matters, and it is already held.
         }
     }
 
+    /** Where {@link #announceHolder()} leaves its note. Deliberately not the lock file. */
+    private static Path holderNote(Path file) {
+        return file.resolveSibling(file.getFileName() + ".holder");
+    }
+
     private static String readHolderQuietly(Path file) {
         try {
-            String text = Files.readString(file, StandardCharsets.UTF_8).strip();
+            String text = Files.readString(holderNote(file), StandardCharsets.UTF_8).strip();
             return text.isEmpty() ? null : text;
         } catch (IOException e) {
             return null;
@@ -170,6 +185,11 @@ final class InstallLock implements AutoCloseable {
         } finally {
             closeQuietly(channel);
             inProcess.release();
+        }
+        try {
+            Files.deleteIfExists(holderNote(file));
+        } catch (IOException ignored) {
+            // A stale note names a pid that is no longer holding anything. Harmless.
         }
     }
 

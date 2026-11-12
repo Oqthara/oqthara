@@ -81,11 +81,11 @@ class InstallLockTest {
 
     @Test
     void aStaleLookingLockFileDoesNotBlock(@TempDir Path temp) throws Exception {
-        // A file left by a process that is long gone. Nothing in this class reads it to decide
-        // whether to wait, so its presence must change nothing whatsoever.
+        // A note left by a process that is long gone. Nothing reads it to decide whether to
+        // wait, so its presence must change nothing whatsoever.
         Path file = temp.resolve("runtime.lock");
-        Files.writeString(file, "pid=999999999 since=1999-01-01T00:00:00Z\n",
-                StandardCharsets.UTF_8);
+        Files.writeString(temp.resolve("runtime.lock.holder"),
+                "pid=999999999 since=1999-01-01T00:00:00Z\n", StandardCharsets.UTF_8);
         try (InstallLock lock = InstallLock.acquire(temp, Duration.ofSeconds(2))) {
             assertEquals(file.toAbsolutePath(), lock.file());
         }
@@ -133,6 +133,12 @@ class InstallLockTest {
                     () -> InstallLock.acquire(temp, Duration.ofMillis(250)));
             assertTrue(refused.getMessage().contains("another installation is in progress"),
                     refused.getMessage());
+
+            // The holder is a different process, so this can only be known if the note is
+            // readable while the lock is held. Windows takes mandatory locks and refuses that
+            // read of the lock file, so the note must not live there.
+            assertTrue(refused.getMessage().contains("pid=" + child.pid()),
+                    "message should name the holding process: " + refused.getMessage());
 
             child.destroyForcibly();
             assertTrue(child.waitFor(30, TimeUnit.SECONDS), "child did not die");
