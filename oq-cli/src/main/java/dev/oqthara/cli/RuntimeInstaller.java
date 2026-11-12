@@ -132,6 +132,57 @@ final class RuntimeInstaller {
     }
 
     /**
+     * Installs {@code archive} over an existing runtime, retaining the one being replaced.
+     *
+     * <p>ADR-0048 D7. The difference from {@link #install} is only the rotation: the active
+     * runtime is renamed to {@code .prev} instead of the rename being refused, so an upgrade
+     * leaves a complete previous runtime on disk rather than deleting one to make room. The D5
+     * ordering is unchanged — staging is still validated before anything is touched — which means
+     * a corrupt archive fails with the existing runtime still active.
+     *
+     * @return the activated runtime home
+     */
+    Path upgrade(Path archive, int minimumMajor)
+            throws IOException, InterruptedException, InstallRefusedException {
+        return installWith(archive, minimumMajor, new RuntimeRetention(home));
+    }
+
+    /**
+     * Installs, rotating first when a retention policy is supplied.
+     *
+     * <p>Rotation happens after validation and immediately before activation, so a refusal never
+     * displaces a working runtime.
+     */
+    private Path installWith(Path archive, int minimumMajor, RuntimeRetention retention)
+            throws IOException, InterruptedException, InstallRefusedException {
+        if (!Files.isRegularFile(archive)) {
+            throw new InstallRefusedException("the runtime archive does not exist: " + archive);
+        }
+        Files.createDirectories(home);
+
+        try (InstallLock lock = InstallLock.acquire(home, lockTimeout)) {
+            assert lock.file().getParent().equals(home);
+            discardAbandonedStaging();
+
+            Path staging = home.resolve(STAGING_PREFIX + UUID.randomUUID());
+            Files.createDirectory(staging);
+            try {
+                SafeArchive.extract(archive, staging);
+                Path extracted = locate(staging);
+                validate(extracted.resolve("bin").resolve(executableName()), minimumMajor);
+                if (retention != null) {
+                    retention.rotate();
+                }
+                activate(extracted);
+                return destination();
+            } catch (IOException | InstallRefusedException | RuntimeException e) {
+                deleteRecursively(staging);
+                throw e;
+            }
+        }
+    }
+
+    /**
      * Finds the {@code java} executable the archive produced.
      *
      * <p>JDK archives wrap their contents in a single top-level directory whose name carries the

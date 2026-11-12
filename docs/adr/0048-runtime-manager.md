@@ -1,7 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4, D5 and D6 implemented; provenance, retention and signing
-  are not)
+- **Status:** Proposed (D1, D2, D4, D5, D6 and D7 implemented; provenance, offline diagnostics
+  and signing are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -132,6 +132,22 @@ unreliable on some network filesystems, which is recorded as a limit rather than
 **D7. Rollback is retention, not repair.** The manager keeps the previous runtime until the new
 one has been validated and has run a program successfully. "Rollback" means selecting the
 retained version; it never means undoing a filesystem operation.
+
+`RuntimeRetention` keeps two directories in the managed home: `runtime/java` is active and
+`runtime/java.prev` is the one it replaced. An upgrade validates the new runtime in staging (D5),
+then renames the active one to `.prev` and the staged one to `.active`, so the previous runtime is
+complete on disk before the new one is live and nothing is deleted to make room. Rolling back
+renames the two, which is a selection and not a repair — no state is reconstructed from a
+partial one.
+
+Rotating *after* validation and not before is the load-bearing ordering: a refused upgrade leaves
+the working runtime active and retains nothing, and `aRefusedUpgradeLeavesTheWorkingRuntimeActive`
+fails if the two steps are swapped.
+
+At most two runtimes are kept. A third generation replaces the retained one rather than
+accumulating, which is a bound the requirement implies but does not state: no rule here decides
+how many generations is enough, so one is retained and the choice is written down rather than
+left to a cleanup that runs on a timer.
 
 **D8. Offline operation is a first-class path.** With no network, an already-installed managed
 runtime is used. If none exists, the diagnostic says which runtime was looked for, where it
