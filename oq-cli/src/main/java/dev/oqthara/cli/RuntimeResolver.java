@@ -303,7 +303,44 @@ final class RuntimeResolver {
         return explainFailure(resolution, null);
     }
 
+    /**
+     * Answers whether a runtime could be acquired right now, if one is missing.
+     *
+     * <p>ADR-0048 D8. Separated from the message so a test can state the answer rather than
+     * depend on the network of the machine running it. The real probe asks the network; a test
+     * replaces it and asserts both branches.
+     */
+    interface Reachability {
+        boolean networkAvailable();
+    }
+
+    /**
+     * The real probe: whether any acquisition host answers.
+     *
+     * <p>An unreachable host is a slow DNS lookup, so the first answer that arrives decides.
+     * A network that exists but cannot reach the vendor is reported as unavailable, because for
+     * this purpose the only question is whether installing is possible.
+     */
+    static boolean networkReachable() {
+        String[] hosts = {"api.adoptium.net", "github.com"};
+        for (String host : hosts) {
+            try {
+                if (java.net.InetAddress.getByName(host).isReachable(2_000)) {
+                    return true;
+                }
+            } catch (IOException | SecurityException ignored) {
+                // Try the next host. A probe that throws answers "unreachable" for this host.
+            }
+        }
+        return false;
+    }
+
     static String explainFailure(Resolution resolution, String managedHome) {
+        return explainFailure(resolution, managedHome, RuntimeResolver::networkReachable);
+    }
+
+    static String explainFailure(Resolution resolution, String managedHome,
+            Reachability reachability) {
         StringBuilder message = new StringBuilder();
         message.append("no usable Java runtime found; Oqthara requires Java ")
                 .append(FLOOR).append(" or newer.\n");
@@ -320,6 +357,11 @@ final class RuntimeResolver {
             message.append("A managed runtime would be installed at ")
                     .append(Path.of(managedHome, "runtime", "java"))
                     .append(", which does not exist.\n");
+            if (!reachability.networkAvailable()) {
+                message.append("The network is unreachable, so one cannot be downloaded now. ")
+                        .append("An already-installed runtime is used offline without any ")
+                        .append("network access.\n");
+            }
         }
         message.append("Set OQ_JAVA to a Java ").append(FLOOR)
                 .append("+ executable, or put one on PATH.");

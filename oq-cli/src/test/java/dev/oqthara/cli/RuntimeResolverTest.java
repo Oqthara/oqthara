@@ -189,6 +189,70 @@ class RuntimeResolverTest {
     }
 
     @Test
+    void anOfflineFailureSaysTheNetworkIsUnreachable() {
+        // ADR-0048 D8. The useful part of an offline failure is that installing is impossible
+        // right now, which is a different situation from the network being fine and the
+        // download merely not having happened.
+        RuntimeResolver.Resolution nothing = RuntimeResolver.resolve(
+                inputs(null, null, "/home/someone/.oq/runtime/java/bin/java",
+                        "/usr/bin/java"), probe(Map.of()));
+
+        String offline = RuntimeResolver.explainFailure(nothing, "/home/someone/.oq",
+                () -> false);
+
+        assertTrue(offline.contains("The network is unreachable"), offline);
+        assertTrue(offline.contains("used offline without any network access"), offline);
+        assertTrue(offline.contains(Path.of("/home/someone/.oq", "runtime", "java").toString()),
+                offline);
+    }
+
+    @Test
+    void anOnlineFailureDoesNotClaimTheNetworkIsDown() {
+        // The mirror of the previous test, and the one that catches a probe that is never
+        // consulted: a message that always says "unreachable" would pass that test alone.
+        RuntimeResolver.Resolution nothing = RuntimeResolver.resolve(
+                inputs(null, null, null, null), probe(Map.of()));
+
+        String online = RuntimeResolver.explainFailure(nothing, "/home/someone/.oq", () -> true);
+
+        assertFalse(online.contains("The network is unreachable"), online);
+        assertTrue(online.contains("does not exist"), online);
+    }
+
+    @Test
+    void theNetworkIsNotConsultedWhenNoManagedHomeIsKnown() {
+        // Nothing would be downloaded into a home that is not known, so asking the network
+        // would be a side effect this path does not need. A probe that throws proves it is
+        // never called.
+        RuntimeResolver.Resolution nothing = RuntimeResolver.resolve(
+                inputs(null, null, null, null), probe(Map.of()));
+
+        String message = RuntimeResolver.explainFailure(nothing, null, () -> {
+            throw new AssertionError("the network must not be consulted without a managed home");
+        });
+
+        assertFalse(message.contains("The network is unreachable"), message);
+    }
+
+    @Test
+    void anInstalledRuntimeResolvesWithoutAnyNetwork(@TempDir Path home) throws Exception {
+        // The first half of D8, and the half that matters: an installed runtime is used with
+        // no network. Resolution reads the filesystem and never reaches out, so the proof is
+        // that a runtime on disk resolves while the network probe would report unreachable.
+        Path java = home.resolve("runtime").resolve("java").resolve("bin").resolve("java");
+        Files.createDirectories(java.getParent());
+        Files.writeString(java, "#!/bin/sh\necho 'openjdk version \"21.0.0\"'\n");
+        java.toFile().setExecutable(true);
+
+        RuntimeResolver.Resolution resolution = RuntimeResolver.resolve(
+                inputs(null, null, java.toString(), null),
+                probe(Map.of(java.toString(), 21)));
+
+        assertTrue(resolution.found(), resolution.rejected().toString());
+        assertEquals(java.toString(), resolution.selected().orElseThrow().location());
+    }
+
+    @Test
     void managedHomeFallsBackFromOqHomeToUserHome() {
         assertEquals(Path.of("/custom/oq"),
                 RuntimeResolver.managedHome(Map.of("OQ_HOME", "/custom/oq")).orElseThrow());

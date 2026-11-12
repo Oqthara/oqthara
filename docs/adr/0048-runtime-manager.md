@@ -1,7 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4, D5, D6 and D7 implemented; provenance, offline diagnostics
-  and signing are not)
+- **Status:** Proposed (D1, D2, D4, D5, D6, D7 and D8 implemented; provenance, bounded
+  compatibility validation and signing are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -152,6 +152,16 @@ left to a cleanup that runs on a timer.
 **D8. Offline operation is a first-class path.** With no network, an already-installed managed
 runtime is used. If none exists, the diagnostic says which runtime was looked for, where it
 would have been installed, and that the network was unreachable — not a generic failure.
+
+*Implemented.* Resolution reads the environment and the filesystem and never reaches the
+network, so an installed runtime is used offline with no special case; the test
+`anInstalledRuntimeResolvesWithoutAnyNetwork` records that. The diagnostic gained a
+`Reachability` seam: `explainFailure` consults it only when a managed home is known, because a
+home that is not known would not be downloaded into. The real probe asks whether any acquisition
+host answers, with a two-second bound per host, and reports "unreachable" for a host that throws.
+A test supplies the answer instead, so both branches are asserted on a machine whose own network
+state is irrelevant. The message states reachability; it never retries or falls back, because
+nothing in this resolution path downloads anything to fall back from.
 
 **D9. Oqthara compatibility is a separate question from JDK availability.** Java 21 LTS is the
 floor because `build.gradle.kts:51-52` targets it. A vendor's release date is not a compatibility
