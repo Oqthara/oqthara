@@ -15,6 +15,16 @@
 #                                no Java;
 #   required_status_checks       the CI contexts below must pass.
 #
+# The macOS contexts are produced by GitHub Actions. macOS lived on CircleCI until
+# the macOS jobs stopped dispatching on three consecutive pull requests, leaving
+# them permanently "Expected - Waiting for status to be reported" with no failing
+# job to point at. docs/adr/0049-macos-ci-on-github-actions.md records the move.
+# CircleCI keeps its macOS workflow configured as the fallback, but its contexts
+# are deliberately NOT required here: a required context that never arrives blocks
+# every merge, and GitHub cannot express "either of these two" in a ruleset. The
+# either-provider rule is enforced instead in scripts/check-circleci.py, which the
+# release workflow gates on before publishing.
+#
 # bypass_actors is empty on purpose: the maintainer is bound by these rules too.
 #
 # REQUIRED_APPROVALS defaults to 0 under a documented solo-maintainer exception.
@@ -119,8 +129,8 @@ payload=$(cat <<JSON
           {"context": "Bytecode backend (JDK 25)"},
           {"context": "Standalone jar"},
           {"context": "analyze"},
-          {"context": "ci/circleci: macOS / JDK 21"},
-          {"context": "ci/circleci: macOS / JDK 25"},
+          {"context": "macos-latest / JDK 21"},
+          {"context": "macos-latest / JDK 25"},
           {"context": "ci/circleci: jazzer-fuzz"}
         ]
       }

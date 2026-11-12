@@ -404,6 +404,30 @@ defend.
 | R-017 | Conformance corpus is circular: tests and implementation share one author | High | Medium | Medium | 11 | Accepted |
 | R-018 | Fuzzing does not reach text, path resolution, CSV or semantic analysis | Medium | Medium | Medium | 11 | Open |
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
+| R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
+
+**R-024 — A required CI context can vanish without failing, blocking every merge.**
+The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
+CircleCI stopped dispatching the `macOS / JDK 21` and `macOS / JDK 25` jobs on three consecutive
+pull requests while continuing to report `ci/circleci: jazzer-fuzz` normally. The missing contexts
+were **absent**, not failing, so `statusCheckRollup` read SUCCESS while `mergeStateStatus` read
+BLOCKED and the pull request page showed an indefinite "Expected — Waiting for status to be
+reported". Three pull requests (#127, #131, #132) were unmergeable for two sessions.
+
+*Mitigation.* macOS moved to GitHub Actions under ADR-0049, the ruleset now requires
+`macos-latest / JDK 21|25`, CircleCI keeps its macOS workflow as the fallback, and
+`scripts/check-circleci.py` accepts either provider at release time while failing on a red result
+from either. `scripts/tests/test_check_ci_gate.py` pins the anti-masking rule.
+
+*Residual.* The failure mode itself is unavoidable: a required context is identified by name alone,
+and GitHub cannot distinguish "not dispatched" from "still queued". The same silent stop could
+happen on GitHub Actions, and the recovery is the mirror image — dispatch the CircleCI workflow by
+hand and let the release gate accept that evidence. `installers-macos` remains CircleCI-only and is
+not a required context, so a macOS installer regression would not block a merge.
+
+*Evidence.* `docs/adr/0049-macos-ci-on-github-actions.md` · `.github/workflows/ci.yml` (matrix) ·
+`scripts/apply-branch-protection.sh` (required contexts) · `scripts/check-circleci.py` (grouped
+requirements) · `scripts/tests/test_check_ci_gate.py`.
 
 **R-017 — Conformance corpus is circular: tests and implementation share one author.**
 `conformance/` holds 229 cases, and `scripts/verify-conformance.py` compares the interpreter against
@@ -559,10 +583,10 @@ done.
 | Exposure | Count | IDs |
 |---|---|---|
 | **Critical** | 1 | R-001 |
-| High | 2 | R-002, R-008 |
+| High | 3 | R-002, R-008, R-024 |
 | Medium | 10 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020 |
 | Low | 10 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023 |
-| **Total** | **23** | |
+| **Total** | **24** | |
 
 ## Review cadence
 

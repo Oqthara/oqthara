@@ -19,13 +19,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A bounded job cannot turn a hung step into an hour-long runner occupation: the
     # artifact-upload fault that motivated this cap stalled one job for 45 minutes after
-    # its tests had already passed. Generous against the ~5 minute worst leg.
-    timeout-minutes: 20
+    # its tests had already passed. Generous against the ~5 minute worst leg; macOS is
+    # slower to provision and to run the build, so it gets twice the budget.
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 40 || 20 }}
     strategy:
       fail-fast: false
       matrix:
-        # macOS runs on CircleCI (.circleci/config.yml) by project decision.
-        os: [ubuntu-latest, windows-latest]
+        # macOS here is the primary source of macOS evidence. CircleCI still runs the
+        # same two legs (.circleci/config.yml) as a fallback: if this environment stops
+        # reporting, the job is a one-line revert and CircleCI already holds the
+        # history. See docs/adr/0049-macos-ci-on-github-actions.md.
+        os: [ubuntu-latest, windows-latest, macos-latest]
         java: ["21", "25"]
     steps:
       - uses: actions/checkout@v7
