@@ -44,12 +44,20 @@ class WaitedBudgetTest {
         // Found by an example: eight awaits of instant work with a 10-second limit reported
         // "waited for too long" in microseconds, because the timeout itself was billed as
         // though the program had spent it. The timeout is a ceiling, not a cost.
+        //
+        // The ceiling must therefore bill nothing worth speaking of, and the bound asserted is
+        // five seconds of slack across twenty awaits rather than zero. Zero was the original
+        // claim and it was wrong: a single millisecond of scheduler noise in any one of the
+        // twenty `get()` calls spent the whole remaining budget, so the test passed on an idle
+        // laptop and failed under CI load. Five seconds is far above the real cost of twenty
+        // already-completed futures and far below the 200 seconds that billing the ceiling
+        // would charge, so it separates the two behaviours without measuring the machine.
         WaitedBudget.reset();
         CompletableFuture<Object> done = CompletableFuture.completedFuture(1);
         for (int i = 0; i < 20; i++) {
             assertEquals(1, new OqTask(done).awaitWithin(10_000, span));
         }
-        assertDoesNotThrow(() -> WaitedBudget.charge(WaitedBudget.MAX_MILLIS, span));
+        assertDoesNotThrow(() -> WaitedBudget.charge(WaitedBudget.MAX_MILLIS - 5_000, span));
     }
 
     @Test
