@@ -232,6 +232,12 @@ def describe(statuses: dict[str, dict]) -> list[str]:
             lines.append("  {context}: {state}".format(context=group[0], state=state))
             continue
         alternatives = " or ".join(group)
+        if state == "waiting":
+            # Nothing decided this group, so naming a "via" context would imply one
+            # of the alternatives had reported. Neither had.
+            lines.append("  {alternatives}: {state}".format(
+                alternatives=alternatives, state=state))
+            continue
         lines.append(
             "  {alternatives}: {state} (via {context})".format(
                 alternatives=alternatives, state=state, context=context
@@ -242,7 +248,7 @@ def describe(statuses: dict[str, dict]) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Fail-closed release gate on CircleCI commit statuses.",
+        description="Fail-closed release gate on CI evidence for a commit.",
         epilog=(
             "exit codes: 0 all required contexts succeeded; 1 missing, pending "
             "or failed evidence; 2 invalid invocation or missing GITHUB_TOKEN."

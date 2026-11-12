@@ -140,6 +140,12 @@ class DescribeTests(unittest.TestCase):
         joined = "\n".join(lines)
         self.assertIn("(via {context})".format(context=GH_21), joined)
 
+    def test_describe_does_not_claim_a_satisfying_context_when_waiting(self):
+        # "(via macos-latest / JDK 21)" next to "waiting" reads as though that context
+        # had reported. When nothing decided the group, no member is named.
+        joined = "\n".join(gate.describe(statuses()))
+        self.assertNotIn("(via", joined)
+
 
 class RequirementShapeTests(unittest.TestCase):
     def test_every_requirement_group_is_non_empty(self):
