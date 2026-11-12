@@ -1,7 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4, D5, D6, D7 and D8 implemented; provenance, bounded
-  compatibility validation and signing are not)
+- **Status:** Proposed (D1, D2, D4, D5, D6, D7, D8 and D9 implemented; provenance and
+  signing are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -162,6 +162,36 @@ host answers, with a two-second bound per host, and reports "unreachable" for a 
 A test supplies the answer instead, so both branches are asserted on a machine whose own network
 state is irrelevant. The message states reachability; it never retries or falls back, because
 nothing in this resolution path downloads anything to fall back from.
+
+*Implemented.* `RuntimeCompatibility` runs the three checks against the candidate JVM and
+returns a verdict rather than throwing. Each check has a sixty-second bound, so a JVM that hangs
+is refused instead of stalling the install, and output is compared as well as exit status
+because a JVM that exits zero after printing the wrong thing has not run the program. The
+database check is reported and not enforced: a missing native SQLite library is a property of
+the machine, and refusing an otherwise working JVM for it would reject a runtime on which every
+other program runs. `DOCUMENTED_CHECK_COUNT` exists so the documented count is itself asserted
+rather than drifting from the code. Eight tests in `RuntimeCompatibilityTest` cover a JVM that
+prints the wrong output, one that hangs, one that passes, one without a database library, a
+missing jar and an unstartable check; dropping the output comparison fails
+`refusesAJvmThatPrintsTheWrongOutput`.
+
+The installer runs this check only when it has the jar built from the release being installed,
+which is the one case where the answer is about *this* Oqthara rather than a guess. That seal is
+tested by `refusesAJvmThatReportsTheFloorAndCannotRunOqthara`: the version probe is told to
+answer 21 while the extracted `bin/java` fails every program, and nothing is activated.
+
+**An executable bit is part of the archive contract.** Writing these tests found a defect in D4
+that no amount of reading had exposed. The Unix mode is read from the central directory to
+identify symbolic links, and the execute bits in that same field were being discarded, so a real
+JDK archive — which marks `bin/java` 0755 — installed a launcher that could not be executed.
+The install would report success and every later command would fail with a permission error,
+which is the worst place to discover the problem. `SafeArchive` now records which entries carry
+any execute bit and applies owner-execute after the whole archive is written, so a tree that
+failed partway is never left looking prepared. Only `0111` is honoured: setuid and setgid are
+deliberately ignored, because honouring them would let an untrusted archive install a binary
+that runs with the installer's privileges. Because a ZIP built without a Unix mode carries none
+at all, the installer also makes the one path it is about to execute executable before probing
+it, and refuses if that cannot be done.
 
 **D9. Oqthara compatibility is a separate question from JDK availability.** Java 21 LTS is the
 floor because `build.gradle.kts:51-52` targets it. A vendor's release date is not a compatibility

@@ -125,6 +125,47 @@ class RuntimeInstallerTest {
     }
 
     @Test
+    void refusesAJvmThatReportsTheFloorAndCannotRunOqthara(@TempDir Path temp) throws Exception {
+        // The seal between D5 and D9. The probe says Java 21, so the version check passes; the
+        // JVM then fails every program it is asked to run. Nothing must be activated, because
+        // the resolver would hand this JVM to every later command.
+        Path home = temp.resolve("home");
+        Path archive = failingRuntime(temp, "jdk-21.0.1");
+        Path jar = temp.resolve("oq.jar");
+        Files.write(jar, new byte[] {'P', 'K', 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0});
+
+        RuntimeInstaller installer = new RuntimeInstaller(home, Duration.ofSeconds(5),
+                probeAnswering(21), jar);
+
+        RuntimeInstaller.InstallRefusedException refused =
+                assertThrows(RuntimeInstaller.InstallRefusedException.class,
+                        () -> installer.install(archive, 21));
+
+        assertTrue(refused.getMessage().contains("cannot run Oqthara"), refused.getMessage());
+        assertFalse(Files.exists(installer.destination()),
+                "an incompatible JVM must not be activated");
+    }
+
+    /**
+     * A runtime whose {@code bin/java} exits non-zero for everything, which is the JDK 25 case:
+     * the version it reports is acceptable and it still cannot run the program.
+     */
+    private static Path failingRuntime(Path dir, String topLevel) throws IOException {
+        Path archive = dir.resolve("runtime-incompatible.zip");
+        try (OutputStream out = Files.newOutputStream(archive);
+             ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry(topLevel + "/bin/java"));
+            zip.write("#!/bin/sh\nexit 1\n".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry(topLevel + "/release"));
+            zip.write("JAVA_VERSION=\"21\"\n".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return archive;
+    }
+
+    @Test
     void refusesARuntimeBelowTheFloor(@TempDir Path temp) throws Exception {
         Path home = temp.resolve("home");
         Path archive = fakeRuntime(temp, "jdk-17.0.9", 17);

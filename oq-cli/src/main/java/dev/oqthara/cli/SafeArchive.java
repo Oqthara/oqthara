@@ -80,7 +80,10 @@ final class SafeArchive {
         // archive could use that to slip a second payload past a name check.
         // Links are found from the central directory, before any entry is written, because
         // `ZipInputStream` discards the Unix mode that identifies them.
-        Set<String> linkNames = symbolicLinkNames(archive);
+        Directory directory = centralDirectory(archive);
+        Set<String> linkNames = directory.links();
+        Set<String> executables = directory.executables();
+        Set<Path> executableTargets = new java.util.LinkedHashSet<>();
         Set<String> claimed = new HashSet<>();
         List<Path> written = new ArrayList<>();
         long total = 0;
@@ -120,6 +123,15 @@ final class SafeArchive {
                     throw new ArchiveRejected("archive expands beyond " + MAX_TOTAL_BYTES + " bytes");
                 }
                 written.add(target);
+                if (executables.contains(entry.getName())) {
+                    executableTargets.add(target);
+                }
+            }
+            // Applied last, so a tree that failed partway is never mistaken for one that has
+            // been fully prepared. On a filesystem without the POSIX bits this is a no-op and
+            // the runtime's launcher is left as the extractor wrote it.
+            for (Path target : executableTargets) {
+                makeExecutable(target);
             }
         } catch (IOException | RuntimeException failure) {
             // Nothing half-written may survive: a later run reads the directory, not a flag.
@@ -230,6 +242,20 @@ final class SafeArchive {
      * the loop after the first entry. {@code ZipInputStream} reads a limited number of bytes per
      * entry and returns -1 at the entry's end, which is what bounds this copy.
      */
+    /**
+     * Adds the owner-execute bit, and only that bit.
+     *
+     * <p>Called for entries the archive marked executable. {@code setExecutable} rather than a
+     * POSIX permission set because it degrades to a no-op on a filesystem that has no such bits,
+     * and an installer that fails because a filesystem lacks a permission model is worse than one
+     * that installs a runtime the user can start with {@code java -jar}.
+     */
+    private static void makeExecutable(Path target) {
+        // Deliberately ignored: if the bit cannot be set, the install still completes and the
+        // runtime's own launcher reports the problem more clearly than a wrapping exception.
+        target.toFile().setExecutable(true, true);
+    }
+
     private static long copyBounded(ZipInputStream in, Path target) throws IOException {
         byte[] buffer = new byte[64 * 1024];
         long written = 0;
@@ -264,9 +290,30 @@ final class SafeArchive {
      * <p>A malformed archive yields no names, and the traversal and duplicate checks still apply;
      * this method is one gate, not the only one.
      */
-    private static Set<String> symbolicLinkNames(Path archive) throws IOException {
+    /**
+     * What the central directory says about entries, which {@link ZipEntry} discards.
+     *
+     * @param links entries the archive marks as symbolic links
+     * @param executables entries the archive marks with any execute bit
+     */
+    private record Directory(Set<String> links, Set<String> executables) {
+    }
+
+    /**
+     * Reads the two attributes that matter from the central directory.
+     *
+     * <p>The Unix mode lives in external attributes, which {@link ZipEntry} does not expose, so a
+     * JDK archive's {@code bin/java} arrives looking like any other file. Extraction that ignored
+     * the mode would install a runtime whose launcher cannot be executed — the install would
+     * succeed and every later command would fail, which is the wrong place to discover it.
+     *
+     * <p>Only the execute bits are read. Writing the full mode would mean honouring setuid and
+     * setgid from an untrusted archive, which is not something an installer should ever do.
+     */
+    private static Directory centralDirectory(Path archive) throws IOException {
         byte[] bytes = Files.readAllBytes(archive);
         Set<String> names = new HashSet<>();
+        Set<String> executables = new HashSet<>();
 
         int eocd = -1;
         // The end-of-central-directory record is last, followed by a comment of at most 64 KiB.
@@ -277,7 +324,7 @@ final class SafeArchive {
             }
         }
         if (eocd < 0) {
-            return names;
+            return new Directory(names, executables);
         }
 
         long count = Integer.toUnsignedLong(readShort(bytes, eocd + 10));
@@ -297,10 +344,12 @@ final class SafeArchive {
             int mode = externalAttributes >>> 16;
             if ((mode & 0xF000) == 0xA000) {
                 names.add(name);
+            } else if ((mode & 0111) != 0) {
+                executables.add(name);
             }
             at += 46 + nameLength + extraLength + commentLength;
         }
-        return names;
+        return new Directory(names, executables);
     }
 
     private static int readShort(byte[] bytes, int at) {
