@@ -182,6 +182,34 @@ class DeterminismTests(unittest.TestCase):
         self.assertEqual((1, 2, []), (compiled, fallback, divergences))
 
 
+class JvmNoiseTests(unittest.TestCase):
+    """A JVM diagnostic on stderr is not the program's output. On a busy CI runner HotSpot
+    prints a perf-data warning ahead of the real stdout, which used to be reported as a
+    stdout divergence and fail the conformance step for a reason no source change caused."""
+
+    NOISE = (
+        "[0.001s][warning][perf,memops] Cannot use file /tmp/hsperfdata_runner/10610"
+        " because it is locked by another process (errno = 11)\n"
+    )
+
+    def test_perf_data_warning_is_not_a_divergence(self):
+        self.assertEqual("Hello, World!\n", verify.normalize(self.NOISE + "Hello, World!\n"))
+
+    def test_a_real_difference_survives_the_filter(self):
+        # The filter must not make every case agree: only the JVM line is removed.
+        self.assertNotEqual(
+            verify.normalize(self.NOISE + "Hello, World!\n"),
+            verify.normalize("Hello, Wrold!\n"),
+        )
+
+    def test_program_output_that_merely_mentions_warning_is_kept(self):
+        for text in ("warning: something\n", "Error[E1] at line 3\n", "[1s][warning] hi\n"):
+            self.assertEqual(text, verify.normalize(text))
+
+    def test_crlf_is_still_normalised_alongside_the_filter(self):
+        self.assertEqual("a\nb\n", verify.normalize(self.NOISE + "a\r\nb\r\n"))
+
+
 class DefaultJobsTests(unittest.TestCase):
     def test_default_is_bounded(self):
         # Concurrency must stay modest: each case runs up to three JVMs in sequence.

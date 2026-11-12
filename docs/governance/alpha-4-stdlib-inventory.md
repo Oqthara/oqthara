@@ -56,7 +56,7 @@ document that promises is a document that cannot be checked.
 | Callable **registrations** | **166** | 9 names are overloaded, adding 11 extra registrations (`range` and `csv_parse` have three each): `assert`, `await`, `csv_parse`, `csv_write`, `exit`, `input`, `random`, `range`, `round` |
 | Method **families** | **9** | `MethodResolverImpl.java`, one method per family |
 | Documented method names | **193** | `docs/stdlib/reference.md` L147–L183 |
-| Host-dependent builtins | **36** | `Builtins.java:45` (`HOST_DEPENDENT`), the compiled-code bridge |
+| Host-dependent builtins | **36** | `oq-stdlib/.../Builtins.java:45` (`HOST_DEPENDENT`), the compiled-code bridge |
 | Builtins exercised by `examples/` | **55 of 155** | 41 `.oq` files, checked by name |
 
 The matrix carried "89 global functions and eight method families" when this document was

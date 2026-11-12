@@ -22,6 +22,7 @@ import concurrent.futures
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -45,8 +46,16 @@ def run(cmd, cwd):
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
 
 
+# The HotSpot diagnostic warnings that can precede a program's own output when several JVMs
+# share a host. `Cannot use file /tmp/hsperfdata_*` appears when a perf-data file is already
+# open by a sibling JVM, which happens on a CI runner building the corpus in parallel. The
+# line is emitted by the JVM, not by the program, so it must not count as a divergence: on a
+# quiet machine it never appears, and a real stdout difference still differs after filtering.
+JVM_NOISE = re.compile(r"^\[[\d.]+s\]\[(?:warning|error)\]\[[a-z,]+\] .*\n", re.MULTILINE)
+
+
 def normalize(text):
-    return text.replace("\r\n", "\n")
+    return JVM_NOISE.sub("", text.replace("\r\n", "\n"))
 
 
 def measure_corpus(cases):
