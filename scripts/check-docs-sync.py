@@ -714,6 +714,70 @@ def cited_tests_exist() -> None:
     note(f"{cited} test-class citations in docs resolve to a declared class")
 
 
+# 10b. Every `name`:line citation in the stdlib inventory must point at the line that actually
+#     registers that name. This is a different question from the tallies check, which only proves
+#     the counts add up. The inventory asserted that every name was found by grep in the files
+#     named against it, and 122 of its 126 `Stdlib.java` citations had drifted by the time this
+#     check was written: the numbers were once true and nothing re-read them after the file
+#     changed. A stale citation is worse than no citation, because it is checkable and therefore
+#     looks checked.
+def stdlib_inventory_citations_resolve() -> None:
+    path = "docs/governance/alpha-4-stdlib-inventory.md"
+    stdlib = ROOT / "oq-stdlib/src/main/java/dev/oqthara/stdlib"
+    text = read(path)
+    if "### The 155 names, by registration site" not in text:
+        problems.append(f"{path} no longer has the registration-site section")
+        return
+    section = text.split("### The 155 names, by registration site")[1]
+    section = section.split("### What the 155 do not include")[0]
+
+    def registered(source: pathlib.Path) -> dict[str, list[int]]:
+        found: dict[str, list[int]] = {}
+        relative = f"oq-stdlib/src/main/java/dev/oqthara/stdlib/{source.name}"
+        for index, line in enumerate(read(relative).split("\n"), 1):
+            match = re.search(r'defineBuiltin\(\s*NativeFunction\.\w+\("([a-z_0-9]+)"', line)
+            if not match:
+                match = re.search(r'defineBuiltin\(\s*"([a-z_0-9]+)"', line)
+            if match:
+                found.setdefault(match.group(1), []).append(index)
+        return found
+
+    # Each family is a paragraph that names at most one .java file; the document's convention is
+    # that a paragraph without one means Stdlib.java.
+    actual: dict[str, dict[str, list[int]]] = {}
+    for block in section.split("\n\n"):
+        if not re.search(r"`[a-z_0-9]+`:\d", block):
+            continue
+        named = re.findall(r"in `(\w+\.java)`", block)
+        for file_name in named or ["Stdlib.java"]:
+            if not (stdlib / file_name).exists():
+                problems.append(f"{path} cites {file_name}, which does not exist")
+                continue
+            actual[file_name] = registered(stdlib / file_name)
+
+    resolved = 0
+    for file_name, table in actual.items():
+        for match in re.finditer(r"`([a-z_0-9]+)`:((?:\d+(?:\s*(?:,|and)\s*)?)+)", section):
+            name = match.group(1)
+            if name not in table:
+                continue
+            cited = sorted(int(n) for n in re.findall(r"\d+", match.group(2)))
+            if cited != sorted(table[name]):
+                problems.append(
+                    f"{path}: `{name}` is cited at {file_name}:{cited}"
+                    f" but is registered at {sorted(table[name])}")
+            else:
+                resolved += 1
+
+    # Names in a paragraph whose file is not Stdlib.java must not be attributed to Stdlib.java.
+    for name in re.findall(r"`([a-z_0-9]+)`:\d", section):
+        if not any(name in table for table in actual.values()):
+            problems.append(f"{path} cites `{name}`, which none of the named files registers")
+
+    if not any("citations" in p or "registered at" in p for p in problems):
+        note(f"{resolved} stdlib inventory name citations resolve to the registering line")
+
+
 # 13b. A cited test method must exist on the class it is attributed to.
 #
 # `cited_tests_exist` checks class names only, so `.aTestThatWasRenamed` slipped through: the
@@ -802,6 +866,7 @@ CHECKS = (
     cited_builtins_exist,
     contract_register_is_complete,
     stdlib_inventory_tallies_agree,
+    stdlib_inventory_citations_resolve,
     requirement_matrix_figures_match_the_inventory,
     cited_tests_exist,
     cited_test_methods_exist,

@@ -26,8 +26,12 @@ document that promises is a document that cannot be checked.
   name-for-name against
   the generated surface in [`docs/stdlib/reference.md`](../stdlib/reference.md). The two agree
   exactly, in both directions, with zero drift: 155 global names and 193 documented method
-  entries on each
-  side. Every name cited in this document was found by grep in the files named against it.
+  entries on each side. Every name cited in this document was found by grep in the files named
+  against it, and `check-docs-sync.py`'s `stdlib_inventory_citations_resolve` re-resolves all
+  152 of them on every run, because the sentence you are reading was not true when it was first
+  written: 128 of those line numbers had drifted by then, and none of the counts had. A number
+  can stay right while every pointer into the file goes wrong, which is why the pointer is now
+  checked rather than asserted.
 - **Python side measured from the index.** Parsed the table of contents of
   <https://docs.python.org/3/library/index.html>, consulted 2026-11-10. That page yields 34
   top-level chapters and 243 links.
@@ -98,34 +102,23 @@ Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
 lines is one name and three registrations.
 
-**Core** (21) — `print`:128, `write_text`:141, `write`:148, `input`:155 and 157, `text`:167,
-`repr`:168, `number`:169, `type_of`:170, `is_nothing`:171, `is_number`:172, `is_text`:173,
-`length`:174, `range`:176, 178 and 181, `error`:192, `assert`:195 and 200, `args`:208,
-`exit`:209 and 210, `sort_by`:218, `map`:229, `filter`:231, `clone`:233.
+**Core** (21) — `print`:128, `write_text`:141, `write`:148, `input`:155 and 159`text`:167,
+`repr`:169`number`:171`type_of`:173`is_nothing`:175`is_number`:177`is_text`:179`length`:181`range`:183, 187 and 190`error`:199`assert`:202 and 209`args`:215`exit`:217 and 220`sort_by`:226`map`:237`filter`:239`clone`:241.
 
-**Text** (10) — `format`:237, `join`:238, `upper`:251, `lower`:253, `trim`:255,
-`contains`:257, `split`:259, `replace`:264, `regex`:266, `matches`:283.
+**Text** (10) — `format`:246`join`:248`upper`:261`lower`:263`trim`:265`contains`:267`split`:269`replace`:274`regex`:277`matches`:294.
 
-**Collections** (14) — `keys`:288, `values`:294, `push`:300, `pop`:309, `sum`:314,
-`sort`:316, `reverse`:318, `unique`:320, `set`:322, `frozenset`:329, `list`:335,
-`enumerate`:341, `zip`:352, `range_list`:362.
+**Collections** (14) — `keys`:300`values`:306`push`:312`pop`:321`sum`:326`sort`:328`reverse`:330`unique`:332`set`:334`frozenset`:341`list`:347`enumerate`:353`zip`:364`range_list`:374.
 
-**Math** (12) — `abs`:367, `floor`:379, `ceil`:381, `round`:383 and 388, `sqrt`:409,
-`pow`:411, `min`:415, `max`:417, `sorted`:419, `clamp`:421, `random`:427 and 427,
-`random_item`:435.
+**Math** (12) — `abs`:380`floor`:392`ceil`:394`round`:396 and 403`sqrt`:422`pow`:424`min`:428`max`:430`sorted`:432`clamp`:434`random`:440 and 442`random_item`:448.
 
-**Files** (13) — `read`:443, `read_lines`:447, `save`:458, `append`:471, `exists`:485,
-`list_files`:487, `delete`:512, `make_dir`:519, `file_size`:527, `path_join`:534,
-`path_name`:536, `path_parent`:540, `cwd`:544.
+**Files** (13) — `read`:456`read_lines`:460`save`:471`append`:484`exists`:498`list_files`:500`delete`:525`make_dir`:532`file_size`:540`path_join`:547`path_name`:550`path_parent`:554`cwd`:558.
 
-**File operations** (7) — `is_file`:558, `is_dir`:560, `read_bytes`:562, `write_bytes`:578,
-`copy_file`:590, `move_file`:595, `walk`:610.
+**File operations** (7) — `is_file`:572`is_dir`:574`read_bytes`:576`write_bytes`:592`copy_file`:604`move_file`:609`walk`:624.
 
 **Patterns** (2) — `fnmatch`:40, `glob`:49, both in `Patterns.java`.
 
 **Statistics, identifiers, ordered search** (12) — `mean`:33, `median`:35, `variance`:37,
-`stdev`:39, `mode`:42, `percentile`:44, `uuid`:48, `is_uuid`:50, `heap_push`:53, `heap_pop`:55,
-`bisect_left`:57, `bisect_right`:59, all in `Statistics.java`. One registration per name, so the
+`stdev`:39, `mode`:42, `percentile`:44, `uuid`:49`is_uuid`:51`heap_push`:54`heap_pop`:56`bisect_left`:58`bisect_right`:61all in `Statistics.java`. One registration per name, so the
 section adds 12 to both columns. Specified by [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md).
 
 **Text layout** (6) — `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39,
@@ -141,33 +134,27 @@ One registration per name, so the section adds 6 to both columns. Specified by
 the defence counts the bytes actually produced rather than trusting a length field, because a
 hostile producer writes whatever length it likes.
 
-**JSON** (4) — `json_parse`:692, `json`:694, `json_write`:695, `json_pretty`:696.
+**JSON** (4) — `json_parse`:706`json`:708`json_write`:710`json_pretty`:712.
 
-**Encoding** (11) — `hex_encode`:709, `hex_decode`:711, `base64_encode`:713,
-`base64_decode`:715, `sha256`:717, `sha1`:719, `md5`:721, `hmac_sha256`:723,
-`secure_random_hex`:725, `secure_equal`:735, `pbkdf2_sha256`:743.
+**Encoding** (11) — `hex_encode`:725`hex_decode`:727`base64_encode`:729`base64_decode`:731`sha256`:733`sha1`:735`md5`:737`hmac_sha256`:739`secure_random_hex`:741`secure_equal`:751`pbkdf2_sha256`:759.
 
-**Logging** (6) — `log_debug`:827, `log_info`:829, `log_warn`:831, `log_error`:833,
-`log_level`:835, `log_enabled`:845.
+**Logging** (6) — `log_debug`:843`log_info`:845`log_warn`:847`log_error`:849`log_level`:851`log_enabled`:861.
 
-**Arguments** (1) — `arg_parse`:871.
+**Arguments** (1) — `arg_parse`:887.
 
-**CSV** (2) — `csv_parse`:1021, 1021 and 1024, `csv_write`:1029 and 1029.
+**CSV** (2) — `csv_parse`:1037, 1039 and 1042`csv_write`:1046 and 1048.
 
-**Dates** (2) — `date_parse`:1178, `instant_parse`:1180.
+**Dates** (2) — `date_parse`:1195`instant_parse`:1197.
 
-**Time** (6) — `now`:1205, `today`:1207, `datetime`:1209, `timestamp`:1211,
-`tz_convert`:1213, `sleep`:1235.
+**Time** (6) — `now`:1222`today`:1224`datetime`:1226`timestamp`:1228`tz_convert`:1230`sleep`:1252.
 
-**URLs** (6) — `url_parse`:1263, `url_encode`:1287, `url_decode`:1291, `query_parse`:1300,
-`query_encode`:1319, `url_join`:1359.
+**URLs** (6) — `url_parse`:1280`url_encode`:1304`url_decode`:1308`query_parse`:1317`query_encode`:1336`url_join`:1376.
 
-**HTTP** (2) — `http_get`:1446, `http_post`:1448.
+**HTTP** (2) — `http_get`:1463`http_post`:1465.
 
-**Concurrency** (5) — `spawn`:1601, `await`:1609 and 1614, `done`:1630, `mutex`:1637,
-`par_map`:1639.
+**Concurrency** (5) — `spawn`:1619`await`:1627 and 1634`done`:1648`mutex`:1655`par_map`:1657.
 
-**Process** (4) — `env`:1667, `run_command`:1669, `cpu_count`:1721, `memory_mb`:1723.
+**Process** (4) — `env`:1685`run_command`:1687`cpu_count`:1739`memory_mb`:1741.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),
