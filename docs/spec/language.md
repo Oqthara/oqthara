@@ -2207,6 +2207,63 @@ When several overloads match, the one whose parameter types fit the arguments mo
 chosen, so `String.valueOf(5)` reaches the `int` overload rather than the `Object` one.
 Arguments are converted by the table above before the choice is made.
 
+### Exceptions crossing the boundary
+
+A Java throwable does not reach the program as a Java object. It is translated into an
+ordinary Oqthara error whose message is the throwable's class name and its message, and
+whose span is the call that threw it. `try` catches it like any other error:
+
+```
+use java.lang.Integer
+
+try
+  print Integer.parseInt("not a number")
+catch e
+  print e.message   # NumberFormatException: For input string: "not a number"
+  print e.line      # 4, the call that threw
+end
+```
+
+The message reports the throwing class rather than wrapping it, so the text names what
+failed in the JDK's own words. There is no separate `catch` clause for Java exceptions:
+they are errors, and the span carries the position, which is what a stack trace would
+otherwise be consulted for.
+
+### Exact Java numbers
+
+`BigDecimal` and a `BigInteger` wider than 64 bits stay Java objects. They are not
+narrowed to `decimal` or `number`, because narrowing loses the thing they exist for — a
+`BigDecimal` reports the scale it was given, and a `BigInteger` reports digits that a
+`long` cannot hold:
+
+```
+use java.math.BigDecimal
+
+tenth = BigDecimal("0.1")
+fifth = BigDecimal("0.2")
+print tenth.add(fifth).toString()                             # 0.3
+print BigDecimal("1").divide(BigDecimal("3"), 10, 4).toString()  # 0.3333333333
+```
+
+Because they stay Java objects they keep their methods. Mixing one into Oqthara
+arithmetic is an error rather than a silent conversion to `decimal`, which would discard
+the exactness that made it worth importing.
+
+### The classpath
+
+`use` resolves against the classloader the program runs on, so any class on the server's
+classpath is reachable, not only the JDK's:
+
+```
+use dev.oqthara.core.Lexer
+
+print Lexer.lex("<probe>", "1 + 2").size()   # 5
+```
+
+This is the same mechanism the JDK classes above use. There is no separate import path,
+no manifest and no allowlist; a class that is present is importable and one that is
+absent is refused at `use`.
+
 ### Callbacks
 
 A Java method that wants a functional interface accepts a `fun`. The parameter is the
