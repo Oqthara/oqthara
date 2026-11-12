@@ -1,6 +1,6 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1 implemented; acquisition, extraction and locking are not)
+- **Status:** Proposed (D1 and D2 implemented; acquisition, extraction and locking are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -60,6 +60,19 @@ decision was listed first.
 supports exactly the platforms it can test on, and the list is enumerated rather than implied:
 Linux x86_64 and aarch64, macOS x86_64 and aarch64, Windows x86_64. A platform outside that list
 gets a diagnostic naming what was detected, not a silent fallback to an incompatible JVM.
+
+*Implemented, 2026-11-13.* `PlatformSupport` in `oq-cli` enumerates that list and
+`oq java` reports it: `--json` always carries `platform` and `platformSupported`, and when nothing
+resolves on an unsupported platform the failure names what was detected and says that `OQ_JAVA` or
+a Java 21+ on `PATH` still works. What D2 asks for is the *enumeration and the diagnostic*, not the
+download, so this is complete as stated. The normalisation is the substance rather than the table:
+one processor is reported as `x86_64`, `amd64`, `x64` or `x86-64` depending on the vendor and the
+operating system, and one as `aarch64` or `arm64`. Every spelling is folded to a canonical name
+before it is compared, because matching the raw properties would make support depend on which JDK
+the user happens to run — and a silent miss there produces exactly the silent fallback this item
+forbids. An unrecognised value yields "unknown" rather than a guess, since a wrong platform name in
+a diagnostic is worse than an admitted unknown. Windows on ARM is deliberately outside the list
+because the ADR names Windows x86_64 only; adding it is a change to this ADR, not to the code.
 
 **D3. Provenance is verified before extraction.** A runtime archive is accepted only when its
 SHA-256 matches a value compiled into `oq` for that specific archive, and the download is
