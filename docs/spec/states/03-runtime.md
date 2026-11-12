@@ -327,8 +327,17 @@ The refused-call path no longer decrements to undo its own increment; `enterFram
 stores, so a refused call leaves the counter exactly as it found it and a caught-and-retried
 recursion error cannot permanently consume a level.
 
-`ConcurrencyTest` pins both halves: forty tasks recursing 350 deep must each return exactly 350,
-and a task that fails three hundred frames deep must leave the next recursion unaffected. Against
-the old shared field the first fails deterministically — three runs out of three — so the test
-cannot be satisfied by reintroducing the defect.
+`ConcurrencyTest` pins both halves: forty tasks recursing 40 deep must each count exactly 40, and
+a task that fails 40 frames down must not perturb 39 neighbours still inside their own calls.
+Against the old shared field both fail deterministically — three runs out of three — so neither
+test can be satisfied by reintroducing the defect.
+
+The depth is 40 rather than 350 for a reason worth recording. An earlier version recursed 350
+frames, which passed on a developer machine and failed on the JDK 25 CI runner: the JVM's own Java
+stack overflowed before Oqthara's 800-frame guard fired, so the run reported a stack overflow
+instead of the accounting defect. Magnitude was never what made the bug visible — overlap is. A
+shared counter is corrupted the moment two tasks occupy a frame at the same time, and `sleep`
+inside the recursive call holds each task in its frame long enough for that to be reliable. The
+shallow version reproduces the defect on every run and does not depend on how much stack the
+machine happens to give a virtual thread.
 
