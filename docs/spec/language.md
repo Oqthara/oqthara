@@ -1357,7 +1357,16 @@ Entry names given to `zip_compress` may not be absolute, may not contain a `..` 
 backslash or a NUL, and are refused with `zip_compress() refused entry name: <name>`. The name
 is refused rather than rewritten: a name that had to be changed to be safe is not the name the
 caller asked for, and storing a quietly different one is the wrong-answer failure mode this
-language treats as a defect. `tar` is not provided; zip covers the archive case and needs no
+language treats as a defect.
+
+`zip_decompress` applies the identical rule to the archive it is given, and refuses with
+`zip_decompress() refused entry name: <name>` rather than returning a map holding a name the
+writer would have refused. Reading is the direction that matters: a program does not choose the
+names in an archive it is handed, and the obvious use of the result — writing each entry's
+content to the path named by its key — would otherwise turn a hostile archive into an
+arbitrary-file-write. Nothing is returned when any name is refused, so the failure is a refusal
+and not a partial map the caller might act on. Names that merely contain dots, such as `..txt`
+or `a/b..c`, are not traversal and are accepted in both directions. `tar` is not provided; zip covers the archive case and needs no
 separate reader.
 
 Text layout: `wrap_text(text, width)` returns the text as a list of lines no longer than

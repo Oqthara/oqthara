@@ -78,6 +78,33 @@ line is rendered under its own name rather than refused. See
 
 Compiles a program to bytecode.
 
+## `oq java`
+
+Shows the Java runtime Oqthara would use, and where it looked. See
+[ADR-0048](../adr/0048-runtime-manager.md).
+
+The resolution order is fixed, and the first executable that exists *and* is Java 21 or newer
+wins:
+
+1. `OQ_JAVA`, if set to an executable;
+2. a `.oq/java` pin, found by walking up from the working directory so a pin at a project root
+   applies to every directory beneath it;
+3. a managed runtime under `OQ_HOME` (or `~/.oq`), used only once installed;
+4. `java` on `PATH`.
+
+A candidate that is below the floor is reported and skipped rather than aborting the search, so
+an accidental JDK 17 in `OQ_JAVA` does not hide a working JDK 21 further down. `--json` prints the
+same decision machine-readably, together with the detected platform and whether a managed runtime
+could be installed there. The command resolves without downloading or installing anything.
+
+The platforms a managed runtime can be installed on are enumerated rather than implied: Linux
+x86_64 and aarch64, macOS x86_64 and aarch64, Windows x86_64. When nothing resolves and the
+platform is outside that list, the failure names what was detected and what to do instead. Vendor
+spellings of the same processor (`amd64`, `x64` and `x86_64`; `arm64` and `aarch64`) are folded to
+one name first, so support does not depend on which JDK happens to be running. Platform support
+governs installation only; setting `OQ_JAVA` or putting a Java 21+ on `PATH` still works anywhere
+Oqthara runs.
+
 ## `oq version`
 
 Prints the version.
