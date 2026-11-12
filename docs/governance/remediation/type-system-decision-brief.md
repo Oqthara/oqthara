@@ -205,14 +205,16 @@ Two things are not decisions:
 ## The workstream gap
 
 Directive §4 records that workstream 2, Type System & Values, is "under-covered in the current
-workstream assignment". The assignment document does not name an owner for it, and this brief
-does not fix that by inventing one.
+workstream assignment". Row 2 of that document does exist, but it marks itself
+**Under-covered** and names `oq-hive-development` only as a *"(de facto)"* owner — no role is
+assigned to own the type model. The gap the directive names is therefore real and is about
+ownership rather than a missing row, and this brief does not fix it by inventing an owner.
 
-**Recommended action:** add an explicit row for workstream 2 naming
-`oq-hive-architecture-governance` as primary and `oq-hive-development` as supporting, with this
-brief as its first artefact. That is a one-line change to
-[`alpha-4-workstream-assignment.md`](../alpha-4-workstream-assignment.md) and is left undone here
-only because it would be a governance change bundled into a technical brief; it is the natural
+**Recommended action:** revise row 2 to name a real primary owner —
+`oq-hive-architecture-governance` is the natural candidate, because the open questions are value
+model and ADR decisions rather than implementation — with `oq-hive-development` as supporting and
+this brief as its first artefact. It is left undone here because changing who owns a workstream
+belongs in its own governance commit, not bundled into a technical brief; it is the natural
 follow-up to whichever option is chosen.
 
 ## Recommended next step
