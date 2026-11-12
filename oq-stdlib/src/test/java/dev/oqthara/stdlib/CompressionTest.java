@@ -251,6 +251,58 @@ class CompressionTest {
         assertEquals(files, restored);
     }
 
+    /**
+     * Builds an archive with {@link java.util.zip} directly, bypassing {@code zip_compress}.
+     *
+     * <p>A reader-side test must not be built with the writer it is checking: if the writer ever
+     * grows the same flaw, a test that goes through it would pass. This is also the only way to
+     * produce an archive whose names the writer refuses, which is exactly the case the reader has
+     * to handle.
+     */
+    private static String archiveWithEntryNamed(String name, String content) throws Exception {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(bytes)) {
+            zip.putNextEntry(new java.util.zip.ZipEntry(name));
+            zip.write(content.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return hex(bytes.toByteArray());
+    }
+
+    @Test
+    void zipDecompressRefusesATraversalNameFromAnUntrustedArchive() throws Exception {
+        // The writer refuses to create this name, so the only way it arrives is from an archive
+        // someone else produced -- which is the direction that matters.
+        String archive = archiveWithEntryNamed("../../etc/evil.txt", "pwned");
+        OqError refused = assertThrows(OqError.class, () -> call("zip_decompress", archive));
+        assertTrue(refused.getMessage().startsWith("zip_decompress() refused entry name:"),
+                "got: " + refused.getMessage());
+        assertTrue(refused.getMessage().contains("../../etc/evil.txt"),
+                "the message must name the entry it refused: " + refused.getMessage());
+    }
+
+    @Test
+    void zipDecompressRefusesAnAbsoluteNameAndABackslashName() throws Exception {
+        for (String name : new String[] {"/etc/evil.txt", "dir\\evil.txt", "a/../../b"}) {
+            String archive = archiveWithEntryNamed(name, "x");
+            OqError refused = assertThrows(OqError.class, () -> call("zip_decompress", archive),
+                    name);
+            assertTrue(refused.getMessage().contains("refused entry name"), name + ": " + refused);
+        }
+    }
+
+    @Test
+    void zipDecompressAcceptsHostileNeighbourNamesThatAreNotActuallyTraversal() throws Exception {
+        // The reader must not be more restrictive than the writer: these are legal names, and a
+        // round-trip through an outside archive has to keep working for them.
+        for (String name : new String[] {"..txt", "a/b..c", "a/...b/c"}) {
+            String archive = archiveWithEntryNamed(name, "y");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> entries = (Map<String, Object>) call("zip_decompress", archive);
+            assertEquals(Map.of(name, hexOf("y")), entries, name);
+        }
+    }
+
     // --- malformed input ---------------------------------------------------------------------
 
     @Test

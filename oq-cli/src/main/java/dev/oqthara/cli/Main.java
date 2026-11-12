@@ -240,12 +240,18 @@ public final class Main {
                     Path.of("").toAbsolutePath(), System.getenv());
             RuntimeResolver.Resolution resolution =
                     RuntimeResolver.resolve(inputs, RuntimeResolver.processProbe());
+            PlatformSupport.Platform platform = currentPlatform();
             if (json) {
-                out.println(jsonRuntime(resolution));
+                out.println(jsonRuntime(resolution, platform));
                 return resolution.found() ? 0 : 1;
             }
             if (!resolution.found()) {
                 err.println(RuntimeResolver.explainFailure(resolution));
+                if (!platform.supported()) {
+                    err.println();
+                    err.println(PlatformSupport.explainUnsupported(
+                            System.getProperty("os.name"), System.getProperty("os.arch")));
+                }
                 return 1;
             }
             out.println(resolution.chosen().describe());
@@ -255,9 +261,24 @@ public final class Main {
             return 0;
         }
 
-        private static String jsonRuntime(RuntimeResolver.Resolution resolution) {
+        /**
+         * The platform, for the diagnostic that says a managed runtime cannot be installed here.
+         *
+         * <p>Reported only when nothing resolved. Resolution on {@code PATH} is unaffected by
+         * platform support, so mentioning it on success would imply a limit that does not exist.
+         */
+        private static PlatformSupport.Platform currentPlatform() {
+            return PlatformSupport.detect(
+                            System.getProperty("os.name"), System.getProperty("os.arch"))
+                    .orElse(new PlatformSupport.Platform("unknown", "unknown"));
+        }
+
+        private static String jsonRuntime(RuntimeResolver.Resolution resolution,
+                                          PlatformSupport.Platform platform) {
             StringBuilder json = new StringBuilder("{\"found\":")
-                    .append(resolution.found());
+                    .append(resolution.found())
+                    .append(",\"platform\":\"").append(platform.label())
+                    .append("\",\"platformSupported\":").append(platform.supported());
             if (resolution.found()) {
                 RuntimeResolver.Candidate chosen = resolution.chosen();
                 json.append(",\"origin\":\"").append(chosen.origin().name().toLowerCase())
