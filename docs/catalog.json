@@ -398,6 +398,12 @@
       "slug": "docs/governance/remediation/solo-maintainer-exception"
     },
     {
+      "path": "docs/governance/remediation/type-system-decision-brief.md",
+      "title": "Type model and typed `data` fields — decision brief",
+      "section": "governance",
+      "slug": "docs/governance/remediation/type-system-decision-brief"
+    },
+    {
       "path": "docs/governance/roadmap-alpha-3.md",
       "title": "Alpha 3 engineering roadmap",
       "section": "governance",
