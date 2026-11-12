@@ -562,11 +562,16 @@ added under "Interoperability with Java" are pinned by tests in `JavaInteropTest
 `aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow`,
 `exactJavaNumbersKeepTheirScaleAndTheirPrecision` and
 `aClassFromTheProgramsOwnClasspathIsImportable` — each asserting the exact annotated output, so
-an example that stops matching fails the build. That covers three of the document's examples and
-is a precedent rather than a fix: nothing stops the next example from being wrong, and the
-mechanism does not generalise without the work described below. It is recorded here because
-"mitigation is a habit" and "mitigation is three tests" are different claims and the second one
-is now the true one.
+an example that stops matching fails the build. The non-finite-numbers example added to
+`docs/spec/language.md` by ADR-0051 is pinned the same way, by
+`theSpecificationExampleForNonFiniteNumbersPrintsWhatItClaims` in `TranscendentalTest`, which
+asserts both operator results and the two exact logarithms the surrounding paragraph quotes.
+
+That covers four of the document's examples and is a precedent rather than a fix: nothing stops
+the next example from being wrong, and the mechanism does not generalise without the work
+described below. The count is worth stating plainly because the difference between "the examples
+are checked" and "four examples are checked" is the difference between a control and a habit, and
+the paragraph above is a case of the habit failing to generalise even within one document.
 
 *Why accepted rather than fixed now.* Executing fenced blocks requires deciding which blocks are
 runnable (many are deliberate error transcripts, or fragments that only make sense in context),
@@ -667,13 +672,16 @@ done.
 
 **R-027 — Line-number citations in the stdlib inventory drift silently.**
 `docs/governance/alpha-4-stdlib-inventory.md` cites its evidence the way every other governance
-document in this repository does: a backticked name and a line number, `\`sqrt\`: 423`. Those
+document in this repository does: a backticked name and a line number, `` `sqrt`: 423 ``. Those
 numbers are breadcrumbs, and nothing recomputed them. Measured against `HEAD` before Alpha 4 §17
-added a single import, **113 of 240 citations already pointed at the wrong line** — `format`
-claimed 237 and sat at 246, `join` claimed 238 and sat at 248, `read_bytes` claimed 562 and sat at
-576. The drift was not uniform: some sections had been edited since their numbers were written and
-others had not, which is why it went unnoticed. Every citation was off by the same amount only
-*after* this session's edit, and that uniform off-by-one is what finally made the checker fail.
+added a single import, **112 of the 240 citations that name a `Stdlib.java` builtin already
+pointed at the wrong line** (a further 47 cite names registered in another file, or a name that was
+never a registration, and are checked separately) — `format` claimed 237 and sat at 246, `join`
+claimed 238 and sat at 248, `read_bytes` claimed 562 and sat at 576. The drift was not uniform:
+some sections had been edited since their numbers were written and others had not, which is why it
+went unnoticed. The parity that finally exposed it was accidental: adding one import line shifted
+every `Stdlib.java` registration by exactly one, so the citations became uniformly wrong and the
+checker, which had been silently agreeing with a document it never actually recomputed, failed.
 
 The failure mode is worse than a wrong number. A citation that lands on a plausible neighbouring
 line still resolves, so a reader who follows it reads real code that does not support the sentence
@@ -694,8 +702,8 @@ direction of fix, and a habit that would eventually have been used to silence a 
 
 *Residual.* Only this one document is covered. A line number in any other governance document,
 ADR or `CHANGELOG` entry is still unchecked, and the citation checker resolves the *first*
-registration of a name, so an overloaded builtin cited at its second site would pass on the wrong
-line. The general fix is the same work described in R-025: execute what the documents claim and
+registration of a name, so an overloaded builtin cited at its second site would report the
+first site's line and pass. The general fix is the same work described in R-025: execute what the documents claim and
 compare, rather than reading it.
 
 *Evidence.* `docs/governance/alpha-4-stdlib-inventory.md` · `scripts/check-docs-sync.py`

@@ -277,6 +277,29 @@ class TranscendentalTest {
         }
     }
 
+    // --- the specification's own example -------------------------------------------------------
+
+    @Test
+    void theSpecificationExampleForNonFiniteNumbersPrintsWhatItClaims() {
+        // docs/spec/language.md, "A number outside the representable range". Every line of that
+        // fenced block is asserted here, including the two operator results and the two exact
+        // logarithms quoted in the paragraph beneath it. The block is the section a reader is
+        // told to trust, and R-025 records that nothing else executes it.
+        double big = number(call("pow", 1.0e308, 10.0));
+        assertTrue(Double.isInfinite(big), "1.0e308 raised to 10 should overflow to infinity");
+
+        // n == n is false and n != n is true, exactly as a reader would type them.
+        double nan = big - big;
+        assertTrue(Double.isNaN(nan), "subtracting an infinity from itself should give NaN");
+        assertEquals(false, nan == nan);
+        assertEquals(true, nan != nan);
+
+        assertEquals(-1074.0, number(call("log2", Double.MIN_VALUE)), 0.0,
+                "log2 of the smallest subnormal is exact and is -1074");
+        assertEquals(0.0, number(call("exp", -1000.0)), 0.0,
+                "underflow is silent, so exp(-1000) is 0.0 rather than an error");
+    }
+
     @Test
     void logarithmsThroughTheMethodFormAreExactOnPowersOfTwo() {
         OqCallable method = host().methods().resolve(1024.0, "log2", Span.synthetic());
