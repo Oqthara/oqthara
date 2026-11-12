@@ -1,7 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4 and D6 implemented; provenance, atomic installation,
-  retention and signing are not)
+- **Status:** Proposed (D1, D2, D4, D5 and D6 implemented; provenance, retention and signing
+  are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -91,6 +91,27 @@ filesystem as its final location and moved into place with a single rename. An i
 download or extraction leaves a temporary directory that is discarded on the next run, never a
 half-installed runtime that later validation has to detect. A validate-then-activate step runs
 the extracted `java -version` before the rename, so a corrupt archive cannot be activated.
+
+`RuntimeInstaller` performs the sequence under the D6 lock: discard staging left by an earlier
+run, extract into `$OQ_HOME/.staging-<uuid>`, locate `bin/java` inside the extracted tree, run it
+and check the major version against the floor, then rename the located runtime to
+`$OQ_HOME/runtime/java` with `ATOMIC_MOVE`. A refused or failed step deletes the staging
+directory, so the only states are "nothing installed" and "a validated runtime installed".
+
+There is deliberately no fallback when the filesystem refuses an atomic rename. Copying into
+place instead would reintroduce the window this requirement removes, so the failure is reported
+and installation does not happen.
+
+The validation ask is about the exact bytes that will be activated, which is what makes the
+ordering meaningful: `validationHappensBeforeActivation` records whether the live path exists at
+the moment the version probe is called, and fails if it does.
+
+**D1 correction.** `RuntimeResolver.managedJava` originally treated `$OQ_HOME/runtime/java` as
+the Java executable. No JDK archive can satisfy that — a runtime is a tree of `bin`, `lib` and
+`release` — and nothing could produce one before D5 existed, so the mistake was invisible. The
+managed runtime is now a home directory and the executable is `bin/java` beneath it, which is the
+same layout `JAVA_HOME` uses. The change is confined to the managed origin; the explicit override,
+the project pin and `PATH` are unchanged.
 
 **D6. Concurrent invocations serialise on a lock.** Two `oq` processes starting at once must not
 extract into the same directory. The lock is acquired before any download, and a stale lock from

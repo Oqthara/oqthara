@@ -219,8 +219,8 @@ class RuntimeResolverTest {
     void managedRuntimeIsOnlyOfferedWhenItExists(@TempDir Path home) throws Exception {
         assertTrue(RuntimeResolver.managedJava(Map.of("OQ_HOME", home.toString())).isEmpty());
 
-        Files.createDirectories(home.resolve("runtime"));
-        Path java = home.resolve("runtime").resolve("java");
+        Files.createDirectories(home.resolve("runtime").resolve("java").resolve("bin"));
+        Path java = home.resolve("runtime").resolve("java").resolve("bin").resolve("java");
         Files.writeString(java, "#!/bin/sh\n");
 
         assertEquals(java.toString(),
@@ -229,8 +229,9 @@ class RuntimeResolverTest {
 
     @Test
     void managedRuntimeDefaultsToTheHomeDirectory(@TempDir Path home) throws Exception {
-        Files.createDirectories(home.resolve(".oq").resolve("runtime"));
-        Path java = home.resolve(".oq").resolve("runtime").resolve("java");
+        Files.createDirectories(home.resolve(".oq").resolve("runtime").resolve("java").resolve("bin"));
+        Path java = home.resolve(".oq").resolve("runtime").resolve("java").resolve("bin")
+                .resolve("java");
         Files.writeString(java, "#!/bin/sh\n");
 
         assertEquals(java.toString(),
