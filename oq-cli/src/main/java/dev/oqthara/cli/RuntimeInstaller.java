@@ -105,30 +105,7 @@ final class RuntimeInstaller {
      */
     Path install(Path archive, int minimumMajor)
             throws IOException, InterruptedException, InstallRefusedException {
-        if (!Files.isRegularFile(archive)) {
-            throw new InstallRefusedException("the runtime archive does not exist: " + archive);
-        }
-        Files.createDirectories(home);
-
-        try (InstallLock lock = InstallLock.acquire(home, lockTimeout)) {
-            // Holding the lock for the whole sequence is the point: two installers must not
-            // stage, validate and activate against the same home at once.
-            assert lock.file().getParent().equals(home);
-            discardAbandonedStaging();
-
-            Path staging = home.resolve(STAGING_PREFIX + UUID.randomUUID());
-            Files.createDirectory(staging);
-            try {
-                SafeArchive.extract(archive, staging);
-                Path extracted = locate(staging);
-                validate(extracted.resolve("bin").resolve(executableName()), minimumMajor);
-                activate(extracted);
-                return destination();
-            } catch (IOException | InstallRefusedException | RuntimeException e) {
-                deleteRecursively(staging);
-                throw e;
-            }
-        }
+        return installWith(archive, minimumMajor, null);
     }
 
     /**
@@ -151,7 +128,8 @@ final class RuntimeInstaller {
      * Installs, rotating first when a retention policy is supplied.
      *
      * <p>Rotation happens after validation and immediately before activation, so a refusal never
-     * displaces a working runtime.
+     * displaces a working runtime. A {@code null} policy installs without rotating, which is what
+     * a first install wants: there is nothing to keep.
      */
     private Path installWith(Path archive, int minimumMajor, RuntimeRetention retention)
             throws IOException, InterruptedException, InstallRefusedException {
