@@ -304,21 +304,40 @@ task to stop, cannot learn that it was abandoned, and cannot wait for all tasks.
 as an invariant so that it is a decision rather than an omission — but it is a decision real
 concurrent work will eventually want reversed, and reversing it is a language change, not a fix.
 
-**The recursion depth counter is a plain `int` shared by every thread.** `Interpreter.depth` is
-incremented and decremented around every block on whatever virtual thread is running, with no
-synchronisation. `spawn` hands the *same* `Interpreter` to the task, so two concurrent tasks
-interleave their increments and see a depth that belongs to neither of them. Measured, with two
-tasks each looping thirty million times:
+**The recursion depth counter is per execution, not per interpreter.** `Interpreter.depth` was
+formerly a plain `int` incremented and decremented around every block on whatever virtual thread
+was running, with no synchronisation. `spawn` hands the *same* `Interpreter` to the task, so two
+concurrent tasks interleaved their increments and saw a depth that belonged to neither of them.
+Measured with the old field, two tasks each looping thirty million times produced a different
+failure on different runs:
 
 ```
 run 1: error: program ran for too long     (the shared step budget, correctly)
 run 2: error: call stack is too deep       (a stack of depth 2 reported as overflow)
 ```
 
-The same program reports a different failure on different runs, and the second message names a
-source line that is not recursing at all. This is not cosmetic: `call stack is too deep` tells a
-programmer to look for infinite recursion in a program that has none. The step counter next to it
-is an `AtomicLong` and carries a comment explaining why it must be; `depth` did not get the same
-treatment because the interpreter was single-threaded when it was written and `spawn` arrived
-later. Making it per-thread is a small change, but it is a change to failure behaviour under
-concurrency and belongs with the other task work rather than in a documentation branch.
+The second message names a source line that is not recursing at all, which tells a programmer to
+look for infinite recursion in a program that has none. `depth` is now a `ThreadLocal<Integer>`,
+matching `callStack` and `currentClass`, because a virtual thread is one execution and a call chain
+belongs to one execution. The step counter next to it stays an `AtomicLong` for the opposite
+reason: the step budget is a program-wide total, so it must be shared, while depth is a property
+of a single chain and must not be.
+
+The refused-call path no longer decrements to undo its own increment; `enterFrame` tests before it
+stores, so a refused call leaves the counter exactly as it found it and a caught-and-retried
+recursion error cannot permanently consume a level.
+
+`ConcurrencyTest` pins both halves: forty tasks recursing 40 deep must each count exactly 40, and
+a task that fails 40 frames down must not perturb 39 neighbours still inside their own calls.
+Against the old shared field both fail deterministically — three runs out of three — so neither
+test can be satisfied by reintroducing the defect.
+
+The depth is 40 rather than 350 for a reason worth recording. An earlier version recursed 350
+frames, which passed on a developer machine and failed on the JDK 25 CI runner: the JVM's own Java
+stack overflowed before Oqthara's 800-frame guard fired, so the run reported a stack overflow
+instead of the accounting defect. Magnitude was never what made the bug visible — overlap is. A
+shared counter is corrupted the moment two tasks occupy a frame at the same time, and `sleep`
+inside the recursive call holds each task in its frame long enough for that to be reliable. The
+shallow version reproduces the defect on every run and does not depend on how much stack the
+machine happens to give a virtual thread.
+
