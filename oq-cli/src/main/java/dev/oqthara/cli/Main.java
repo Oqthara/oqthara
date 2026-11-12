@@ -246,7 +246,9 @@ public final class Main {
                 return resolution.found() ? 0 : 1;
             }
             if (!resolution.found()) {
-                err.println(RuntimeResolver.explainFailure(resolution));
+                err.println(RuntimeResolver.explainFailure(resolution,
+                        RuntimeResolver.managedHome(System.getenv()).map(Path::toString)
+                                .orElse(null)));
                 if (!platform.supported()) {
                     err.println();
                     err.println(PlatformSupport.explainUnsupported(

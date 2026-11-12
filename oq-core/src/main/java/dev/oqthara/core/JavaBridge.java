@@ -202,6 +202,129 @@ public final class JavaBridge {
         }
     }
 
+    /**
+     * Calls a Java value as a function when it is a functional interface.
+     *
+     * <p>An Oqthara function handed to Java becomes a proxy (see {@link #functionalInterface}),
+     * but the direction back was missing: {@code Comparator.naturalOrder()} answered an object
+     * whose {@code compare} could be called with a dot and which could not be called at all, so
+     * {@code map(xs, Comparator.naturalOrder())} — the form a program ported from Java would
+     * write — was refused while the equivalent lambda worked.
+     *
+     * <p>A value can satisfy more than one functional interface. {@code
+     * Comparator.naturalOrder()} is an enum, so it is a {@code Comparator} (two parameters) and
+     * also a {@code Comparable} inherited from {@code Enum} (one). Which one a bare call means is
+     * decided by the number of arguments, which is the only information a call site carries;
+     * two different methods at the same arity would be genuinely ambiguous and are refused rather
+     * than resolved by declaration order. The invocation goes through {@link #callMethod} on the
+     * abstract method's own name, reusing the overload selection and argument conversion already
+     * validated for an explicit call, so {@code f(1, 2)} and {@code f.compare(1, 2)} cannot
+     * diverge.
+     *
+     * @return the result, or {@link #NOT_FOUND} when {@code value} is not callable as a function,
+     *         in which case the caller reports it as not a function
+     */
+    public static Object callFunctional(Object value, List<Object> args, Span span, Path cwd,
+                                        OqHost host) {
+        if (value == null || value instanceof Class<?> || value instanceof String
+                || value instanceof Long || value instanceof Double || value instanceof Boolean
+                || value instanceof OqCallable) {
+            return NOT_FOUND;
+        }
+        Method abstractMethod = singleAbstractMethod(value.getClass(), args.size());
+        if (abstractMethod == null) {
+            int wanted = functionalArityOf(value.getClass());
+            if (wanted >= 0) throw wrongArity(value, args.size(), wanted, span);
+            return NOT_FOUND;
+        }
+        return callMethod(value, abstractMethod.getName(), args, span, cwd, host);
+    }
+
+    /** Explains a functional Java value called with the wrong number of arguments. */
+    private static OqError wrongArity(Object value, int given, int wanted, Span span) {
+        return new OqError("wrong number of arguments", span, Values.wrongArityHelp(value, given, wanted));
+    }
+
+    /**
+     * The arity of the functional interface that makes {@code type} callable, or -1.
+     *
+     * <p>Declared interfaces decide before inherited ones, for the reason
+     * {@link #singleAbstractMethod} gives, so the count this reports is the count the call was
+     * actually resolved against. Looking only at declared interfaces would report a value as not
+     * callable whenever the interface it implements came from a superclass.
+     */
+    private static int functionalArityOf(Class<?> type) {
+        int declared = functionalArityOfDeclared(type);
+        if (declared >= 0) return declared;
+        for (Class<?> face : allInterfaces(type)) {
+            int arity = functionalArity(face);
+            if (arity >= 0) return arity;
+        }
+        return -1;
+    }
+
+    /** The arity of the class's own declared functional interface, or -1 when it has none. */
+    private static int functionalArityOfDeclared(Class<?> type) {
+        for (Class<?> face : type.getInterfaces()) {
+            int arity = functionalArity(face);
+            if (arity >= 0) return arity;
+        }
+        return -1;
+    }
+
+    /**
+     * The single abstract method of {@code type} that takes {@code arity} arguments, or null.
+     *
+     * <p>Interfaces the class declares itself are considered before ones it merely inherits, which
+     * is what keeps {@code Comparator.naturalOrder()} a comparator. That value is an enum, so it
+     * inherits {@code Comparable} from {@code Enum} as well as declaring {@code Comparator}; a
+     * one-argument call would otherwise select {@code compareTo} and fail inside Java with a
+     * {@code ClassCastException} casting a number to {@code Enum}. The inheritance is an
+     * implementation detail of the JDK's singleton, and the declared interface is what the value
+     * is for.
+     *
+     * <p>Returns null both when nothing matches and when two distinct methods at the same arity do,
+     * because a call with no target type has nothing else to choose between them.
+     */
+    private static Method singleAbstractMethod(Class<?> type, int arity) {
+        Method declared = abstractMethodsAt(type.getInterfaces(), arity);
+        if (declared != null) return declared;
+        // A declared functional interface says what the value is for, and says it at its own
+        // arity, so a call at another arity is a wrong count rather than a reason to look at
+        // what the class inherits. A declared *marker* interface makes no such claim, so it
+        // must not hide a functional interface the class inherits: refusing whenever any
+        // interface is declared would make a class that merely added Serializable uncallable.
+        if (functionalArityOfDeclared(type) >= 0) return null;
+        return abstractMethodsAt(allInterfaces(type).toArray(new Class<?>[0]), arity);
+    }
+
+    private static Method abstractMethodsAt(Class<?>[] faces, int arity) {
+        Method found = null;
+        for (Class<?> face : faces) {
+            if (functionalArity(face) != arity) continue;
+            for (Method method : face.getMethods()) {
+                if (method.isDefault() || Modifier.isStatic(method.getModifiers())) continue;
+                if (!Modifier.isAbstract(method.getModifiers())) continue;
+                if (method.getParameterCount() != arity) continue;
+                if (overridesObject(method)) continue;
+                if (found != null && !found.getName().equals(method.getName())) return null;
+                found = method;
+            }
+        }
+        return found;
+    }
+
+    /** Every interface {@code type} implements, including through superclasses. */
+    private static List<Class<?>> allInterfaces(Class<?> type) {
+        List<Class<?>> seen = new ArrayList<>();
+        for (Class<?> cursor = type; cursor != null; cursor = cursor.getSuperclass()) {
+            for (Class<?> face : cursor.getInterfaces()) {
+                if (!seen.contains(face)) seen.add(face);
+            }
+        }
+        return seen;
+    }
+
     public static Object readField(Object receiver, String name, Span span) {
         if (receiver == null || receiver instanceof Long || receiver instanceof Double
                 || receiver instanceof Boolean || receiver instanceof String) {
