@@ -1,6 +1,7 @@
 # ADR-0002 — macOS CI lives on CircleCI
 
-- **Status:** accepted
+- **Status:** amended by [ADR-0049](0049-macos-ci-on-github-actions.md) — macOS now runs
+  primarily on GitHub Actions and CircleCI is the fallback
 - **Date:** 2026-11-04
 - **Deciders:** oq-ci-release, oq-orchestrator
 - **Supersedes:** nothing

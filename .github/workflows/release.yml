@@ -50,13 +50,15 @@ jobs:
           manifest_version=$(unzip -p oq-cli/build/libs/oq.jar META-INF/MANIFEST.MF | grep -i '^Implementation-Version:' | sed 's/.*: *//' | tr -d '\r')
           echo "manifest=$manifest_version tag=$VERSION"
           test "$manifest_version" = "$VERSION"
-      # macOS (JDK 21/25) and Jazzer fuzzing run on CircleCI, which reports one
-      # commit status per job to GitHub (.circleci/config.yml,
-      # docs/adr/0002-ci-split.md). The gate is fail-closed: it requires
-      # GITHUB_TOKEN and every required context, and has no skip path
-      # (docs/adr/0010-release-gate.md). CIRCLECI_TOKEN only enables an extra
-      # job-level cross-check and is never required.
-      - name: Gate - CircleCI evidence
+      # macOS (JDK 21/25) runs on GitHub Actions and fuzzing runs on CircleCI
+      # (.github/workflows/ci.yml, .circleci/config.yml). CircleCI keeps its
+      # macOS workflow as the fallback, so the gate accepts either provider for
+      # the macOS legs and fails on a red result from either
+      # (docs/adr/0049-macos-ci-on-github-actions.md, docs/adr/0010-release-gate.md).
+      # The gate is fail-closed: it requires GITHUB_TOKEN and every requirement,
+      # and has no skip path. CIRCLECI_TOKEN only enables an extra job-level
+      # cross-check and is never required.
+      - name: Gate - CI evidence
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
