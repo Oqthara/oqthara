@@ -63,6 +63,30 @@ class ErrorMessageContractTest {
         goodError("print \"a\".nope()", "has no method 'nope'");
     }
 
+    /**
+     * A missing map key is a value, not an error; a bad list index is an error.
+     *
+     * <p>The asymmetry is deliberate rather than an oversight, and [ADR-0023] states why: `[i]`
+     * on a map means "look up key `i`", and a key that is absent is `nothing`, while an index
+     * past the end of a list is a mistake with a knowable correct range. Both are pinned here
+     * because they are the pair that looks like an inconsistency until the ADR is read, and
+     * "fixing" one to match the other would break a documented contract.
+     *
+     * <p>Holding `nothing` under a key is therefore indistinguishable from not holding it.
+     * ADR-0021 records that ambiguity as the reason `m.pop(key)` without a default is an error
+     * instead of returning `nothing`, so the cost is already accounted for elsewhere.
+     *
+     * [ADR-0023]: ../../../../../docs/adr/0023-collection-protocols.md
+     */
+    @Test
+    void aMissingMapKeyIsNothingWhileABadIndexIsAnError() {
+        assertEquals("nothing\n", ok("m = {\"a\": 1}\nprint m[\"b\"]"),
+                "a missing map key must read as nothing");
+        assertEquals("nothing\n", ok("m = {\"a\": nothing}\nprint m[\"a\"]"),
+                "a present nothing must be indistinguishable from an absent key");
+        goodError("xs = [1, 2, 3]\nprint xs[5]", "out of range");
+    }
+
     @Test
     void syntaxErrorsPointAtTheConstruct() {
         goodError("if true\n  print 1", "expected 'end'");
