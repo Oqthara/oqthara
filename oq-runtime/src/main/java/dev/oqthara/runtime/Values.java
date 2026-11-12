@@ -92,6 +92,22 @@ public final class Values {
         return "It is " + name + ", which cannot be called.";
     }
 
+    /**
+     * Explains a call to a Java object that is a functional interface of a different arity.
+     *
+     * <p>Such a value <em>is</em> callable — {@code Comparator.naturalOrder()} answers {@code
+     * f(1, 2)} — so reporting only that it is not a {@code fun} would deny a capability it has.
+     * What failed is the argument count, and the message says which count would have worked rather
+     * than leaving the reader to guess.
+     */
+    public static String wrongArityHelp(Object value, int given, int wanted) {
+        String name = typeName(value);
+        return "It is " + name + ", a Java object with one method of "
+                + wanted + " argument" + (wanted == 1 ? "" : "s") + ", so it is called with "
+                + wanted + " rather than " + given + ". Call its methods with '.' for anything"
+                + " else.";
+    }
+
     public static String display(Object value) {
         if (value == null) return "nothing";
         if (value instanceof String s) return s;

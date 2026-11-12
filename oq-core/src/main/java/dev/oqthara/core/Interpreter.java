@@ -703,6 +703,11 @@ public final class Interpreter implements OqHost {
         if (callee instanceof Class<?> type) {
             return JavaBridge.construct(type, args, span, workingDirectory, this);
         }
+        // A Java value whose class has one abstract method is a function in everything but
+        // syntax: Comparator.naturalOrder() is callable as a lambda would be, so `f(1, 2)` and
+        // `f.compare(1, 2)` reach the same method rather than the first being refused.
+        Object fromJava = JavaBridge.callFunctional(callee, args, span, workingDirectory, this);
+        if (fromJava != JavaBridge.NOT_FOUND) return fromJava;
         // A callback reaches here from a standard-library higher-order method, which knows the
         // value it was handed but not the name the caller wrote, so quoting a placeholder as
         // though it were an identifier would misrepresent the program's own text.
