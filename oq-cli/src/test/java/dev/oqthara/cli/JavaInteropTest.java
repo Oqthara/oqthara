@@ -295,4 +295,54 @@ class JavaInteropTest {
                 print xs.size()
                 """));
     }
+
+    @Test
+    void aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow() {
+        // docs/spec/language.md, "Exceptions crossing the boundary" — the section claims the
+        // message is the throwable's class and text and that e.line is the throwing call.
+        // Both halves are asserted: a span of 3 would pass a weaker test that only checked
+        // the message.
+        assertEquals("""
+                NumberFormatException: For input string: "not a number"
+                4
+                """, ok("""
+                use java.lang.Integer
+
+                try
+                  print Integer.parseInt("not a number")
+                catch e
+                  print e.message
+                  print e.line
+                end
+                """));
+    }
+
+    @Test
+    void exactJavaNumbersKeepTheirScaleAndTheirPrecision() {
+        // docs/spec/language.md, "Exact Java numbers" — 0.1 + 0.2 as doubles is
+        // 0.30000000000000004, so this fails if either value is narrowed on the way in.
+        assertEquals("""
+                0.3
+                0.3333333333
+                """, ok("""
+                use java.math.BigDecimal
+
+                tenth = BigDecimal("0.1")
+                fifth = BigDecimal("0.2")
+                print tenth.add(fifth).toString()
+                print BigDecimal("1").divide(BigDecimal("3"), 10, 4).toString()
+                """));
+    }
+
+    @Test
+    void aClassFromTheProgramsOwnClasspathIsImportable() {
+        // docs/spec/language.md, "The classpath" — the claim is that `use` reaches any class
+        // on the running classloader, so a project class works where only JDK classes had
+        // been tried. Lexer.lex is static, which is what makes this a one-line program.
+        assertEquals("5\n", ok("""
+                use dev.oqthara.core.Lexer
+
+                print Lexer.lex("<probe>", "1 + 2").size()
+                """));
+    }
 }

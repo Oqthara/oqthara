@@ -512,6 +512,17 @@ habit is worth keeping. The exposure stays `Low` rather than `Medium` because a 
 misleads a reader rather than corrupting a program, and because the examples that matter most —
 the ones a reader copies into a file — are the ones most likely to be tried by that reader too.
 
+The habit has since been made mechanical for the section it was learned in: the three examples
+added under "Interoperability with Java" are pinned by tests in `JavaInteropTest` —
+`aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow`,
+`exactJavaNumbersKeepTheirScaleAndTheirPrecision` and
+`aClassFromTheProgramsOwnClasspathIsImportable` — each asserting the exact annotated output, so
+an example that stops matching fails the build. That covers three of the document's examples and
+is a precedent rather than a fix: nothing stops the next example from being wrong, and the
+mechanism does not generalise without the work described below. It is recorded here because
+"mitigation is a habit" and "mitigation is three tests" are different claims and the second one
+is now the true one.
+
 *Why accepted rather than fixed now.* Executing fenced blocks requires deciding which blocks are
 runnable (many are deliberate error transcripts, or fragments that only make sense in context),
 building the CLI in the documentation check, and pinning expected output per block. That is a
