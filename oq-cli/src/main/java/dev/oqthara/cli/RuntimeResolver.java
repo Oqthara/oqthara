@@ -200,17 +200,31 @@ final class RuntimeResolver {
         return Optional.of(Path.of(home));
     }
 
-    /** Returns the managed runtime's {@code java}, if one has been installed and validated. */
+    /**
+     * Returns the managed runtime's {@code java}, if one has been installed and validated.
+     *
+     * <p>{@code runtime/java} is the runtime's <em>home</em>, the directory a JDK archive extracts
+     * to, and the executable is {@code bin/java} beneath it. It was briefly treated as the
+     * executable itself, which no real JDK archive can satisfy: a runtime is a tree of
+     * {@code bin}, {@code lib} and {@code release}, not one file. Nothing could install a runtime
+     * when that assumption was written, so no test caught it until the installer existed and had
+     * somewhere to put one.
+     */
     static Optional<String> managedJava(java.util.Map<String, String> env) {
         Optional<Path> home = managedHome(env);
         if (home.isEmpty()) {
             return Optional.empty();
         }
-        Path java = home.get().resolve("runtime").resolve("java");
-        if (!Files.isRegularFile(java)) {
-            return Optional.empty();
-        }
-        return Optional.of(java.toString());
+        Optional<Path> java = managedExecutable(home.get());
+        return java.map(Path::toString);
+    }
+
+    /** The {@code java} executable inside a managed home, or empty when nothing is installed. */
+    static Optional<Path> managedExecutable(Path home) {
+        String name = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+                .startsWith("windows") ? "java.exe" : "java";
+        Path java = home.resolve("runtime").resolve("java").resolve("bin").resolve(name);
+        return Files.isRegularFile(java) ? Optional.of(java) : Optional.empty();
     }
 
     /** Asks a specific executable for its version. Injectable for tests. */

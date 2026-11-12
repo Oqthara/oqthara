@@ -18,6 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class RuntimeResolverTest {
 
+    /** A JDK on Windows has {@code bin/java.exe} and no {@code bin/java}, so the name depends. */
+    private static final String EXECUTABLE = System.getProperty("os.name", "")
+            .toLowerCase(java.util.Locale.ROOT).startsWith("windows") ? "java.exe" : "java";
+
     /** A probe that answers from a fixed table, so no process is ever started. */
     private static RuntimeResolver.VersionProbe probe(Map<String, Integer> versions) {
         return executable -> {
@@ -219,8 +223,8 @@ class RuntimeResolverTest {
     void managedRuntimeIsOnlyOfferedWhenItExists(@TempDir Path home) throws Exception {
         assertTrue(RuntimeResolver.managedJava(Map.of("OQ_HOME", home.toString())).isEmpty());
 
-        Files.createDirectories(home.resolve("runtime"));
-        Path java = home.resolve("runtime").resolve("java");
+        Files.createDirectories(home.resolve("runtime").resolve("java").resolve("bin"));
+        Path java = home.resolve("runtime").resolve("java").resolve("bin").resolve(EXECUTABLE);
         Files.writeString(java, "#!/bin/sh\n");
 
         assertEquals(java.toString(),
@@ -229,8 +233,9 @@ class RuntimeResolverTest {
 
     @Test
     void managedRuntimeDefaultsToTheHomeDirectory(@TempDir Path home) throws Exception {
-        Files.createDirectories(home.resolve(".oq").resolve("runtime"));
-        Path java = home.resolve(".oq").resolve("runtime").resolve("java");
+        Files.createDirectories(home.resolve(".oq").resolve("runtime").resolve("java").resolve("bin"));
+        Path java = home.resolve(".oq").resolve("runtime").resolve("java").resolve("bin")
+                .resolve(EXECUTABLE);
         Files.writeString(java, "#!/bin/sh\n");
 
         assertEquals(java.toString(),
