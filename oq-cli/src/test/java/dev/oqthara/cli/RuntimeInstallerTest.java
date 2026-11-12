@@ -142,9 +142,22 @@ class RuntimeInstallerTest {
                 assertThrows(RuntimeInstaller.InstallRefusedException.class,
                         () -> installer.install(archive, 21));
 
-        assertTrue(refused.getMessage().contains("cannot run Oqthara"), refused.getMessage());
+        // What the message must say depends on what the platform lets a fake JVM be. On POSIX a
+        // shell script is a legal executable, so it runs and fails every program: the refusal
+        // names the incompatibility. Windows loads a .exe as a PE image and will not start a
+        // script under that name at all (CreateProcess error=216), so no fake JVM can be
+        // fabricated there and the refusal reports that the check could not run. Both are a
+        // refusal to install a JVM that never demonstrated it can run Oqthara, which is the
+        // property this test exists to prove; the execution path itself is covered by
+        // RuntimeCompatibilityTest, whose fakes are batch files on Windows.
+        String message = refused.getMessage();
+        if (JAVA.endsWith(".exe")) {
+            assertTrue(message.contains("could not run"), message);
+        } else {
+            assertTrue(message.contains("cannot run Oqthara"), message);
+        }
         assertFalse(Files.exists(installer.destination()),
-                "an incompatible JVM must not be activated");
+                "a JVM that never ran Oqthara must not be activated");
     }
 
     /**
