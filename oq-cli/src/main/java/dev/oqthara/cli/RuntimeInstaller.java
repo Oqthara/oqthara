@@ -39,15 +39,28 @@ final class RuntimeInstaller {
     private final Path home;
     private final Duration lockTimeout;
     private final RuntimeResolver.VersionProbe probe;
+    private final Path compatibilityJar;
 
     RuntimeInstaller(Path home) {
-        this(home, DEFAULT_TIMEOUT, RuntimeResolver.processProbe());
+        this(home, DEFAULT_TIMEOUT, RuntimeResolver.processProbe(), null);
     }
 
     RuntimeInstaller(Path home, Duration lockTimeout, RuntimeResolver.VersionProbe probe) {
+        this(home, lockTimeout, probe, null);
+    }
+
+    /**
+     * @param compatibilityJar the Oqthara jar to run on a candidate JVM (ADR-0048 D9), or
+     *     {@code null} to validate only the reported version. {@code null} is what a test wants:
+     *     the bounded compatibility check spawns real JVMs and belongs to the install path, not
+     *     to every unit-test assertion about ordering.
+     */
+    RuntimeInstaller(Path home, Duration lockTimeout, RuntimeResolver.VersionProbe probe,
+            Path compatibilityJar) {
         this.home = home.toAbsolutePath().normalize();
         this.lockTimeout = lockTimeout;
         this.probe = probe;
+        this.compatibilityJar = compatibilityJar;
     }
 
     /** Where a validated runtime ends up. */
@@ -105,14 +118,40 @@ final class RuntimeInstaller {
      */
     Path install(Path archive, int minimumMajor)
             throws IOException, InterruptedException, InstallRefusedException {
+        return installWith(archive, minimumMajor, null);
+    }
+
+    /**
+     * Installs {@code archive} over an existing runtime, retaining the one being replaced.
+     *
+     * <p>ADR-0048 D7. The difference from {@link #install} is only the rotation: the active
+     * runtime is renamed to {@code .prev} instead of the rename being refused, so an upgrade
+     * leaves a complete previous runtime on disk rather than deleting one to make room. The D5
+     * ordering is unchanged — staging is still validated before anything is touched — which means
+     * a corrupt archive fails with the existing runtime still active.
+     *
+     * @return the activated runtime home
+     */
+    Path upgrade(Path archive, int minimumMajor)
+            throws IOException, InterruptedException, InstallRefusedException {
+        return installWith(archive, minimumMajor, new RuntimeRetention(home));
+    }
+
+    /**
+     * Installs, rotating first when a retention policy is supplied.
+     *
+     * <p>Rotation happens after validation and immediately before activation, so a refusal never
+     * displaces a working runtime. A {@code null} policy installs without rotating, which is what
+     * a first install wants: there is nothing to keep.
+     */
+    private Path installWith(Path archive, int minimumMajor, RuntimeRetention retention)
+            throws IOException, InterruptedException, InstallRefusedException {
         if (!Files.isRegularFile(archive)) {
             throw new InstallRefusedException("the runtime archive does not exist: " + archive);
         }
         Files.createDirectories(home);
 
         try (InstallLock lock = InstallLock.acquire(home, lockTimeout)) {
-            // Holding the lock for the whole sequence is the point: two installers must not
-            // stage, validate and activate against the same home at once.
             assert lock.file().getParent().equals(home);
             discardAbandonedStaging();
 
@@ -122,6 +161,9 @@ final class RuntimeInstaller {
                 SafeArchive.extract(archive, staging);
                 Path extracted = locate(staging);
                 validate(extracted.resolve("bin").resolve(executableName()), minimumMajor);
+                if (retention != null) {
+                    retention.rotate();
+                }
                 activate(extracted);
                 return destination();
             } catch (IOException | InstallRefusedException | RuntimeException e) {
@@ -175,6 +217,15 @@ final class RuntimeInstaller {
      * resolver hands to every later command.
      */
     private void validate(Path java, int minimumMajor) throws InstallRefusedException {
+        // A JDK archive records 0755 on its launcher, and SafeArchive restores it. Not every tool
+        // that builds a ZIP records a Unix mode at all, though, and an archive with no mode
+        // arrives as a plain file. The installer is about to execute this exact path, so it makes
+        // that possible rather than refusing an otherwise usable runtime for a metadata gap.
+        // Only the owner's execute bit is added; nothing is ever made setuid.
+        if (!Files.isExecutable(java) && !java.toFile().setExecutable(true, true)) {
+            throw new InstallRefusedException("the extracted " + java.getFileName()
+                    + " is not executable and the permission could not be changed");
+        }
         OptionalInt major = probe.majorVersion(java.toString());
         if (major.isEmpty()) {
             throw new InstallRefusedException("the extracted java did not report a version;"
@@ -183,6 +234,23 @@ final class RuntimeInstaller {
         if (major.getAsInt() < minimumMajor) {
             throw new InstallRefusedException("the archive contains Java " + major.getAsInt()
                     + ", below the required " + minimumMajor);
+        }
+        if (compatibilityJar != null) {
+            // ADR-0048 D9. A version number says what the JVM claims, not what it can run.
+            RuntimeCompatibility.Verdict verdict;
+            try {
+                verdict = new RuntimeCompatibility(compatibilityJar).validate(java);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new InstallRefusedException("the compatibility check was interrupted");
+            } catch (IOException e) {
+                throw new InstallRefusedException("the compatibility check could not run: "
+                        + e.getMessage());
+            }
+            if (!verdict.compatible()) {
+                throw new InstallRefusedException("the archive contains a Java " + major.getAsInt()
+                        + " that cannot run Oqthara: " + verdict.summary());
+            }
         }
     }
 

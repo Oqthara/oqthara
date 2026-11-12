@@ -125,6 +125,71 @@ class RuntimeInstallerTest {
     }
 
     @Test
+    void refusesAJvmThatReportsTheFloorAndCannotRunOqthara(@TempDir Path temp) throws Exception {
+        // The seal between D5 and D9. The probe says Java 21, so the version check passes; the
+        // JVM then fails every program it is asked to run. Nothing must be activated, because
+        // the resolver would hand this JVM to every later command.
+        Path home = temp.resolve("home");
+        Path archive = failingRuntime(temp, "jdk-21.0.1");
+        Path jar = temp.resolve("oq.jar");
+        Files.write(jar, new byte[] {'P', 'K', 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0});
+
+        RuntimeInstaller installer = new RuntimeInstaller(home, Duration.ofSeconds(5),
+                probeAnswering(21), jar);
+
+        RuntimeInstaller.InstallRefusedException refused =
+                assertThrows(RuntimeInstaller.InstallRefusedException.class,
+                        () -> installer.install(archive, 21));
+
+        // What the message must say depends on what the platform lets a fake JVM be. On POSIX a
+        // shell script is a legal executable, so it runs and fails every program: the refusal
+        // names the incompatibility. Windows loads a .exe as a PE image and will not start a
+        // script under that name at all (CreateProcess error=216), so no fake JVM can be
+        // fabricated there and the refusal reports that the check could not run. Both are a
+        // refusal to install a JVM that never demonstrated it can run Oqthara, which is the
+        // property this test exists to prove; the execution path itself is covered by
+        // RuntimeCompatibilityTest, whose fakes are batch files on Windows.
+        String message = refused.getMessage();
+        if (JAVA.endsWith(".exe")) {
+            assertTrue(message.contains("could not run"), message);
+        } else {
+            assertTrue(message.contains("cannot run Oqthara"), message);
+        }
+        assertFalse(Files.exists(installer.destination()),
+                "a JVM that never ran Oqthara must not be activated");
+    }
+
+    /**
+     * A launcher that exits non-zero, written so the platform will execute it.
+     *
+     * <p>A {@code #!/bin/sh} file named {@code java.exe} is not run as a script: Windows reports
+     * {@code CreateProcess error=216} because the executable format is wrong, so the test would
+     * prove nothing about the version check it is meant to exercise.
+     */
+    private static String failingLauncher() {
+        return JAVA.endsWith(".exe") ? "@echo off\r\nexit /b 1\r\n" : "#!/bin/sh\nexit 1\n";
+    }
+
+    /**
+     * A runtime whose {@code bin/java} exits non-zero for everything, which is the JDK 25 case:
+     * the version it reports is acceptable and it still cannot run the program.
+     */
+    private static Path failingRuntime(Path dir, String topLevel) throws IOException {
+        Path archive = dir.resolve("runtime-incompatible.zip");
+        try (OutputStream out = Files.newOutputStream(archive);
+             ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.putNextEntry(new ZipEntry(topLevel + "/bin/" + JAVA));
+            zip.write(failingLauncher().getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry(topLevel + "/release"));
+            zip.write("JAVA_VERSION=\"21\"\n".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return archive;
+    }
+
+    @Test
     void refusesARuntimeBelowTheFloor(@TempDir Path temp) throws Exception {
         Path home = temp.resolve("home");
         Path archive = fakeRuntime(temp, "jdk-17.0.9", 17);

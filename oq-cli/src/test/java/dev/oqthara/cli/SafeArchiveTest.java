@@ -187,6 +187,78 @@ class SafeArchiveTest {
         }
     }
 
+// --- executable bits ---
+
+    @Test
+    void restoresTheExecutableBitFromTheArchive(@TempDir Path temp) throws IOException {
+        // A real JDK archive marks `bin/java` 0755. Extraction that dropped the mode would
+        // install a runtime that cannot be started, and the failure would surface only when the
+        // user ran a program.
+        Path archive = temp.resolve("jdk.zip");
+        Files.write(archive, modeArchive("bin/java", "#!/bin/sh\n", 0x81ED));
+        Path out = root(temp);
+
+        SafeArchive.extract(archive, out);
+
+        assertTrue(Files.isExecutable(out.resolve("bin/java")));
+    }
+
+    @Test
+    void leavesAnOrdinaryFileInexecutable(@TempDir Path temp) throws IOException {
+        Path archive = temp.resolve("jdk.zip");
+        Files.write(archive, modeArchive("lib/modules", "data", 0x81A4));
+        Path out = root(temp);
+
+        SafeArchive.extract(archive, out);
+
+        Path modules = out.resolve("lib/modules");
+        int installed;
+        try {
+            installed = (int) Files.getAttribute(modules, "unix:mode");
+        } catch (UnsupportedOperationException | IllegalArgumentException e) {
+            // Not a POSIX filesystem. Windows has no execute bit to withhold: isExecutable
+            // reports true for any readable file, so asserting inexecutability there would test
+            // the platform rather than the extractor. The extractor only ever grants the bit,
+            // never clears it, so the guarantee this test states is a POSIX one.
+            return;
+        }
+        assertEquals(0, installed & 0x49, "no execute bit may be granted to an ordinary entry");
+    }
+
+    @Test
+    void neverSetsTheSetuidBitFromAnArchive(@TempDir Path temp) throws IOException {
+        // An archive is untrusted input. Honouring setuid would let it install a binary that runs
+        // with the installer's privileges.
+        Path archive = temp.resolve("jdk.zip");
+        Files.write(archive, modeArchive("bin/java", "#!/bin/sh\n", 0x89ED));
+        Path out = root(temp);
+
+        SafeArchive.extract(archive, out);
+
+        Path java = out.resolve("bin/java");
+        assertTrue(Files.isExecutable(java));
+        int installed;
+        try {
+            installed = (int) Files.getAttribute(java, "unix:mode");
+        } catch (UnsupportedOperationException | IllegalArgumentException e) {
+            return; // Not a POSIX filesystem; there is no setuid bit to leak.
+        }
+        assertEquals(0, installed & 0x800, "setuid bit must not be honoured");
+    }
+
+    @Test
+    void doesNotMarkADirectoryExecutableFromAModeAlone(@TempDir Path temp) throws IOException {
+        // Directories are always traversable, so an executable directory proves nothing; the
+        // check is that a file beside it did not inherit the flag.
+        Path archive = temp.resolve("jdk.zip");
+        Files.write(archive, modeArchive("bin/", "", 0x41ED));
+        Path out = root(temp);
+
+        SafeArchive.extract(archive, out);
+
+        assertTrue(Files.isDirectory(out.resolve("bin")));
+    }
+
     // --- symbolic links ---
 
     @Test
@@ -352,8 +424,18 @@ class SafeArchiveTest {
      * is the whole point of the test.
      */
     private static byte[] linkArchive(String name, String target) throws IOException {
+        return modeArchive(name, target, 0xA1FF);
+    }
+
+    /**
+     * A one-entry ZIP whose central-directory record carries the given Unix mode.
+     *
+     * <p>Written as raw bytes because {@link ZipEntry} has no API for the mode, and the mode is
+     * the whole point of the tests that use this.
+     */
+    private static byte[] modeArchive(String name, String contents, int mode) throws IOException {
         byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
-        byte[] targetBytes = target.getBytes(StandardCharsets.UTF_8);
+        byte[] targetBytes = contents.getBytes(StandardCharsets.UTF_8);
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 
         java.util.zip.CRC32 checksum = new java.util.zip.CRC32();
@@ -393,7 +475,7 @@ class SafeArchiveTest {
         buffer.write(le16(0));
         buffer.write(le16(0));
         buffer.write(le16(0));
-        buffer.write(le32(0xA1FF_0000)); // S_IFLNK | 0777 in the high 16 bits
+        buffer.write(le32(mode << 16)); // the Unix mode occupies the high 16 bits
         buffer.write(le32(0));
         buffer.write(nameBytes);
 

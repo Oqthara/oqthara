@@ -1,7 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4, D5 and D6 implemented; provenance, retention and signing
-  are not)
+- **Status:** Proposed (D1, D2, D4, D5, D6, D7, D8 and D9 implemented; provenance and
+  signing are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -133,9 +133,65 @@ unreliable on some network filesystems, which is recorded as a limit rather than
 one has been validated and has run a program successfully. "Rollback" means selecting the
 retained version; it never means undoing a filesystem operation.
 
+`RuntimeRetention` keeps two directories in the managed home: `runtime/java` is active and
+`runtime/java.prev` is the one it replaced. An upgrade validates the new runtime in staging (D5),
+then renames the active one to `.prev` and the staged one to `.active`, so the previous runtime is
+complete on disk before the new one is live and nothing is deleted to make room. Rolling back
+renames the two, which is a selection and not a repair — no state is reconstructed from a
+partial one.
+
+Rotating *after* validation and not before is the load-bearing ordering: a refused upgrade leaves
+the working runtime active and retains nothing, and `aRefusedUpgradeLeavesTheWorkingRuntimeActive`
+fails if the two steps are swapped.
+
+At most two runtimes are kept. A third generation replaces the retained one rather than
+accumulating, which is a bound the requirement implies but does not state: no rule here decides
+how many generations is enough, so one is retained and the choice is written down rather than
+left to a cleanup that runs on a timer.
+
 **D8. Offline operation is a first-class path.** With no network, an already-installed managed
 runtime is used. If none exists, the diagnostic says which runtime was looked for, where it
 would have been installed, and that the network was unreachable — not a generic failure.
+
+*Implemented.* Resolution reads the environment and the filesystem and never reaches the
+network, so an installed runtime is used offline with no special case; the test
+`anInstalledRuntimeResolvesWithoutAnyNetwork` records that. The diagnostic gained a
+`Reachability` seam: `explainFailure` consults it only when a managed home is known, because a
+home that is not known would not be downloaded into. The real probe asks whether any acquisition
+host answers, with a two-second bound per host, and reports "unreachable" for a host that throws.
+A test supplies the answer instead, so both branches are asserted on a machine whose own network
+state is irrelevant. The message states reachability; it never retries or falls back, because
+nothing in this resolution path downloads anything to fall back from.
+
+*Implemented.* `RuntimeCompatibility` runs the three checks against the candidate JVM and
+returns a verdict rather than throwing. Each check has a sixty-second bound, so a JVM that hangs
+is refused instead of stalling the install, and output is compared as well as exit status
+because a JVM that exits zero after printing the wrong thing has not run the program. The
+database check is reported and not enforced: a missing native SQLite library is a property of
+the machine, and refusing an otherwise working JVM for it would reject a runtime on which every
+other program runs. `DOCUMENTED_CHECK_COUNT` exists so the documented count is itself asserted
+rather than drifting from the code. Eight tests in `RuntimeCompatibilityTest` cover a JVM that
+prints the wrong output, one that hangs, one that passes, one without a database library, a
+missing jar and an unstartable check; dropping the output comparison fails
+`refusesAJvmThatPrintsTheWrongOutput`.
+
+The installer runs this check only when it has the jar built from the release being installed,
+which is the one case where the answer is about *this* Oqthara rather than a guess. That seal is
+tested by `refusesAJvmThatReportsTheFloorAndCannotRunOqthara`: the version probe is told to
+answer 21 while the extracted `bin/java` fails every program, and nothing is activated.
+
+**An executable bit is part of the archive contract.** Writing these tests found a defect in D4
+that no amount of reading had exposed. The Unix mode is read from the central directory to
+identify symbolic links, and the execute bits in that same field were being discarded, so a real
+JDK archive — which marks `bin/java` 0755 — installed a launcher that could not be executed.
+The install would report success and every later command would fail with a permission error,
+which is the worst place to discover the problem. `SafeArchive` now records which entries carry
+any execute bit and applies owner-execute after the whole archive is written, so a tree that
+failed partway is never left looking prepared. Only `0111` is honoured: setuid and setgid are
+deliberately ignored, because honouring them would let an untrusted archive install a binary
+that runs with the installer's privileges. Because a ZIP built without a Unix mode carries none
+at all, the installer also makes the one path it is about to execute executable before probing
+it, and refuses if that cannot be done.
 
 **D9. Oqthara compatibility is a separate question from JDK availability.** Java 21 LTS is the
 floor because `build.gradle.kts:51-52` targets it. A vendor's release date is not a compatibility
@@ -144,6 +200,12 @@ installed: `--version`, then a small fixed set of conformance programs chosen be
 exercise the bytecode backend, the standard library and the JNI database path. It is not the full
 corpus — 212 executable files is too much to run before every install — and the ADR says so
 rather than implying a stronger check than exists.
+
+The compatibility check compares the program's text, not only its exit status, because a JVM
+that exits zero having printed the wrong thing has not run the program. It normalises the line
+terminator before comparing: a JVM on Windows writes `\r\n` even when the program prints `\n`,
+and a byte-exact comparison would refuse every working JVM there on first install. The full text
+and the number of lines are still compared.
 
 This is not hypothetical. [ADR-0002](0002-ci-split.md) records that the build failed on JDK 25
 with `Unsupported class file major version 69`, because the Gradle release in use at the time
