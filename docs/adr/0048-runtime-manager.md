@@ -1,6 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1 and D2 implemented; acquisition, extraction and locking are not)
+- **Status:** Proposed (D1, D2 and D4 implemented; provenance, atomic installation, locking,
+  retention and signing are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
