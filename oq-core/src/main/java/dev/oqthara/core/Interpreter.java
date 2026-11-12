@@ -53,7 +53,14 @@ public final class Interpreter implements OqHost {
     private final java.util.concurrent.atomic.AtomicLong steps =
             new java.util.concurrent.atomic.AtomicLong();
     private int maxSteps = 50_000_000;
-    private int depth = 0;
+    // Recursion depth is per execution, not per interpreter. A program's tasks all run on the
+    // same Interpreter instance, so a shared counter lets two concurrent tasks corrupt each
+    // other's accounting: one task's `++` can be lost or double-counted by another, and the
+    // `finally` decrements interleave so a nested call can be refused while the real call stack
+    // is shallow. It is a ThreadLocal for the same reason `callStack` is — a virtual thread is
+    // one execution — and `steps` is atomic rather than thread-local only because the step
+    // budget is a program-wide total while depth is a property of one call chain.
+    private final ThreadLocal<Integer> depth = ThreadLocal.withInitial(() -> 0);
     private final int maxDepth = 800;
 
     public Interpreter(PrintStream out, PrintStream err, BufferedReader in, List<String> args,
@@ -172,20 +179,35 @@ public final class Interpreter implements OqHost {
     }
 
     public void executeBlock(List<Ast.Stmt> statements, Env env) {
-        depth++;
-        if (depth > maxDepth) {
-            depth--;
-            throw new OqError("call stack is too deep", Span.synthetic(),
-                    "This usually means an infinite recursion. Check that the function eventually stops calling itself.");
-        }
+        enterFrame();
         try {
             hoist(statements, env);
             for (Ast.Stmt stmt : statements) {
                 execute(stmt, env);
             }
         } finally {
-            depth--;
+            leaveFrame();
         }
+    }
+
+    /**
+     * Counts one nesting level and refuses the call once the limit is reached.
+     *
+     * <p>The increment happens before the test and is undone before throwing, so a refused call
+     * leaves the counter exactly as it found it. Otherwise a caught-and-retried recursion error
+     * would permanently consume a level and a later, shallower call would be refused.
+     */
+    private void enterFrame() {
+        int next = depth.get() + 1;
+        if (next > maxDepth) {
+            throw new OqError("call stack is too deep", Span.synthetic(),
+                    "This usually means an infinite recursion. Check that the function eventually stops calling itself.");
+        }
+        depth.set(next);
+    }
+
+    private void leaveFrame() {
+        depth.set(depth.get() - 1);
     }
 
     private void hoist(List<Ast.Stmt> statements, Env env) {
@@ -515,12 +537,7 @@ public final class Interpreter implements OqHost {
      * before it and a recursive function can call itself.
      */
     private Object blockValue(List<Ast.Stmt> statements, Env env) {
-        depth++;
-        if (depth > maxDepth) {
-            depth--;
-            throw new OqError("call stack is too deep", Span.synthetic(),
-                    "This usually means an infinite recursion. Check that the function eventually stops calling itself.");
-        }
+        enterFrame();
         try {
             hoist(statements, env);
             int last = statements.size() - 1;
@@ -535,7 +552,7 @@ public final class Interpreter implements OqHost {
             execute(finalStatement, env);
             return null;
         } finally {
-            depth--;
+            leaveFrame();
         }
     }
 

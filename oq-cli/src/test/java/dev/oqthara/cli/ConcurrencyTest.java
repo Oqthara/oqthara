@@ -114,4 +114,82 @@ class ConcurrencyTest {
                 end)
                 """));
     }
+
+    /**
+     * Recursion depth is per execution, not per interpreter.
+     *
+     * <p>Every task a program spawns runs on the same {@code Interpreter} instance, so a shared
+     * depth counter is corrupted by concurrency: the increments and the {@code finally}
+     * decrements interleave, a level can be lost or counted twice, and a depth that should be
+     * shallow reads as deep. The failure is not a crash but a wrong answer — a call refused with
+     * "call stack is too deep" from a chain only a few frames deep.
+     *
+     * <p>Reproducing that reliably needs many tasks recursing at once, so each task recurses to a
+     * depth close to the limit. Every task must succeed, and each must return the exact depth it
+     * counted: if decrements leak into another task's counter, a later task starts at a nonzero
+     * depth and its own count is wrong even when no refusal happens. A single shared counter
+     * cannot satisfy both assertions.
+     */
+    @Test
+    void concurrentRecursionDoesNotCorruptTheDepthCount() {
+        String out = ok("""
+                fun descend(n, acc)
+                  if n == 0
+                    return acc
+                  end
+                  return descend(n - 1, acc + 1)
+                end
+                tasks = []
+                for i in 1 to 40
+                  tasks.push(spawn(fun()
+                    return descend(350, 0)
+                  end))
+                end
+                total = 0
+                for task in tasks
+                  value = await(task)
+                  if value != 350
+                    error("depth counted {value}, expected 350")
+                  end
+                  total = total + 1
+                end
+                print total
+                """);
+        assertEquals("40\n", out);
+    }
+
+    /**
+     * A completed task must leave no depth behind for whatever runs next.
+     *
+     * <p>This is the same defect seen from the sequential side: a leaked increment from an
+     * abandoned or failed task is invisible until something recurses afterwards and fails early.
+     * A task that fails inside deep recursion is the case most likely to leak, because the
+     * unwinding path is the one that has to restore the counter.
+     */
+    @Test
+    void aFailedTaskDoesNotPoisonLaterRecursion() {
+        assertEquals("deep ok\n", ok("""
+                fun descend(n)
+                  if n == 0
+                    error("bottom")
+                  end
+                  return descend(n - 1)
+                end
+                task = spawn(fun()
+                  return descend(300)
+                end)
+                try
+                  await(task)
+                catch e
+                  caught = e.message
+                end
+                fun again(n)
+                  if n == 0
+                    return "deep ok"
+                  end
+                  return again(n - 1)
+                end
+                print again(350)
+                """));
+    }
 }
