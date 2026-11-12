@@ -236,13 +236,6 @@ final class SafeArchive {
     }
 
     /**
-     * Copies one entry, refusing to write more than the per-entry limit.
-     *
-     * <p>The stream is deliberately not closed here: it is the archive, and closing it would end
-     * the loop after the first entry. {@code ZipInputStream} reads a limited number of bytes per
-     * entry and returns -1 at the entry's end, which is what bounds this copy.
-     */
-    /**
      * Adds the owner-execute bit, and only that bit.
      *
      * <p>Called for entries the archive marked executable. {@code setExecutable} rather than a
@@ -256,6 +249,13 @@ final class SafeArchive {
         target.toFile().setExecutable(true, true);
     }
 
+    /**
+     * Copies one entry, refusing to write more than the per-entry limit.
+     *
+     * <p>The stream is deliberately not closed here: it is the archive, and closing it would end
+     * the loop after the first entry. {@code ZipInputStream} reads a limited number of bytes per
+     * entry and returns -1 at the entry's end, which is what bounds this copy.
+     */
     private static long copyBounded(ZipInputStream in, Path target) throws IOException {
         byte[] buffer = new byte[64 * 1024];
         long written = 0;
