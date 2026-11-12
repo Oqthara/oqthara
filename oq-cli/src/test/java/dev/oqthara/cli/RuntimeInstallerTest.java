@@ -21,6 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Covers ADR-0048 D5: installation is atomic and validation precedes activation. */
 class RuntimeInstallerTest {
 
+    /**
+     * The launcher's file name on this platform.
+     *
+     * <p>These tests build archives by hand, so they decide what the archive contains. A JDK on
+     * Windows has {@code bin/java.exe} and none of the others, so an archive holding only
+     * {@code bin/java} is not a runtime there -- the installer was right to refuse it, and the
+     * tests were wrong to expect otherwise. Every path below goes through this constant so the
+     * two cannot disagree again.
+     */
+    private static final String JAVA = System.getProperty("os.name", "")
+            .toLowerCase(java.util.Locale.ROOT).startsWith("windows") ? "java.exe" : "java";
+
     /** Reports whatever major the caller tells it to, so no real JVM is needed. */
     private static RuntimeResolver.VersionProbe probeAnswering(int major) {
         return executable -> OptionalInt.of(major);
@@ -39,7 +51,7 @@ class RuntimeInstallerTest {
             zip.closeEntry();
             zip.putNextEntry(new ZipEntry(topLevel + "/bin/"));
             zip.closeEntry();
-            zip.putNextEntry(new ZipEntry(topLevel + "/bin/java"));
+            zip.putNextEntry(new ZipEntry(topLevel + "/bin/" + JAVA));
             zip.write("#!/bin/sh\necho 'openjdk version \"21.0.1\"'\n"
                     .getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
@@ -59,8 +71,8 @@ class RuntimeInstallerTest {
                 .install(archive, 21);
 
         assertEquals(home.resolve("runtime").resolve("java").toAbsolutePath(), java);
-        assertTrue(Files.isRegularFile(java.resolve("bin").resolve("java")),
-                "the activated runtime should hold bin/java");
+        assertTrue(Files.isRegularFile(java.resolve("bin").resolve(JAVA)),
+                "the activated runtime should hold bin/" + JAVA);
         assertTrue(Files.isRegularFile(java.resolve("release")));
     }
 
@@ -91,7 +103,7 @@ class RuntimeInstallerTest {
         RuntimeInstaller.InstallRefusedException refused =
                 assertThrows(RuntimeInstaller.InstallRefusedException.class,
                         () -> installer.install(archive, 21));
-        assertTrue(refused.getMessage().contains("bin/java"), refused.getMessage());
+        assertTrue(refused.getMessage().contains("bin/" + JAVA), refused.getMessage());
         assertFalse(Files.exists(installer.destination()),
                 "a refused archive must not activate anything");
     }
@@ -146,7 +158,7 @@ class RuntimeInstallerTest {
 
         assertFalse(visibleDuringValidation[0],
                 "the runtime was already at its live path while it was being validated");
-        assertTrue(Files.isRegularFile(destination.resolve("bin").resolve("java")));
+        assertTrue(Files.isRegularFile(destination.resolve("bin").resolve(JAVA)));
     }
 
     @Test
@@ -167,7 +179,7 @@ class RuntimeInstallerTest {
     void discardsStagingLeftByAnInterruptedRun(@TempDir Path temp) throws Exception {
         Path home = temp.resolve("home");
         Files.createDirectories(home.resolve(".staging-abandoned").resolve("jdk/bin"));
-        Files.writeString(home.resolve(".staging-abandoned").resolve("jdk/bin/java"), "x");
+        Files.writeString(home.resolve(".staging-abandoned").resolve("jdk/bin/" + JAVA), "x");
 
         int removed = new RuntimeInstaller(home, Duration.ofSeconds(5), probeAnswering(21))
                 .discardAbandonedStaging();
@@ -181,13 +193,13 @@ class RuntimeInstallerTest {
         Path home = temp.resolve("home");
         Path live = home.resolve("runtime").resolve("java").resolve("bin");
         Files.createDirectories(live);
-        Files.writeString(live.resolve("java"), "x");
+        Files.writeString(live.resolve(JAVA), "x");
         Files.createDirectories(home.resolve(".staging-old"));
 
         new RuntimeInstaller(home, Duration.ofSeconds(5), probeAnswering(21))
                 .discardAbandonedStaging();
 
-        assertTrue(Files.isRegularFile(live.resolve("java")),
+        assertTrue(Files.isRegularFile(live.resolve(JAVA)),
                 "cleanup must never delete the runtime that is in use");
     }
 
@@ -207,7 +219,7 @@ class RuntimeInstallerTest {
         Path archive = temp.resolve("evil.zip");
         try (OutputStream out = Files.newOutputStream(archive);
              ZipOutputStream zip = new ZipOutputStream(out)) {
-            zip.putNextEntry(new ZipEntry("jdk/bin/java"));
+            zip.putNextEntry(new ZipEntry("jdk/bin/" + JAVA));
             zip.write("x".getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
             // Traversal: SafeArchive must refuse, and the installer must not activate anything.
@@ -230,7 +242,7 @@ class RuntimeInstallerTest {
         Path home = temp.resolve("home");
         Path live = home.resolve("runtime").resolve("java").resolve("bin");
         Files.createDirectories(live);
-        Files.writeString(live.resolve("java"), "old");
+        Files.writeString(live.resolve(JAVA), "old");
 
         Path archive = fakeRuntime(temp, "jdk-21.0.2", 21);
         RuntimeInstaller installer =
@@ -239,7 +251,7 @@ class RuntimeInstallerTest {
         // The activated path already exists, so activation is refused rather than overwriting:
         // a real upgrade has to move the old runtime aside first, which is D7's job.
         assertThrows(IOException.class, () -> installer.install(archive, 21));
-        assertEquals("old", Files.readString(live.resolve("java")),
+        assertEquals("old", Files.readString(live.resolve(JAVA)),
                 "an existing runtime must not be replaced without retention");
     }
 
@@ -261,6 +273,6 @@ class RuntimeInstallerTest {
         // Once released, the same installer object proceeds.
         Path java = new RuntimeInstaller(home, Duration.ofSeconds(5), probeAnswering(21))
                 .install(archive, 21);
-        assertTrue(Files.isRegularFile(java.resolve("bin").resolve("java")));
+        assertTrue(Files.isRegularFile(java.resolve("bin").resolve(JAVA)));
     }
 }
