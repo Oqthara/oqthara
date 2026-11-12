@@ -1,6 +1,6 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2 and D4 implemented; provenance, atomic installation, locking,
+- **Status:** Proposed (D1, D2, D4 and D6 implemented; provenance, atomic installation,
   retention and signing are not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
@@ -95,6 +95,18 @@ the extracted `java -version` before the rename, so a corrupt archive cannot be 
 **D6. Concurrent invocations serialise on a lock.** Two `oq` processes starting at once must not
 extract into the same directory. The lock is acquired before any download, and a stale lock from
 a killed process is detected rather than waited on forever.
+
+The lock is an operating-system advisory lock on a file in the managed home, not a pid written
+into a file. The difference decides what "stale" means: the kernel releases an advisory lock
+however the holder dies, so a killed process leaves a lock file that is *unlocked*, and no reader
+ever waits on a dead owner. A pid-based scheme has to guess, and its guess fails when the pid is
+reused. The file's contents name the holding process for a human reading a timeout message, and
+nothing parses them to make a decision.
+
+Two levels are needed because `FileLock` belongs to a JVM rather than a thread: a second thread in
+one process does not block on it, it throws `OverlappingFileLockException`. An in-process semaphore
+per lock path serialises threads; the file lock serialises processes. Advisory locking is
+unreliable on some network filesystems, which is recorded as a limit rather than mitigated.
 
 **D7. Rollback is retention, not repair.** The manager keeps the previous runtime until the new
 one has been validated and has run a program successfully. "Rollback" means selecting the
