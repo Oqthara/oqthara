@@ -150,8 +150,11 @@ under Consequences.
 2. **Cycles raise an error** instead of printing or hashing. This is deliberate and bounded,
    but a user who builds a cycle gets a diagnostic where they used to get a stack overflow.
 3. **`-0.0 == 0` is `true`** and both hash identically, which follows from numeric equality.
-   `0.0/0.0` is `NaN`, and `NaN == NaN` is `false`, so `NaN` never equals itself; a set may
-   therefore hold several references to the same `NaN`.
+   `NaN == NaN` is `false`, so `NaN` never equals itself and a set may therefore hold
+   several references to the same `NaN`. `NaN` itself comes from combining infinities
+   (`infinity - infinity`), not from dividing zero by zero: `0.0/0.0` raises
+   `division by zero`, because `Values.divide` checks the divisor before dividing.
+   [ADR-0051](0051-non-finite-numbers-and-transcendentals.md) records the full policy.
 
 **Follow-up this ADR does not do.** Requiring hashability where it matters — rejecting an
 unhashable key at insertion rather than silently losing it — is the natural next step and

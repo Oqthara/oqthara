@@ -119,7 +119,7 @@ Documentation drift is now machine-checked rather than maintained by hand:
 | Evidence | Where |
 | --- | --- |
 | Conformance verifier corrected and in required CI | `scripts/verify-conformance.py`, `.github/workflows/ci.yml` |
-| Measured baseline | 203 compiled, 13 fallback, 0 divergences across 229 programs (212 executable) |
+| Measured baseline | 203 compiled, 13 fallback, 0 divergences across 230 programs (213 executable) |
 | Regression tests for the verifier | `scripts/tests/test_verify_conformance.py` |
 | Keyword drift detection | `scripts/check-docs-sync.py`, parsing `Lexer.KEYWORDS` |
 | Ruleset repaired and enforced | `main-protection`, read back after update |

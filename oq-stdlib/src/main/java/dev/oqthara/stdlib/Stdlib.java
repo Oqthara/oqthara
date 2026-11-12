@@ -2,6 +2,7 @@ package dev.oqthara.stdlib;
 
 import dev.oqthara.core.Interpreter;
 import dev.oqthara.runtime.NativeFunction;
+import dev.oqthara.runtime.Errors;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
@@ -420,9 +421,66 @@ public final class Stdlib {
             return rounded;
         }).named("value", "places"));
         interpreter.defineBuiltin(NativeFunction.of("sqrt", 1, (host, args, span) ->
-                Math.sqrt(asNumber(args.get(0), "sqrt", span))).named("value"));
+                real(StrictMath.sqrt(asNumber(args.get(0), "sqrt", span)),
+                        "sqrt", args.get(0), span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("pow", 2, (host, args, span) ->
                 Values.power(args.get(0), args.get(1), span)).named("base", "exponent"));
+        // Trigonometry, logarithms and exponentials. StrictMath rather than Math throughout: Math
+        // may use platform intrinsics whose last bits vary by CPU and JVM, and a program that
+        // prints a result has to print the same digits everywhere.
+        interpreter.defineBuiltin(NativeFunction.of("sin", 1, (host, args, span) ->
+                real(StrictMath.sin(asNumber(args.get(0), "sin", span)),
+                        "sin", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("cos", 1, (host, args, span) ->
+                real(StrictMath.cos(asNumber(args.get(0), "cos", span)),
+                        "cos", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("tan", 1, (host, args, span) ->
+                real(StrictMath.tan(asNumber(args.get(0), "tan", span)),
+                        "tan", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("asin", 1, (host, args, span) ->
+                real(StrictMath.asin(asNumber(args.get(0), "asin", span)),
+                        "asin", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("acos", 1, (host, args, span) ->
+                real(StrictMath.acos(asNumber(args.get(0), "acos", span)),
+                        "acos", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("atan", 1, (host, args, span) ->
+                real(StrictMath.atan(asNumber(args.get(0), "atan", span)),
+                        "atan", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("atan2", 2, (host, args, span) -> {
+            double y = asNumber(args.get(0), "atan2", span);
+            double x = asNumber(args.get(1), "atan2", span);
+            return real(StrictMath.atan2(y, x), "atan2", y, span);
+        }).named("y", "x"));
+        interpreter.defineBuiltin(NativeFunction.of("hypot", 2, (host, args, span) -> {
+            double a = asNumber(args.get(0), "hypot", span);
+            double b = asNumber(args.get(1), "hypot", span);
+            // StrictMath.hypot avoids the overflow that Math.sqrt(a*a + b*b) suffers.
+            return real(StrictMath.hypot(a, b), "hypot", a, span);
+        }).named("a", "b"));
+        interpreter.defineBuiltin(NativeFunction.of("ln", 1, (host, args, span) -> {
+            double value = asNumber(args.get(0), "ln", span);
+            return logarithm(StrictMath.log(value), value, "ln", span);
+        }).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("log10", 1, (host, args, span) -> {
+            double value = asNumber(args.get(0), "log10", span);
+            return logarithm(StrictMath.log10(value), value, "log10", span);
+        }).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("log2", 1, (host, args, span) -> {
+            double value = asNumber(args.get(0), "log2", span);
+            return logarithm(log2(value), value, "log2", span);
+        }).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("exp", 1, (host, args, span) ->
+                real(StrictMath.exp(asNumber(args.get(0), "exp", span)),
+                        "exp", args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("degrees", 1, (host, args, span) ->
+                real(asNumber(args.get(0), "degrees", span) * (180.0 / StrictMath.PI),
+                        "degrees", args.get(0), span)).named("radians"));
+        interpreter.defineBuiltin(NativeFunction.of("radians", 1, (host, args, span) ->
+                real(asNumber(args.get(0), "radians", span) * (StrictMath.PI / 180.0),
+                        "radians", args.get(0), span)).named("degrees"));
+        interpreter.defineBuiltin(NativeFunction.of("pi", 0, (host, args, span) -> StrictMath.PI));
+        interpreter.defineBuiltin(NativeFunction.of("e", 0, (host, args, span) -> StrictMath.E));
+        interpreter.defineBuiltin(NativeFunction.of("tau", 0, (host, args, span) -> 2.0 * StrictMath.PI));
         // One argument means "the extreme of this collection"; two or more mean "among these
         // values". The arity decides, so `min([3, 1])` is 1 and `min(3, 1)` is 1 as well.
         interpreter.defineBuiltin(NativeFunction.variadic("min", 1, (host, args, span) ->
@@ -2105,6 +2163,69 @@ public final class Stdlib {
             throw new OqError(builtin + "() needs a finite number, got "
                     + Values.display(value), span);
         }
+    }
+
+    /**
+     * The result of a function that has no real value for some inputs, which the JDK signals by
+     * returning {@code NaN}. Raising keeps this consistent with {@code 1 / 0} and {@code
+     * round(NaN)} instead of letting a bad input travel onward as a silent {@code NaN}.
+     */
+    static double real(double result, String builtin, Object input) {
+        return real(result, builtin, input, Errors.current());
+    }
+
+    private static double real(double result, String builtin, Object input, Span span) {
+        if (!Double.isNaN(result)) return result;
+        throw new OqError(builtin + "() has no real result for "
+                + Values.display(Values.isNumber(input) ? Values.asDouble(input) : input), span,
+                "The input is outside the range " + builtin + "() accepts.");
+    }
+
+    /**
+     * A logarithm, which needs its own guard: the JDK answers {@code -infinity} for zero rather
+     * than {@code NaN}, so the NaN check in {@link #real} would let {@code ln(0)} through as a
+     * silent infinity. Zero has no logarithm — that is a domain error like the negative case.
+     */
+    private static double logarithm(double result, double input, String builtin, Span span) {
+        if (input <= 0) {
+            throw new OqError(builtin + "() needs a positive number, got "
+                    + Values.display(input), span,
+                    "A logarithm is only defined for numbers greater than zero.");
+        }
+        return real(result, builtin, input, span);
+    }
+
+    /** Package-visible so the method form refuses the same inputs as the builtin. */
+    static double logarithm(double input, String builtin, Object original,
+                            java.util.function.DoubleUnaryOperator function) {
+        Span span = Errors.current();
+        if (input <= 0) {
+            throw new OqError(builtin + "() needs a positive number, got "
+                    + Values.display(input), span,
+                    "A logarithm is only defined for numbers greater than zero.");
+        }
+        return real(function.applyAsDouble(input), builtin, original, span);
+    }
+
+    /**
+     * Base-2 logarithm, exact on every power of two. {@code log(x) / log(2)} is inexact for 439
+     * of the 2098 powers of two a double can hold — 2^-1021 came out as -1021.0000000000001 —
+     * which would be visible to anyone using log2 for bit arithmetic.
+     */
+    static double log2(double x) {
+        if (x > 0) {
+            int exponent = Math.getExponent(x);
+            if (exponent == -1023) {
+                // A subnormal: rescaling by a power of two is exact and normalizes it.
+                double scaled = x * 0x1p54;
+                if (Math.scalb(1.0, Math.getExponent(scaled)) == scaled) {
+                    return Math.getExponent(scaled) - 54;
+                }
+            } else if (Math.scalb(1.0, exponent) == x) {
+                return exponent;
+            }
+        }
+        return StrictMath.log(x) / StrictMath.log(2);
     }
 
     private static Object invokeMethod(OqHost host, Object receiver, String name, List<Object> args, Span span) {

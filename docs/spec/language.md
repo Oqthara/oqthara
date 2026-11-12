@@ -149,7 +149,9 @@ that leaves the range wraps rather than raising an error, so `922337203685477580
 is `-9223372036854775808`.
 
 Built-in functions: `abs`, `floor`, `ceil`, `round`, `round(value, places)`, `sqrt`,
-`pow`, `min`, `max`, `clamp`, `random`.
+`pow`, `min`, `max`, `clamp`, `random`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`,
+`atan2`, `hypot`, `ln`, `log10`, `log2`, `exp`, `degrees`, `radians`, `pi()`, `e()`,
+`tau()`.
 
 `round` breaks a tie *upward*, toward positive infinity: `round(0.5)` is `1`,
 `round(2.5)` is `3`, and `round(-1.5)` is `-1` rather than `-2`. It is not banker's
@@ -161,6 +163,31 @@ double, so `round(1.005, 2)` is `1.0` and not `1.01`: the stored double is a lit
 below `1.005`, and a tie is never reached. A result that must not depend on how a
 double is stored needs exact decimal arithmetic, which the standard library does not
 yet provide.
+
+A number outside the representable range is not the same thing as an input the
+function cannot accept, and the two are treated differently. An input with no
+real-number result is an error: `sqrt(-1)`, `ln(0)`, `ln(-1)`, `asin(2)` and
+`pow(-8, 0.5)` all raise, as `1 / 0` already did. A finite input whose true answer is
+merely too large or too small is not an error: `exp(1000)` and `1.0e308 * 10` are
+`infinity`, and `1.0e-308 / 10.0` is `0.0`. `pow(0, -1)` is `infinity` for the same
+reason — the input is in the domain and the function grows without bound.
+
+`NaN` therefore never comes from an in-domain input. It is reachable only by
+combining infinities, as in `infinity - infinity`, `infinity / infinity` or
+`0.0 * infinity`. There is no `infinity` literal, so an infinity is reached by
+overflowing a finite one, as in `1.0e308 * 10`. Because `NaN` equals nothing, `n != n`
+is the test for it:
+
+```oq
+big = 1.0e308 * 10
+n = big - big
+print n == n   # false
+print n != n   # true
+```
+
+The transcendental functions use `java.lang.StrictMath`, so a given input yields the
+same bits on every platform and JVM. `log2` is exact on every power of two, so
+`log2(1024)` is `10.0` and `log2(5e-324)` is `-1074.0`.
 
 Lists compare lexicographically, so a sort key can itself be a list:
 

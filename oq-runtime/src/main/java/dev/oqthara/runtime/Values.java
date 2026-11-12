@@ -542,7 +542,18 @@ public final class Values {
 
     public static Object power(Object a, Object b, Span span) {
         if (isNumber(a) && isNumber(b)) {
-            double result = Math.pow(asDouble(a), asDouble(b));
+            double base = asDouble(a);
+            double exponent = asDouble(b);
+            // A negative base has no real result for a fractional exponent: nothing real squared
+            // gives -8. Math.pow answers NaN there, which used to travel onward silently while
+            // `sqrt(-4)` did the same and `1 / 0` raised. Only the fractional case is refused —
+            // pow(-2, 3) is -8 and pow(0, -1) is infinity, both of which are real answers.
+            if (base < 0 && exponent != Math.rint(exponent)) {
+                throw new OqError("pow() has no real result for "
+                        + display(base) + " raised to " + display(exponent), span,
+                        "A negative base needs a whole-number exponent.");
+            }
+            double result = Math.pow(base, exponent);
             // `Math.pow(10, 400)` is infinity, and `(long) Double.POSITIVE_INFINITY` is
             // Long.MAX_VALUE, so an unchecked cast turned an unrepresentable power into a
             // plausible-looking wrong answer. Only an exact whole value that fits stays a

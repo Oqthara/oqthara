@@ -732,12 +732,40 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "floor" -> fixed(name, 0, (host, args) -> (long) Math.floor(((Number) number).doubleValue()));
             case "ceil" -> fixed(name, 0, (host, args) -> (long) Math.ceil(((Number) number).doubleValue()));
             case "round" -> fixed(name, 0, (host, args) -> Math.round(((Number) number).doubleValue()));
-            case "sqrt" -> fixed(name, 0, (host, args) -> Math.sqrt(((Number) number).doubleValue()));
+            case "sqrt" -> fixed(name, 0, (host, args) -> Stdlib.real(
+                    StrictMath.sqrt(((Number) number).doubleValue()), "sqrt", number));
+            // The method form and the builtin must agree, including on what they refuse: a
+            // `(-1).sqrt()` that returned NaN while sqrt(-1) raised would be exactly the
+            // divergence this project treats as a defect.
+            case "sin" -> transcendentalMethod(name, number, StrictMath::sin);
+            case "cos" -> transcendentalMethod(name, number, StrictMath::cos);
+            case "tan" -> transcendentalMethod(name, number, StrictMath::tan);
+            case "asin" -> transcendentalMethod(name, number, StrictMath::asin);
+            case "acos" -> transcendentalMethod(name, number, StrictMath::acos);
+            case "atan" -> transcendentalMethod(name, number, StrictMath::atan);
+            case "ln" -> logarithmMethod(name, number, StrictMath::log);
+            case "log10" -> logarithmMethod(name, number, StrictMath::log10);
+            case "log2" -> logarithmMethod(name, number, Stdlib::log2);
+            case "exp" -> transcendentalMethod(name, number, StrictMath::exp);
+            case "degrees" -> transcendentalMethod(name, number, v -> v * (180.0 / StrictMath.PI));
+            case "radians" -> transcendentalMethod(name, number, v -> v * (StrictMath.PI / 180.0));
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(number));
             case "is_even" -> fixed(name, 0, (host, args) -> ((Number) number).longValue() % 2 == 0);
             case "is_odd" -> fixed(name, 0, (host, args) -> ((Number) number).longValue() % 2 != 0);
             default -> null;
         };
+    }
+
+    private static dev.oqthara.runtime.NativeFunction transcendentalMethod(
+            String name, Object number, java.util.function.DoubleUnaryOperator function) {
+        return fixed(name, 0, (host, args) -> Stdlib.real(
+                function.applyAsDouble(((Number) number).doubleValue()), name, number));
+    }
+
+    private static dev.oqthara.runtime.NativeFunction logarithmMethod(
+            String name, Object number, java.util.function.DoubleUnaryOperator function) {
+        return fixed(name, 0, (host, args) -> Stdlib.logarithm(
+                ((Number) number).doubleValue(), name, number, function));
     }
 
     private static Object parseNumber(String text, Span span) {

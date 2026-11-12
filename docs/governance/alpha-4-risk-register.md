@@ -75,11 +75,11 @@ difference is not, and the refusal list is large enough that a widening change c
 something that used to be interpreted differently.
 
 *Mitigation.* The interpreter is normative and the bytecode backend must either agree or refuse —
-rule 2 of `oq-hive-development`. The measured subset is pinned: `196 of 212` executable
+rule 2 of `oq-hive-development`. The measured subset is pinned: `204 of 213` executable
 conformance programs compile and produce byte-identical output, asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so the number cannot
 slide down silently. `scripts/verify-conformance.py` independently runs `oq run` and the built jar
-over the whole corpus with `BASELINE = {"executable": 212, "compiled": 196}` and fails on mismatch.
+over the whole corpus with `BASELINE = {"executable": 213, "compiled": 203}` and fails on mismatch.
 `JarBuilder`-produced jars are compared against the interpreter by `BuildJarTest`. The boundary is
 documented as an ordered list in `docs/spec/backend.md` "The current boundary", so widening it is a
 deliberate act with a paper trail.
@@ -586,6 +586,7 @@ deliverable rather than bolted onto the documentation gate that currently runs i
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
 | R-023 | Keyword count is stated two ways across four documents | High | Low | Low | 1 | Open |
+| R-027 | Line-number citations in the stdlib inventory drift silently | High | Low | Low | 16 | Open |
 | R-025 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
 
 **R-020 — Installer verifies integrity but not authenticity.**
@@ -664,6 +665,43 @@ done.
 `.github/agents/oq-hive-language-syntax.agent.md` rule 2 · `scripts/check-docs-sync.py`
 `keyword_budget_is_honest`.
 
+**R-027 — Line-number citations in the stdlib inventory drift silently.**
+`docs/governance/alpha-4-stdlib-inventory.md` cites its evidence the way every other governance
+document in this repository does: a backticked name and a line number, `\`sqrt\`: 423`. Those
+numbers are breadcrumbs, and nothing recomputed them. Measured against `HEAD` before Alpha 4 §17
+added a single import, **113 of 240 citations already pointed at the wrong line** — `format`
+claimed 237 and sat at 246, `join` claimed 238 and sat at 248, `read_bytes` claimed 562 and sat at
+576. The drift was not uniform: some sections had been edited since their numbers were written and
+others had not, which is why it went unnoticed. Every citation was off by the same amount only
+*after* this session's edit, and that uniform off-by-one is what finally made the checker fail.
+
+The failure mode is worse than a wrong number. A citation that lands on a plausible neighbouring
+line still resolves, so a reader who follows it reads real code that does not support the sentence
+they were checking. The document therefore looked more verified than it was for as long as the
+drift lasted, and the three mutually inconsistent coverage tallies repaired alongside it (see the
+inventory's own account) are the same class of defect: a document asserting facts about source that
+nothing compared against the source.
+
+*Mitigation.* The inventory's figures are now recomputed from the implementation rather than
+carried forward, and `scripts/check-docs-sync.py` gained two guards. `stdlib_inventory_tallies_agree`
+reconciles the per-domain table, the `Total` row and the status counts against the chapters they are
+derived from, so the three-way disagreement cannot return. `stdlib_inventory_citations_resolve`
+resolves every `name`:line citation against an actual scan for the registration form, which is what
+turned the off-by-one into a build failure. The registration-site heading is matched by shape
+(`^### The (\d+) names, by registration site$`) rather than by literal text, because the count lives
+in the heading and a literal match made adding a builtin require editing the checker — the wrong
+direction of fix, and a habit that would eventually have been used to silence a real failure.
+
+*Residual.* Only this one document is covered. A line number in any other governance document,
+ADR or `CHANGELOG` entry is still unchecked, and the citation checker resolves the *first*
+registration of a name, so an overloaded builtin cited at its second site would pass on the wrong
+line. The general fix is the same work described in R-025: execute what the documents claim and
+compare, rather than reading it.
+
+*Evidence.* `docs/governance/alpha-4-stdlib-inventory.md` · `scripts/check-docs-sync.py`
+(`stdlib_inventory_tallies_agree`, `stdlib_inventory_citations_resolve`) ·
+`oq-stdlib/src/main/java/dev/oqthara/stdlib/Stdlib.java`.
+
 ## Summary by exposure
 
 | Exposure | Count | IDs |
@@ -671,8 +709,8 @@ done.
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
 | Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020, R-026 |
-| Low | 11 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025 |
-| **Total** | **26** | |
+| Low | 12 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025, R-027 |
+| **Total** | **27** | |
 
 ## Review cadence
 
@@ -682,7 +720,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 23 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 27 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to

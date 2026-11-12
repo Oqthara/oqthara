@@ -1,0 +1,30 @@
+# Trigonometry, logarithms and exponentials, from ADR-0051.
+
+print "pi = {pi()}"
+print "e = {e()}"
+print "sin(pi/2) = {sin(pi() / 2)}"
+print "cos(0) = {cos(0)}"
+print "atan2(1, 1) = {atan2(1, 1)}"
+print "hypot(3, 4) = {hypot(3, 4)}"
+
+print "ln(e) = {ln(e())}"
+print "log10(1000) = {log10(1000)}"
+print "log2(1024) = {log2(1024)}"
+print "exp(0) = {exp(0)}"
+
+print "degrees(pi) = {degrees(pi())}"
+print "radians(180) = {radians(180)}"
+
+# A domain error raises rather than returning NaN, so it is catchable like any other error.
+try
+    print sqrt(-1)
+catch err
+    print "sqrt(-1) raised: {err.message}"
+end
+
+# NaN therefore only comes from combining infinities, and `n != n` is the test for it.
+# There is no infinity literal: an infinity is reached by overflowing a finite number.
+big = 1.0e308 * 10
+n = big - big
+print "n == n: {n == n}"
+print "n != n: {n != n}"
