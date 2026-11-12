@@ -493,7 +493,7 @@ existing gate.
 `oq-cli/src/test/java/dev/oqthara/cli/ExamplesRunTest.java` ·
 `oq-compiler/src/test/java/dev/oqthara/compiler/LoweringTest.java`.
 
-**R-024 — Nothing executes the specification's code examples, so a wrong one ships silently.**
+**R-025 — Nothing executes the specification's code examples, so a wrong one ships silently.**
 `docs/spec/language.md` carries well over a hundred fenced examples. `scripts/check-docs-sync.py`
 checks that the document states a version, that its version matches the build, and that certain
 named constructs are described; `scripts/check-links.py` checks that its links resolve. Neither
@@ -541,7 +541,7 @@ deliverable rather than bolted onto the documentation gate that currently runs i
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
 | R-023 | Keyword count is stated two ways across four documents | High | Low | Low | 1 | Open |
-| R-024 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
+| R-025 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
 
 **R-020 — Installer verifies integrity but not authenticity.**
 `scripts/install.sh` downloads `oq.jar` and `oq.jar.sha256` from the *same* GitHub release, checks the
@@ -626,8 +626,8 @@ done.
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
 | Medium | 10 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020 |
-| Low | 10 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023 |
-| **Total** | **24** | |
+| Low | 11 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025 |
+| **Total** | **25** | |
 
 ## Review cadence
 
