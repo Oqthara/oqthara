@@ -75,11 +75,11 @@ difference is not, and the refusal list is large enough that a widening change c
 something that used to be interpreted differently.
 
 *Mitigation.* The interpreter is normative and the bytecode backend must either agree or refuse —
-rule 2 of `oq-hive-development`. The measured subset is pinned: `196 of 212` executable
+rule 2 of `oq-hive-development`. The measured subset is pinned: `204 of 213` executable
 conformance programs compile and produce byte-identical output, asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so the number cannot
 slide down silently. `scripts/verify-conformance.py` independently runs `oq run` and the built jar
-over the whole corpus with `BASELINE = {"executable": 212, "compiled": 196}` and fails on mismatch.
+over the whole corpus with `BASELINE = {"executable": 213, "compiled": 203}` and fails on mismatch.
 `JarBuilder`-produced jars are compared against the interpreter by `BuildJarTest`. The boundary is
 documented as an ordered list in `docs/spec/backend.md` "The current boundary", so widening it is a
 deliberate act with a paper trail.
@@ -406,6 +406,7 @@ defend.
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
+| R-028 | A timing test asserts exact zero and fails only under CI load | Medium | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
 The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
@@ -473,6 +474,39 @@ covered by the same input.
 
 *Evidence.* `build.gradle.kts` (`tasks.withType<Test>().configureEach`) · `gradle.properties` ·
 `.github/workflows/ci.yml` · run `43300234346` versus run `43302389917`.
+
+**R-028 — A timing test asserts exact zero and fails only under CI load.**
+`WaitedBudgetTest.aFinishedTaskChargesAlmostNothingWhateverItsTimeout` exists because of a real
+defect: `OqTask.awaitWithin` used to bill the caller's *ceiling* rather than the time actually
+spent waiting, so eight awaits of instant work under a ten-second ceiling reported "waited for too
+long" in microseconds. The fix charges the elapsed time in a `finally` block, which is correct.
+
+The test written for the fix then asserted the fix by following twenty awaits with
+`charge(MAX_MILLIS)`. Because `WaitedBudget.charge` refuses when the running total exceeds the
+maximum, that assertion only passes when the twenty awaits cost *exactly* zero milliseconds in
+total. Any single scheduler pause inside one `future.get()` contributes a whole millisecond —
+`elapsedMillis` truncates but does not round down to nothing — and the follow-up charge then
+crosses the limit. It failed on `ubuntu-latest / JDK 25` in run `43323606693` and passed five
+consecutive local runs, which is the signature of a test measuring the machine rather than the
+behaviour.
+
+This is the second entry in this register caused by an assertion that was stronger than its own
+comment. The comment says the timeout is a ceiling and not a cost; the assertion says the total
+must be zero. Those are different claims, and only the second one is false.
+
+*Mitigation.* The follow-up charge is now made against `MAX_MILLIS - 5000`. Five seconds is three
+orders of magnitude above the real cost of releasing twenty already-completed futures and three
+orders below the 200 seconds that billing the ceiling would charge, so the assertion separates the
+two behaviours with room to spare. The test was verified to still catch the original defect:
+moving the charge back to the up-front position makes it fail, and restoring it makes it pass.
+
+*Residual.* The slack is a constant, not a measurement, so a CI machine slow enough to spend five
+seconds across twenty completed-future releases would still fail — that machine would be broken in
+ways this test is not the right place to detect. Other timing assertions in this repository were
+not audited in this pass; the class of defect is recorded here rather than claimed absent.
+
+*Evidence.* `oq-runtime/src/test/java/dev/oqthara/runtime/WaitedBudgetTest.java` ·
+`oq-runtime/src/main/java/dev/oqthara/runtime/{WaitedBudget,OqTask}.java` · run `43323606693`.
 
 **R-017 — Conformance corpus is circular: tests and implementation share one author.**
 `conformance/` holds 229 cases, and `scripts/verify-conformance.py` compares the interpreter against
@@ -562,11 +596,16 @@ added under "Interoperability with Java" are pinned by tests in `JavaInteropTest
 `aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow`,
 `exactJavaNumbersKeepTheirScaleAndTheirPrecision` and
 `aClassFromTheProgramsOwnClasspathIsImportable` — each asserting the exact annotated output, so
-an example that stops matching fails the build. That covers three of the document's examples and
-is a precedent rather than a fix: nothing stops the next example from being wrong, and the
-mechanism does not generalise without the work described below. It is recorded here because
-"mitigation is a habit" and "mitigation is three tests" are different claims and the second one
-is now the true one.
+an example that stops matching fails the build. The non-finite-numbers example added to
+`docs/spec/language.md` by ADR-0051 is pinned the same way, by
+`theSpecificationExampleForNonFiniteNumbersPrintsWhatItClaims` in `TranscendentalTest`, which
+asserts both operator results and the two exact logarithms the surrounding paragraph quotes.
+
+That covers four of the document's examples and is a precedent rather than a fix: nothing stops
+the next example from being wrong, and the mechanism does not generalise without the work
+described below. The count is worth stating plainly because the difference between "the examples
+are checked" and "four examples are checked" is the difference between a control and a habit, and
+the paragraph above is a case of the habit failing to generalise even within one document.
 
 *Why accepted rather than fixed now.* Executing fenced blocks requires deciding which blocks are
 runnable (many are deliberate error transcripts, or fragments that only make sense in context),
@@ -586,6 +625,7 @@ deliverable rather than bolted onto the documentation gate that currently runs i
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
 | R-023 | Keyword count is stated two ways across four documents | High | Low | Low | 1 | Open |
+| R-027 | Line-number citations in the stdlib inventory drift silently | High | Low | Low | 16 | Open |
 | R-025 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
 
 **R-020 — Installer verifies integrity but not authenticity.**
@@ -664,15 +704,55 @@ done.
 `.github/agents/oq-hive-language-syntax.agent.md` rule 2 · `scripts/check-docs-sync.py`
 `keyword_budget_is_honest`.
 
+**R-027 — Line-number citations in the stdlib inventory drift silently.**
+`docs/governance/alpha-4-stdlib-inventory.md` cites its evidence the way every other governance
+document in this repository does: a backticked name and a line number, `` `sqrt`: 423 ``. Those
+numbers are breadcrumbs, and nothing recomputed them. Measured against `HEAD` before Alpha 4 §17
+added a single import, **112 of the 240 citations that name a `Stdlib.java` builtin already
+pointed at the wrong line** (a further 47 cite names registered in another file, or a name that was
+never a registration, and are checked separately) — `format` claimed 237 and sat at 246, `join`
+claimed 238 and sat at 248, `read_bytes` claimed 562 and sat at 576. The drift was not uniform:
+some sections had been edited since their numbers were written and others had not, which is why it
+went unnoticed. The parity that finally exposed it was accidental: adding one import line shifted
+every `Stdlib.java` registration by exactly one, so the citations became uniformly wrong and the
+checker, which had been silently agreeing with a document it never actually recomputed, failed.
+
+The failure mode is worse than a wrong number. A citation that lands on a plausible neighbouring
+line still resolves, so a reader who follows it reads real code that does not support the sentence
+they were checking. The document therefore looked more verified than it was for as long as the
+drift lasted, and the three mutually inconsistent coverage tallies repaired alongside it (see the
+inventory's own account) are the same class of defect: a document asserting facts about source that
+nothing compared against the source.
+
+*Mitigation.* The inventory's figures are now recomputed from the implementation rather than
+carried forward, and `scripts/check-docs-sync.py` gained two guards. `stdlib_inventory_tallies_agree`
+reconciles the per-domain table, the `Total` row and the status counts against the chapters they are
+derived from, so the three-way disagreement cannot return. `stdlib_inventory_citations_resolve`
+resolves every `name`:line citation against an actual scan for the registration form, which is what
+turned the off-by-one into a build failure. The registration-site heading is matched by shape
+(`^### The (\d+) names, by registration site$`) rather than by literal text, because the count lives
+in the heading and a literal match made adding a builtin require editing the checker — the wrong
+direction of fix, and a habit that would eventually have been used to silence a real failure.
+
+*Residual.* Only this one document is covered. A line number in any other governance document,
+ADR or `CHANGELOG` entry is still unchecked, and the citation checker resolves the *first*
+registration of a name, so an overloaded builtin cited at its second site would report the
+first site's line and pass. The general fix is the same work described in R-025: execute what the documents claim and
+compare, rather than reading it.
+
+*Evidence.* `docs/governance/alpha-4-stdlib-inventory.md` · `scripts/check-docs-sync.py`
+(`stdlib_inventory_tallies_agree`, `stdlib_inventory_citations_resolve`) ·
+`oq-stdlib/src/main/java/dev/oqthara/stdlib/Stdlib.java`.
+
 ## Summary by exposure
 
 | Exposure | Count | IDs |
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
-| Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020, R-026 |
-| Low | 11 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025 |
-| **Total** | **26** | |
+| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020, R-026, R-028 |
+| Low | 12 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025, R-027 |
+| **Total** | **28** | |
 
 ## Review cadence
 
@@ -682,7 +762,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 23 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 28 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to

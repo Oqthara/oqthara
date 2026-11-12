@@ -15,10 +15,14 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | Function | Source |
 |---|---|
 | `abs` | built-in |
+| `acos` | built-in |
 | `append` | built-in |
 | `arg_parse` | built-in |
 | `args` | built-in |
+| `asin` | built-in |
 | `assert` | built-in |
+| `atan` | built-in |
+| `atan2` | built-in |
 | `await` | built-in |
 | `base64_decode` | built-in |
 | `base64_encode` | built-in |
@@ -29,6 +33,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `clone` | built-in |
 | `contains` | built-in |
 | `copy_file` | built-in |
+| `cos` | built-in |
 | `cpu_count` | built-in |
 | `csv_parse` | built-in |
 | `csv_write` | built-in |
@@ -39,13 +44,16 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `db_query` | built-in |
 | `db_transaction` | built-in |
 | `dedent_text` | built-in |
+| `degrees` | built-in |
 | `delete` | built-in |
 | `done` | built-in |
+| `e` | built-in |
 | `enumerate` | built-in |
 | `env` | built-in |
 | `error` | built-in |
 | `exists` | built-in |
 | `exit` | built-in |
+| `exp` | built-in |
 | `file_size` | built-in |
 | `fill_text` | built-in |
 | `filter` | built-in |
@@ -63,6 +71,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `hmac_sha256` | built-in |
 | `http_get` | built-in |
 | `http_post` | built-in |
+| `hypot` | built-in |
 | `indent_text` | built-in |
 | `input` | built-in |
 | `instant_parse` | built-in |
@@ -81,6 +90,9 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `length` | built-in |
 | `list` | built-in |
 | `list_files` | built-in |
+| `ln` | built-in |
+| `log10` | built-in |
+| `log2` | built-in |
 | `log_debug` | built-in |
 | `log_enabled` | built-in |
 | `log_error` | built-in |
@@ -108,12 +120,14 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `path_parent` | built-in |
 | `pbkdf2_sha256` | built-in |
 | `percentile` | built-in |
+| `pi` | built-in |
 | `pop` | built-in |
 | `pow` | built-in |
 | `print` | built-in |
 | `push` | built-in |
 | `query_encode` | built-in |
 | `query_parse` | built-in |
+| `radians` | built-in |
 | `random` | built-in |
 | `random_item` | built-in |
 | `range` | built-in |
@@ -134,6 +148,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `sha1` | built-in |
 | `sha256` | built-in |
 | `shorten_text` | built-in |
+| `sin` | built-in |
 | `sleep` | built-in |
 | `sort` | built-in |
 | `sort_by` | built-in |
@@ -143,6 +158,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `sqrt` | built-in |
 | `stdev` | built-in |
 | `sum` | built-in |
+| `tan` | built-in |
+| `tau` | built-in |
 | `text` | built-in |
 | `timestamp` | built-in |
 | `today` | built-in |
@@ -206,7 +223,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 
 ### number
 
-`.abs()`, `.ceil()`, `.floor()`, `.is_even()`, `.is_odd()`, `.round()`, `.sqrt()`, `.text()`, `.to_string()`
+`.abs()`, `.acos()`, `.asin()`, `.atan()`, `.ceil()`, `.cos()`, `.degrees()`, `.exp()`, `.floor()`, `.is_even()`, `.is_odd()`, `.ln()`, `.log10()`, `.log2()`, `.radians()`, `.round()`, `.sin()`, `.sqrt()`, `.tan()`, `.text()`, `.to_string()`
 
 ## Java interoperability
 

@@ -308,6 +308,12 @@
       "slug": "docs/adr/0050-platform-scoped-test-cache"
     },
     {
+      "path": "docs/adr/0051-non-finite-numbers-and-transcendentals.md",
+      "title": "ADR-0051: Non-finite numbers and the transcendental functions",
+      "section": "adr",
+      "slug": "docs/adr/0051-non-finite-numbers-and-transcendentals"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

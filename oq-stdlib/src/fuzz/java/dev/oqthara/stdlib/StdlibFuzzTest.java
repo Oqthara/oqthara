@@ -45,6 +45,8 @@ class StdlibFuzzTest {
             "upper", "lower", "trim", "split", "replace", "contains", "format",
             "abs", "floor", "ceil", "round", "sqrt", "pow", "min", "max", "clamp",
             "number", "text", "type_of", "json", "json_pretty",
+            "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "hypot",
+            "ln", "log10", "log2", "exp", "degrees", "radians", "pi", "e", "tau",
     };
 
     private static final Interpreter INTERPRETER = createInterpreter();
@@ -76,7 +78,7 @@ class StdlibFuzzTest {
     private static List<Object> argumentsFor(String name, FuzzedDataProvider data) {
         List<Object> args = new ArrayList<>();
         switch (name) {
-            case "split", "contains", "pow", "min", "max" -> {
+            case "split", "contains", "pow", "min", "max", "atan2", "hypot" -> {
                 args.add(anyValue(data, 0));
                 args.add(anyValue(data, 0));
             }

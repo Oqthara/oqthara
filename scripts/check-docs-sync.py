@@ -725,11 +725,15 @@ def stdlib_inventory_citations_resolve() -> None:
     path = "docs/governance/alpha-4-stdlib-inventory.md"
     stdlib = ROOT / "oq-stdlib/src/main/java/dev/oqthara/stdlib"
     text = read(path)
-    if "### The 155 names, by registration site" not in text:
+    # The heading carries the count, so matching it literally made the check fail whenever a
+    # builtin was added — and the fix was to edit the checker, which is the wrong direction.
+    # Match the shape and read the number out of the heading instead.
+    heading = re.search(r"^### The (\d+) names, by registration site$", text, re.M)
+    if not heading:
         problems.append(f"{path} no longer has the registration-site section")
         return
-    section = text.split("### The 155 names, by registration site")[1]
-    section = section.split("### What the 155 do not include")[0]
+    section = text.split(heading.group(0))[1]
+    section = section.split("### What the " + heading.group(1) + " do not include")[0]
 
     def registered(source: pathlib.Path) -> dict[str, list[int]]:
         found: dict[str, list[int]] = {}

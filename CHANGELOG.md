@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Trigonometry, logarithms and exponentials, and a settled rule for non-finite
+  numbers.** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `ln`, `log10`,
+  `log2`, `exp`, `degrees` and `radians` join the standard library, along with the constants
+  `pi()`, `e()` and `tau()`. All of them use `java.lang.StrictMath`, so a given input yields
+  the same bits on every platform and JVM: `Math.sin` and `StrictMath.sin` disagreed on 36,073
+  of 1,000,000 probed values, which would have made printed results machine-dependent.
+  `log2` returns the exponent directly when its input is exactly a power of two, because
+  `log(x) / log(2)` is inexact for 439 of the 2098 powers of two a double holds — `2^-1021`
+  came out as `-1021.0000000000001` — and anyone using `log2` for bit arithmetic would have
+  seen that. The constants are zero-arity functions rather than values because the compiled
+  backend has no representation for a builtin value. Methods mirror the builtins, so `9.sqrt()`
+  and `sqrt(9)` cannot disagree. [ADR-0051](docs/adr/0051-non-finite-numbers-and-transcendentals.md)
+  records the whole set of decisions.
+- **An example and four conformance cases for the new functions**, and the specification now
+  states the non-finite rule instead of leaving it to be discovered by experiment.
+
+### Changed
+- **A domain error raises instead of returning `NaN`.** `sqrt(-1)`, `ln(0)`, `ln(-1)`,
+  `log10(0)`, `log2(-4)`, `asin(2)`, `acos(-2)` and `pow(-8, 0.5)` now raise, matching
+  `1 / 0` and `round(NaN)`; before this, `sqrt(-1)` and `pow(-8, 0.5)` silently returned `NaN`
+  while every other arithmetic mistake raised. Overflow of a finite input still yields
+  `infinity` (`exp(1000)`, `1.0e308 * 10`) and underflow still yields `0.0`, because those
+  inputs are in the domain and only the answer is out of range; `pow(0, -1)` is `infinity` for
+  the same reason, a pole not being a domain error. `NaN` remains reachable by combining
+  infinities, and `n != n` is the test for it, so no `is_nan` builtin is needed. `pow(-2, 3)`
+  is still `-8`, and `0 ** 0` is still `1`.
+- ADR-0017 claimed `0.0/0.0` is `NaN`; it raises `division by zero`, because `Values.divide`
+  checks the divisor before dividing. The stale sentence is corrected.
+- The conformance corpus is one case larger (233 programs, 213 executable), and the bytecode
+  backend now compiles 204 of them rather than 203.
 - **`oq java` reports which JVM Oqthara will use, and ADR-0048 D1 is implemented.** The order is
   fixed: an explicit `OQ_JAVA`, then a `.oq/java` project pin found by walking up from the working
   directory, then a managed runtime under `OQ_HOME` or `~/.oq`, then `java` on `PATH`. The first

@@ -60,10 +60,25 @@ class StdlibFuzzRegressionTest {
     }
 
     @Test
+    void twoArgumentMathBuiltinsRejectNonNumbersAsProgramErrors() {
+        // atan2 and hypot were added with the transcendentals; the loop above covers only
+        // the one-argument functions, and a wrong first argument must not escape as an
+        // "internal error".
+        for (String name : List.of("atan2", "hypot")) {
+            rejectsWithOqError(name, "abc", 1L);
+            rejectsWithOqError(name, 1L, "abc");
+            rejectsWithOqError(name, new Object[]{null, 1L});
+            rejectsWithOqError(name, new Object[]{1L, null});
+        }
+    }
+
+    @Test
     void numericBuiltinsRejectNonNumbersAsProgramErrors() {
         // Each of these used to escape as a raw IllegalArgumentException from Values.asLong
         // or Values.asDouble, which the CLI renders as "internal error ... This is a bug".
-        for (String name : List.of("floor", "ceil", "round", "sqrt", "range", "abs")) {
+        for (String name : List.of("floor", "ceil", "round", "sqrt", "range", "abs",
+                "sin", "cos", "tan", "asin", "acos", "atan", "ln", "log10", "log2", "exp",
+                "degrees", "radians")) {
             rejectsWithOqError(name, "abc");
             // An explicit array: `call(name, null)` would pass a null varargs array.
             rejectsWithOqError(name, new Object[]{null});
