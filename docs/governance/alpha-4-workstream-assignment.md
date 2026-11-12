@@ -133,4 +133,4 @@ agent adds a column of accountability and requires re-reading all twelve rows. T
 [`alpha-4-risk-register.md`](alpha-4-risk-register.md) cites workstream numbers from this table,
 so renumbering a workstream is a change to two documents.
 
-**Last verified:** `b5813d1` (merge of PR #84), 2026-11-10.
+**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.

@@ -779,4 +779,4 @@ admitted. Closing an entry to `Mitigated` requires a control that exists in the 
 path. Moving an entry to `Accepted` requires an ADR that records the refusal, because "accepted" is
 a decision and decisions in this repository have identifiers.
 
-**Last verified:** `b5813d1` (merge of PR #84), 2026-11-10.
+**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.
