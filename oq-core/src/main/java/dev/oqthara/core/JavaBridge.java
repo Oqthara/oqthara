@@ -233,7 +233,7 @@ public final class JavaBridge {
         }
         Method abstractMethod = singleAbstractMethod(value.getClass(), args.size());
         if (abstractMethod == null) {
-            int wanted = functionalArityOfDeclared(value.getClass());
+            int wanted = functionalArityOf(value.getClass());
             if (wanted >= 0) throw wrongArity(value, args.size(), wanted, span);
             return NOT_FOUND;
         }
@@ -243,6 +243,24 @@ public final class JavaBridge {
     /** Explains a functional Java value called with the wrong number of arguments. */
     private static OqError wrongArity(Object value, int given, int wanted, Span span) {
         return new OqError("wrong number of arguments", span, Values.wrongArityHelp(value, given, wanted));
+    }
+
+    /**
+     * The arity of the functional interface that makes {@code type} callable, or -1.
+     *
+     * <p>Declared interfaces decide before inherited ones, for the reason
+     * {@link #singleAbstractMethod} gives, so the count this reports is the count the call was
+     * actually resolved against. Looking only at declared interfaces would report a value as not
+     * callable whenever the interface it implements came from a superclass.
+     */
+    private static int functionalArityOf(Class<?> type) {
+        int declared = functionalArityOfDeclared(type);
+        if (declared >= 0) return declared;
+        for (Class<?> face : allInterfaces(type)) {
+            int arity = functionalArity(face);
+            if (arity >= 0) return arity;
+        }
+        return -1;
     }
 
     /** The arity of the class's own declared functional interface, or -1 when it has none. */
@@ -271,7 +289,12 @@ public final class JavaBridge {
     private static Method singleAbstractMethod(Class<?> type, int arity) {
         Method declared = abstractMethodsAt(type.getInterfaces(), arity);
         if (declared != null) return declared;
-        if (type.getInterfaces().length > 0) return null;
+        // A declared functional interface says what the value is for, and says it at its own
+        // arity, so a call at another arity is a wrong count rather than a reason to look at
+        // what the class inherits. A declared *marker* interface makes no such claim, so it
+        // must not hide a functional interface the class inherits: refusing whenever any
+        // interface is declared would make a class that merely added Serializable uncallable.
+        if (functionalArityOfDeclared(type) >= 0) return null;
         return abstractMethodsAt(allInterfaces(type).toArray(new Class<?>[0]), arity);
     }
 

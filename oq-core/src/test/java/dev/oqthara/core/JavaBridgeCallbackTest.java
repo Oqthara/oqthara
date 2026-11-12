@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -227,5 +228,62 @@ class JavaBridgeCallbackTest {
                     JavaBridge.callFunctional(value, List.of(1L), span, cwd, null),
                     String.valueOf(value));
         }
+    }
+
+    /** Declares nothing functional itself and inherits {@code compareTo} from {@code Object}. */
+    private static final class MarkerOnly implements java.io.Serializable {
+        @Override
+        public String toString() {
+            return "a value that is not a function";
+        }
+    }
+
+    /**
+     * Declares a marker interface and inherits {@code Runnable} from {@code Thread}.
+     *
+     * <p>This is the shape that separates a correct guard from a reflexively tight one: the class's
+     * own interface list says only "serializable", while the interface that makes it callable lives
+     * on the superclass.
+     */
+    private static final class SavedThread extends Thread implements java.io.Serializable {
+        private int runs;
+
+        @Override
+        public void run() {
+            runs++;
+        }
+    }
+
+    @Test
+    void aDeclaredMarkerInterfaceDoesNotHideAnInheritedFunctionalOne() {
+        MarkerOnly value = new MarkerOnly();
+        assertSame(JavaBridge.NOT_FOUND,
+                JavaBridge.callFunctional(value, List.of(1L), span, cwd, null),
+                "a marker interface alone is not a functional interface");
+
+        // The value above proves too little on its own: no guard would make it callable, so both
+        // the tight and the correct rule answer the same. This one does distinguish them, because
+        // the interface that makes it callable is inherited rather than declared. Refusing as soon
+        // as any interface is declared would leave it uncallable while the equivalent lambda ran.
+        SavedThread thread = new SavedThread();
+        Object ran = JavaBridge.callFunctional(thread, List.of(), span, cwd, null);
+        assertNotSame(JavaBridge.NOT_FOUND, ran,
+                "an inherited Runnable makes the value callable even though the class declares "
+                        + "only Serializable");
+        assertNull(ran, "a void functional method answers nothing");
+        assertEquals(1, thread.runs, "the inherited abstract method is what a call runs");
+    }
+
+    @Test
+    void anInheritedFunctionalValueAtTheWrongAritySaysWhichCountWouldWork() {
+        // The count must come from the same interface the call was resolved against. Reporting
+        // only declared interfaces made this value read as "not a function" at every arity,
+        // which is a worse error than a wrong count because it names no fix.
+        SavedThread thread = new SavedThread();
+        OqError error = assertThrows(OqError.class, () -> JavaBridge.callFunctional(thread,
+                List.of(1L), span, cwd, null));
+        assertEquals("wrong number of arguments", error.getMessage());
+        assertTrue(error.hint().contains("0 rather than 1"), error.hint());
+        assertEquals(0, thread.runs, "a refused call runs nothing");
     }
 }

@@ -2282,6 +2282,13 @@ casting a number to `Enum`. With nothing else to choose between them, the argume
 which method a bare call means. Two different methods at the same count would be genuinely
 ambiguous and are refused rather than resolved by declaration order.
 
+Declaring an interface only counts when that interface has a single abstract method. A class that
+declares a marker such as `Serializable` while inheriting its callable interface from a superclass
+is still callable: `class Saved extends Thread implements Serializable` is called as a `Runnable`,
+because a marker makes no claim about how the value is used and must not hide one that does.
+Declaring a *functional* interface is such a claim, so the same value at another argument count is
+a wrong count rather than a reason to look further up the hierarchy.
+
 A functional Java value called with the wrong number of arguments is not described as a non-function,
 because it is one at its own count. The refusal names the count that would have worked:
 
