@@ -155,7 +155,7 @@ class RuntimeInstallerTest {
         Path archive = dir.resolve("runtime-incompatible.zip");
         try (OutputStream out = Files.newOutputStream(archive);
              ZipOutputStream zip = new ZipOutputStream(out)) {
-            zip.putNextEntry(new ZipEntry(topLevel + "/bin/java"));
+            zip.putNextEntry(new ZipEntry(topLevel + "/bin/" + JAVA));
             zip.write("#!/bin/sh\nexit 1\n".getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
             zip.putNextEntry(new ZipEntry(topLevel + "/release"));

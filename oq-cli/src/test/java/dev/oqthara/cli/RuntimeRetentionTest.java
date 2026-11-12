@@ -20,6 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /** Covers ADR-0048 D7: rollback is retention, and retention never costs a working runtime. */
 class RuntimeRetentionTest {
 
+    /** A JDK on Windows has {@code bin/java.exe} and no {@code bin/java}. */
+    private static final String JAVA = System.getProperty("os.name", "")
+            .toLowerCase(java.util.Locale.ROOT).startsWith("windows") ? "java.exe" : "java";
+
     private static RuntimeResolver.VersionProbe probeAnswering(int major) {
         return executable -> OptionalInt.of(major);
     }
@@ -28,7 +32,7 @@ class RuntimeRetentionTest {
         Path archive = dir.resolve(name + ".zip");
         try (OutputStream out = Files.newOutputStream(archive);
              ZipOutputStream zip = new ZipOutputStream(out)) {
-            for (String entry : new String[] {"bin/", "bin/java", "release", "lib/"}) {
+            for (String entry : new String[] {"bin/", "bin/" + JAVA, "release", "lib/"}) {
                 zip.putNextEntry(new ZipEntry(name + "/" + entry));
                 if (entry.endsWith("java")) {
                     zip.write("#!/bin/sh\n".getBytes(StandardCharsets.UTF_8));
@@ -219,7 +223,7 @@ class RuntimeRetentionTest {
         // the runtime is present but cannot run a program.
         Path broken = home.resolve("runtime").resolve("java");
         Files.createDirectories(broken.resolve("bin"));
-        Files.writeString(broken.resolve("bin").resolve("java"), "not a program");
+        Files.writeString(broken.resolve("bin").resolve(JAVA), "not a program");
 
         assertFalse(RuntimeRetention.runsAProgram(broken, Duration.ofSeconds(5)),
                 "a runtime that cannot run a program must not count as working");
