@@ -406,6 +406,7 @@ defend.
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
+| R-028 | A timing test asserts exact zero and fails only under CI load | Medium | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
 The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
@@ -473,6 +474,39 @@ covered by the same input.
 
 *Evidence.* `build.gradle.kts` (`tasks.withType<Test>().configureEach`) · `gradle.properties` ·
 `.github/workflows/ci.yml` · run `43300234346` versus run `43302389917`.
+
+**R-028 — A timing test asserts exact zero and fails only under CI load.**
+`WaitedBudgetTest.aFinishedTaskChargesAlmostNothingWhateverItsTimeout` exists because of a real
+defect: `OqTask.awaitWithin` used to bill the caller's *ceiling* rather than the time actually
+spent waiting, so eight awaits of instant work under a ten-second ceiling reported "waited for too
+long" in microseconds. The fix charges the elapsed time in a `finally` block, which is correct.
+
+The test written for the fix then asserted the fix by following twenty awaits with
+`charge(MAX_MILLIS)`. Because `WaitedBudget.charge` refuses when the running total exceeds the
+maximum, that assertion only passes when the twenty awaits cost *exactly* zero milliseconds in
+total. Any single scheduler pause inside one `future.get()` contributes a whole millisecond —
+`elapsedMillis` truncates but does not round down to nothing — and the follow-up charge then
+crosses the limit. It failed on `ubuntu-latest / JDK 25` in run `43323606693` and passed five
+consecutive local runs, which is the signature of a test measuring the machine rather than the
+behaviour.
+
+This is the second entry in this register caused by an assertion that was stronger than its own
+comment. The comment says the timeout is a ceiling and not a cost; the assertion says the total
+must be zero. Those are different claims, and only the second one is false.
+
+*Mitigation.* The follow-up charge is now made against `MAX_MILLIS - 5000`. Five seconds is three
+orders of magnitude above the real cost of releasing twenty already-completed futures and three
+orders below the 200 seconds that billing the ceiling would charge, so the assertion separates the
+two behaviours with room to spare. The test was verified to still catch the original defect:
+moving the charge back to the up-front position makes it fail, and restoring it makes it pass.
+
+*Residual.* The slack is a constant, not a measurement, so a CI machine slow enough to spend five
+seconds across twenty completed-future releases would still fail — that machine would be broken in
+ways this test is not the right place to detect. Other timing assertions in this repository were
+not audited in this pass; the class of defect is recorded here rather than claimed absent.
+
+*Evidence.* `oq-runtime/src/test/java/dev/oqthara/runtime/WaitedBudgetTest.java` ·
+`oq-runtime/src/main/java/dev/oqthara/runtime/{WaitedBudget,OqTask}.java` · run `43323606693`.
 
 **R-017 — Conformance corpus is circular: tests and implementation share one author.**
 `conformance/` holds 229 cases, and `scripts/verify-conformance.py` compares the interpreter against
@@ -716,9 +750,9 @@ compare, rather than reading it.
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
-| Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020, R-026 |
+| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020, R-026, R-028 |
 | Low | 12 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025, R-027 |
-| **Total** | **27** | |
+| **Total** | **28** | |
 
 ## Review cadence
 
@@ -728,7 +762,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 27 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 28 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to
