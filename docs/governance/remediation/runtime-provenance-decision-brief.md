@@ -1,7 +1,7 @@
 # Runtime provenance and signing — decision brief
 
 **State:** OPEN — awaiting a maintainer decision. No part of D3 is implemented.
-**Scope:** [ADR-0048](../adr/0048-runtime-manager.md) D3 (provenance) and the signing item
+**Scope:** [ADR-0048](../../adr/0048-runtime-manager.md) D3 (provenance) and the signing item
 named in its status line.
 **Blocks:** nothing already merged. D1, D2, D4, D5, D6, D7, D8 and D9 are implemented and do
 not depend on the choice below.
