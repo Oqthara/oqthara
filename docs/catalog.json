@@ -380,6 +380,12 @@
       "slug": "docs/governance/remediation/pr-37-retrospective"
     },
     {
+      "path": "docs/governance/remediation/runtime-provenance-decision-brief.md",
+      "title": "Runtime provenance and signing — decision brief",
+      "section": "governance",
+      "slug": "docs/governance/remediation/runtime-provenance-decision-brief"
+    },
+    {
       "path": "docs/governance/remediation/solo-maintainer-exception.md",
       "title": "Solo-maintainer governance exception",
       "section": "governance",
