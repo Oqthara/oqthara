@@ -493,6 +493,46 @@ existing gate.
 `oq-cli/src/test/java/dev/oqthara/cli/ExamplesRunTest.java` ·
 `oq-compiler/src/test/java/dev/oqthara/compiler/LoweringTest.java`.
 
+**R-025 — Nothing executes the specification's code examples, so a wrong one ships silently.**
+`docs/spec/language.md` carries well over a hundred fenced examples. `scripts/check-docs-sync.py`
+checks that the document states a version, that its version matches the build, and that certain
+named constructs are described; `scripts/check-links.py` checks that its links resolve. Neither
+runs an example. The conformance corpus is the only executed body of programs, and it is a
+separate corpus under `conformance/`, so an example may be wrong in the specification while
+every test passes.
+
+This is not hypothetical. While promoting §16 of the requirement matrix, a drafted example read
+`Lexer().tokenize("1 + 2")`. Executing it against the built CLI refused it —
+`cannot create Lexer with 0 arguments` — because `Lexer` declares a two-argument constructor and
+a static `lex`. The same draft would have merged had it not been tried, and nothing in CI would
+have objected.
+
+*Mitigation.* Every example added in this change was executed before being written down, and the
+habit is worth keeping. The exposure stays `Low` rather than `Medium` because a wrong example
+misleads a reader rather than corrupting a program, and because the examples that matter most —
+the ones a reader copies into a file — are the ones most likely to be tried by that reader too.
+
+The habit has since been made mechanical for the section it was learned in: the three examples
+added under "Interoperability with Java" are pinned by tests in `JavaInteropTest` —
+`aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow`,
+`exactJavaNumbersKeepTheirScaleAndTheirPrecision` and
+`aClassFromTheProgramsOwnClasspathIsImportable` — each asserting the exact annotated output, so
+an example that stops matching fails the build. That covers three of the document's examples and
+is a precedent rather than a fix: nothing stops the next example from being wrong, and the
+mechanism does not generalise without the work described below. It is recorded here because
+"mitigation is a habit" and "mitigation is three tests" are different claims and the second one
+is now the true one.
+
+*Why accepted rather than fixed now.* Executing fenced blocks requires deciding which blocks are
+runnable (many are deliberate error transcripts, or fragments that only make sense in context),
+building the CLI in the documentation check, and pinning expected output per block. That is a
+real piece of work with its own failure modes, and it belongs in workstream 16 as a defined
+deliverable rather than bolted onto the documentation gate that currently runs in seconds.
+
+*Evidence.* `scripts/check-docs-sync.py` (states a version, matches the build) ·
+`scripts/check-links.py` (195 links) · the `Lexer` example in `docs/spec/language.md`
+"Interoperability with Java", which is the corrected form of the draft that failed.
+
 ### Distribution and publication
 
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
@@ -501,6 +541,7 @@ existing gate.
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
 | R-023 | Keyword count is stated two ways across four documents | High | Low | Low | 1 | Open |
+| R-025 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
 
 **R-020 — Installer verifies integrity but not authenticity.**
 `scripts/install.sh` downloads `oq.jar` and `oq.jar.sha256` from the *same* GitHub release, checks the
@@ -585,8 +626,8 @@ done.
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
 | Medium | 10 | R-004, R-006, R-007, R-009, R-010, R-011, R-014, R-017, R-018, R-020 |
-| Low | 10 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023 |
-| **Total** | **24** | |
+| Low | 11 | R-003, R-005, R-012, R-013, R-015, R-016, R-019, R-021, R-022, R-023, R-025 |
+| **Total** | **25** | |
 
 ## Review cadence
 
