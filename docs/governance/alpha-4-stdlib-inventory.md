@@ -912,7 +912,7 @@ absent set is large, cheap and honest, and the blocked set is small, expensive a
 
 ---
 
-**Last verified:** `5f7b868` (merge of PR #93) plus the `textwrap`/`difflib` builtins
+**Last verified:** `27cac46` (merge of PR #136) plus the `textwrap`/`difflib` builtins
 added in PR #94, 2026-11-11. The coverage tallies in the status table, the per-domain table and its
 Total row are now checked by `scripts/check-docs-sync.py`, which derives them from the
 per-domain chapters and fails when any of the three disagrees.

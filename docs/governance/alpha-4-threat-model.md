@@ -1094,4 +1094,4 @@ requires a test that would fail without the control — a control with no test i
 comment is not a mitigation. A `Not mitigated` status requires nothing but honesty, which is the
 point of having the category.
 
-**Last verified:** `b5813d1` (merge of PR #84), 2026-11-10.
+**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.
