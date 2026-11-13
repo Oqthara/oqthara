@@ -21,6 +21,7 @@ public final class Values {
         if (value instanceof Map<?, ?> m) return !m.isEmpty();
         if (value instanceof Set<?> s) return !s.isEmpty();
         if (value instanceof OqRange r) return !r.isEmpty();
+        if (value instanceof OqFraction f) return f.numerator().signum() != 0;
         return true;
     }
 
@@ -65,6 +66,7 @@ public final class Values {
         if (value instanceof OqFrozenSet) return "frozenset";
         if (value instanceof Set<?>) return "set";
         if (value instanceof OqRange) return "range";
+        if (value instanceof OqFraction) return "fraction";
         if (value instanceof OqData d) return d.typeName();
         if (value instanceof OqInstance instance) return instance.className();
         if (value instanceof OqIterator) return "iterator";
@@ -169,6 +171,7 @@ public final class Values {
             return sb.append('}').toString();
         }
         if (value instanceof OqRange r) return r.toString();
+        if (value instanceof OqFraction f) return f.toString();
         if (value instanceof OqIterator it) return it.toString();
         if (value instanceof OqInstance instance) return "<" + instance.className() + " object>";
         if (value instanceof OqData d) {

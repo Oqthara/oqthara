@@ -949,6 +949,7 @@ filename into a page.
 | TH-52 | The catalogue is stale and a published page cites a document that changed | Repudiation | **Partially mitigated** |
 | TH-53 | A versioned-docs script writes outside its directory or to a path that no longer exists | Tampering | **Not mitigated** |
 | TH-54 | A document is added and the catalogue gate fails, blocking every merge | Denial of service (of the project) | **Mitigated** by a documented step |
+| TH-55 | A managed runtime directory writable by another user is activated as the interpreter | Elevation of privilege | **Accepted**, latent — no command installs a runtime yet |
 
 **TH-49 — mitigated.** `isNotificationOnly` (line 104) is a positive allow-list over both keys and
 types: every entry must be one of `reason`, `ref`, `tag` *and* a non-empty string, and an empty
@@ -990,6 +991,22 @@ stale". The `docs/governance/` sections of `docs/catalog.json` are keyed by the 
 under `docs/`, so a new governance document is a catalogue entry, not an exception. The step is
 documented; it is not automated into a pre-commit hook.
 
+**TH-55 — accepted for now, and latent rather than live.**
+`RuntimeInstaller` activates a JVM it previously unpacked under a managed home. `activateAtomically`
+(line 71) renames the staged directory into place and `RuntimeRetention` deletes older ones, but
+nothing checks who owns the managed home or the unpacked tree before the result is executed. On a
+shared host, a directory another user can write to would let them replace the JDK that `oq` then
+runs.
+
+It is recorded as *latent* because no command installs a runtime yet: `Main` dispatches `run`,
+`repl`, `check`, `version`, `help`, `fmt`, `new`, `doc`, `test`, `build` and `java`, and never
+constructs a `RuntimeInstaller`. Only the tests do. The check that closes this belongs with the
+command that makes it reachable — an owner comparison against the current user on the managed home
+and on the unpacked tree, before `activateAtomically` is allowed to publish it — and adding it now
+would be untestable through any real entry point. `docs/governance/alpha-4-stdlib-inventory.md`
+line 386 already records the absence of ownership support in the shipped `stat` builtin, which is
+the same gap seen from the language side.
+
 ### Residual risk
 
 The dispatch path is the strongest part of the pipeline and the documentation tooling is the
@@ -1014,10 +1031,10 @@ document stating the keyword count agrees with `Lexer.KEYWORDS`.
 |---|---|---|
 | **Mitigated** | 14 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-48, TH-49, TH-50, TH-54 |
 | **Partially mitigated** | 12 | TH-06, TH-08, TH-15, TH-21, TH-26, TH-33, TH-35, TH-37, TH-38, TH-43, TH-47, TH-52 |
-| **Accepted** | 13 | TH-01, TH-02, TH-03, TH-04, TH-05, TH-07, TH-16, TH-22, TH-30, TH-34, TH-36, TH-40, TH-41 |
+| **Accepted** | 14 | TH-01, TH-02, TH-03, TH-04, TH-05, TH-07, TH-16, TH-22, TH-30, TH-34, TH-36, TH-40, TH-41, TH-55 |
 | **Not mitigated** | 15 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-44, TH-45, TH-46, TH-51, TH-53 |
 
-Fifty-four threats. The distribution is the finding: the runtime's *accident* controls are
+Fifty-five threats. The distribution is the finding: the runtime's *accident* controls are
 excellent and its *adversary* controls are absent by design, while the distribution machinery has
 fifteen genuinely open items that are nearly all small, cheap fixes — a `USER` line, a
 verification-metadata file, SHA-pinned actions, a row cap, a fan-out cap.

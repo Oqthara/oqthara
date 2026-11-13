@@ -18,7 +18,7 @@ $ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/hello.oq
 compiled build/oqdoc/hello.oq (0 functions, 5 main instructions)
 backend=classfile (self-contained writer, JDK 21)
 codepath: compiled bytecode
-wrote build/oqdoc/hello.jar (337 classes, 0 skipped)
+wrote build/oqdoc/hello.jar (343 classes, 0 skipped)
 run it with: java -jar build/oqdoc/hello.jar
 
 $ java -jar build/oqdoc/hello.jar
@@ -58,7 +58,7 @@ $ java -jar oq-cli/build/libs/oq.jar build build/oqdoc/arith.oq
 compiled build/oqdoc/arith.oq (1 functions, 8 main instructions)
 backend=classfile (self-contained writer, JDK 21)
 codepath: compiled bytecode
-wrote build/oqdoc/arith.jar (337 classes, 0 skipped)
+wrote build/oqdoc/arith.jar (343 classes, 0 skipped)
 run it with: java -jar build/oqdoc/arith.jar
 ```
 

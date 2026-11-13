@@ -50,6 +50,15 @@ final class SafeArchive {
     /** The largest number of entries this will consider. */
     private static final int MAX_ENTRIES = 100_000;
 
+    /**
+     * The largest central directory this will read, in bytes.
+     *
+     * <p>CRC-bearing entry names and extras for {@link #MAX_ENTRIES} entries fit under this; the
+     * point of the cap is that the directory is read into an array, so a figure is needed. The
+     * archive as a whole is never read into memory: only this tail is.
+     */
+    private static final long MAX_CENTRAL_DIRECTORY_BYTES = 64L * 1024 * 1024;
+
     private SafeArchive() {
     }
 
@@ -311,7 +320,8 @@ final class SafeArchive {
      * setgid from an untrusted archive, which is not something an installer should ever do.
      */
     private static Directory centralDirectory(Path archive) throws IOException {
-        byte[] bytes = Files.readAllBytes(archive);
+        Tail tail = readCentralDirectory(archive);
+        byte[] bytes = tail.bytes();
         Set<String> names = new HashSet<>();
         Set<String> executables = new HashSet<>();
 
@@ -328,7 +338,10 @@ final class SafeArchive {
         }
 
         long count = Integer.toUnsignedLong(readShort(bytes, eocd + 10));
-        long offset = Integer.toUnsignedLong(readInt(bytes, eocd + 16));
+        long offset = Integer.toUnsignedLong(readInt(bytes, eocd + 16)) - tail.base();
+        if (offset < 0 || offset >= bytes.length) {
+            return new Directory(names, executables);
+        }
         int at = (int) offset;
         for (long n = 0; n < count; n++) {
             if (at < 0 || at + 46 > bytes.length || readInt(bytes, at) != 0x02014b50) {
@@ -350,6 +363,43 @@ final class SafeArchive {
             at += 46 + nameLength + extraLength + commentLength;
         }
         return new Directory(names, executables);
+    }
+
+    /**
+     * Reads the tail that holds the central directory, without reading the archive.
+     *
+     * <p>{@code Files.readAllBytes} made the size of the archive a matter of heap: a file of any
+     * length was loaded whole before a single cap applied, so the caps below the call could not
+     * be reached by the one input that most needs them. The end-of-central-directory record is
+     * in the last 64 KiB plus a comment, and the directory before it is bounded here, so a
+     * bounded read of the tail is enough. The empty array means the archive had no directory to
+     * read, which the caller treats as "no modes to honour".
+     */
+    static Tail readCentralDirectory(Path archive) throws IOException {
+        long length = Files.size(archive);
+        if (length == 0) {
+            return new Tail(new byte[0], 0);
+        }
+        long tail = Math.min(length, MAX_CENTRAL_DIRECTORY_BYTES + 0xFFFF + 22);
+        try (java.nio.channels.SeekableByteChannel channel = Files.newByteChannel(archive)) {
+            channel.position(length - tail);
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.allocate((int) tail);
+            while (buffer.hasRemaining() && channel.read(buffer) > 0) {
+                // Fill to the end; a short read is retried rather than truncated, because a
+                // truncated tail would lose the directory without saying so.
+            }
+            return new Tail(buffer.array(), length - tail);
+        }
+    }
+
+    /**
+     * The bytes read from the end of an archive, and where they start in it.
+     *
+     * <p>The central directory's start is stored as an offset from the beginning of the file, so
+     * a parser working on a tail has to subtract {@code base} to get back to a position in
+     * {@code bytes}. Keeping the two together is what stops the subtraction being forgotten.
+     */
+    record Tail(byte[] bytes, long base) {
     }
 
     private static int readShort(byte[] bytes, int at) {

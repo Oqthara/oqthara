@@ -30,7 +30,7 @@ $ oq build aband.oq
 compiled aband.oq (0 functions, 6 main instructions)
 backend=classfile (self-contained writer, JDK 21)
 codepath: interpreter launcher ('use' imports a Java class, which is not compiled yet)
-wrote aband.jar (337 classes, 0 skipped)
+wrote aband.jar (343 classes, 0 skipped)
 run it with: java -jar aband.jar
 $ java -jar aband.jar
 main done

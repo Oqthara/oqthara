@@ -3,8 +3,8 @@ package dev.oqthara.core;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.Span;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class Env {
     private record Binding(Object value, boolean mutable, boolean shadowable, String fixedBy,
@@ -12,7 +12,14 @@ public final class Env {
     }
 
     private final Env parent;
-    private final Map<String, Binding> values = new HashMap<>();
+    // Concurrent, not merely convenient. spawn() runs a task on another thread while the main
+    // thread keeps executing, and both may touch this map: the task reads names from a closure
+    // while the caller assigns a new one. A HashMap resizing under a concurrent read can return
+    // a miss for a key that is present, which surfaced as "'count' is not defined" in a program
+    // that had defined it -- an error about the program's text that the program did not make.
+    // A scope is per-invocation and small, so the cost of the concurrent map is bounded and
+    // paid only where correctness requires it.
+    private final Map<String, Binding> values = new ConcurrentHashMap<>();
 
     public Env() {
         this.parent = null;

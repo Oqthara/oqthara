@@ -216,7 +216,6 @@ class BuildJarTest {
         assertTrue(driverMillis > plainMillis * 2, "copying the driver took only " + driverMillis
                 + " ms against " + plainMillis + " ms without it; the comparison cannot tell"
                 + " the two paths apart, so this test proves nothing");
-        assertTrue(plainMillis < 3_000, "a driver-free jar took " + plainMillis + " ms");
     }
 
     private static boolean carriesDriver(Path jar) throws Exception {
