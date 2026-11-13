@@ -626,9 +626,29 @@ class BytecodeCompilerTest {
         assertEquals("a\nb\nc\n", compileAndRun("for c in \"abc\"\n  print c\nend", dir));
     }
 
+    /**
+     * A whole-number refusal is worded and positioned the same in both backends.
+     *
+     * <p>The interpreter raises it from the builtin's own code with the call's span, and the
+     * compiler reaches the same helper through {@code Stdlib.install}, which reads the position
+     * the backend marked. Only the framing differs, so the wording, the value and the line are
+     * what a program can observe; that is what this compares.
+     */
     @Test
-    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {
-        for (String source : List.of(
+    void aFractionalRangeBoundIsRefusedIdenticallyOnBothBackends(@TempDir Path dir) throws Exception {
+        String source = "print range(0, 5, 1.5)";
+        OqRunner.Result interpreted = OqRunner.run("<t>", source, List.of(), "", dir);
+        assertEquals(1, interpreted.code(), interpreted.stderr());
+        String compiled = compileAndRunError(source, dir);
+        String fragment = "range() needs a whole number, got 1.5";
+        assertTrue(interpreted.stderr().contains(fragment), interpreted.stderr());
+        assertTrue(compiled.contains(fragment), compiled);
+        assertTrue(interpreted.stderr().contains("<t>:1:12"), interpreted.stderr());
+        assertTrue(compiled.contains("<t>:1:12"), compiled);
+    }
+
+    @Test
+    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {        for (String source : List.of(
                 "const x = 1\nconst x = 2\nprint x",
                 "x = 1\nconst x = 2\nprint x",
                 "const a = 1\nconst a, b = (2, 3)\nprint a",
