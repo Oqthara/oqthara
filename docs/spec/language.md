@@ -1217,6 +1217,17 @@ are ASCII and round-trip, so a digest or a payload survives a file, a JSON docum
 terminal. Decoding refuses anything that is not canonically that spelling and reports the
 offset it refused, because a value pasted from a log is the usual source.
 
+A decode returns text, so the bytes have to be the UTF-8 encoding of it. Malformed UTF-8 is
+refused rather than replaced: `hex_decode("ff")` raises
+`hex_decode() decoded bytes that are not valid UTF-8` naming the byte offset, and
+`base64_decode("/w==")` — the same byte in base64 — raises the matching message. Replacing
+the bad bytes with U+FFFD would return a plausible value that re-encodes to `efbfbd` instead
+of `ff`, which contradicts the round trip above. Base64 is canonical in one further sense:
+the unused pad bits of the last character must be zero, so `base64_decode("Zh==")` is
+refused (`base64_decode() found non-zero pad bits at offset 2, got 'h'`) even though the
+platform decoder would read it as `f`. Only `Zg==` is accepted, and
+`base64_encode(base64_decode(s)) == s` holds for every `s` that is accepted.
+
 ```
 print hex_encode("abc")          # 616263
 print hex_decode("616263")       # abc

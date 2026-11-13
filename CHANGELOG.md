@@ -41,6 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `zip_decompress() found a duplicate entry name: <name>`; identical content does not make the
   archive unambiguous. The JDK's own `ZipOutputStream` will not write such an archive, which is
   how the defect stayed hidden. (#171)
+- **`hex_decode` and `base64_decode` replaced malformed UTF-8 instead of refusing it.** Both
+  decoders built their result with `new String(bytes, UTF_8)`, whose convenience constructor
+  substitutes U+FFFD for anything that is not UTF-8. `hex_decode("ff")` therefore returned a
+  replacement character, and re-encoding it produced `efbfbd` rather than `ff`, breaking the
+  lossless round trip ADR-0033 D1 promises. Both now decode strictly and raise
+  `hex_decode() decoded bytes that are not valid UTF-8` (or the `base64_decode` form) naming
+  the byte offset that opened the bad sequence. (#158)
+- **`base64_decode` accepted non-canonical pad bits.** The JDK decoder ignores the unused low
+  bits of the last Base64 character, so `Zh==` and `Zg==` both decoded to `f` and two distinct
+  spellings named the same value — `base64_encode(base64_decode(s)) == s` was false for an
+  input the decoder had accepted. `base64_decode` now refuses non-zero pad bits with
+  `base64_decode() found non-zero pad bits at offset N, got 'c'`, and it reports misplaced or
+  excessive `=` padding with its own offset rather than the platform decoder's "wrong 4-byte
+  ending unit". Canonical inputs are unchanged. (#159)
 
 ### Added
 - **Exact rational arithmetic under the name `fraction`.** A `fraction` holds a `BigInteger`
