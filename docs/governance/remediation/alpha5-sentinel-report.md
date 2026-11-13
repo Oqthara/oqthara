@@ -54,6 +54,9 @@ both backends.
 | #168 | heap operations reject mixed whole and decimal numbers | 5 | Fixed, verified, tests added |
 | #169 | `bisect_left` disagrees with language ordering for signed zero | 5 | Fixed, verified, tests added |
 | #174 | `bisect` returns the wrong insertion point for `NaN` | 5 | Fixed, verified, tests added |
+| #180 | `OqMap.keySet` `remove` reports `false` after removing a key mapped to `nothing` | 6 | Fixed, verified, tests added |
+| #181 | `OqMap`/`OqSet`/`OqFrozenSet` `hashCode` disagrees with the language's equality | 6 | Fixed, verified, tests added |
+| #182 | `input` leaves the CR of a CRLF terminator attached | 6 | Fixed, verified, tests added |
 
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
@@ -683,6 +686,74 @@ the table above was re-run there and returns the "After" value.
 Regenerating the conformance baseline was part of the change: `230-math-transcendental.out`
 lines 9, 18, 19 and 20 carried the old twelve-place projection. Line 17 is untouched because
 it is a value the program rounds itself, so it still prints eleven places.
+
+## Group 6 — collection and stream contracts
+
+Three defects, each a place where the runtime was right in Oqthara's terms and wrong in the
+terms of a Java interface it exposes. All three are visible only through the interop
+boundary or through stdin, which is why the language's own tests never caught them.
+
+### #180 — a removed key reported as absent
+
+`OqMap.keySet().remove(key)` answers "did the set change", but it was implemented as
+`backing.remove(boxed) != null`. The backing map stores raw values, so an entry whose value is
+`nothing` is stored as Java null, and removing it returns null even though the key was there.
+The set therefore reported `false` after it had already removed the key — the one combination
+the `Set` contract forbids. Presence is now tested before the removal, so the answer matches
+what happened.
+
+### #181 — equal collections that hashed apart
+
+`OqMap`, `OqSet` and `OqFrozenSet` all inherited their `hashCode` from `AbstractMap` and
+`AbstractSet`, which combine the elements' <em>Java</em> hashes. Java hashes `Long` and `Double`
+differently, while the language widens them together: `set([1]) == set([1.0])` is true, yet the
+two hashed to `1` and `1072693248`. Any Java hash-based container holding both would have kept
+two entries for one value.
+
+All three now hash through `Value.hashing`, the same structural function `Value.hashCode` uses,
+so the hash is computed from exactly the widened values that `Values.equal` compares. It is
+order-independent, matching set equality's indifference to insertion order.
+
+This is the collection analogue of #163: there, a whole number and the decimal it equals hashed
+apart; here, the containers holding them did. Both are the ADR-0017 invariant one level up.
+
+### #182 — a carriage return left on the line
+
+`input` read until `'\n'` and nothing else. A CRLF stream therefore returned `hello` plus
+U+000D, and a CR-only stream was read as a single line. The reader now stops at CR as well, and
+consumes the LF that may follow it; anything else is pushed back, so the next line still sees it.
+
+The pushback uses `BufferedReader.mark(1)`/`reset()`, which the host already exposes. This is
+the reason the fix is a two-line change rather than a new buffering layer: the reader the
+runtime hands the builtin already supports exactly one character of lookahead.
+
+Two behaviours deliberately unchanged. A blank line is the empty string, not `nothing` —
+`nothing` is reserved for end of input with nothing read. And a stream that ends without a
+terminator still yields its last partial line.
+
+### Reproduction and verification
+
+Each row was run through the real CLI at `ff5c674` (before) and on this branch (after).
+
+| Input | Before | After |
+| --- | --- | --- |
+| `{"x": nothing}` then `ks.remove("x")`, then `length(m)` | `false`, `0` | `true`, `0` |
+| `set([1]).hashCode() == set([1.0]).hashCode()` | `false` | `true` |
+| `{1: "x"}.hashCode() == {1.0: "x"}.hashCode()` | `false` | `true` |
+| `frozenset([1]).hashCode() == frozenset([1.0]).hashCode()` | `false` | `true` |
+| `set([1]).hashCode() == set([2]).hashCode()` | `false` | `false` — still distinct |
+| `input()` on `hello\r\n`, hex-encoded | `68656c6c6f0d` | `68656c6c6f` |
+| `input()` on `hello\r`, hex-encoded | `68656c6c6f` in one line | `68656c6c6f` |
+| two `input()` calls on `hello\r\nworld\r\n` | one line, then end | `hello`, then `world` |
+| blank line `\r\n` | `0d` | empty string |
+| `input()` on `hello` with no terminator | `hello` | `hello` |
+
+The fourth row of the hash block is the control: a change that made every set hash alike would
+pass the three above it and fail that one.
+
+Test classes: `CollectionContractTest` (8 tests, 4 of which fail on the pre-fix code) covers
+#180 and #181; `HostBuiltinLimitsTest` gains 2 tests for #182. The suite goes from 1,513 tests
+at `ff5c674` to 1,523 with 0 failures.
 
 ## Newly discovered defects
 

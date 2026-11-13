@@ -2222,7 +2222,7 @@ public final class Stdlib {
         boolean sawEnd = false;
         try {
             int code = host.in().read();
-            while (code != -1 && code != '\n') {
+            while (code != -1 && code != '\n' && code != '\r') {
                 if (sb.length() >= MAX_TEXT_BYTES) {
                     throw new OqError("input line is too large", span,
                             "It is more than the " + MAX_TEXT_BYTES + " character limit. "
@@ -2230,6 +2230,13 @@ public final class Stdlib {
                 }
                 sb.append((char) code);
                 code = host.in().read();
+            }
+            // A CR ends the line, and a following LF belongs to the same terminator. The reader
+            // may only push back one character, so mark before peeking: an LF is consumed, and
+            // anything else is reset so the next line sees it.
+            if (code == '\r') {
+                host.in().mark(1);
+                if (host.in().read() != '\n') host.in().reset();
             }
             sawEnd = code == -1;
         } catch (IOException e) {
