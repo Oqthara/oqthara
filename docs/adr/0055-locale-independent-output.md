@@ -38,16 +38,36 @@ Where a locale is needed, `Locale.ROOT` is named explicitly at the call site.
 
 Four consequences follow.
 
-1. **`format` and case conversion never appear bare.** `String.format` without a leading locale
-   argument, and `toLowerCase()`/`toUpperCase()` with no argument, are defects in production code.
-   The fix is mechanical but must not be mechanical *only*: the reason is recorded here so the
-   next author does not reintroduce it.
+1. **`format` and case conversion name their locale.** `toLowerCase()`/`toUpperCase()` with no
+   argument are always defects, because a locale-sensitive mapping exists for every letter the
+   default locale differs on. `String.format` without a leading locale argument is a defect only
+   when it can emit a *digit* or a *decimal separator* — the `%d`, `%f`, `%e`, `%g` and `%a`
+   conversions. The `%s`, `%c`, `%x`, `%X`, `%o` and `%%` conversions emit ASCII regardless of
+   default locale, which was verified rather than assumed: under `ar-EG`, `%04X` of 160 is
+   `00A0` while `%d` of 1234 is `١٢٣٤`. The `Json` module's `\u%04X` escapes are therefore correct
+   as they stand and are not the same defect. The fix is mechanical but must not be mechanical
+   *only*: the reason is recorded here so the next author does not reintroduce it, and so a later
+   audit does not "fix" the hex sites or mistake them for unfixed ones.
 
-2. **The rule is enforced by test, not by review.** `DiagnosticsLocaleTest` sets a hostile default
-   and asserts identical output across `tr-TR`, `ar-EG`, `de-DE`, `hi-IN-u-nu-deva` and the root
-   locale. It fails against the pre-fix code on two of three assertions, which is what makes it
-   worth keeping. `formatDouble`'s assertion passes before and after — it is there to stop a
-   regression, not to demonstrate the fix.
+2. **The rule is enforced by test, not by review.** Each of the three fixed sites now has a
+   regression test that holds `Locale.getDefault()` at `tr-TR`, `ar-EG`, `de-DE`,
+   `hi-IN-u-nu-deva` and the root locale and asserts byte-identical output:
+   `DiagnosticsLocaleTest` for the diagnostic gutter, `DisassemblyLocaleTest` for the IR listing,
+   and `theJsonReportIsByteIdenticalInEveryLocale` in `JavaCommandTest` for the resolver JSON.
+   Each was checked against the pre-fix code and fails there — the diagnostic test on two of three
+   assertions, the other two on the byte-identity assertion, with `tr_TR` producing
+   `overrıde` and `project_pın` and `ar_EG` producing Arabic-Indic instruction indices. A test that
+   passes without the fix is not a guard, so this was verified rather than assumed.
+
+   The resolver test constructs its `Resolution` directly instead of invoking `oq java --json`.
+   The command reads the ambient environment, so on a machine with no `OQ_JAVA` it resolves
+   `path` — an origin with no `i` in it, which no case rule can mangle. A test written that way
+   passes against the broken code and is therefore worthless; it was written, found vacuous, and
+   replaced. `jsonRuntime`'s visibility was widened to package-private so the assertion has a
+   target that always exercises the defect.
+
+   `formatDouble`'s assertion passes before and after — it is there to stop a regression, not to
+   demonstrate the fix.
 
 3. **This is a prerequisite for Chapter 19, not a substitute for it.** The inventory's ranked
    list keeps message catalogues (`gettext`) and locale-aware collation (`locale`) absent. This
@@ -76,8 +96,9 @@ machine-readable field.
 
 **Detect the defect with a static check instead of tests.** Attractive, and worth adding later, but
 a grep for `String.format(` without `Locale` cannot distinguish the diagnosis from a false positive
-without parsing the argument list. The test is a stronger guarantee today: it asserts the property
-that matters (identical output), not a proxy for it.
+without inspecting the conversion characters, and the exemptions above make the check
+conversion-aware rather than textual. The test is a stronger guarantee today: it asserts the
+property that matters (identical output), not a proxy for it.
 
 ## Consequences
 

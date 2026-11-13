@@ -275,7 +275,7 @@ public final class Main {
                     .orElse(new PlatformSupport.Platform("unknown", "unknown"));
         }
 
-        private static String jsonRuntime(RuntimeResolver.Resolution resolution,
+        static String jsonRuntime(RuntimeResolver.Resolution resolution,
                                           PlatformSupport.Platform platform) {
             StringBuilder json = new StringBuilder("{\"found\":")
                     .append(resolution.found())
