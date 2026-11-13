@@ -38,6 +38,11 @@ Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
 silently folded into the fixes above.
 
+Each group lands as its own Draft PR, so a test added by one group is not present on
+another group's branch. A test class that belongs to a different group is therefore cited
+by its file path rather than by class name, so that a reader on any one branch can tell
+which citations that branch can actually run.
+
 ## Group 1 — numeric semantics
 
 Branch `sentinel/alpha5/group1-numeric`. Four issues, confined to `oq-stdlib` plus one
@@ -119,9 +124,10 @@ Tests added or extended:
 
 - `StatisticsTest` — three tests at both ends of the double range and in the subnormal
   range.
-- `NumberMethodBuiltinParityTest` (new) — method and builtin answers past the 64-bit
-  range, the lowest-whole-number `abs`, the wrong-receiver refusal, and parity of
-  values with no `long` representation.
+- `oq-stdlib/src/test/java/dev/oqthara/stdlib/NumberMethodBuiltinParityTest.java` (new,
+  on the Group 1 branch) — method and builtin answers past the 64-bit range, the
+  lowest-whole-number `abs`, the wrong-receiver refusal, and parity of values with no
+  `long` representation.
 - `StdlibFuzzRegressionTest` — fractional and out-of-range whole-number arguments are
   refused rather than truncated.
 - `BytecodeCompilerTest` — a fractional range bound is refused identically on both
