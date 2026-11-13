@@ -251,7 +251,7 @@ shallow enough to parse and still be too deep to print.
 | `M7` | `ConcurrencyTest.spawnReturnsAValue`, `.manyTasksDoNotLeakStack` |
 | `M8`, `M9` | `ImmutableRefusalTest.aJdkRefusalBecomesAProgramErrorNotABug`, `.aRefusalWithNoMessageStillReadsAsASentence` |
 | `M10` | `StepBudgetTest.printLoopStopsAtTheOutputCeiling`, `.oversizedReadIsRefused`; `WaitedBudgetTest.theLimitIsOnTheTotalNotOneCall`; `HostBuiltinLimitsTest.exactlySixteenMebibytesIsAllowed`, `.oneBytePastSixteenMebibytesIsRefused` |
-| `M11`, `M12` | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
+| `M11`, `M12` | `BuildJarTest.anInternalErrorIsClassifiedAsExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
 | `M13` | `ConcurrencyTest.twoTasksBothComplete`, `.parMapPreservesOrder`; the shared-counter half is exercised there, the depth half is not |
 | `M14` | `ValueTest.mapsFindKeysWrittenWithTheOtherNumericType`, `.setsCollapseEqualNumbersAndReportOneItem`, `.setsCollapseEqualTupleValuesOfDifferentNumericTypes`; `LanguageFeatureTest.equalNumbersHashAlike`, `.numericEqualityReachesInsideCollections` |
 | `E38`, `E39` | `HostBuiltinLimitsTest.runCommandTimeoutKillsTheWholeProcessTree`, `.runCommandTimeoutsACommandThatNeverClosesItsOutput`, `.runCommandOutputIsBounded`, `.runCommandDoesNotGoThroughAShell` |

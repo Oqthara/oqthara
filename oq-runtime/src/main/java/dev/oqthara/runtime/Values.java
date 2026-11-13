@@ -20,7 +20,7 @@ public final class Values {
         if (value instanceof List<?> l) return !l.isEmpty();
         if (value instanceof Map<?, ?> m) return !m.isEmpty();
         if (value instanceof Set<?> s) return !s.isEmpty();
-        if (value instanceof OqRange r) return r.size() > 0;
+        if (value instanceof OqRange r) return !r.isEmpty();
         if (value instanceof OqFraction f) return f.numerator().signum() != 0;
         return true;
     }
@@ -625,12 +625,18 @@ public final class Values {
         }
         if (target instanceof OqRange r) {
             long i = integerIndex(key, span);
-            List<Object> items = r.toList();
-            long index = i < 0 ? items.size() + i : i;
-            if (index < 0 || index >= items.size()) {
+            long count = r.size();
+            long index = i < 0 ? count + i : i;
+            if (index < 0 || index >= count) {
                 throw new OqError("index " + i + " is out of range for " + r, span);
             }
-            return items.get((int) index);
+            // The value is arithmetic on the range, not a lookup in a list of every value:
+            // `(0 to 10000000)[0]` must not build ten million numbers to answer 0 (#156).
+            // BigInteger keeps start + index * step exact; the result is a value the range
+            // walks, so it is in range by construction and longValueExact cannot fail.
+            java.math.BigInteger value = java.math.BigInteger.valueOf(r.start())
+                    .add(java.math.BigInteger.valueOf(index).multiply(java.math.BigInteger.valueOf(r.step())));
+            return value.longValueExact();
         }
         throw new OqError("cannot index " + typeName(target), span);
     }
@@ -729,9 +735,7 @@ public final class Values {
             for (Object c : sliceItems(textCharacters(s), from, to, stride, span)) out.append((String) c);
             return out.toString();
         }
-        if (target instanceof OqRange r) {
-            return new ArrayList<>(sliceItems(r.toList(), from, to, stride, span));
-        }
+        if (target instanceof OqRange r) return sliceRange(r, from, to, stride, span);
         if (target instanceof OqTuple) {
             // A tuple stays a tuple, matching `subList` on a tuple: immutability is part of the
             // value, and a caller who sliced one to inspect a run should not be handed a mutable
@@ -746,6 +750,104 @@ public final class Values {
         }
         throw new OqError("cannot slice " + typeName(target), span,
                 "Slicing works on a list, a tuple, a range, text or a set.");
+    }
+
+    /**
+     * A slice of a range, by index arithmetic rather than by building every value.
+     *
+     * <p>Slicing a range is a window over its positions, so the answers are the same as slicing
+     * the list it would have produced, and only the selected values are ever created. That is
+     * what makes {@code (0 to 10000000)[1 until 3]} cost two numbers rather than ten million
+     * (issue #156).
+     */
+    private static List<Object> sliceRange(OqRange r, Object from, Object to, long stride, Span span) {
+        long size = r.size();
+        if (stride > 0) {
+            long start = rangeSliceBound(from, size, 0, "a slice start", span);
+            long end = rangeSliceBound(to, size, size, "a slice end", span);
+            if (start >= end) return new ArrayList<>();
+            return rangeWindow(r, start, sliceCount(start, end, stride), stride, span);
+        }
+        long start = rangeSliceBound(from, size, size - 1, "a slice start", span);
+        if (start >= size) start = size - 1;
+        long end = rangeSliceBound(to, size, -1, "a slice end", span);
+        if (start <= end || start < 0) return new ArrayList<>();
+        return rangeWindow(r, start, sliceCount(start, end, stride), stride, span);
+    }
+
+    /**
+     * Materialises a counted window of a range.
+     *
+     * <p>The count is computed up front rather than by comparing a moving position against the
+     * end, because that comparison is what a step can jump over: a window ending at
+     * {@link Long#MAX_VALUE} with a step of 2 had the last position stop just short of the end,
+     * then wrap negative on the next step and never terminate.
+     */
+    private static List<Object> rangeWindow(OqRange r, long start, long count, long stride, Span span) {
+        requireListable(count, span);
+        List<Object> out = new ArrayList<>((int) Math.min(count, 1024));
+        for (long n = 0; n < count; n++) out.add(rangeValueAt(r, start, n, stride));
+        return out;
+    }
+
+    /**
+     * How many values a slice window names, computed exactly.
+     *
+     * <p>{@link BigInteger} is not caution for its own sake here: the window can span the whole
+     * 64-bit range, and the magnitude of a step of {@link Long#MIN_VALUE} has no {@code long}
+     * representation, so both the distance and the step are taken as big integers.
+     */
+    private static long sliceCount(long start, long end, long stride) {
+        // The distance is unsigned: a forward window has start < end and a reversed one has
+        // start > end, and both name the same number of values for a step of the same size.
+        java.math.BigInteger span = java.math.BigInteger.valueOf(start)
+                .subtract(java.math.BigInteger.valueOf(end)).abs().subtract(java.math.BigInteger.ONE);
+        java.math.BigInteger steps = java.math.BigInteger.valueOf(stride).abs();
+        return span.divide(steps).add(java.math.BigInteger.ONE).min(
+                java.math.BigInteger.valueOf(Long.MAX_VALUE)).longValue();
+    }
+
+    /** A slice bound over a position in a range, clamped exactly as a list slice clamps. */
+    private static long rangeSliceBound(Object bound, long size, long whenOmitted, String which, Span span) {
+        if (bound == null) return whenOmitted;
+        long i = integerIndex(bound, span, which);
+        long resolved = i < 0 ? size + i : i;
+        if (resolved < 0) return 0;
+        if (resolved > size) return size;
+        return resolved;
+    }
+
+    /**
+     * The value at a position in a range, computed without building the positions before it.
+     *
+     * <p>The offset is multiplied as a big integer: a window near {@link Long#MAX_VALUE} with a
+     * step above 1 has positions whose product overflows a long even though the value itself
+     * fits, and {@link java.math.BigInteger#longValueExact()} refuses a result that does not.
+     */
+    private static Long rangeValueAt(OqRange r, long start, long offset, long stride) {
+        // The window start is a position in the range as well, so it is scaled by the step
+        // exactly like the offset is; adding it unscaled is only right when the step is 1.
+        java.math.BigInteger position = java.math.BigInteger.valueOf(offset)
+                .multiply(java.math.BigInteger.valueOf(stride))
+                .add(java.math.BigInteger.valueOf(start));
+        return java.math.BigInteger.valueOf(r.start())
+                .add(position.multiply(java.math.BigInteger.valueOf(r.step())))
+                .longValueExact();
+    }
+
+    /**
+     * Refuses a slice longer than a list can hold.
+     *
+     * <p>A range slice returns a list, so a window of two billion values cannot be answered at
+     * all. Saying so immediately is better than exhausting memory partway through, which is the
+     * failure the range rewrite exists to remove.
+     */
+    private static void requireListable(long count, Span span) {
+        if (count > Integer.MAX_VALUE) {
+            throw new OqError("this slice is too long to produce", span,
+                    "It names more than 2147483647 items, which is more than a list can hold. "
+                            + "Walk the range with `for`, or narrow the slice.");
+        }
     }
 
     private static List<Object> sliceItems(List<?> list, Object from, Object to, long stride, Span span) {
@@ -773,10 +875,63 @@ public final class Values {
         return integerIndex(key, span, "an index");
     }
 
-    private static long integerIndex(Object key, Span span, String what) {
+    /**
+     * A whole number read out of {@code key}, or a refusal naming {@code what}.
+     *
+     * <p>An integral decimal is accepted, because {@code 2.0} and {@code 2} are the same value
+     * (ADR-0017). A decimal that is not integral is refused rather than truncated: silently
+     * turning {@code 1.5} into {@code 1} answers a question the program did not ask.
+     *
+     * <p>Containing the value to the 64-bit range is the second half of the same rule. Every
+     * double at or beyond 2^63 is integral, so it used to pass the {@code rint} test and then
+     * saturate at {@link Long#MAX_VALUE} on the cast -- {@code xs[1e300]} reported an
+     * out-of-range index of {@code 9223372036854775807} instead of the one that was written.
+     * An infinity is refused the same way, since it names no position either; a NaN is not
+     * whole in any sense and takes the fractional refusal above.
+     *
+     * <p>Public so that the standard library's bound and count arguments go through the same
+     * rule as indexing and slicing, instead of each method narrowing on its own.
+     */
+    public static long integerIndex(Object key, Span span, String what) {
         if (key instanceof Long l) return l;
-        if (key instanceof Double d && d == Math.rint(d)) return d.longValue();
+        if (key instanceof Double d) {
+            if (d != Math.rint(d)) {
+                throw new OqError(what + " must be a whole number, got " + typeName(key), span);
+            }
+            if (fitsInLong(d)) return d.longValue();
+            // A decimal past the 64-bit range is whole but names no position a collection can
+            // have, so it is reported as out of range rather than as a fractional value.
+            throw new OqError(what + " is out of range: " + display(key), span,
+                    "Indexes and bounds are whole numbers between " + Long.MIN_VALUE
+                            + " and " + Long.MAX_VALUE + ".");
+        }
         throw new OqError(what + " must be a whole number, got " + typeName(key), span);
+    }
+
+    /**
+     * A whole number, refusing anything that cannot be one exactly.
+     *
+     * <p>{@link #integerIndex} is the rule for positions inside a list: a fractional position
+     * is refused, but a value beyond the 64-bit range is allowed to saturate because the
+     * position is then out of bounds anyway and the caller says so. A range bound is different.
+     * It is stored, and every later question — length, membership, walking — is arithmetic on
+     * it, so a bound that only nearly fits silently becomes a different range.
+     * {@code 9223372036854775806 to 9223372036854775807} compared to the decimal
+     * {@code 9.223372036854776e18} said {@code true} (issue #153) precisely because that
+     * decimal was cast to {@link Long#MAX_VALUE} and then matched a bound it does not equal.
+     *
+     * <p>The wording matches the standard library's own whole-number refusal so a reader gets
+     * one sentence whether the bound came from a range literal or from {@code range(a, b)}.
+     */
+    static long wholeNumber(Object value, Span span) {
+        if (value instanceof Long l) return l;
+        if (value instanceof Double d) {
+            if (d == Math.rint(d) && fitsInLong(d)) return d.longValue();
+            throw new OqError("a range bound must be a whole number, got " + display(value), span,
+                    "Pass a number with no fractional part, within the 64-bit range.");
+        }
+        throw new OqError("a range bound must be a whole number, got " + typeName(value), span,
+                "Ranges count numbers: write `1 to 10`, not `\"a\" to 10`.");
     }
 
     public static int size(Object value, Span span) {
@@ -784,7 +939,17 @@ public final class Values {
         if (value instanceof List<?> l) return l.size();
         if (value instanceof Map<?, ?> m) return m.size();
         if (value instanceof Set<?> s) return s.size();
-        if (value instanceof OqRange r) return (int) r.size();
+        // A range's count is not an int. Truncating it produced a negative `length` for the
+        // admission check `length(xs) == 0`, so a range too long to narrow is refused rather
+        // than reported as empty. `length()` calls `OqRange.size()` directly and is unaffected.
+        if (value instanceof OqRange r) {
+            long count = r.size();
+            if (count > Integer.MAX_VALUE) {
+                throw new OqError("this range is too long to report as an int size", span,
+                        "Use length() instead, which counts in 64-bit numbers.");
+            }
+            return (int) count;
+        }
         if (value instanceof OqIterator) {
             throw new OqError("an iterator has no length", span,
                     "An iterator is a position, not a collection. Use has_next() to ask what is left.");
@@ -889,7 +1054,9 @@ public final class Values {
         }
         if (value instanceof List<?> l) return new ArrayList<>(l);
         if (value instanceof Set<?> s) return new ArrayList<>(s);
-        if (value instanceof OqRange r) return r.toList();
+        // A range is immutable, so there is nothing for a `for` loop to snapshot: the range
+        // itself is the walk, which keeps the loop lazy (#155) and still honours ADR-0016.
+        if (value instanceof OqRange r) return r;
         if (value instanceof Map<?, ?> m) return new ArrayList<>(m.keySet());
         if (value instanceof String s) return textCharacters(s);
         throw new OqError("cannot loop over " + typeName(value), span,
@@ -911,7 +1078,7 @@ public final class Values {
         if (value instanceof OqIterator existing) return existing;
         if (value instanceof List<?> l) return new OqIterator(l.iterator(), value);
         if (value instanceof Set<?> s) return new OqIterator(s.iterator(), value);
-        if (value instanceof OqRange r) return new OqIterator(r.toList().iterator(), value);
+        if (value instanceof OqRange r) return new OqIterator(r.iterator(), value);
         if (value instanceof Map<?, ?> m) return new OqIterator(m.keySet().iterator(), value);
         if (value instanceof String s) return new OqIterator(textCharacters(s).iterator(), value);
         throw new OqError("cannot iterate over " + typeName(value), span,
@@ -946,15 +1113,25 @@ public final class Values {
         }
     }
 
-    public static boolean contains(Object container, Object item, Span span) {        if (container instanceof List<?> l) return l.stream().anyMatch(x -> equal(x, item));
+    public static boolean contains(Object container, Object item, Span span) {
+        if (container instanceof List<?> l) return l.stream().anyMatch(x -> equal(x, item));
         if (container instanceof Set<?> s) return s.contains(item);
         if (container instanceof Map<?, ?> m) return m.containsKey(item);
         if (container instanceof String s) return s.contains(display(item));
         if (container instanceof OqRange r) {
-            if (!isNumber(item)) return false;
-            double d = asDouble(item);
-            if (d != Math.rint(d)) return false;
-            return r.contains((long) d);
+            // A Long is already exact, so checking it exactly is the only correct answer.
+            // Converting it through a double first was the defect: above 2^53 a double cannot
+            // hold every integer, so `9223372036854775806 in (0 to 9223372036854775806)`
+            // rounded to 9223372036854775808 and answered false for a value the range plainly
+            // holds, while `r.contains(same value)` answered true. ADR-0026 requires the two
+            // paths to agree.
+            if (item instanceof Long l) return r.contains(l);
+            if (!(item instanceof Double d)) return false;
+            // A decimal is a member only when it names an exactly representable whole number
+            // inside the 64-bit range. Casting 9.223372036854776e18 to long saturates at
+            // Long.MAX_VALUE, which made it equal to a bound it is not (#153).
+            if (d != Math.rint(d) || !fitsInLong(d)) return false;
+            return r.contains(d.longValue());
         }
         throw new OqError("cannot check membership in " + typeName(container), span);
     }

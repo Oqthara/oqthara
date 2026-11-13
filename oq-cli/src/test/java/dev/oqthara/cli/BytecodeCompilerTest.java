@@ -160,6 +160,54 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void aRefusedCountOrBoundReportsTheSameDiagnosticOnBothBackends(@TempDir Path dir) throws Exception {
+        // The list and text methods share one narrowing rule, Values.integerIndex. A compiled
+        // program resolves methods through the same resolver, so the two backends must word a
+        // refusal identically -- including the programs that used to escape as a JVM failure.
+        List<String> programs = List.of(
+                "xs = [10, 20, 30, 40]\nprint xs.take(1.5)",
+                "xs = [10, 20, 30, 40]\nprint xs.skip(1.5)",
+                "xs = [10, 20, 30, 40]\nprint xs.slice(1.5, 3.5)",
+                "xs = [10, 20, 30, 40]\nprint xs.take(\"a\")",
+                "print \"abcdef\".substring(1.5, 4)",
+                "print \"x\".repeat(-1)",
+                "print \"x\".repeat(2.5)",
+                "print \"x\".pad_start(9.5, \"0\")",
+                "xs = [10, 20]\nprint xs[1e300]");
+        for (String source : programs) {
+            dev.oqthara.compiler.Ir.Program program =
+                    Lowering.lower(Parser.parse("u.oq", source));
+            String reason = BytecodeCompiler.whyNot(program);
+            assertNull(reason, "expected to compile: " + source + " but " + reason);
+            Path jar = dir.resolve("bounds.jar");
+            JarBuilder.build(jar, "oq.generated.Program", source, "u.oq",
+                    BytecodeCompiler.compile(program, "oq.generated.Program"));
+            ProcessResult compiled = runJarProcess(jar, dir);
+            assertEquals(1, compiled.exit(), "exit code for: " + source);
+            assertFalse(compiled.stderr().contains("internal error"),
+                    "a refusal must be a program error: " + compiled.stderr());
+            assertFalse(compiled.stderr().contains("Exception in thread"),
+                    "no stack trace for " + source + ": " + compiled.stderr());
+
+            OqRunner.Result interpreted = OqRunner.run("u.oq", source, List.of(), "", dir);
+            assertEquals(1, interpreted.code(), "interpreter exit code for: " + source);
+            assertFalse(interpreted.stderr().contains("internal error"),
+                    "a refusal must be a program error: " + interpreted.stderr());
+
+            for (String line : interpreted.stderr().lines()
+                    .filter(text -> !text.isBlank())
+                    .filter(text -> !text.trim().startsWith("2 |"))
+                    .filter(text -> !text.trim().startsWith("1 |"))
+                    .filter(text -> !text.trim().startsWith("^"))
+                    .toList()) {
+                assertTrue(compiled.stderr().contains(line.strip()),
+                        "missing [" + line.strip() + "] for " + source
+                                + "\ncompiled stderr was:\n" + compiled.stderr());
+            }
+        }
+    }
+
+    @Test
     void aCaughtErrorIsNotRenderedAsUncaught(@TempDir Path dir) throws Exception {
         // The top-level handler covers the whole body, so it must lose to the program's own
         // exception table row for the try region.
@@ -626,9 +674,29 @@ class BytecodeCompilerTest {
         assertEquals("a\nb\nc\n", compileAndRun("for c in \"abc\"\n  print c\nend", dir));
     }
 
+    /**
+     * A whole-number refusal is worded and positioned the same in both backends.
+     *
+     * <p>The interpreter raises it from the builtin's own code with the call's span, and the
+     * compiler reaches the same helper through {@code Stdlib.install}, which reads the position
+     * the backend marked. Only the framing differs, so the wording, the value and the line are
+     * what a program can observe; that is what this compares.
+     */
     @Test
-    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {
-        for (String source : List.of(
+    void aFractionalRangeBoundIsRefusedIdenticallyOnBothBackends(@TempDir Path dir) throws Exception {
+        String source = "print range(0, 5, 1.5)";
+        OqRunner.Result interpreted = OqRunner.run("<t>", source, List.of(), "", dir);
+        assertEquals(1, interpreted.code(), interpreted.stderr());
+        String compiled = compileAndRunError(source, dir);
+        String fragment = "range() needs a whole number, got 1.5";
+        assertTrue(interpreted.stderr().contains(fragment), interpreted.stderr());
+        assertTrue(compiled.contains(fragment), compiled);
+        assertTrue(interpreted.stderr().contains("<t>:1:12"), interpreted.stderr());
+        assertTrue(compiled.contains("<t>:1:12"), compiled);
+    }
+
+    @Test
+    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {        for (String source : List.of(
                 "const x = 1\nconst x = 2\nprint x",
                 "x = 1\nconst x = 2\nprint x",
                 "const a = 1\nconst a, b = (2, 3)\nprint a",
@@ -1505,6 +1573,116 @@ class BytecodeCompilerTest {
                 | (bytes[at[0] + 3] & 0xFF);
         at[0] += 4;
         return value;
+    }
+
+    /**
+     * A counter loop and a range literal reach the same runtime helpers from both backends.
+     *
+     * <p>The bounds of {@code for i in a to b} are validated where they are consumed, so unlike
+     * a compiled range literal they cannot be constant-folded at compile time. Before this,
+     * the interpreter coerced each bound with {@code asLong} (so {@code 1.5 to 3.5} printed
+     * {@code 1, 2, 3}) while the compiler truncated them (so the same program printed
+     * {@code 1.5, 2.5, 3.5}), and {@code "a" to 3} escaped as an {@code internal error}.
+     */
+    @Test
+    void aRefusedCounterLoopBoundReportsTheSameDiagnosticOnBothBackends(@TempDir Path dir)
+            throws Exception {
+        List<String> programs = List.of(
+                "for i in 1.5 to 3.5\n  print i\nend",
+                "for i in \"a\" to 3\n  print i\nend",
+                "for i in 1 to 2.5\n  print i\nend",
+                "for i in nothing to 3\n  print i\nend",
+                "print (1.5 to 3.5)",
+                "print (\"a\" to 3)");
+        for (String source : programs) {
+            OqRunner.Result interpreted = OqRunner.run("b.oq", source, List.of(), "", dir);
+            assertEquals(1, interpreted.code(), "interpreter exit code for: " + source);
+            assertTrue(interpreted.stderr().contains("must be a whole number"),
+                    interpreted.stderr());
+
+            dev.oqthara.compiler.Ir.Program program =
+                    Lowering.lower(Parser.parse("b.oq", source));
+            String reason = BytecodeCompiler.whyNot(program);
+            assertNull(reason, "expected to compile: " + source + " but " + reason);
+            Path jar = dir.resolve("bound.jar");
+            JarBuilder.build(jar, "oq.generated.Program", source, "b.oq",
+                    BytecodeCompiler.compile(program, "oq.generated.Program"));
+            ProcessResult compiled = runJarProcess(jar, dir);
+            assertEquals(1, compiled.exit(), "compiled exit code for: " + source);
+            assertFalse(compiled.stderr().contains("Exception in thread"),
+                    "a refused bound must not surface as a stack trace: " + compiled.stderr());
+            // The message, the position and the hint must match; only the source line and the
+            // caret differ, because a compiled jar embeds none.
+            for (String line : interpreted.stderr().lines()
+                    .filter(text -> !text.isBlank())
+                    .filter(text -> !text.trim().startsWith("1 |"))
+                    .filter(text -> !text.trim().startsWith("^"))
+                    .toList()) {
+                assertTrue(compiled.stderr().contains(line.strip()),
+                        "missing [" + line.strip() + "] for " + source
+                                + "\ncompiled stderr was:\n" + compiled.stderr());
+            }
+        }
+    }
+
+    /**
+     * A counter loop must stop at its end bound even when that bound is the largest number.
+     *
+     * <p>The old loop added the step and retested the bound, so {@code 9223372036854775807 to
+     * 9223372036854775807} wrapped to {@code Long.MIN_VALUE} and printed forever. Both backends
+     * now walk an {@code OqRange}, which stops by remembering the last value it will reach.
+     */
+    @Test
+    void aCounterLoopAtTheLargestNumberTerminatesOnBothBackends(@TempDir Path dir)
+            throws Exception {
+        String source = """
+                for i in 9223372036854775807 to 9223372036854775807
+                  print i
+                end
+                print "done"
+                """;
+        assertEquals("9223372036854775807\ndone\n", OqRunner.run("l.oq", source, List.of(), "", dir).stdout());
+        assertEquals("9223372036854775807\ndone\n", compileAndRun(source, "l.oq", dir));
+    }
+
+    /**
+     * A range is walked lazily, so neither backend materialises it before the first iteration.
+     *
+     * <p>This is asserted as output plus a memory cap rather than as a timing, because the
+     * defect was an allocation: a ten-million element loop used to build a ten-million element
+     * list first. The jar runs under the cap the defect was reported with.
+     */
+    @Test
+    void aLongRangeLoopDoesNotMaterialiseTheRange(@TempDir Path dir) throws Exception {
+        String source = """
+                r = 0 to 10000000
+                for n in r
+                  print n
+                  break
+                end
+                print r.first()
+                print r[0]
+                print length(r[0:3])
+                """;
+        String expected = OqRunner.run("m.oq", source, List.of(), "", dir).stdout();
+        assertEquals("0\n0\n0\n3\n", expected);
+
+        dev.oqthara.compiler.Ir.Program program = Lowering.lower(Parser.parse("m.oq", source));
+        String reason = BytecodeCompiler.whyNot(program);
+        assertNull(reason, "expected to compile but " + reason);
+        Path jar = dir.resolve("lazy.jar");
+        JarBuilder.build(jar, "oq.generated.Program", source, "m.oq",
+                BytecodeCompiler.compile(program, "oq.generated.Program"));
+        ProcessBuilder builder = new ProcessBuilder(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-Xmx32m", "-jar", jar.toAbsolutePath().toString());
+        builder.directory(dir.toFile());
+        Process process = builder.start();
+        String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String err = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(process.waitFor(60, TimeUnit.SECONDS), "jar timed out");
+        assertEquals(0, process.exitValue(), "a lazy loop must fit in 32MB: " + err);
+        assertEquals(expected, out.replace("\r\n", "\n"));
     }
 
     private String runJar(Path jar, Path dir) throws Exception {

@@ -113,11 +113,11 @@ lines is one name and three registrations.
 
 **Collections** (14) — `keys`:304, `values`:310, `push`:316, `pop`:325, `sum`:330, `sort`:332, `reverse`:334, `unique`:336, `set`:338, `frozenset`:345, `list`:351, `enumerate`:357, `zip`:368, `range_list`:378.
 
-**Math** (29) — `abs`:384, `floor`:396, `ceil`:398, `round`:400 and 407, `sqrt`:426, `pow`:429, `sin`:434, `cos`:437, `tan`:440, `asin`:443, `acos`:446, `atan`:449, `atan2`:452, `hypot`:457, `ln`:463, `log10`:467, `log2`:471, `exp`:475, `degrees`:478, `radians`:481, `pi`:484, `e`:485, `tau`:486, `min`:489, `max`:491, `sorted`:493, `clamp`:495, `random`:501 and 503, `random_item`:509.
+**Math** (29) — `abs`:385, `floor`:387, `ceil`:389, `round`:391 and 393, `sqrt`:412, `pow`:415, `sin`:420, `cos`:423, `tan`:426, `asin`:429, `acos`:432, `atan`:435, `atan2`:438, `hypot`:443, `ln`:449, `log10`:453, `log2`:457, `exp`:461, `degrees`:464, `radians`:467, `pi`:470, `e`:471, `tau`:472, `min`:475, `max`:477, `sorted`:479, `clamp`:481, `random`:487 and 489, `random_item`:495.
 
-**Files** (13) — `read`:517, `read_lines`:521, `save`:532, `append`:545, `exists`:559, `list_files`:561, `delete`:586, `make_dir`:593, `file_size`:601, `path_join`:608, `path_name`:611, `path_parent`:615, `cwd`:619.
+**Files** (13) — `read`:503, `read_lines`:507, `save`:518, `append`:531, `exists`:545, `list_files`:547, `delete`:572, `make_dir`:579, `file_size`:587, `path_join`:594, `path_name`:597, `path_parent`:601, `cwd`:605.
 
-**File operations** (7) — `is_file`:633, `is_dir`:635, `read_bytes`:637, `write_bytes`:653, `copy_file`:665, `move_file`:670, `walk`:685.
+**File operations** (7) — `is_file`:619, `is_dir`:621, `read_bytes`:623, `write_bytes`:639, `copy_file`:651, `move_file`:656, `walk`:671.
 
 **Files and directories** (7) — `stat`:73, `touch`:75, `temp_dir`:79, `copy_tree`:81,
 `read_lines_or_empty`:86, `path_absolute`:89, `path_normalize`:91, all in `FileSystem.java`.
@@ -161,27 +161,27 @@ because `Values` has to name and display it, and whose whole point is that no op
 to a `double`: `fraction_compare` cross-multiplies, and `fraction_to_decimal` is the one
 conversion outward, with the precision stated by the caller.
 
-**JSON** (4) — `json_parse`:882, `json`:884, `json_write`:886, `json_pretty`:888.
+**JSON** (4) — `json_parse`:868, `json`:870, `json_write`:872, `json_pretty`:874.
 
-**Encoding** (11) — `hex_encode`:901, `hex_decode`:903, `base64_encode`:905, `base64_decode`:907, `sha256`:909, `sha1`:911, `md5`:913, `hmac_sha256`:915, `secure_random_hex`:917, `secure_equal`:927, `pbkdf2_sha256`:935.
+**Encoding** (11) — `hex_encode`:887, `hex_decode`:889, `base64_encode`:891, `base64_decode`:893, `sha256`:895, `sha1`:897, `md5`:899, `hmac_sha256`:901, `secure_random_hex`:903, `secure_equal`:913, `pbkdf2_sha256`:921.
 
-**Logging** (6) — `log_debug`:1019, `log_info`:1021, `log_warn`:1023, `log_error`:1025, `log_level`:1027, `log_enabled`:1037.
+**Logging** (6) — `log_debug`:1005, `log_info`:1007, `log_warn`:1009, `log_error`:1011, `log_level`:1013, `log_enabled`:1023.
 
-**Arguments** (1) — `arg_parse`:1063.
+**Arguments** (1) — `arg_parse`:1049.
 
-**CSV** (2) — `csv_parse`:1213, 1215 and 1218, `csv_write`:1222 and 1224.
+**CSV** (2) — `csv_parse`:1199, 1201 and 1204, `csv_write`:1208 and 1210.
 
-**Dates** (2) — `date_parse`:1380, `instant_parse`:1382.
+**Dates** (2) — `date_parse`:1357, `instant_parse`:1359.
 
-**Time** (6) — `now`:1407, `today`:1409, `datetime`:1411, `timestamp`:1413, `tz_convert`:1415, `sleep`:1437.
+**Time** (6) — `now`:1384, `today`:1386, `datetime`:1388, `timestamp`:1390, `tz_convert`:1392, `sleep`:1414.
 
-**URLs** (6) — `url_parse`:1465, `url_encode`:1489, `url_decode`:1493, `query_parse`:1497, `query_encode`:1516, `url_join`:1556.
+**URLs** (6) — `url_parse`:1442, `url_encode`:1466, `url_decode`:1470, `query_parse`:1479, `query_encode`:1498, `url_join`:1538.
 
-**HTTP** (2) — `http_get`:1854, `http_post`:1856.
+**HTTP** (2) — `http_get`:1625, `http_post`:1627.
 
-**Concurrency** (5) — `spawn`:2010, `await`:2018 and 2025, `done`:2039, `mutex`:2046, `par_map`:2048.
+**Concurrency** (5) — `spawn`:1781, `await`:1789 and 1796, `done`:1810, `mutex`:1817, `par_map`:1819.
 
-**Process** (4) — `env`:2076, `run_command`:2078, `cpu_count`:2130, `memory_mb`:2132.
+**Process** (4) — `env`:1847, `run_command`:1849, `cpu_count`:1901, `memory_mb`:1903.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),
@@ -332,7 +332,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `string`, `string.templatelib`, `re` [P]; `unicodedata` [A]; `difflib`, `textwrap` [C]; `stringprep`, `readline`, `rlcompleter` [X] |
-| Oqthara equivalent | Text method family (43 names, `MethodResolverImpl.java:649`): `upper`, `lower`, `trim`, `split`, `replace`, `words`, `lines`, `pad_start`, `pad_end`, `repeat`, `substring`, `find`, `starts_with`; globals `format`:237, `join`:238, `regex`:266, `matches`:283, `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39, `shorten_text`:44, `unified_diff`:49; string interpolation `"{expr}"` in source |
+| Oqthara equivalent | Text method family (43 names, `MethodResolverImpl.java:649`): `upper`, `lower`, `trim`, `split`, `replace`, `words`, `lines`, `pad_start`, `pad_end`, `repeat`, `substring`, `find`, `starts_with`; globals `format`:247, `join`:249, `regex`:278, `matches`:295, `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39, `shorten_text`:44, `unified_diff`:49; string interpolation `"{expr}"` in source |
 | Missing | No character-class constants (`string.digits`); no `Template` substitution; no `SequenceMatcher` ratio or `get_close_matches`; no Unicode category or normalisation API; no `locale`-independent case folding |
 | JVM fit | Yes — `java.util.regex`, `java.text.Normalizer` and `Character` cover the mechanics; nothing here needs a host facility the JVM lacks |
 | Lifetime | Per-call. Every one of these is a pure text-to-text transformation, so no construct is required and none of them can be blocked by ADR-0036 |
@@ -347,7 +347,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `struct` [A]; `codecs` [A] |
-| Oqthara equivalent | None. Binary content is carried as **hex text** through `read_bytes`:562 / `write_bytes`:578, with `hex_encode`:709 / `hex_decode`:711 as the conversion |
+| Oqthara equivalent | None. Binary content is carried as **hex text** through `read_bytes`:620 / `write_bytes`:636, with `hex_encode`:769 / `hex_decode`:771 as the conversion |
 | Missing | Packing and unpacking typed fields at byte offsets; integer endianness control; character-set transcoding as a first-class operation (UTF-8 is the only encoding the language recognises) |
 | JVM fit | Partly — `ByteBuffer` with explicit `order()` gives `struct` semantics cheaply, and `Charset` gives `codecs`. What the JVM cannot give back is a *bytes value*: the language has no such type by [ADR-0033](../adr/0033-encoding-and-hashing.md), so any result must be re-expressed as hex text, which doubles size and makes offset arithmetic text-shaped |
 | Lifetime | Per-call. Both are pure functions over values already in memory |
@@ -362,7 +362,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `datetime`, `zoneinfo`, `collections`, `copy`, `pprint` [P]; `heapq`, `bisect` [C]; `calendar`, `collections.abc`, `array`, `reprlib`, `enum`, `graphlib` [A]; `weakref`, `types` [X] |
-| Oqthara equivalent | `now`:1205, `today`:1207, `datetime`:1209, `timestamp`:1211, `tz_convert`:1213, `date_parse`:1178, `instant_parse`:1180; `clone`:233 plus `.clone()`/`.copy()` on every collection family; `repr`:168, `format`:237, `json_pretty`:696; `heap_push`:53, `heap_pop`:55, `bisect_left`:57, `bisect_right`:59; list/map/set/frozenset/range families |
+| Oqthara equivalent | `now`:1266, `today`:1268, `datetime`:1270, `timestamp`:1272, `tz_convert`:1274, `date_parse`:1239, `instant_parse`:1241; `clone`:242 plus `.clone()`/`.copy()` on every collection family; `repr`:170, `format`:247, `json_pretty`:756; `heap_push`:53, `heap_pop`:55, `bisect_left`:57, `bisect_right`:59; list/map/set/frozenset/range families |
 | Missing | No date *arithmetic* (add a day, subtract two dates, a duration type); no formatting other than the fixed shapes; no `deque`, `Counter`, `defaultdict`, `OrderedDict` or named tuples; no topological sort; no enumerations or algebraic tags beyond `data`. Priority queues and binary search shipped in `Statistics.java` as `heap_push`/`heap_pop`/`bisect_left`/`bisect_right`, so they are no longer missing |
 | JVM fit | Yes — `java.time` is the strongest date/time library on any platform and `TreeMap`/`PriorityQueue` give `heapq` and ordered maps directly. The gap is a language-level one: with no `date` type there is nothing for arithmetic to return |
 | Lifetime | Per-call. `zoneinfo` deserves one note: tzdata in a jar must be packaged, and `ZoneId.of` failing on an unknown zone is the correct behaviour, not a fallback to UTC |
@@ -377,11 +377,11 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `math`, `random` [P]; `statistics` [C]; `numbers`, `math.integer`, `cmath`, `decimal`, `fractions` [A] |
-| Oqthara equivalent | `abs`:381, `floor`:393, `ceil`:395, `round`:397/404, `sqrt`:423, `pow`:426, `sin`:431, `cos`:434, `tan`:437, `asin`:440, `acos`:443, `atan`:446, `atan2`:449, `hypot`:454, `ln`:460, `log10`:464, `log2`:468, `exp`:472, `degrees`:475, `radians`:478, `pi`:481, `e`:482, `tau`:483, `min`:486, `max`:488, `clamp`:492; number methods `is_even`, `is_odd`, `abs`, `ceil`, `floor`, `round`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log10`, `log2`, `exp`, `degrees`, `radians`; `random`:498/500, `random_item`:506; `mean`:33, `median`:35, `variance`:37, `stdev`:39, `mode`:42, `percentile`:44 |
+| Oqthara equivalent | `abs`:382, `floor`:384, `ceil`:386, `round`:388/390, `sqrt`:409, `pow`:412, `sin`:417, `cos`:420, `tan`:423, `asin`:426, `acos`:429, `atan`:432, `atan2`:435, `hypot`:440, `ln`:446, `log10`:450, `log2`:454, `exp`:458, `degrees`:461, `radians`:464, `pi`:467, `e`:468, `tau`:469, `min`:472, `max`:474, `clamp`:478; number methods `is_even`, `is_odd`, `abs`, `ceil`, `floor`, `round`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `ln`, `log10`, `log2`, `exp`, `degrees`, `radians`; `random`:484/486, `random_item`:492; `mean`:33, `median`:35, `variance`:37, `stdev`:39, `mode`:42, `percentile`:44 |
 | Missing | No exact decimal arithmetic; no rational type; no seeding, no Gaussian, no shuffle; `statistics` shipped in full at six functions, so what remains absent is `fmean`/`geometric_mean`/`harmonic_mean`/`quantiles`/`multimode`/`NormalDist`/regression, all declined in [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md); no complex numbers; no numeric-tower distinction between int and float beyond `is_number` |
 | JVM fit | Yes, with one caveat. `BigDecimal` gives exact decimal and `StrictMath` gives the transcendentals, so the arithmetic is cheap. The caveat is semantic, not technical: Python's `decimal` has a *context* (precision, rounding, traps) and reproducing it faithfully is a design decision, not a wrapper |
 | Lifetime | Per-call. Nothing here can be blocked by ADR-0036, which makes this chapter the best value-per-unit-of-risk on the whole list |
-| Security | Unseedable randomness is a security property worth keeping: `random()` is deliberately not reproducible and `secure_random_hex`:799 is the separate cryptographic source. The risk to avoid is a `seed` function that gets used for tokens. `decimal` removes the float-rounding class of bug from money handling, which is a correctness and trust issue rather than a threat |
+| Security | Unseedable randomness is a security property worth keeping: `random()` is deliberately not reproducible and `secure_random_hex`:785 is the separate cryptographic source. The risk to avoid is a `seed` function that gets used for tokens. `decimal` removes the float-rounding class of bug from money handling, which is a correctness and trust issue rather than a threat |
 | Contract | `round` now states its tie-breaking rule once in the spec and does not vary by arity, pinned by `RoundTieTest`. The trigonometric, logarithmic and exponential functions are specified by [ADR-0051](../adr/0051-non-finite-numbers-and-transcendentals.md), which settles the non-finite policy by measurement rather than by assumption: a **domain error raises** (`sqrt` of a negative, a logarithm of zero or less, `asin`/`acos` outside `[-1, 1]`, a negative base raised to a fractional power), while **overflow and underflow of a finite input stay silent** (`exp(1000)` is an infinity, `1.0e-308 / 10.0` is `0.0`), and a pole is not a domain error (`pow(0, -1)` is an infinity). `NaN` is therefore reachable only by combining infinities, and is detectable with `n != n` — no `is_nan` builtin exists. Every function is `StrictMath` rather than `Math` because `Math` may use platform intrinsics whose last bits vary by CPU and JVM; measured, `Math.sin` and `StrictMath.sin` disagreed on 36,073 of 1,000,000 inputs. `infinity` is not a literal, so the only way to obtain one is to overflow a finite number. A proposed exact-decimal domain must construct from text, never from a float, and must state precision and rounding explicitly per operation — but it cannot be called `decimal`, see the note below. **Name collision:** `Values.typeName` already returns `decimal` for a `Double`, so `type_of(1.5)` is `decimal` and [ADR-0015](../adr/0015-type-families.md) records that as the value model. A Python-style exact-decimal domain under the same name would make `type_of` ambiguous for the two numbers that most need telling apart. The domain is therefore blocked on a naming decision, and is not scheduled rather than half-built under a name that already means something else. [ADR-0045](../adr/0045-exact-java-numbers.md) has since removed the second objection that used to sit beside this one: `normalize` no longer narrows a `BigDecimal` to a `double`, so exact values survive the Java bridge and only the name remains undecided. A proposed `seed` must be documented as "not for secrets" in its own description, not only in prose |
 | Test | `RoundTieTest` — six tests pinning the tie rule at both arities, including the three negative cases where upward rounding, banker's rounding and away-from-zero disagree; verified to fail when the implementation is mutated to `Math.rint`. `TranscendentalTest` — 31 tests publishing the constants as an external oracle rather than against the JDK (`sin(pi/2)` is 1 because a right angle's sine is 1), every domain violation in both the builtin and method form, and a sweep asserting no in-domain input yields `NaN`. `RandomIsUnseededTest` — asserts no `seed`/`srand`/`set_seed` builtin exists, that bounded draws stay in their half-open range and cover it, and that 100 draws are not all one value. All three files exist and are green; the earlier version of this row named them before they were written, which is the same defect class this document repairs elsewhere. `StatisticsTest` carries a fixed sample with published mean/median/stdev values, the tie and interpolation rules, and the single-element and empty-sample cases |
 | Acc. | Tie-breaking documented and tested; every numeric addition carries at least one edge case at zero, one negative and one very large value |
@@ -392,7 +392,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `functools` [P]; `itertools`, `operator` [A] |
-| Oqthara equivalent | First-class functions and lambdas (`x -> x * 2`, exercised in `examples/collections.oq`); `map`:229, `filter`:231, `sort_by`:218, `par_map`:1639; `.map()`, `.filter()`, `.each()`, `.reduce()`, `.any()`, `.all()`, `.find()` on the collection families |
+| Oqthara equivalent | First-class functions and lambdas (`x -> x * 2`, exercised in `examples/collections.oq`); `map`:238, `filter`:240, `sort_by`:227, `par_map`:1701; `.map()`, `.filter()`, `.each()`, `.reduce()`, `.any()`, `.all()`, `.find()` on the collection families |
 | Missing | No lazy sequences or generators — every one of these is eager and materialises; no partial application or composition; no memoisation; no operator-as-value library beyond lambdas |
 | JVM fit | Partly — the JVM can host all of it, but a lazy pipeline needs a *protocol* (a pull-based iterator), and the language's `iteratorMethod` (3 names) is that substrate only for existing collections, not for user-defined or unbounded sequences |
 | Lifetime | Per-call for the eager forms. A proposed generator would be the first construct in the language whose value owns a suspended computation — a lifetime in all but name — so it must be settled before, not after, any lazy API is proposed |
@@ -437,7 +437,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `compression` (namespace) [X]; `zlib`, `gzip`, `zipfile` [C]; `compression.zstd`, `bz2`, `lzma`, `tarfile` [A] |
-| Oqthara equivalent | `zlib_compress`/`zlib_decompress`, `gzip_compress`/`gzip_decompress`, `zip_compress`/`zip_decompress` ([ADR-0042](../adr/0042-whole-value-compression.md)), each a whole-value pair over lowercase hex. `zlib_compress` is hex-in because it is the raw byte path; `gzip_compress` is the one exception, taking text and encoding it as UTF-8 first, which is why `gzip_compress("hello")` needs no `hex_encode` while `zlib_compress` refuses odd-length input. Every decompressor is hex-in. `read_bytes`:562 / `write_bytes`:578 remain the only raw binary path |
+| Oqthara equivalent | `zlib_compress`/`zlib_decompress`, `gzip_compress`/`gzip_decompress`, `zip_compress`/`zip_decompress` ([ADR-0042](../adr/0042-whole-value-compression.md)), each a whole-value pair over lowercase hex. `zlib_compress` is hex-in because it is the raw byte path; `gzip_compress` is the one exception, taking text and encoding it as UTF-8 first, which is why `gzip_compress("hello")` needs no `hex_encode` while `zlib_compress` refuses odd-length input. Every decompressor is hex-in. `read_bytes`:620 / `write_bytes`:636 remain the only raw binary path |
 | Missing | bzip2, xz and tar containers. There is no deflate-level control, no zstd and no entry-at-a-time archive walk |
 | JVM fit | Yes, and unusually cheaply — `Deflater`/`Inflater`, `GZIPInputStream`, `ZipInputStream` and `ZipEntry` all operate on in-memory arrays, so a whole-value API needs no host I/O at all |
 | Lifetime | Per-call, and that is what it shipped as: `zlib_*`, `gzip_*` and `zip_*` are byte-in/byte-out over hex text, with no streaming and no entry-at-a-time walk. This is the chapter where the ADR-0036 constraint cost least |
@@ -467,7 +467,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `hashlib`, `hmac`, `secrets` [all P] |
-| Oqthara equivalent | `sha256`:717, `sha1`:719, `md5`:721, `hmac_sha256`:723, `pbkdf2_sha256`:743, `secure_random_hex`:799, `secure_equal`:735 — [ADR-0033](../adr/0033-encoding-and-hashing.md) and [ADR-0038](../adr/0038-constant-time-and-password-hashing.md) |
+| Oqthara equivalent | `sha256`:777, `sha1`:779, `md5`:781, `hmac_sha256`:783, `pbkdf2_sha256`:803, `secure_random_hex`:785, `secure_equal`:795 — [ADR-0033](../adr/0033-encoding-and-hashing.md) and [ADR-0038](../adr/0038-constant-time-and-password-hashing.md) |
 | Missing | No SHA-512, SHA-3 or BLAKE2; no incremental/streaming digest; no HKDF or scrypt/argon2; no `token_urlsafe`, no `choice`, no `randbelow`; HMAC only in SHA-256 |
 | JVM fit | Yes, entirely — every one of these is a `MessageDigest`, `Mac` or `SecureRandom` call. The gap is API surface, not capability |
 | Lifetime | Per-call. There is deliberately no key or certificate handle: ADR-0038 Decision 6 refuses a key API precisely because a key needs a lifetime and there is no `close` |
@@ -482,7 +482,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `logging` [C]; `os`, `io`, `time` [P]; `logging.config`, `logging.handlers`, `platform`, `errno` [A]; `ctypes` [X] |
-| Oqthara equivalent | `log_debug`:901, `log_info`:903, `log_warn`:905, `log_error`:907, `log_level`:909, `log_enabled`:919 with a threshold from `OQ_LOG_LEVEL` ([ADR-0034](../adr/0034-logging-and-argument-parsing.md)); `env`:1743, `cwd`:616, `cpu_count`:1797, `memory_mb`:1799; `read`/`write`/`read_lines`/`read_bytes`/`write_bytes`; `now`/`today`/`datetime`/`timestamp`/`sleep` |
+| Oqthara equivalent | `log_debug`:887, `log_info`:889, `log_warn`:891, `log_error`:893, `log_level`:895, `log_enabled`:905 with a threshold from `OQ_LOG_LEVEL` ([ADR-0034](../adr/0034-logging-and-argument-parsing.md)); `env`:1729, `cwd`:602, `cpu_count`:1783, `memory_mb`:1785; `read`/`write`/`read_lines`/`read_bytes`/`write_bytes`; `now`/`today`/`datetime`/`timestamp`/`sleep` |
 | Missing | No stream objects; no monotonic or high-resolution timer, no `strftime`/`strptime`; no log file output, rotation or handler configuration; no OS name or platform string; no errno constants |
 | JVM fit | Yes — `System.getenv`, `Runtime.availableProcessors`, `System.nanoTime` and `java.util.logging` (or a one-file writer) cover it. `strftime`/`strptime` map onto `DateTimeFormatter` with the caveat that the pattern languages differ |
 | Lifetime | Per-call, with one exception worth flagging: a log *handler* that owns a file descriptor is a lifetime, which is why the environment-variable threshold plus stderr is the right shape and a `log_to_file` should not be added without the scoped-body pattern |
@@ -497,7 +497,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `argparse` [C]; `fileinput` [A]; `optparse`, `getpass`, `curses`, `curses.ascii`, `curses.panel`, `cmd` [X] |
-| Oqthara equivalent | `arg_parse`:871, a declarative parser returning `{flags, values, rest}`; `args`:208; `input`:159/157 |
+| Oqthara equivalent | `arg_parse`:931, a declarative parser returning `{flags, values, rest}`; `args`:216; `input`:156/160 |
 | Missing | No typed options or defaults beyond the flag/value split; no subcommands; no usage generation; no iteration over files named on the command line |
 | JVM fit | Yes — argument parsing is pure string processing, which is why it is already done |
 | Lifetime | Per-call. The one adjacent risk is `getpass`, whose echo suppression changes terminal state and must be restored even on error — a lifetime in disguise, and a reason to leave it out |
@@ -512,7 +512,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `threading`, `concurrent.futures` [P]; `subprocess` [C]; `sched`, `contextvars` [A]; `multiprocessing`, `multiprocessing.shared_memory`, `concurrent`, `concurrent.interpreters`, `_thread`, `queue` [X] |
-| Oqthara equivalent | `spawn`:1677, `await`:1685/1692, `done`:1706, `mutex`:1713, `par_map`:1715, `run_command`:1745 — [ADR-0039](../adr/0039-executors-and-cancellation.md). One shared executor, a bounded `await(task, seconds)` that raises without cancelling, and a mutex that closed a measured lost update (2000 + 2000 increments produced 3840/3850/3704 before, 4000 on every run after) |
+| Oqthara equivalent | `spawn`:1663, `await`:1671/1678, `done`:1692, `mutex`:1699, `par_map`:1701, `run_command`:1731 — [ADR-0039](../adr/0039-executors-and-cancellation.md). One shared executor, a bounded `await(task, seconds)` that raises without cancelling, and a mutex that closed a measured lost update (2000 + 2000 increments produced 3840/3850/3704 before, 4000 on every run after) |
 | Missing | No thread creation or pooling control, no priorities, no daemon semantics; no queue or channel; no per-task context propagation; no scheduled callbacks; no process-based parallelism |
 | JVM fit | Partly — the JVM has real parallelism, which is an advantage over CPython's GIL, but it has no `fork`, so `multiprocessing` is not portable. `concurrent.interpreters` is a CPython 3.14 facility with no JVM analogue |
 | Lifetime | Per-call for `spawn`/`await`/`par_map`, because a task is a value the runtime owns. A `queue` would be a lifetime (who closes it, what happens to a blocked reader) and is excluded on exactly that ground |
@@ -527,7 +527,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `signal` [A]; `asyncio`, `socket`, `ssl`, `select`, `selectors`, `mmap` [X] |
-| Oqthara equivalent | None at this layer. Outbound HTTP only: `http_get`:1446, `http_post`:1448, with 15 s connect and 30 s header/body deadlines, redirects normalised, TLS fully validated with no opt-out |
+| Oqthara equivalent | None at this layer. Outbound HTTP only: `http_get`:1507, `http_post`:1509, with 15 s connect and 30 s header/body deadlines, redirects normalised, TLS fully validated with no opt-out |
 | Missing | No sockets, no listeners, no event loop, no readiness polling, no memory-mapped files, no signal handling |
 | JVM fit | Yes technically — `SocketChannel`, `Selector`, `AsynchronousSocketChannel` and `MappedByteBuffer` exist. The obstacle is not the host, it is the language |
 | Lifetime | **Blocked for all seven.** A socket, a listener, a selector and a mapped buffer are all resources that own an OS handle outside the call. [ADR-0037](../adr/0037-networking-and-urls.md) Decision 4 states it: "a language with no resource construct … has nowhere to put the lifetime" |
@@ -542,7 +542,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `json`, `base64` [C]; `binascii` [P]; `email`, `mimetypes`, `quopri` [A]; `mailbox` [X] |
-| Oqthara equivalent | `json_parse`:692, `json`:694, `json_write`:695, `json_pretty`:696 (nesting capped at 256 by `Json.java:20`); `base64_encode`:713, `base64_decode`:715; `hex_encode`:709, `hex_decode`:711 |
+| Oqthara equivalent | `json_parse`:750, `json`:752, `json_write`:754, `json_pretty`:756 (nesting capped at 256 by `Json.java:20`); `base64_encode`:773, `base64_decode`:775; `hex_encode`:769, `hex_decode`:771 |
 | Missing | No MIME message model, no quoted-printable, no CRC-32 or Adler-32, no type guessing from a filename, no RFC 5322 address handling |
 | JVM fit | Yes — `java.util.Base64`, `java.util.zip.CRC32` and `MimeType`-style tables. Mail parsing is a large but self-contained grammar |
 | Lifetime | Per-call. Text or hex in, value out |
@@ -572,7 +572,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `urllib.parse`, `uuid` [C]; `urllib.request`, `urllib.error` [P]; `urllib.robotparser`, `http.cookies`, `ipaddress` [A]; `webbrowser`, `wsgiref`, `urllib`, `http`, `http.client`, `ftplib`, `poplib`, `imaplib`, `smtplib`, `socketserver`, `http.server`, `http.cookiejar`, `xmlrpc`, `xmlrpc.client`, `xmlrpc.server` [X] |
-| Oqthara equivalent | `url_parse`:1263, `url_encode`:1287, `url_decode`:1291, `query_parse`:1300, `query_encode`:1319, `url_join`:1359; `http_get`:1446, `http_post`:1448; `uuid`, `is_uuid` (version 4, canonical lowercase only) |
+| Oqthara equivalent | `url_parse`:1324, `url_encode`:1348, `url_decode`:1352, `query_parse`:1361, `query_encode`:1380, `url_join`:1420; `http_get`:1507, `http_post`:1509; `uuid`, `is_uuid` (version 4, canonical lowercase only) |
 | Missing | No IP address arithmetic or validation; no cookie parsing; no robots.txt evaluation; no authentication, proxy or cookie jar support in the HTTP client; no FTP, POP3, IMAP, SMTP; no server of any kind; no UUID versions other than 4 and no name-based generation |
 | JVM fit | Yes for the four absent items — `UUID.randomUUID()`, `InetAddress` with `BigInteger` arithmetic, and cookie parsing is text. No for the fifteen excluded items, which need listeners, connection objects or XML |
 | Lifetime | Per-call for all four absent items: a UUID is a value, an IP address is a value, a cookie is a value, a robots rule set is a value. Per-call is precisely why they are cheap. Every excluded item is a connection, a listener or a jar — a lifetime |
@@ -632,7 +632,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `pydoc` [C]; `unittest` [P]; `typing`, `devmode`, `doctest`, `unittest.mock` [A]; `test` (with its eight `test.support.*` submodules) [X] |
-| Oqthara equivalent | `oq doc` generates a reference page from declarations, with `_Undocumented._` for a declaration lacking a comment and a footer counting documented versus undocumented ([ADR-0030](../adr/0030-docstrings.md)); `docs/stdlib/reference.md` is that output. `assert`:202/200 with arity 1 or 2 |
+| Oqthara equivalent | `oq doc` generates a reference page from declarations, with `_Undocumented._` for a declaration lacking a comment and a footer counting documented versus undocumented ([ADR-0030](../adr/0030-docstrings.md)); `docs/stdlib/reference.md` is that output. `assert`:203/210 with arity 1 or 2 |
 | Missing | No in-language test runner or assertions beyond `assert`; no mocking; no doctest extraction; no type annotations; no deprecation warnings |
 | JVM fit | Yes, but with a governance caveat: [ADR-0039](../adr/0039-executors-and-cancellation.md) Decision 6 records that test and assert utilities are already present and are not to be extended. That decision, not feasibility, is what bounds this chapter |
 | Lifetime | Per-call. An in-language runner that owns a report file would be a lifetime |
@@ -648,7 +648,7 @@ Conventions used in the tables:
 |---|---|
 | Modules | `audit_events`, `pdb`, `profiling`, `pstats`, `timeit`, `trace` [A]; `bdb`, `faulthandler`, `tracemalloc` [X] |
 | Oqthara equivalent | None in-language. Structured `error` values and `try` are the only diagnostic surface; `traceback` content is produced by the runtime on an uncaught raise |
-| Missing | No single-stepping debugger, no profiler, no timing harness, no call tracing, no memory accounting beyond `memory_mb`:1723 |
+| Missing | No single-stepping debugger, no profiler, no timing harness, no call tracing, no memory accounting beyond `memory_mb`:1785 |
 | JVM fit | Partly — a profiler and a debugger are JVM-level tools (JFR, JDI) that would be exposed *through* the host, not reimplemented; a `timeit`-style harness is pure timing and would be cheap |
 | Lifetime | Per-call for a timing harness. A stepping session is a lifetime and an interactive one at that |
 | Security | A tracing facility that prints values will print secrets; `audit_events` exists in CPython as a security-audit hook and has no JVM equivalent that is safe to expose. Profiling perturbs timing, which matters if a program's security depends on a timeout |
@@ -677,7 +677,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `sys`, `builtins`, `dataclasses`, `traceback`, `inspect` [P]; `warnings`, `atexit`, `annotationlib` [A]; `sys.monitoring`, `sysconfig`, `__main__`, `contextlib`, `abc`, `__future__`, `gc`, `site` [X] |
-| Oqthara equivalent | `args`:216, `env`:1743, `exit`:218/221; `type_of`:174, `repr`:170, `format`:247; `data` declarations supplying record-shaped types; `error`:200 |
+| Oqthara equivalent | `args`:216, `env`:1729, `exit`:218/221; `type_of`:174, `repr`:170, `format`:247; `data` declarations supplying record-shaped types; `error`:200 |
 | Missing | No introspection of the builtin namespace as a value; no warning category system; no exit hooks; no docstring reflection API beyond `oq doc` |
 | JVM fit | Partly — the JVM has all of it internally, but several modules exist only to describe *CPython's* runtime: `sysconfig` reports build flags, `sys.monitoring` is a CPython profiler hook, `site` is CPython's startup sequence, `__future__` is a compile-time flag mechanism |
 | Lifetime | Per-call. `atexit` is the one that implies deferred execution, which is a form of lifetime the language does not model |
@@ -752,7 +752,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `shlex` [A]; `posix`, `pwd`, `grp`, `termios`, `tty`, `pty`, `fcntl`, `resource`, `syslog` [X] |
-| Oqthara equivalent | None. `run_command`:1745 takes one executable and arguments with no shell, so no quoting helper is needed for it |
+| Oqthara equivalent | None. `run_command`:1731 takes one executable and arguments with no shell, so no quoting helper is needed for it |
 | Missing | No shell-word quoting or splitting; no user/group lookup; no terminal control; no resource limits; no syslog |
 | JVM fit | Partly — `shlex` is pure string logic and is portable. The rest are POSIX interfaces with no Windows equivalent, so exposing them would make a program's behaviour depend on the host OS in a way the spec cannot describe |
 | Lifetime | Per-call for `shlex`. Blocked for the rest: a file descriptor, a tty and a pty are all handles |
@@ -767,7 +767,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `getopt`, `profile` — both [X] |
-| Oqthara equivalent | `arg_parse`:871 supersedes `getopt` in the same way `argparse` supersedes it in CPython |
+| Oqthara equivalent | `arg_parse`:931 supersedes `getopt` in the same way `argparse` supersedes it in CPython |
 | Missing | Nothing worth having: both are retained in CPython for backwards compatibility only |
 | JVM fit | n/a |
 | Lifetime | Not applicable |

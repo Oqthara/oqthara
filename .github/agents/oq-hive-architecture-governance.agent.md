@@ -22,6 +22,10 @@ tomorrow's contradiction.
 - The decision registry
 - `docs/spec/` — only for structural coherence, never for syntax detail
 - `AGENTS.md` and the repository's standing rules
+- The website publication contract: `scripts/dispatch-site-content.mjs`,
+  `.github/workflows/site-content-dispatch.yml`, and the ADRs that decide how documentation
+  reaches `Oqthara/Oqthara.github.io`. You own whether the two repositories stay in agreement;
+  `oq-hive-testing-security` owns the dispatch token's scope.
 
 ## How to write a decision
 

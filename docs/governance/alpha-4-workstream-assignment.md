@@ -27,16 +27,18 @@ This closes the `§4.1 workstream assignment` row of
 | 9 | Runtime Manager & Distribution | `oq-hive-testing-security` | `oq-hive-development` | `Dockerfile`, `.github/workflows/docker.yml`, `.github/workflows/release.yml`, `scripts/install.sh`, `scripts/install.ps1`, `scripts/tests/`, `packageApp` in `oq-cli/build.gradle.kts`; [ADR-0048](../adr/0048-runtime-manager.md) | Covered (ownership resolved 2026-11-11) |
 | 10 | Security Engineering | `oq-hive-testing-security` | `oq-hive-architecture-governance` | `SECURITY.md`; `docs/spec/fuzzing.md`; `oq-core/src/fuzz/java/dev/oqthara/core/`, `oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/`; `oq-runtime/src/main/java/dev/oqthara/runtime/OqHost.java`, `OutputBudget.java`, `WaitedBudget.java`; `.github/workflows/codeql.yml`; `docs/governance/alpha-4-threat-model.md` | Covered |
 | 11 | QA & Conformance | `oq-hive-testing-security` | `oq-hive-review-escalation` | `conformance/`; `scripts/verify-conformance.py`; `scripts/gen_conformance.py`; `oq-cli/src/test/java/dev/oqthara/cli/ConformanceTest.java`, `ExamplesRunTest.java`; `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`; `.circleci/config.yml` | Covered |
-| 12 | Developer Experience & Website | `oq-hive-development` (CLI/LSP only) | — | `oq-cli/src/main/java/dev/oqthara/cli/{Main,OqRunner,Formatter,Repl,DocGenerator,Scaffold,Modules}.java`; `oq-lsp/src/main/java/dev/oqthara/lsp/{Main,Server,Hover,Formatter}.java`; `editors/vscode/`; `docs/reference/cli.md`; **no owner** for `scripts/dispatch-site-content.mjs`, `.github/workflows/site-content-dispatch.yml`, `docs/adr/0008-react-website.md`, `0011-standalone-website-repository.md` | **Partly unowned** |
+| 12 | Developer Experience & Website | `oq-hive-development` (CLI/LSP) / `oq-hive-architecture-governance` (publication contract) | `oq-hive-testing-security` (dispatch token scope) | `oq-cli/src/main/java/dev/oqthara/cli/{Main,OqRunner,Formatter,Repl,DocGenerator,Scaffold,Modules}.java`; `oq-lsp/src/main/java/dev/oqthara/lsp/{Main,Server,Hover,Formatter}.java`; `editors/vscode/`; `docs/reference/cli.md`; `scripts/dispatch-site-content.mjs`, `.github/workflows/site-content-dispatch.yml`, `docs/adr/0008-react-website.md`, `0011-standalone-website-repository.md` | Covered (split, resolved 2026-11-13) |
 
-Twelve rows, four verdicts: nine `Covered`, one `Under-covered`, one `Unowned`, one `Partly
-unowned`. The matrix's `§4.2 independent review roles` row is separate and stays `BLOCKED`; it is
-a governance requirement, not one of the twelve workstreams.
+Twelve rows, two verdicts: eleven `Covered`, one `Under-covered`, none unowned. The matrix's
+`§4.2 independent review roles` row is separate and stays `BLOCKED`; it is a governance
+requirement, not one of the twelve workstreams.
 
 ## Where the mapping does not reach
 
-The six roles were written for the code, not for the shipping. Two workstreams fall outside every
-one of them, and one is split between two roles without either owning it.
+The six roles were written for the code, not for the shipping. Two workstreams originally fell
+outside every one of them, and one was split between two roles without either owning it. All three
+have since been assigned: 9 on 2026-11-11, 12 on 2026-11-13, and 2 remains under-covered as a
+substantive gap rather than an ownership gap.
 
 ### Workstream 9 — Runtime Manager & Distribution (ownership resolved 2026-11-11)
 
@@ -70,26 +72,28 @@ described in one place and applied in another. The remaining distance between wh
 names and what the repository contains is implementation work tracked as a `PARTIAL` row in the
 requirement matrix, not an unassigned artefact.
 
-### Workstream 12 — Developer Experience & Website is split and partly unowned
+### Workstream 12 — Developer Experience & Website is split, and both halves have an owner
 
 The developer-experience half is genuinely covered. `oq-hive-development` lists `oq-cli` and
 `oq-lsp`, and `oq-hive-language-syntax` lists `editors/`. The CLI, the formatter, the REPL, `oq
 doc`, the scaffolder, the language server and the VS Code extension all have an owner.
 
-The website half has none. `scripts/dispatch-site-content.mjs` and
+The website half had none. `scripts/dispatch-site-content.mjs` and
 `.github/workflows/site-content-dispatch.yml` announce content changes to
 `Oqthara/Oqthara.github.io`; `docs/adr/0008-react-website.md` and
 `docs/adr/0011-standalone-website-repository.md` record why the site lives in another repository.
-Nothing in the six agent files claims any of it, and the site repository is outside every role's
+Nothing in the six agent files claimed any of it, and the site repository is outside every role's
 working checkout.
 
-**Proposal.** Split the workstream explicitly. CLI, LSP, formatter, `oq doc`, the scaffolder and
-`editors/` stay with `oq-hive-development` and `oq-hive-language-syntax` as today. The dispatch
-path and the documentation pipeline go to `oq-hive-architecture-governance`, because the dispatch
-is a publication contract between two repositories and that role already owns cross-record
-coherence; `oq-hive-testing-security` reviews the token scope. If the directive prefers a single
-accountable role, `oq-hive-orchestrator` is the alternative — it is the only role with `agent`
-and `web` tools and it already owns integration and reporting.
+**Decision (2026-11-13).** Split the workstream explicitly. CLI, LSP, formatter, `oq doc`, the
+scaffolder and `editors/` stay with `oq-hive-development` and `oq-hive-language-syntax` as today.
+The dispatch path and the documentation pipeline go to `oq-hive-architecture-governance`, because
+the dispatch is a publication contract between two repositories and that role already owns
+cross-record coherence; `oq-hive-testing-security` reviews the token scope.
+
+The assignment is reflected in `.github/agents/oq-hive-architecture-governance.agent.md` in the
+same change that updated this document, so accountability moved in one step rather than being
+described in one place and applied in another.
 
 ### Workstream 2 — Type System & Values is under-covered
 

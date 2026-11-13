@@ -101,6 +101,51 @@ class StatisticsTest {
         assertEquals(3.0, number(call("median", list(9L, 3L, 1L, 3L, 100L))), 1e-12);
     }
 
+    /**
+     * The mean of the two middles must not overflow at either end of the double range.
+     *
+     * <p>The obvious {@code (a + b) / 2} is {@code infinity} when both middles are large and
+     * share a sign, and {@code 0.0} when both are tiny and equal. Neither is the true mean, and
+     * both used to reach the caller: {@code median([1e308, 1e308])} answered {@code infinity}.
+     * The fix moves from the lower end, which keeps the difference below the larger magnitude.
+     */
+    @Test
+    void medianOfAnEvenCountSurvivesBothEndsOfTheDoubleRange() {
+        assertEquals(1e308, number(call("median", list(1e308, 1e308))), 0.0);
+        assertEquals(-1e308, number(call("median", list(-1e308, -1e308))), 0.0);
+        assertEquals(4.9e-324, number(call("median", list(4.9e-324, 4.9e-324))), 0.0);
+        assertEquals(5e-324, number(call("median", list(5e-324, 5e-324))), 0.0);
+        // Opposite signs make the difference overflow, so the symmetric form must be used.
+        assertEquals(0.0, number(call("median", list(-1e308, 1e308))), 0.0);
+        assertEquals(0.0, number(call("median", list(-Double.MAX_VALUE, Double.MAX_VALUE))), 0.0);
+    }
+
+    /**
+     * A subnormal pair one step apart rounds back to the lower end, because there is no double
+     * between them. The answer must still be the higher of the two rather than the lower, and
+     * in no case {@code 0.0}; the test compares numerically because the printer shows every
+     * subnormal as {@code 0.0}.
+     */
+    @Test
+    void medianOfTwoAdjacentSubnormalsStaysInTheSubnormalRange() {
+        double middle = number(call("median", list(4.9e-324, 1e-323)));
+        assertTrue(middle > 0 && middle <= 1e-323,
+                "median was " + Double.doubleToLongBits(middle));
+    }
+
+    /**
+     * {@code percentile} interpolates between the same two values, so it had the same overflow:
+     * the symmetric form was already in use there, which is why this test is about the shared
+     * helper and not a second fix.
+     */
+    @Test
+    void percentileSurvivesBothEndsOfTheDoubleRange() {
+        assertEquals(1e308, number(call("percentile", list(1e308, 1e308), 50L)), 0.0);
+        assertEquals(0.0, number(call("percentile", list(-1e308, 1e308), 50L)), 0.0);
+        // Out-of-order middle values are sorted first, so the ends are the middles here.
+        assertEquals(1e308, number(call("percentile", list(1e308, -1e308, 1e308), 100L)), 0.0);
+    }
+
     // --- spread ------------------------------------------------------------------------------
 
     /**

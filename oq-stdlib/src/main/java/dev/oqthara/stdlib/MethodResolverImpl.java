@@ -263,9 +263,12 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 return result;
             });
             case "take" -> fixed(name, 1, (host, args) ->
-                    new ArrayList<>(list.subList(0, clampIndex(args.get(0), list.size()))));
+                    new ArrayList<>(list.subList(0,
+                            clampIndex(args.get(0), list.size(), span, "a count for take"))));
             case "skip" -> fixed(name, 1, (host, args) ->
-                    new ArrayList<>(list.subList(clampIndex(args.get(0), list.size()), list.size())));
+                    new ArrayList<>(list.subList(
+                            clampIndex(args.get(0), list.size(), span, "a count for skip"),
+                            list.size())));
             case "subList", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
                     (host, args, callSpan) -> {
                 // A bound is a position, so it resolves negatives from the end, and is then
@@ -273,10 +276,10 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 // IndexOutOfBoundsException outside the range, which would surface as an
                 // Oqthara bug. Folding negatives to 0, as this used to, made `slice(-2, 5)`
                 // return the whole list instead of its last two items.
-                int from = resolvedBound(args.get(0), list.size());
+                int from = resolvedBound(args.get(0), list.size(), span, "a slice start");
                 int to = args.size() == 1
                         ? list.size()
-                        : resolvedBound(args.get(1), list.size());
+                        : resolvedBound(args.get(1), list.size(), span, "a slice end");
                 // An inverted range is empty, not an error: the spec promises clamping, and a
                 // caller that computed start > end gets the same empty answer as start == end.
                 // Java's subList would throw here, so the two indices are ordered explicitly.
@@ -568,29 +571,31 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "length", "size" -> fixed(name, 0, (host, args) -> range.size());
             case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(range, span));
             case "to_list", "list", "items" -> fixed(name, 0, (host, args) -> range.toList());
-            case "sum", "min", "max", "sorted" -> fixed(name, 0, (host, args) -> {
-                List<Object> items = range.toList();
-                switch (name) {
-                    case "sum" -> {
-                        Object total = 0L;
-                        for (Object item : items) total = Values.add(total, item, span);
-                        return total;
-                    }
-                    case "sorted" -> {
-                        List<Object> copy = new ArrayList<>(items);
-                        copy.sort((a, b) -> Values.compare(a, b, span));
-                        return copy;
-                    }
-                    default -> {
-                        if (items.isEmpty()) return null;
-                        Object best = items.get(0);
-                        for (Object item : items) {
-                            int c = Values.compare(item, best, span);
-                            if (name.equals("min") ? c < 0 : c > 0) best = item;
-                        }
-                        return best;
-                    }
-                }
+            // `min` and `max` are the two ends of the progression, so neither has to be walked.
+            // They used to build every value first, which meant `(0 to 10000000).max()` died of
+            // memory exhaustion asking a question the bounds already answer.
+            case "min" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
+                if (range.isEmpty()) return null;
+                return range.step() > 0 ? range.start() : range.last();
+            });
+            case "max" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
+                if (range.isEmpty()) return null;
+                return range.step() > 0 ? range.last() : range.start();
+            });
+            // `sum` adds every value, so it genuinely enumerates. It stays materialising and is
+            // therefore bounded by what a list can hold; the report records that limitation
+            // rather than pretending the arithmetic is free.
+            case "sum" -> fixed(name, 0, (host, args) -> {
+                Object total = 0L;
+                for (Object item : range.toList()) total = Values.add(total, item, span);
+                return total;
+            });
+            // `sorted` reverses the walk when the step is negative and copies it when it is
+            // positive, but it still returns a list of every value, so it enumerates by nature.
+            case "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> copy = new ArrayList<>(range.toList());
+                copy.sort((a, b) -> Values.compare(a, b, span));
+                return copy;
             });
             // A range is an arithmetic progression, so reversing it gives another range with
             // the same shape — not a list. Returning a list would drop the family for no
@@ -598,19 +603,25 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             //
             // The endpoints come from the arithmetic, not from walking the range: a range can
             // be huge (range(0, 2_000_000_000)) and reversing it must not allocate one element
-            // per step just to read the first and last.
+            // per step just to read the first and last. `last()` is the reachable end, which is
+            // not `end` whenever the step does not divide the span: `range(0, 9, 3)` reaches 6,
+            // so it reverses to `6 to 0 by -3`, not `8 to 0 by -3`.
             //
-            // The new start is the last value the walk reaches, which is not `end` whenever the
-            // step does not divide the span: `range(0, 9, 3)` reaches 6, so it reverses to
-            // `6 to 0 by -3`, not `8 to 0 by -3`.
+            // A step of Long.MIN_VALUE cannot be negated: there is no positive long of that
+            // magnitude. Refusing says so, rather than producing a range with a wrapped step
+            // that would walk in the wrong direction.
             case "reverse" -> fixed(name, 0, (host, args) -> {
-                long size = range.size();
-                if (size == 0) {
+                if (range.isEmpty()) {
                     return new dev.oqthara.runtime.OqRange(range.start(), range.start(), false,
                             range.step());
                 }
-                long last = range.start() + (size - 1) * range.step();
-                return new dev.oqthara.runtime.OqRange(last, range.start(), true, -range.step());
+                if (range.step() == Long.MIN_VALUE) {
+                    throw new dev.oqthara.runtime.OqError(
+                            "this range cannot be reversed", span,
+                            "Its step is -9223372036854775808, and there is no positive step that large.");
+                }
+                return new dev.oqthara.runtime.OqRange(range.last(), range.start(), true,
+                        -range.step());
             });
             case "to_set", "set" -> fixed(name, 0, (host, args) ->
                     new dev.oqthara.runtime.OqSet(range.toList()));
@@ -618,29 +629,31 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 Object item = args.get(0);
                 // `r.contains(x)` and `x in r` are two spellings of one question, so they must
                 // accept the same items. `3.0` is the same number as `3` everywhere else in the
-                // language, so a whole-valued decimal counts here too (ADR-0026).
+                // language, so a whole-valued decimal counts here too (ADR-0026). A decimal
+                // outside the 64-bit range is not a member: casting it would saturate at
+                // Long.MAX_VALUE and match a value it does not equal (issue #153).
                 if (item instanceof Long l) return range.contains(l);
-                if (Values.isNumber(item)) {
-                    double d = Values.asDouble(item);
-                    return d == Math.rint(d) && range.contains((long) d);
+                if (item instanceof Double d) {
+                    return d == Math.rint(d) && Values.fitsInLong(d) && range.contains(d.longValue());
                 }
                 return false;
             });
+            // The first and last values are the start and the reachable end. Both used to build
+            // the whole list first, so `(0 to 10000000).first()` ran out of memory answering
+            // with the number it already had.
             case "first" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
-                List<Object> items = range.toList();
-                if (items.isEmpty()) {
+                if (range.isEmpty()) {
                     throw new dev.oqthara.runtime.OqError("this range is empty", callSpan,
                             "Check length() before asking for the first item.");
                 }
-                return items.get(0);
+                return range.start();
             });
             case "last" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
-                List<Object> items = range.toList();
-                if (items.isEmpty()) {
+                if (range.isEmpty()) {
                     throw new dev.oqthara.runtime.OqError("this range is empty", callSpan,
                             "Check length() before asking for the last item.");
                 }
-                return items.get(items.size() - 1);
+                return range.last();
             });
             default -> null;
         };
@@ -678,24 +691,46 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             });
             case "substring", "slice" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2,
                     (host, args, callSpan) -> {
-                        // Bounds are character offsets, per ADR-0024, so they are converted to
-                        // UTF-16 offsets before reaching String.substring.
+                        // Bounds are character offsets, per ADR-0024, so they are validated as
+                        // whole numbers and converted to UTF-16 offsets before reaching
+                        // String.substring. Narrowing with intValue() first truncated a
+                        // fractional bound and saturated a huge one.
                         int count = Values.codePointCount(text);
-                        int from = ((Number) args.get(0)).intValue();
-                        if (from < 0) from = count + from;
-                        int to = args.size() > 1 ? ((Number) args.get(1)).intValue() : count;
-                        if (to < 0) to = count + to;
+                        long fromIndex = Values.integerIndex(args.get(0), callSpan, "a slice start");
+                        long from = fromIndex < 0 ? count + fromIndex : fromIndex;
+                        long to;
+                        if (args.size() > 1) {
+                            long toIndex = Values.integerIndex(args.get(1), callSpan, "a slice end");
+                            to = toIndex < 0 ? count + toIndex : toIndex;
+                        } else {
+                            to = count;
+                        }
                         from = Math.max(0, Math.min(from, count));
                         to = Math.max(from, Math.min(to, count));
                         return text.substring(
-                                text.offsetByCodePoints(0, from), text.offsetByCodePoints(0, to));
+                                text.offsetByCodePoints(0, (int) from),
+                                text.offsetByCodePoints(0, (int) to));
                     });
-            case "repeat" -> fixed(name, 1, (host, args) ->
-                    text.repeat(((Number) args.get(0)).intValue()));
-            case "pad_start" -> fixed(name, 2, (host, args) -> pad(text, args, true));
-            case "pad_end" -> fixed(name, 2, (host, args) -> pad(text, args, false));
-            case "capitalize" -> fixed(name, 0, (host, args) ->
-                    text.isEmpty() ? text : Character.toUpperCase(text.charAt(0)) + text.substring(1));
+            case "repeat" -> fixed(name, 1, (host, args) -> {
+                long times = Values.integerIndex(args.get(0), span, "a count for repeat");
+                if (times < 0) {
+                    throw new OqError("repeat() needs a count of zero or more, got " + times, span,
+                            "Repeating text a negative number of times has no meaning.");
+                }
+                // Java's String.repeat takes an int and throws when the result would not fit one.
+                // Checking the product here names the argument instead of leaking that exception
+                // as an internal error (issue #145).
+                long length = text.length();
+                if (length > 0 && times > Integer.MAX_VALUE / length) {
+                    throw new OqError("repeat() count is too large: " + times, span,
+                            "The repeated text would be longer than " + Integer.MAX_VALUE
+                                    + " characters, which is the most a text value can hold.");
+                }
+                return text.repeat((int) times);
+            });
+            case "pad_start" -> fixed(name, 2, (host, args) -> pad(text, args, span, true));
+            case "pad_end" -> fixed(name, 2, (host, args) -> pad(text, args, span, false));
+            case "capitalize" -> fixed(name, 0, (host, args) -> capitalize(text));
             case "words" -> fixed(name, 0, (host, args) -> new ArrayList<Object>(
                     List.of(text.strip().isEmpty() ? new String[0] : text.strip().split("\\s+"))));
             case "number", "to_number" -> fixed(name, 0, (host, args) -> parseNumber(text, span));
@@ -727,11 +762,13 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
 
     private OqCallable numberMethod(Object number, String name, Span span) {
         return switch (name) {
-            case "abs" -> fixed(name, 0, (host, args) -> number instanceof Long l
-                    ? (Object) Math.abs(l) : (Object) Math.abs(((Number) number).doubleValue()));
-            case "floor" -> fixed(name, 0, (host, args) -> (long) Math.floor(((Number) number).doubleValue()));
-            case "ceil" -> fixed(name, 0, (host, args) -> (long) Math.ceil(((Number) number).doubleValue()));
-            case "round" -> fixed(name, 0, (host, args) -> Math.round(((Number) number).doubleValue()));
+            // Every method that has a builtin counterpart delegates to the same code, so the two
+            // forms cannot drift: `1e300.floor()` used to saturate at Long.MAX_VALUE because the
+            // cast to long was local to this method, while floor(1e300) kept the decimal.
+            case "abs" -> fixed(name, 0, (host, args) -> Stdlib.abs(number, span));
+            case "floor" -> fixed(name, 0, (host, args) -> Stdlib.floor(number, span));
+            case "ceil" -> fixed(name, 0, (host, args) -> Stdlib.ceil(number, span));
+            case "round" -> fixed(name, 0, (host, args) -> Stdlib.round(number, span));
             case "sqrt" -> fixed(name, 0, (host, args) -> Stdlib.real(
                     StrictMath.sqrt(((Number) number).doubleValue()), "sqrt", number));
             // The method form and the builtin must agree, including on what they refuse: a
@@ -750,10 +787,41 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "degrees" -> transcendentalMethod(name, number, v -> v * (180.0 / StrictMath.PI));
             case "radians" -> transcendentalMethod(name, number, v -> v * (StrictMath.PI / 180.0));
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(number));
-            case "is_even" -> fixed(name, 0, (host, args) -> ((Number) number).longValue() % 2 == 0);
-            case "is_odd" -> fixed(name, 0, (host, args) -> ((Number) number).longValue() % 2 != 0);
+            case "is_even" -> fixed(name, 0, (host, args) -> isMultipleOfTwo(number, name, true, span));
+            case "is_odd" -> fixed(name, 0, (host, args) -> isMultipleOfTwo(number, name, false, span));
             default -> null;
         };
+    }
+
+    /**
+     * Whether a number is a multiple of two, without narrowing it first.
+     *
+     * <p>Converting to {@code long} first was wrong for every value outside the long range: a
+     * decimal like {@code 1e20} is exactly even (its spacing is far wider than 2), but it used to
+     * saturate at {@link Long#MAX_VALUE} and report odd. A decimal is answered directly, with no
+     * conversion at all, so the parity is the one the value really has.
+     *
+     * <p>A decimal with a fractional part has no parity, so it is refused rather than truncated:
+     * {@code 1.5.is_even()} answering {@code false} is indistinguishable from {@code 1.5} being
+     * odd, which is not what a caller asked. The whole decimal {@code 2.0} is accepted because it
+     * equals the whole number {@code 2}.
+     */
+    private static boolean isMultipleOfTwo(Object number, String name, boolean even, Span span) {
+        boolean multiple;
+        if (number instanceof Long l) {
+            multiple = l % 2 == 0;
+        } else {
+            double d = (Double) number;
+            if (!Double.isFinite(d) || d != Math.rint(d)) {
+                throw new OqError(name + "() needs a whole number, got " + Values.display(number),
+                        span,
+                        "Only a number with no fractional part has a parity.");
+            }
+            // Every double at or beyond 2^53 is a multiple of two, and `%` on a smaller integral
+            // double is exact, so no conversion to long is needed.
+            multiple = d % 2 == 0;
+        }
+        return even == multiple;
     }
 
     private static dev.oqthara.runtime.NativeFunction transcendentalMethod(
@@ -781,42 +849,73 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         }
     }
 
-    private static String pad(String text, List<Object> args, boolean start) {
+    /**
+     * The first character upper-cased, the rest unchanged.
+     *
+     * <p>The first character is read as a code point, not a UTF-16 unit. {@code charAt(0)} reads
+     * half of a surrogate pair, and {@code Character.toUpperCase(char)} cannot map a letter
+     * outside the basic multilingual plane at all, so {@code "𐐨x".capitalize()} used to return
+     * its input unchanged (issue #148). Reading the pair and using the {@code int} overload
+     * upper-cases the letter the language sees, as ADR-0024 requires.
+     */
+    private static String capitalize(String text) {
+        if (text.isEmpty()) return text;
+        int first = text.codePointAt(0);
+        int upper = Character.toUpperCase(first);
+        // A mapping that changes length would need the character count kept in step with the
+        // rest of the text; every single code point maps to a single code point in practice.
+        int end = Character.charCount(first);
+        return new String(Character.toChars(upper)) + text.substring(end);
+    }
+
+    private static String pad(String text, List<Object> args, Span span, boolean start) {
         // Widths are character counts, per ADR-0024, so the padding is built from whole
         // characters rather than trimmed to a UTF-16 length that could split a surrogate pair.
-        int width = ((Number) args.get(0)).intValue();
+        // The width is validated as a whole number first: intValue() used to truncate 9.5 to 9.
+        long widthValue = Values.integerIndex(args.get(0), span,
+                start ? "a width for pad_start" : "a width for pad_end");
         String fill = args.size() > 1 ? Values.display(args.get(1)) : " ";
         List<Object> fillChars = Values.textCharacters(fill);
         if (fillChars.isEmpty()) fillChars = List.of(" ");
-        int needed = width - Values.codePointCount(text);
+        long count = Values.codePointCount(text);
+        long needed = widthValue - count;
         if (needed <= 0) return text;
+        // A padding longer than a text value can hold is refused by name, not by an OutOfMemory
+        // error or a silent wrap of the int loop counter.
+        if (needed > Integer.MAX_VALUE) {
+            throw new OqError("padding width is too large: " + widthValue, span,
+                    "The largest width pad_start() and pad_end() can build is "
+                            + (count + Integer.MAX_VALUE) + " characters.");
+        }
         StringBuilder padding = new StringBuilder();
-        for (int i = 0; i < needed; i++) padding.append(fillChars.get(i % fillChars.size()));
+        for (int i = 0; i < (int) needed; i++) padding.append(fillChars.get(i % fillChars.size()));
         return start ? padding + text : text + padding;
     }
 
     /**
-     * Clamps {@code value} to {@code [0, size]} without letting a long wider than an int wrap.
-     *
-     * <p>Narrowing with {@code intValue()} first turns {@code 4294967297} into {@code 1}, which
-     * silently slices the wrong range, and turns a large negative into a positive index. The
-     * clamp happens in {@code long} so neither can occur.
-     */
-    /**
      * A slice bound: negatives count from the end, then the result is clamped into
      * {@code [0, size]}. Clamping a bound past either end is deliberate -- a bound delimits a
      * range, so {@code slice(i, i + 10)} must not fail on a short list.
+     *
+     * <p>The bound is validated through {@link Values#integerIndex} before it is clamped, so a
+     * fractional or non-finite value is refused rather than truncated. Every other form that
+     * takes a position -- bracket slicing, indexing, {@code take}, {@code skip} -- already does.
+     *
+     * <p>The clamp itself happens in {@code long}: narrowing with {@code intValue()} first turns
+     * {@code 4294967297} into {@code 1}, which silently slices the wrong range, and turns a large
+     * negative into a positive index.
      */
-    private static int resolvedBound(Object value, int size) {
-        long index = ((Number) value).longValue();
+    private static int resolvedBound(Object value, int size, Span span, String which) {
+        long index = Values.integerIndex(value, span, which);
         long resolved = index < 0 ? size + index : index;
         if (resolved < 0) return 0;
         if (resolved > size) return size;
         return (int) resolved;
     }
 
-    private static int clampIndex(Object value, int size) {
-        long index = ((Number) value).longValue();
+    /** {@code take}/{@code skip}: a count, so nothing is resolved from the end. */
+    private static int clampIndex(Object value, int size, Span span, String which) {
+        long index = Values.integerIndex(value, span, which);
         if (index < 0) return 0;
         if (index > size) return size;
         return (int) index;
