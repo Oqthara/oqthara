@@ -88,7 +88,7 @@ final class TextWrap {
             String word = text.substring(start, i);
             while (i < text.length() && Character.isWhitespace(text.charAt(i))) i++;
 
-            if (carrying && current.length() + 1 + word.length() <= width) {
+            if (carrying && codePointWidth(current) + 1 + codePointWidth(word) <= width) {
                 current = current + " " + word;
                 continue;
             }
@@ -96,25 +96,44 @@ final class TextWrap {
                 lines.add(current);
                 current = "";
                 carrying = false;
-            } else if (!current.isEmpty() && current.length() + word.length() > width) {
+            } else if (!current.isEmpty() && codePointWidth(current) + codePointWidth(word) > width) {
                 // Only the indent is on this line and the first word does not fit beside it, so
                 // the indent is dropped rather than emitting a line of nothing but spaces.
                 current = "";
             }
-            if (word.length() <= width) {
+            if (codePointWidth(word) <= width) {
                 current = current + word;
                 carrying = true;
                 continue;
             }
-            while (word.length() > width) {
-                lines.add(word.substring(0, width));
-                word = word.substring(width);
+            while (codePointWidth(word) > width) {
+                int end = offsetOfCodePoint(word, width);
+                lines.add(word.substring(0, end));
+                word = word.substring(end);
             }
             current = word;
             carrying = true;
         }
         if (carrying || !current.isEmpty()) lines.add(current);
         return lines;
+    }
+
+    /**
+     * The width of {@code text} in characters, which Oqthara defines as Unicode code points
+     * (ADR-0024). {@code String.length()} counts UTF-16 units, so it reports U+1F600 as two
+     * characters and, worse, allowed {@link #wrap} to split a surrogate pair in half (#179).
+     */
+    private static int codePointWidth(String text) {
+        return text.codePointCount(0, text.length());
+    }
+
+    /** The char offset of the {@code codePoints}-th code point of {@code text}. */
+    private static int offsetOfCodePoint(String text, int codePoints) {
+        int index = 0;
+        for (int seen = 0; seen < codePoints && index < text.length(); seen++) {
+            index += Character.charCount(text.codePointAt(index));
+        }
+        return index;
     }
 
     private static String dedent(String text) {
@@ -153,17 +172,19 @@ final class TextWrap {
 
     private static String shorten(String text, int width, Span span) {
         String collapsed = String.join(" ", words(text));
-        if (collapsed.length() <= width) return collapsed;
-        if (width <= ELLIPSIS.length()) {
-            throw new OqError("shorten_text() cannot fit " + ELLIPSIS.length()
+        if (codePointWidth(collapsed) <= width) return collapsed;
+        if (width <= codePointWidth(ELLIPSIS)) {
+            throw new OqError("shorten_text() cannot fit " + codePointWidth(ELLIPSIS)
                     + " characters of placeholder in a width of " + width, span,
-                    "Use a width of at least " + (ELLIPSIS.length() + 1) + ".");
+                    "Use a width of at least " + (codePointWidth(ELLIPSIS) + 1) + ".");
         }
-        int room = width - ELLIPSIS.length();
+        int room = width - codePointWidth(ELLIPSIS);
         List<String> parts = words(text);
         StringBuilder out = new StringBuilder();
         for (String word : parts) {
-            int needed = out.isEmpty() ? word.length() : out.length() + 1 + word.length();
+            int needed = out.isEmpty()
+                    ? codePointWidth(word)
+                    : codePointWidth(out.toString()) + 1 + codePointWidth(word);
             if (needed > room) break;
             if (!out.isEmpty()) out.append(' ');
             out.append(word);
