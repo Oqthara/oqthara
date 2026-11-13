@@ -157,6 +157,48 @@ class FileOperationsTest {
         assertEquals("keep", Files.readString(dir.resolve("c.txt")));
     }
 
+    /**
+     * The byte cap is enforced on bytes copied, not on the size the filesystem reports.
+     *
+     * <p>{@code Files.size} is advisory: for a device, a procfs entry, or a file another process
+     * is still writing, it is not the number of bytes a read will yield. A cap applied to it
+     * admits an unbounded copy. The stream here reports a small size and then delivers more,
+     * which is exactly the case the reported-size check cannot see.
+     */
+    @Test
+    void copyStopsAtTheLimitEvenWhenTheReportedSizeIsSmall() {
+        long limit = 1024;
+        byte[] delivered = new byte[64 * 1024];
+        java.io.InputStream lyingSource =
+                new java.io.ByteArrayInputStream(delivered) {
+                    @Override
+                    public int available() {
+                        return 4; // what a file claiming four bytes would offer
+                    }
+                };
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+
+        OqError error = assertThrows(OqError.class, () -> Stdlib.copyBounded(
+                lyingSource, sink, limit, dir.resolve("reported-small"), Span.synthetic()));
+
+        assertTrue(error.getMessage().contains("too large"), error.getMessage());
+        assertTrue(sink.size() <= limit,
+                "nothing past the limit may be written, but " + sink.size() + " bytes were");
+    }
+
+    /** A copy under the limit still succeeds and is charged for what moved. */
+    @Test
+    void copyUnderTheLimitTransfersEveryByte() throws Exception {
+        byte[] payload = "the whole thing".getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+
+        long copied = Stdlib.copyBounded(new java.io.ByteArrayInputStream(payload), sink,
+                1024, dir.resolve("small"), Span.synthetic());
+
+        assertEquals(payload.length, copied);
+        assertEquals("the whole thing", sink.toString(StandardCharsets.UTF_8));
+    }
+
     @Test
     void moveRemovesTheSource() throws Exception {
         Files.writeString(dir.resolve("a.txt"), "hi");

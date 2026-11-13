@@ -711,25 +711,78 @@ public final class Stdlib {
     }
 
     /** Copies one file, refusing an existing target and billing the bytes moved. */
-    private static Object copyCharged(OqHost host, Path source, Path target, Span span) {
-        try (java.io.InputStream in = Files.newInputStream(source)) {
-            if (Files.exists(target)) {
-                throw new OqError("target already exists: " + target, span,
-                        "copy_file and move_file never overwrite. Delete it first, or pick another name.");
-            }
-            long size = Files.size(source);
-            if (size > MAX_TEXT_BYTES) {
+    /**
+     * Copies until the input ends, refusing the moment more than {@code limit} bytes arrive.
+     *
+     * <p>Returns the number of bytes written so the caller can bill what actually moved rather
+     * than what the filesystem claimed would move.
+     */
+    static long copyBounded(java.io.InputStream in, java.io.OutputStream out, long limit,
+                            Path source, Span span) throws IOException {
+        byte[] buffer = new byte[8192];
+        long copied = 0;
+        int read;
+        while ((read = in.read(buffer)) >= 0) {
+            copied += read;
+            if (copied > limit) {
                 throw new OqError("file is too large to copy: " + source, span,
-                        "It is more than the " + MAX_TEXT_BYTES + " byte limit.");
+                        "It is more than the " + limit
+                                + " byte limit. The reported size was smaller.");
             }
+            out.write(buffer, 0, read);
+        }
+        return copied;
+    }
+
+    /**
+     * Copies at most {@link #MAX_TEXT_BYTES}, refusing as soon as the copy exceeds it.
+     *
+     * <p>{@code Files.size} is advisory: it is the value the filesystem reports, which for a
+     * device, a pipe, a procfs entry or a file another process is writing is not the number of
+     * bytes a read will yield. Gating on it alone let a source reporting 4 bytes copy 40 MB --
+     * the check passed and the copy ran unbounded. The limit is enforced here on bytes actually
+     * transferred, so the bound holds whatever the reported size claims. A refused copy deletes
+     * its partial target, because leaving one would make the next attempt fail on "target
+     * already exists" and hide the real reason.
+     */
+    private static Object copyCharged(OqHost host, Path source, Path target, Span span) {
+        if (Files.exists(target)) {
+            throw new OqError("target already exists: " + target, span,
+                    "copy_file and move_file never overwrite. Delete it first, or pick another name.");
+        }
+        long reported = -1;
+        try {
+            reported = Files.size(source);
+        } catch (IOException unreadableSize) {
+            // Size is advisory, so an unreadable one is not a refusal; the byte count decides.
+        }
+        if (reported > MAX_TEXT_BYTES) {
+            throw new OqError("file is too large to copy: " + source, span,
+                    "It is more than the " + MAX_TEXT_BYTES + " byte limit.");
+        }
+        long copied = 0;
+        boolean completed = false;
+        try (java.io.InputStream in = Files.newInputStream(source)) {
             if (target.getParent() != null) Files.createDirectories(target.getParent());
-            java.nio.file.Files.copy(in, target);
-            chargeTransfer(host, size);
+            try (java.io.OutputStream out = Files.newOutputStream(target)) {
+                copied = copyBounded(in, out, MAX_TEXT_BYTES, source, span);
+            }
+            completed = true;
+            chargeTransfer(host, copied);
             return null;
         } catch (OqError error) {
             throw error;
         } catch (IOException e) {
             throw new OqError("cannot copy '" + source + "' to '" + target + "'", span, e.getMessage());
+        } finally {
+            if (!completed) {
+                try {
+                    Files.deleteIfExists(target);
+                } catch (IOException leftover) {
+                    // The copy already failed; a transaction with nothing to add is not raised
+                    // in place of the reason it failed.
+                }
+            }
         }
     }
 
