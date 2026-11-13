@@ -118,6 +118,22 @@ public final class OqSet extends AbstractSet<Object> {
         return result;
     }
 
+    /**
+     * The structural hash, so two collections the language calls equal also look equal to Java.
+     *
+     * <p>The inherited {@code hashCode} sums each element's <em>Java</em> hash, and
+     * {@code Long.hashCode(1)} differs from {@code Double.hashCode(1.0)} even though the language
+     * says {@code 1 == 1.0} and therefore {@code set([1]) == set([1.0])}. Mixing the two in a
+     * Java hash-based container would put equal sets in different buckets. Delegating to
+     * {@link Value#hashing} makes the hash a function of the same widened values the equality
+     * test uses, and its order-independence matches the language's set ordering, which ignores
+     * insertion order.
+     */
+    @Override
+    public int hashCode() {
+        return Value.hashing(this);
+    }
+
     @Override
     public String toString() {
         return Values.repr(this);

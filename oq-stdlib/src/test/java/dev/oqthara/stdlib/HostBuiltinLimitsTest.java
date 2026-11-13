@@ -574,6 +574,41 @@ class HostBuiltinLimitsTest {
         assertTrips(error, "input");
     }
 
+    @Test
+    void inputTreatsCarriageReturnAsALineTerminator() {
+        // BufferedReader.readLine has always accepted LF, CR and CRLF; the hand-rolled reader
+        // accepted only LF, so a Windows stream left a trailing U+000D on every line and a
+        // CR-only stream was read as one long line. All three terminators now agree, and none
+        // of them contribute a character to the returned line.
+        assertEquals("hello", lineFrom("hello\r\n"));
+        assertEquals("hello", lineFrom("hello\r"));
+        assertEquals("hello", lineFrom("hello\n"));
+        assertEquals("hello", lineFrom("hello"));
+    }
+
+    @Test
+    void inputKeepsTheLinesAfterTheFirstTerminatorWhole() {
+        // A CRLF terminator must consume exactly one LF. If the LF were pushed back as well,
+        // the second line would come back empty; if neither were consumed, both would.
+        assertEquals("world", secondLineFrom("hello\r\nworld\r\n"));
+        assertEquals("world", secondLineFrom("hello\rworld\r"));
+        assertEquals("world", secondLineFrom("hello\nworld\n"));
+        // A CR that ends the stream has nothing to peek at; the read must report end of input
+        // rather than block, and the line before it must still be whole.
+        assertEquals("hello", lineFrom("hello\r"));
+    }
+
+    private String lineFrom(String text) {
+        Interpreter reading = interpreterReading(text);
+        return (String) reading.builtins().get("input").call(reading, List.of(), Span.synthetic());
+    }
+
+    private String secondLineFrom(String text) {
+        Interpreter reading = interpreterReading(text);
+        reading.builtins().get("input").call(reading, List.of(), Span.synthetic());
+        return (String) reading.builtins().get("input").call(reading, List.of(), Span.synthetic());
+    }
+
     private Interpreter interpreterReading(String text) {
         dev.oqthara.runtime.OutputBudget.reset();
         Interpreter created = new Interpreter(

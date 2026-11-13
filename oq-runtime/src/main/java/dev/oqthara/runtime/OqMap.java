@@ -113,7 +113,13 @@ public final class OqMap extends AbstractMap<Object, Object> {
 
             @Override
             public boolean remove(Object key) {
-                return backing.remove(Value.of(key)) != null;
+                // A present key can map to `nothing`, which the backing map stores as Java null,
+                // so the removed value cannot answer "did this change the map". Presence must be
+                // tested separately or the set reports false after removing the key.
+                Value boxed = Value.of(key);
+                if (!backing.containsKey(boxed)) return false;
+                backing.remove(boxed);
+                return true;
             }
 
             @Override
@@ -179,6 +185,20 @@ public final class OqMap extends AbstractMap<Object, Object> {
             if (i++ == index) return key.raw();
         }
         throw new IndexOutOfBoundsException(index);
+    }
+
+    /**
+     * The structural hash, so two maps the language calls equal also look equal to Java.
+     *
+     * <p>The inherited {@code hashCode} sums {@code key.hashCode() ^ value.hashCode()}, which
+     * uses each key's <em>Java</em> hash; {@code Long.hashCode(1)} differs from
+     * {@code Double.hashCode(1.0)} even though the language says {@code 1 == 1.0} and therefore
+     * {@code {1: "x"} == {1.0: "x"}}. Delegating to {@link Value#hashing} hashes the keys through
+     * the same widened values the equality test uses.
+     */
+    @Override
+    public int hashCode() {
+        return Value.hashing(this);
     }
 
     @Override
