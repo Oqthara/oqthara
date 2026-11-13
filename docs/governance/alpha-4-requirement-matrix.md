@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `08d3bff` (merge of PR #205: HTML escaping added under ADR-0054), 2026-11-13.
+**Last verified:** `c1e08bb` (merge of PR #206: the verification pin now names the merge commit, since squash-merge discards branch SHAs), 2026-11-13. The locale-independence increment was verified on the branch that becomes PR #207 and re-verified against this commit; the figure content is unchanged by it.
 
 ## Language features (§14)
 
