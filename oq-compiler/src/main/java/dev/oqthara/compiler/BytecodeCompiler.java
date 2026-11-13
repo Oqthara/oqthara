@@ -938,6 +938,15 @@ public final class BytecodeCompiler {
                                 "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
                     }
                 }
+                case Ir.CounterRange counterRange -> {
+                    if (reachable) {
+                        // A primitive flag in the descriptor is not boxed, unlike an Ir.Const.
+                        bytes.write(counterRange.inclusive() ? ICONST_1 : ICONST_0);
+                        push();
+                        call(COLLECTIONS, "counterRange",
+                                "(Ljava/lang/Object;Ljava/lang/Object;Z)Ljava/lang/Object;");
+                    }
+                }
                 case Ir.IterNew ignored -> {
                     if (reachable) {
                         call(COLLECTIONS, "iterator",

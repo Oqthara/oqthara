@@ -1035,72 +1035,34 @@ public final class Lowering {
      * this is spelled out instead of being simplified.
      */
     private void forRange(Ast.ForRange loop) {
-        String from = temp("from");
-        String to = temp("to");
-        String counter = temp("i");
-        String step = temp("step");
-        String last = temp("end");
+        String iterator = temp("iter");
         String id = "loop" + loopCounter++;
         String head = id + "_head";
-        String descending = id + "_desc";
-        String stepChosen = id + "_step_chosen";
-        String body = id + "_body";
-        String stepLabel = id + "_step";
+        String step = id + "_step";
         String exitLabel = id + "_end";
-
+        // A counter loop walks a range, and the range owns the direction: `for i in 5 to 1`
+        // counts down even though the literal `5 to 1` is empty. Building that range in one
+        // runtime helper keeps the interpreter and this backend identical by construction, and
+        // walking it by iterator keeps the loop lazy and free of the counter arithmetic that
+        // wrapped at Long.MAX_VALUE and never terminated.
         expression(loop.from());
-        code.add(new Ir.Store(from));
         expression(loop.to());
-        code.add(new Ir.Store(to));
-        code.add(new Ir.Load(from));
-        code.add(new Ir.Store(counter));
-
-        code.add(new Ir.Load(from));
-        code.add(new Ir.Load(to));
-        code.add(new Ir.Binary("<="));
-        code.add(new Ir.JumpIfFalseLabel(descending));
-        code.add(new Ir.Const(1L));
-        code.add(new Ir.Store(step));
-        code.add(new Ir.JumpLabel(stepChosen));
-        code.add(new Ir.Label(descending));
-        code.add(new Ir.Const(-1L));
-        code.add(new Ir.Store(step));
-        code.add(new Ir.Label(stepChosen));
-
-        code.add(new Ir.Load(to));
-        if (!loop.inclusive()) {
-            code.add(new Ir.Load(step));
-            code.add(new Ir.Binary("-"));
-        }
-        code.add(new Ir.Store(last));
-
+        mark(loop.span());
+        code.add(new Ir.CounterRange(loop.inclusive()));
+        code.add(new Ir.IterNew());
+        code.add(new Ir.Store(iterator));
         code.add(new Ir.Label(head));
-        loops.add(new LoopContext(id, exitLabel, stepLabel));
-        code.add(new Ir.Load(step));
-        code.add(new Ir.Const(0L));
-        code.add(new Ir.Binary(">"));
-        code.add(new Ir.JumpIfFalseLabel(descending + "_check"));
-        code.add(new Ir.Load(counter));
-        code.add(new Ir.Load(last));
-        code.add(new Ir.Binary("<="));
+        loops.add(new LoopContext(id, exitLabel, step));
+        code.add(new Ir.Load(iterator));
+        code.add(new Ir.IterHasNext());
         code.add(new Ir.JumpIfFalseLabel(exitLabel));
-        code.add(new Ir.JumpLabel(body));
-        code.add(new Ir.Label(descending + "_check"));
-        code.add(new Ir.Load(counter));
-        code.add(new Ir.Load(last));
-        code.add(new Ir.Binary(">="));
-        code.add(new Ir.JumpIfFalseLabel(exitLabel));
-        code.add(new Ir.Label(body));
         code.add(new Ir.ScopeEnter());
-        code.add(new Ir.Load(counter));
+        code.add(new Ir.Load(iterator));
+        code.add(new Ir.IterNext());
         code.add(new Ir.Declare(loop.name(), true));
         block(loop.body());
         code.add(new Ir.ScopeExit());
-        code.add(new Ir.Label(stepLabel));
-        code.add(new Ir.Load(counter));
-        code.add(new Ir.Load(step));
-        code.add(new Ir.Binary("+"));
-        code.add(new Ir.Store(counter));
+        code.add(new Ir.Label(step));
         code.add(new Ir.JumpLabel(head));
         loops.remove(loops.size() - 1);
         code.add(new Ir.Label(exitLabel));

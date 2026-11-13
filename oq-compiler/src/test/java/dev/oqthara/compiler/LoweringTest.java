@@ -81,7 +81,9 @@ class LoweringTest {
     @Test
     void descendingRangeIsNotSimplifiedIntoAnAscendingLoop() {
         // A range whose bounds are variables cannot be decided at compile time, so the
-        // lowering must compute the step at runtime rather than emit a fixed `<=` test.
+        // direction has to be chosen at runtime rather than fixed by the lowering. A literal
+        // `to` compiles to the inclusive counter-range opcode, which derives the step from the
+        // operands: `5 to 1` steps down with -1 and `1 to 5` steps up with 1.
         Ast.Program program = Parser.parse("<t>", """
                 a = 5
                 b = 1
@@ -92,10 +94,12 @@ class LoweringTest {
         Lowering.Result result = Lowering.lowerWithReport(program);
         assertTrue(result.divergences().isEmpty());
         List<Ir.Instr> body = result.program().main().body();
-        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Const c && Long.valueOf(-1L).equals(c.value())),
-                "the negative step must be materialized");
-        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Label l && l.name().endsWith("_desc")),
-                "a descending branch must exist");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.CounterRange),
+                "the loop must build a counter range at runtime");
+        assertFalse(body.stream().anyMatch(i -> i instanceof Ir.Binary b2 && b2.op().equals("<=")),
+                "the bound must not be retested with a fixed ascending comparison");
+        assertFalse(body.stream().anyMatch(i -> i instanceof Ir.Const c && Long.valueOf(-1L).equals(c.value())),
+                "the step is derived from the bounds by the runtime, not fixed by the lowering");
     }
 
     @Test
@@ -135,14 +139,37 @@ class LoweringTest {
 
     @Test
     void lowersForRange() {
+        // A counter loop became a range-object walk, not a `_i` counter with a `<=` test: the
+        // old shape added the step and retested the bound, which wrapped at Long.MAX_VALUE and
+        // never terminated. Both backends now share one lazy iterator, so the lowering emits
+        // the two bounds, the direction, and the loop's own iterator protocol.
         Ir.Program program = lower("""
                 for n in 1 to 3
                   print n
                 end
                 """);
         List<Ir.Instr> body = program.main().body();
-        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Store s && s.name().startsWith("_i")));
-        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Binary b && b.op().equals("<=")));
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.CounterRange c && c.inclusive()),
+                "a `to` loop builds an inclusive counter range");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.IterNew));
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.IterHasNext));
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.IterNext));
+        assertFalse(body.stream().anyMatch(i -> i instanceof Ir.Binary b && b.op().equals("<=")),
+                "the bound is not retested with an arithmetic comparison");
+        assertFalse(body.stream().anyMatch(i -> i instanceof Ir.Store s && s.name().equals("_i0")),
+                "the _i counter variable is gone; the loop stores an iterator instead (_iter0)");
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.Store s && s.name().startsWith("_iter")),
+                "the iterator handle is the only loop state");
+    }
+
+    @Test
+    void anUntilLoopBuildsAnExclusiveCounterRange() {
+        List<Ir.Instr> body = lower("""
+                for n in 1 until 3
+                  print n
+                end
+                """).main().body();
+        assertTrue(body.stream().anyMatch(i -> i instanceof Ir.CounterRange c && !c.inclusive()));
     }
 
     @Test

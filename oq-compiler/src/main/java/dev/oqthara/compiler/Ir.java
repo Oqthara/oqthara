@@ -12,7 +12,7 @@ public final class Ir {
     public sealed interface Instr permits Const, Load, Store, Declare, Call, CallValue, Print, Binary,
             Unary, Jump, JumpIfFalse, JumpIfFalseLabel, Return, Pop, MakeList, MakeTuple, MakeMap, MakeSet, Index, Slice,
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
-            GetField, SetField, Range, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
+            GetField, SetField, Range, CounterRange, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
             JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda,
             DestructureParts {
     }
@@ -160,6 +160,22 @@ public final class Ir {
     }
 
     /**
+     * Builds the range a {@code for x in a to b} counter loop walks, from the two evaluated
+     * bounds on the stack.
+     *
+     * <p>A range literal and a counter loop look alike but are not the same value. A literal
+     * advances by one and can be empty when it counts down ({@code 5 to 1}), whereas a counter
+     * loop picks its own direction from the bounds, so {@code for i in 5 to 1} counts down. That
+     * direction rule lives here rather than in the backend so the interpreter and compiled code
+     * share one implementation, and so the bounds are validated by the same whole-number rule
+     * they are validated by everywhere else. Without a shared owner the two backends disagreed
+     * on fractional bounds: the interpreter truncated {@code 1.5 to 3.5} and bytecode kept the
+     * decimals.
+     */
+    public record CounterRange(boolean inclusive) implements Instr {
+    }
+
+    /**
      * Opens a protected region. Everything emitted until the matching {@link TryEnd} is
      * covered by one exception-table entry that jumps to {@code handler}. The handler label
      * is entered with the caught {@code OqError} on the operand stack, which is why it is a
@@ -296,6 +312,7 @@ public final class Ir {
             case GetField g -> "get_field " + g.name();
             case SetField s -> "set_field " + s.name();
             case Range r -> "range " + (r.inclusive() ? "to" : "until");
+            case CounterRange c -> "counter_range " + (c.inclusive() ? "to" : "until");
             case TryStart t -> "try_start " + t.handler();
             case TryEnd t -> "try_end " + t.handler();
             case HandlerLabel h -> h.name() + ": (catch)";
