@@ -440,3 +440,65 @@ before the merge.
 - The agent review that found the Critical defect is recorded as correlated, not independent.
 - The review did find a real Critical defect — documents claiming an applied policy change that
   had not been applied — and it was fixed before merge rather than merged over.
+
+---
+
+## 8. Post-closure remediation — website publication (2026-11-13)
+
+Work after the verdict was published. Nothing here reopens Alpha 3; it repairs two things the
+closure report's own criteria depend on and records them where an auditor will look.
+
+### 8.1 The code-block audit's exit contract was untrue
+
+`Oqthara/Oqthara.github.io` ships an audit (`scripts/audit-code-blocks.mjs`) that reports two
+kinds of finding: *drift* (a documented structure the grammar cannot colour) and *uncoloured
+blocks* (documentation that would render with no grammar at all). Its header documented exit `2`
+when either kind was found. The implementation exited `2` only when drift was found.
+
+The verifier was therefore unable to fail on the second kind. That is the same class of defect
+§2.1 repaired in `verify-conformance.py`: a documented contract the code did not implement.
+
+Resolution, in the site repository:
+
+- The audit now exits `2` for uncoloured blocks, and the header distinguishes *untagged* from
+  *uncoloured* — the site infers a language for untagged fences
+  (`src/lib/highlight.js:80`), so the two are not the same condition.
+- Transcripts and diagrams are excluded by reuse of the renderer's own `looksLikeArt`
+  predicate plus an output-line test, so the audit and the site agree by construction rather than
+  by two rules that can drift apart.
+- The step became **blocking** in `.github/workflows/pages.yml`; it had been `continue-on-error`.
+- Merged as `d4c27c7a832712fbf757f7060e87bc9b5497dfd9`
+  ([Oqthara.github.io#16](https://github.com/Oqthara/Oqthara.github.io/pull/16)) after
+  `Build the static site` (4m26s) and `Cross-browser suite` (8m44s) both passed uncancelled.
+
+One genuine defect was found in the language repository's documentation by the repair: exactly
+one block (`docs/spec/language.md:1128`, the `secure_equal` example) was real Oqthara that the
+inference declined to claim. The other five uncoloured blocks were command transcripts and a
+diagram, where plain rendering is correct. Fixed upstream as
+`b68b970b771e6d3c6957c1035ef1fa31e29b8a3c`
+([#196](https://github.com/Oqthara/oqthara/pull/196)).
+
+Order mattered and was proved rather than asserted: the site CI run against pre-fix language docs
+failed at exactly that step with exit `2`, and the run against post-fix docs passed with exit `0`.
+
+### 8.2 The website publication contract had no owner
+
+`docs/governance/alpha-4-workstream-assignment.md` left workstream 12's website half unowned and
+carried the assignment as a **proposal**. A proposal is not an owner.
+
+Decision (2026-11-13): the dispatch path, documentation pipeline and website ADRs go to
+`oq-hive-architecture-governance`, with `oq-hive-testing-security` reviewing the dispatch token's
+scope. The assignment is reflected in that role's agent file in the same change. Merged as
+`315a7574325b45c63d0383e65168f42c2a777305`
+([#198](https://github.com/Oqthara/oqthara/pull/198)).
+
+No workstream is now unowned. Workstream 2 remains `Under-covered`: a substantive gap in what the
+roles name, not an ownership gap, and it is not dissolved by this change.
+
+### 8.3 Dispatch reliability, verified rather than assumed
+
+The dispatch is exercised end to end on every push to `main`: `site-content-dispatch.yml` ran and
+succeeded on `b68b970`, and the website received `content-updated` at 14:01:36 and synced
+successfully in the same minute. The design is deliberately one-way — the payload names the commit
+and the site re-reads the repository rather than trusting the payload, so a forged or replayed
+dispatch cannot publish arbitrary content.
