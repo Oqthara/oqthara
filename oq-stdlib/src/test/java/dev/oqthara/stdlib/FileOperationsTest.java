@@ -102,6 +102,56 @@ class FileOperationsTest {
         assertTrue(error.hint().contains("Z"), error.hint());
     }
 
+    @Test
+    void aZeroSecondInstantKeepsItsSecondsField() {
+        // OffsetDateTime.toString() drops ":00" when the second is zero, so this printed
+        // 2026-11-10T14:04Z before ADR-0056 and no existing case caught it: every other test
+        // here uses :24.
+        assertEquals("2026-11-10T14:04:00Z",
+                call("tz_convert", "2026-11-10T14:04:00Z", "UTC"));
+        assertEquals("2026-11-10T23:04:00+09:00",
+                call("tz_convert", "2026-11-10T14:04:00Z", "Asia/Tokyo"));
+    }
+
+    @Test
+    void everyTzConvertResultIsAcceptedByInstantParse() {
+        // The round-trip ADR-0036 relies on: text with an offset is interchangeable with an
+        // instant. Seconds field omitted meant instant_parse() rejected the project's own output.
+        for (String source : List.of(
+                "2026-11-10T14:04:00Z", "2026-11-10T00:00:00Z", "2026-11-10T14:04:24Z",
+                "2026-06-30T23:59:00+05:30", "2026-11-10T14:04:24.500Z")) {
+            for (String zone : List.of("UTC", "Asia/Tokyo", "America/New_York", "Europe/Lisbon")) {
+                Object converted = call("tz_convert", source, zone);
+                assertEquals(java.time.Instant.parse(source).toString(),
+                        call("instant_parse", converted),
+                        () -> "tz_convert(" + source + ", " + zone + ") -> " + converted);
+            }
+        }
+    }
+
+    @Test
+    void aConvertedInstantKeepsSubSecondPrecision() {
+        assertEquals("2026-11-10T14:04:24.5Z",
+                call("tz_convert", "2026-11-10T14:04:24.500Z", "UTC"));
+    }
+
+    @Test
+    void datetimeAlwaysHasTheSameShape() {
+        // LocalDateTime.toString() omits ":00" at second zero, so one run in sixty printed
+        // 2026-11-10T15:04 and the rest 2026-11-10T15:04:24. Pinning the pure formatter rather
+        // than the clock is what makes the regression observable: datetime() reads the wall
+        // clock, so a builtin-level assertion would fail only once every sixty runs.
+        assertEquals("2026-11-10T15:04:00",
+                Stdlib.formatLocalDateTime(java.time.LocalDateTime.of(2026, 11, 10, 15, 4, 0)));
+        assertEquals("2026-11-10T15:04:24",
+                Stdlib.formatLocalDateTime(java.time.LocalDateTime.of(2026, 11, 10, 15, 4, 24)));
+        assertEquals("2026-11-01T00:00:00",
+                Stdlib.formatLocalDateTime(java.time.LocalDateTime.of(2026, 11, 1, 0, 0, 0)));
+        assertEquals("2026-11-10T15:04:24",
+                Stdlib.formatLocalDateTime(
+                        java.time.LocalDateTime.of(2026, 11, 10, 15, 4, 24, 987_654_321)));
+    }
+
     // --- Binary content ----------------------------------------------------------------------
 
     @Test

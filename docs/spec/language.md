@@ -1422,6 +1422,18 @@ The output carries an offset rather than a zone name, because a timestamp that r
 zone-database lookup to read is not a timestamp. An abbreviation such as `JST` is an error, not
 a guess: `CST` is three different zones. A bare date is an error too — use `date_parse` first.
 
+Every function above produces the same shape for every value, so a result can be fed back in:
+
+```oq
+print tz_convert("2026-11-10T14:04:00Z", "Europe/Lisbon")   # 2026-11-10T14:04:00Z
+print instant_parse(tz_convert("2026-11-10T14:04:00Z", "Europe/Lisbon"))   # 2026-11-10T14:04:00Z
+print datetime()                                             # 2026-11-10T15:04:00
+```
+
+The seconds field is always present, including when it is `00`. `datetime()` reports whole
+seconds. A timestamp whose text got shorter as its value changed could not round-trip, so the
+shape is fixed rather than shortened (ADR-0056).
+
 HTTP: `http_get(url)`, `http_post(url, body)`. Both return a value with `.status`,
 `.body` and `.ok`.
 

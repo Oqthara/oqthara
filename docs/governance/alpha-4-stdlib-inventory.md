@@ -173,15 +173,15 @@ conversion outward, with the precision stated by the caller.
 
 **Dates** (2) — `date_parse`:1367, `instant_parse`:1369.
 
-**Time** (6) — `now`:1394, `today`:1396, `datetime`:1398, `timestamp`:1400, `tz_convert`:1402, `sleep`:1424.
+**Time** (6) — `now`:1406, `today`:1408, `datetime`:1410, `timestamp`:1412, `tz_convert`:1414, `sleep`:1441.
 
-**URLs** (6) — `url_parse`:1452, `url_encode`:1476, `url_decode`:1480, `query_parse`:1484, `query_encode`:1503, `url_join`:1543.
+**URLs** (6) — `url_parse`:1469, `url_encode`:1493, `url_decode`:1497, `query_parse`:1501, `query_encode`:1520, `url_join`:1560.
 
-**HTTP** (2) — `http_get`:1841, `http_post`:1843.
+**HTTP** (2) — `http_get`:1858, `http_post`:1860.
 
-**Concurrency** (5) — `spawn`:1997, `await`:2005 and 2012, `done`:2026, `mutex`:2033, `par_map`:2035.
+**Concurrency** (5) — `spawn`:2014, `await`:2022 and 2029, `done`:2043, `mutex`:2050, `par_map`:2052.
 
-**Process** (4) — `env`:2063, `run_command`:2065, `cpu_count`:2117, `memory_mb`:2119.
+**Process** (4) — `env`:2080, `run_command`:2082, `cpu_count`:2134, `memory_mb`:2136.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),
@@ -362,7 +362,7 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `datetime`, `zoneinfo`, `collections`, `copy`, `pprint` [P]; `heapq`, `bisect` [C]; `calendar`, `collections.abc`, `array`, `reprlib`, `enum`, `graphlib` [A]; `weakref`, `types` [X] |
-| Oqthara equivalent | `now`:1266, `today`:1268, `datetime`:1270, `timestamp`:1272, `tz_convert`:1274, `date_parse`:1239, `instant_parse`:1241; `clone`:242 plus `.clone()`/`.copy()` on every collection family; `repr`:170, `format`:247, `json_pretty`:756; `heap_push`:53, `heap_pop`:55, `bisect_left`:57, `bisect_right`:59; list/map/set/frozenset/range families |
+| Oqthara equivalent | `now`:1406, `today`:1408, `datetime`:1410, `timestamp`:1412, `tz_convert`:1414, `date_parse`:1367, `instant_parse`:1369; `clone`:246 plus `.clone()`/`.copy()` on every collection family; `repr`:174, `format`:251, `json_pretty`:875; `heap_push`:56, `heap_pop`:58, `bisect_left`:60, `bisect_right`:63 (all four in `Statistics.java`); list/map/set/frozenset/range families |
 | Missing | No date *arithmetic* (add a day, subtract two dates, a duration type); no formatting other than the fixed shapes; no `deque`, `Counter`, `defaultdict`, `OrderedDict` or named tuples; no topological sort; no enumerations or algebraic tags beyond `data`. Priority queues and binary search shipped in `Statistics.java` as `heap_push`/`heap_pop`/`bisect_left`/`bisect_right`, so they are no longer missing |
 | JVM fit | Yes — `java.time` is the strongest date/time library on any platform and `TreeMap`/`PriorityQueue` give `heapq` and ordered maps directly. The gap is a language-level one: with no `date` type there is nothing for arithmetic to return |
 | Lifetime | Per-call. `zoneinfo` deserves one note: tzdata in a jar must be packaged, and `ZoneId.of` failing on an unknown zone is the correct behaviour, not a fallback to UTC |

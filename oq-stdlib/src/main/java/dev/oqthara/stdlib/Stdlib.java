@@ -1390,13 +1390,25 @@ public final class Stdlib {
         }
     }
 
+    /**
+     * Renders a local date-time with the seconds field always present.
+     *
+     * <p>{@link LocalDateTime#toString()} omits {@code :00} when the second is zero, so
+     * {@code datetime()} printed {@code 2026-11-10T15:04} one run in sixty and
+     * {@code 2026-11-10T15:04:24} the rest: the shape of the output depended on the value
+     * (ADR-0056). Nanoseconds are dropped because the function reports whole seconds.
+     */
+    static String formatLocalDateTime(LocalDateTime value) {
+        return DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(value.withNano(0));
+    }
+
     private static void installTime(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("now", 0, (host, args, span) ->
                 java.time.Instant.now().toString()));
         interpreter.defineBuiltin(NativeFunction.of("today", 0, (host, args, span) ->
                 LocalDate.now().toString()));
         interpreter.defineBuiltin(NativeFunction.of("datetime", 0, (host, args, span) ->
-                LocalDateTime.now().withNano(0).toString()));
+                formatLocalDateTime(LocalDateTime.now())));
         interpreter.defineBuiltin(NativeFunction.of("timestamp", 0, (host, args, span) ->
                 System.currentTimeMillis()));
         interpreter.defineBuiltin(NativeFunction.of("tz_convert", 2, (host, args, span) -> {
@@ -1419,7 +1431,12 @@ public final class Stdlib {
             }
             // An offset, not a zone name: the output has to be unambiguous on its own, and a
             // reader that has to look up a zone to read a timestamp is not receiving a timestamp.
-            return instant.atZone(zone).toOffsetDateTime().toString();
+            // ISO_OFFSET_DATE_TIME, not toString(): OffsetDateTime.toString() omits the
+            // seconds field when it is zero, producing 2026-11-10T14:04Z, which
+            // instant_parse() then rejects. A timestamp whose shape depends on its value
+            // cannot round-trip (ADR-0056).
+            return DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(
+                    instant.atZone(zone).toOffsetDateTime());
         }).named("instant", "zone"));
         interpreter.defineBuiltin(NativeFunction.of("sleep", 1, (host, args, span) -> {
             long millis = (long) (Values.asDouble(args.get(0)) * 1000);

@@ -5,7 +5,6 @@ import dev.oqthara.runtime.OqData;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.OqHost;
 import dev.oqthara.runtime.OqTuple;
-import dev.oqthara.runtime.Values;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
@@ -48,11 +47,19 @@ public final class JavaBridge {
             return java.time.LocalDate.of((int) Values.asLong(args.get(0)),
                     (int) Values.asLong(args.get(1)), (int) Values.asLong(args.get(2)));
         }
-        if (type == java.time.LocalDateTime.class && args.size() >= 5) {
-            return java.time.LocalDateTime.of(
-                    (int) Values.asLong(args.get(0)), (int) Values.asLong(args.get(1)),
-                    (int) Values.asLong(args.get(2)), (int) Values.asLong(args.get(3)),
-                    (int) Values.asLong(args.get(4)));
+        if (type == java.time.LocalDateTime.class) {
+            // LocalDateTime has no public constructor, so every arity is spelled out. The
+            // `>= 5` form this replaces silently discarded a sixth argument, so
+            // LocalDateTime(2026, 11, 10, 15, 4, 24) became 15:04:00 with no error (ADR-0056).
+            int[] parts = new int[7];
+            if (args.size() >= 5 && args.size() <= 7) {
+                for (int i = 0; i < args.size(); i++) parts[i] = (int) Values.asLong(args.get(i));
+                return switch (args.size()) {
+                    case 5 -> java.time.LocalDateTime.of(parts[0], parts[1], parts[2], parts[3], parts[4]);
+                    case 6 -> java.time.LocalDateTime.of(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+                    default -> java.time.LocalDateTime.of(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]);
+                };
+            }
         }
         Constructor<?> best = null;
         Object[] bestArgs = null;
