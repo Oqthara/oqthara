@@ -123,7 +123,33 @@ final class Statistics {
     private static Object median(List<Double> sorted, Span span) {
         int size = sorted.size();
         if (size % 2 == 1) return normalize(sorted.get(size / 2));
-        return normalize((sorted.get(size / 2 - 1) + sorted.get(size / 2)) / 2.0);
+        return normalize(interpolate(sorted.get(size / 2 - 1), sorted.get(size / 2), 0.5));
+    }
+
+    /**
+     * A point {@code weight} of the way from {@code low} to {@code high}, written so that
+     * neither the ends of the double range nor the subnormal range changes the answer.
+     *
+     * <p>The obvious {@code (low + high) / 2} is wrong twice over. It overflows when both
+     * ends are large and share a sign -- {@code (1e308 + 1e308) / 2} is {@code infinity}, not
+     * {@code 1e308} -- and it underflows when both ends are tiny and equal, because adding two
+     * subnormals and halving rounds back to them only by luck. The first is fixed by moving
+     * from {@code low}, which keeps the magnitude of the difference below the magnitude of the
+     * larger end; the second by returning an end exactly when the ends are equal, which is what
+     * a weighted average of two equal numbers means.
+     *
+     * <p>Moving from {@code low} is only safe while {@code high - low} is representable. For
+     * ends on opposite sides of zero the difference is the sum of the magnitudes and can
+     * overflow, so those fall back to the symmetric form, which cannot: each term is at most
+     * the end it came from.
+     */
+    private static double interpolate(double low, double high, double weight) {
+        if (low == high) return low;
+        double difference = high - low;
+        if (Double.isFinite(difference) && (low < 0) == (high < 0)) {
+            return low + difference * weight;
+        }
+        return low * (1 - weight) + high * weight;
     }
 
     /** Sample variance, dividing by {@code n - 1}; see ADR-0041 D2. */
@@ -184,8 +210,7 @@ final class Statistics {
         int low = (int) Math.floor(rank);
         int high = (int) Math.ceil(rank);
         if (low == high) return normalize(sorted.get(low));
-        double weight = rank - low;
-        return normalize(sorted.get(low) * (1 - weight) + sorted.get(high) * weight);
+        return normalize(interpolate(sorted.get(low), sorted.get(high), rank - low));
     }
 
     private static double total(List<Double> numbers, String builtin, Span span) {

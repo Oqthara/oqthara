@@ -373,37 +373,23 @@ public final class Stdlib {
             return result;
         }).named("first", "second"));
         interpreter.defineBuiltin(NativeFunction.of("range_list", 2, (host, args, span) ->
-                new OqRange(Values.asLong(args.get(0)), Values.asLong(args.get(1)), false).toList())
+                new OqRange(wholeNumber(args.get(0), "range_list", span),
+                        wholeNumber(args.get(1), "range_list", span), false).toList())
                         .named("start", "stop"));
     }
 
     private static void installMath(Interpreter interpreter) {
-        interpreter.defineBuiltin(NativeFunction.of("abs", 1, (host, args, span) -> {
-            Object value = args.get(0);
-            if (value instanceof Long l) {
-                // Math.abs(Long.MIN_VALUE) is negative again: the magnitude does not fit a
-                // whole number, so keep the exact positive value as a decimal instead of
-                // silently returning the input unchanged.
-                if (l == Long.MIN_VALUE) return -((double) l);
-                return Math.abs(l);
-            }
-            if (value instanceof Double d) return Math.abs(d);
-            throw new OqError("abs() needs a number, got " + Values.typeName(value), span);
-        }).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("abs", 1, (host, args, span) ->
+                abs(args.get(0), span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("floor", 1, (host, args, span) ->
-                whole(Math.floor(asNumber(args.get(0), "floor", span)), "floor", span)).named("value"));
+                floor(args.get(0), span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("ceil", 1, (host, args, span) ->
-                whole(Math.ceil(asNumber(args.get(0), "ceil", span)), "ceil", span)).named("value"));
-        interpreter.defineBuiltin(NativeFunction.of("round", 1, (host, args, span) -> {
-            double value = asNumber(args.get(0), "round", span);
-            requireWhole(value, "round", span);
-            // Beyond the long range the double is already integral (spacing > 1), so the
-            // value itself is the rounded result. Math.round would saturate at Long.MAX_VALUE.
-            return Values.fitsInLong(value) ? (Object) Math.round(value) : (Object) value;
-        }).named("value"));
+                ceil(args.get(0), span)).named("value"));
+        interpreter.defineBuiltin(NativeFunction.of("round", 1, (host, args, span) ->
+                round(args.get(0), span)).named("value"));
         interpreter.defineBuiltin(NativeFunction.of("round", 2, (host, args, span) -> {
             double value = asNumber(args.get(0), "round", span);
-            long places = Values.asLong(args.get(1));
+            long places = wholeNumber(args.get(1), "round", span);
             if (places < 0 || places > 15) {
                 throw new OqError("round() places must be between 0 and 15, got " + places, span);
             }
@@ -498,8 +484,8 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("random", 0, (host, args, span) ->
                 ThreadLocalRandom.current().nextDouble()));
         interpreter.defineBuiltin(NativeFunction.of("random", 2, (host, args, span) -> {
-            long from = Values.asLong(args.get(0));
-            long to = Values.asLong(args.get(1));
+            long from = wholeNumber(args.get(0), "random", span);
+            long to = wholeNumber(args.get(1), "random", span);
             if (to <= from) return from;
             return ThreadLocalRandom.current().nextLong(from, to);
         }).named("from", "to"));
@@ -2140,12 +2126,30 @@ public final class Stdlib {
     }
 
     /**
-     * An integer argument for a builtin that needs one, with the same diagnostic a wrong type
-     * gets everywhere else. {@link Values#asLong} throws a raw {@code IllegalArgumentException},
-     * which reached the CLI as "internal error" instead of a program error.
+     * A whole-number argument for a builtin that needs one.
+     *
+     * <p>Three things are refused, each for the same reason: a value that is not a number, a
+     * decimal with a fractional part, and a value outside the 64-bit whole-number range. A
+     * fractional argument used to be truncated silently -- {@code range(0, 5, 1.5)} walked every
+     * integer -- which changes the operation the caller asked for instead of reporting it. A
+     * value beyond the range used to saturate at {@link Long#MAX_VALUE}, which is a different
+     * number again. An integral decimal such as {@code 2.0} is accepted, because a whole decimal
+     * and the whole number it equals are the same value (the rule {@code 1 == 1.0} already uses).
+     *
+     * <p>The {@code needs a number} wording for a non-number is kept as-is: it is the diagnostic
+     * every numeric builtin gives, and tests pin it.
      */
     private static long wholeNumber(Object value, String builtin, Span span) {
-        return Values.asLong(asNumber(value, builtin, span));
+        if (!Values.isNumber(value)) {
+            throw new OqError(builtin + "() needs a number, got " + Values.typeName(value), span);
+        }
+        if (value instanceof Long l) return l;
+        double d = (Double) value;
+        if (d != Math.rint(d) || !Values.fitsInLong(d)) {
+            throw new OqError(builtin + "() needs a whole number, got " + Values.display(value),
+                    span, "Pass a number with no fractional part, within the 64-bit range.");
+        }
+        return (long) d;
     }
 
     /**
@@ -2163,6 +2167,41 @@ public final class Stdlib {
             throw new OqError(builtin + "() needs a finite number, got "
                     + Values.display(value), span);
         }
+    }
+
+    /**
+     * The magnitude of a number, shared by {@code abs()} and {@code number.abs()}.
+     *
+     * <p>{@code Math.abs(Long.MIN_VALUE)} is negative again, because the magnitude is one past
+     * the largest whole number. The exact positive value is kept as a decimal rather than
+     * silently returning the input unchanged.
+     */
+    static Object abs(Object value, Span span) {
+        if (value instanceof Long l) {
+            if (l == Long.MIN_VALUE) return -((double) l);
+            return Math.abs(l);
+        }
+        if (value instanceof Double d) return Math.abs(d);
+        throw new OqError("abs() needs a number, got " + Values.typeName(value), span);
+    }
+
+    /** {@code floor()} for a number, or the decimal when the result does not fit a long. */
+    static Object floor(Object value, Span span) {
+        return whole(Math.floor(asNumber(value, "floor", span)), "floor", span);
+    }
+
+    /** {@code ceil()} for a number, or the decimal when the result does not fit a long. */
+    static Object ceil(Object value, Span span) {
+        return whole(Math.ceil(asNumber(value, "ceil", span)), "ceil", span);
+    }
+
+    /** {@code round()} to no decimal places, or the decimal when the result does not fit a long. */
+    static Object round(Object value, Span span) {
+        double rounded = asNumber(value, "round", span);
+        requireWhole(rounded, "round", span);
+        // Beyond the long range the double is already integral (spacing > 1), so the
+        // value itself is the rounded result. Math.round would saturate at Long.MAX_VALUE.
+        return Values.fitsInLong(rounded) ? (Object) Math.round(rounded) : (Object) rounded;
     }
 
     /**
