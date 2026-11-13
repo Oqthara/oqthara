@@ -135,27 +135,27 @@ One registration per name, so the section adds 6 to both columns. Specified by
 the defence counts the bytes actually produced rather than trusting a length field, because a
 hostile producer writes whatever length it likes.
 
-**JSON** (4) — `json_parse`:764, `json`:766, `json_write`:768, `json_pretty`:770.
+**JSON** (4) — `json_parse`:817, `json`:819, `json_write`:821, `json_pretty`:823.
 
-**Encoding** (11) — `hex_encode`:783, `hex_decode`:785, `base64_encode`:787, `base64_decode`:789, `sha256`:791, `sha1`:793, `md5`:795, `hmac_sha256`:797, `secure_random_hex`:799, `secure_equal`:809, `pbkdf2_sha256`:817.
+**Encoding** (11) — `hex_encode`:836, `hex_decode`:838, `base64_encode`:840, `base64_decode`:842, `sha256`:844, `sha1`:846, `md5`:848, `hmac_sha256`:850, `secure_random_hex`:852, `secure_equal`:862, `pbkdf2_sha256`:870.
 
-**Logging** (6) — `log_debug`:901, `log_info`:903, `log_warn`:905, `log_error`:907, `log_level`:909, `log_enabled`:919.
+**Logging** (6) — `log_debug`:954, `log_info`:956, `log_warn`:958, `log_error`:960, `log_level`:962, `log_enabled`:972.
 
-**Arguments** (1) — `arg_parse`:945.
+**Arguments** (1) — `arg_parse`:998.
 
-**CSV** (2) — `csv_parse`:1095, 1097 and 1100, `csv_write`:1104 and 1106.
+**CSV** (2) — `csv_parse`:1148, 1150 and 1153, `csv_write`:1157 and 1159.
 
-**Dates** (2) — `date_parse`:1253, `instant_parse`:1255.
+**Dates** (2) — `date_parse`:1306, `instant_parse`:1308.
 
-**Time** (6) — `now`:1280, `today`:1282, `datetime`:1284, `timestamp`:1286, `tz_convert`:1288, `sleep`:1310.
+**Time** (6) — `now`:1333, `today`:1335, `datetime`:1337, `timestamp`:1339, `tz_convert`:1341, `sleep`:1363.
 
-**URLs** (6) — `url_parse`:1338, `url_encode`:1362, `url_decode`:1366, `query_parse`:1375, `query_encode`:1394, `url_join`:1434.
+**URLs** (6) — `url_parse`:1391, `url_encode`:1415, `url_decode`:1419, `query_parse`:1428, `query_encode`:1447, `url_join`:1487.
 
-**HTTP** (2) — `http_get`:1521, `http_post`:1523.
+**HTTP** (2) — `http_get`:1574, `http_post`:1576.
 
-**Concurrency** (5) — `spawn`:1677, `await`:1685 and 1692, `done`:1706, `mutex`:1713, `par_map`:1715.
+**Concurrency** (5) — `spawn`:1730, `await`:1738 and 1745, `done`:1759, `mutex`:1766, `par_map`:1768.
 
-**Process** (4) — `env`:1743, `run_command`:1745, `cpu_count`:1797, `memory_mb`:1799.
+**Process** (4) — `env`:1796, `run_command`:1798, `cpu_count`:1850, `memory_mb`:1852.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),

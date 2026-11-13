@@ -52,6 +52,7 @@ jobs:
         run: |
           python3 scripts/check-links.py
           python3 scripts/check-docs-sync.py
+          python3 scripts/check-risk-register.py
       - name: Unit-test the verification scripts themselves
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         run: |
