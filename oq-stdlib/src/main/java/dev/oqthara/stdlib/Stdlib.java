@@ -719,18 +719,33 @@ public final class Stdlib {
      */
     static long copyBounded(java.io.InputStream in, java.io.OutputStream out, long limit,
                             Path source, Span span) throws IOException {
+        return copyBounded(in, out, limit, source, span, new long[1]);
+    }
+
+    /**
+     * The same copy, reporting how many bytes were written even when it refuses.
+     *
+     * <p>A refusing copy has already handed every accepted chunk to {@code out} by the time it
+     * raises, so the work is real and must be billed: a caller that catches the error and loops
+     * would otherwise move {@code limit} bytes per attempt for free. {@code written[0]} carries
+     * the count out through the exception.
+     */
+    static long copyBounded(java.io.InputStream in, java.io.OutputStream out, long limit,
+                            Path source, Span span, long[] written) throws IOException {
         byte[] buffer = new byte[8192];
         long copied = 0;
         int read;
         while ((read = in.read(buffer)) >= 0) {
             copied += read;
             if (copied > limit) {
+                written[0] = copied - read;
                 throw new OqError("file is too large to copy: " + source, span,
                         "It is more than the " + limit
                                 + " byte limit. The reported size was smaller.");
             }
             out.write(buffer, 0, read);
         }
+        written[0] = copied;
         return copied;
     }
 
@@ -741,9 +756,20 @@ public final class Stdlib {
      * device, a pipe, a procfs entry or a file another process is writing is not the number of
      * bytes a read will yield. Gating on it alone let a source reporting 4 bytes copy 40 MB --
      * the check passed and the copy ran unbounded. The limit is enforced here on bytes actually
-     * transferred, so the bound holds whatever the reported size claims. A refused copy deletes
-     * its partial target, because leaving one would make the next attempt fail on "target
-     * already exists" and hide the real reason.
+     * transferred, so the bound holds whatever the reported size claims.
+     *
+     * <p>The target is opened with {@code CREATE_NEW}, not with the default {@code CREATE}
+     * + {@code TRUNCATE_EXISTING}. The {@code Files.exists} check above it is a friendlier
+     * message, not a guarantee: it is a separate syscall from the open, so on a
+     * {@code par_map} of two copies to one name both could see the target absent and the
+     * second would overwrite the first. {@code CREATE_NEW} also refuses a dangling symbolic
+     * link, which {@code Files.exists} reports as absent because it follows the link; the
+     * earlier {@code Files.copy} had both properties and the stream rewrite lost them.
+     *
+     * <p>A refused copy deletes its partial target, because leaving one would make the next
+     * attempt fail on "target already exists" and hide the real reason. Only a target this
+     * call created is deleted -- deleting on any failure would remove a dangling symlink the
+     * caller had before the copy ever started.
      */
     private static Object copyCharged(OqHost host, Path source, Path target, Span span) {
         if (Files.exists(target)) {
@@ -760,27 +786,38 @@ public final class Stdlib {
             throw new OqError("file is too large to copy: " + source, span,
                     "It is more than the " + MAX_TEXT_BYTES + " byte limit.");
         }
-        long copied = 0;
+        boolean created = false;
         boolean completed = false;
+        long[] written = new long[1];
         try (java.io.InputStream in = Files.newInputStream(source)) {
             if (target.getParent() != null) Files.createDirectories(target.getParent());
-            try (java.io.OutputStream out = Files.newOutputStream(target)) {
-                copied = copyBounded(in, out, MAX_TEXT_BYTES, source, span);
+            try (java.io.OutputStream out = Files.newOutputStream(
+                    target, java.nio.file.StandardOpenOption.CREATE_NEW,
+                    java.nio.file.StandardOpenOption.WRITE)) {
+                created = true;
+                copyBounded(in, out, MAX_TEXT_BYTES, source, span, written);
             }
             // Charge before declaring success. chargeSteps raises OqError when the budget is
             // spent, and `try`/`catch` can absorb it, so charging after `completed = true`
             // left a fully written target behind while reporting failure -- the copy would
             // then have to be deleted by hand before any retry. Charging first means a
             // refused copy is still a refused copy: the finally below removes the target.
-            chargeTransfer(host, copied);
+            chargeTransfer(host, written[0]);
             completed = true;
             return null;
         } catch (OqError error) {
+            // A refusal past the limit has already written accepted chunks; bill them, or a
+            // caught refusal is free work and a loop of them is unbounded by the budget.
+            if (created && !completed) chargeForRefusedCopy(host, written[0]);
             throw error;
+        } catch (java.nio.file.FileAlreadyExistsException raced) {
+            // The target appeared between the check and the open, or it is a dangling link.
+            throw new OqError("target already exists: " + target, span,
+                    "copy_file and move_file never overwrite. Delete it first, or pick another name.");
         } catch (IOException e) {
             throw new OqError("cannot copy '" + source + "' to '" + target + "'", span, e.getMessage());
         } finally {
-            if (!completed) {
+            if (!completed && created) {
                 try {
                     Files.deleteIfExists(target);
                 } catch (IOException leftover) {
@@ -788,6 +825,22 @@ public final class Stdlib {
                     // in place of the reason it failed.
                 }
             }
+        }
+    }
+
+    /**
+     * Bills bytes already written by a copy that then refused.
+     *
+     * <p>Separate from {@link #chargeTransfer} only to keep the reason visible: the steps are
+     * charged on a path that is about to throw, and a budget refusal raised here would replace
+     * the copy's own refusal with "program ran for too long". The copy's reason is the more
+     * useful one, so that error wins and the charge is best-effort.
+     */
+    private static void chargeForRefusedCopy(OqHost host, long bytes) {
+        try {
+            chargeTransfer(host, bytes);
+        } catch (OqError budget) {
+            // Preserved so the caller sees why the copy failed, not that it also ran out.
         }
     }
 

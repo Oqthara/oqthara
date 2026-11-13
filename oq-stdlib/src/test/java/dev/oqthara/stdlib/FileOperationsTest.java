@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Time zones and the file operations added by ADR-0036.
@@ -181,33 +183,260 @@ class FileOperationsTest {
     /**
      * The byte cap is enforced on bytes copied, not on the size the filesystem reports.
      *
-     * <p>{@code Files.size} is advisory: for a device, a procfs entry, or a file another process
-     * is still writing, it is not the number of bytes a read will yield. A cap applied to it
-     * admits an unbounded copy. The stream here reports a small size and then delivers more,
-     * which is exactly the case the reported-size check cannot see.
+     * <p>{@code Files.size} is advisory. On a FIFO it returns 0 however much the writer sends,
+     * on a procfs entry it reports a page, and on a file another process is still writing it is
+     * the length as of the call. A cap applied to that number admits an unbounded copy, so the
+     * cap is applied to the bytes the read actually yields.
+     *
+     * <p>A FIFO is the honest way to assert this. An earlier version of this test overrode
+     * {@code available()} to return 4, but {@code copyBounded} never calls {@code available()},
+     * so the stream was an ordinary in-memory one and the "lying size" was never observed --
+     * the test would have passed against any implementation at all.
      */
     @Test
-    void copyStopsAtTheLimitEvenWhenTheReportedSizeIsSmall() {
-        long limit = 1024;
-        byte[] delivered = new byte[64 * 1024];
-        java.io.InputStream lyingSource =
-                new java.io.ByteArrayInputStream(delivered) {
-                    @Override
-                    public int available() {
-                        return 4; // what a file claiming four bytes would offer
-                    }
-                };
-        ByteArrayOutputStream sink = new ByteArrayOutputStream();
+    void copyStopsAtTheLimitEvenWhenTheReportedSizeIsSmall() throws Exception {
+        assumeTrue(namedPipe(dir.resolve("pipe")) != null, "this platform has no FIFOs");
+        Path pipe = dir.resolve("pipe");
+        assertEquals(0, Files.size(pipe), "a FIFO reports no size; that is the premise");
 
-        OqError error = assertThrows(OqError.class, () -> Stdlib.copyBounded(
-                lyingSource, sink, limit, dir.resolve("reported-small"), Span.synthetic()));
+        Thread writer = new Thread(() -> {
+            try (java.io.OutputStream out = Files.newOutputStream(pipe)) {
+                out.write(new byte[Stdlib.MAX_TEXT_BYTES + 4096]);
+            } catch (java.io.IOException stopped) {
+                // The reader refuses and closes; a writer losing the other end is the point.
+            }
+        });
+        writer.setDaemon(true);
+        writer.start();
+
+        OqError error = assertThrows(OqError.class, () -> call("copy_file", "pipe", "copy.out"));
+        writer.join(10_000);
 
         assertTrue(error.getMessage().contains("too large"), error.getMessage());
-        assertTrue(sink.size() <= limit,
-                "nothing past the limit may be written, but " + sink.size() + " bytes were");
+        assertFalse(Files.exists(dir.resolve("copy.out")),
+                "a refused copy must not leave a target behind");
     }
 
-    /** A copy under the limit still succeeds and is charged for what moved. */
+    /**
+     * A refused copy is billed for the bytes it already wrote.
+     *
+     * <p>{@code copyBounded} hands every accepted chunk to the stream before refusing the
+     * crossing one, so the work is real. Billing only on success made a caught refusal free,
+     * and a FIFO source makes that reachable: its reported size never trips the pre-check, so
+     * a loop of refused copies moved {@code MAX_TEXT_BYTES} per attempt for nothing.
+     *
+     * <p>The charge is observed through a later operation rather than through the refusal.
+     * That is not a shortcut: {@code chargeForRefusedCopy} deliberately swallows the budget
+     * error so the caller keeps the copy's own reason, so a refused copy never reports
+     * exhaustion itself. The budget is still spent, which a subsequent charged copy proves.
+     */
+    @Test
+    void aRefusedCopyIsChargedForTheBytesItWrote() throws Exception {
+        assumeTrue(namedPipe(dir.resolve("pipe")) != null, "this platform has no FIFOs");
+        Path pipe = dir.resolve("pipe");
+        Files.writeString(dir.resolve("small.txt"), "abc");
+        // Four refused copies bill 4 x MAX_TEXT_BYTES, which is past the budget; without the
+        // charge they are all free and the copy below has no reason to fail.
+        host().setMaxSteps(Stdlib.MAX_TEXT_BYTES * 3);
+
+        for (int i = 0; i < 4; i++) {
+            String target = "refused-" + i + ".out";
+            Thread writer = new Thread(() -> {
+                try (java.io.OutputStream out = Files.newOutputStream(pipe)) {
+                    out.write(new byte[Stdlib.MAX_TEXT_BYTES + 4096]);
+                } catch (java.io.IOException stopped) {
+                    // Expected: the reader refuses and closes its end.
+                }
+            });
+            writer.setDaemon(true);
+            writer.start();
+            OqError refused = assertThrows(OqError.class,
+                    () -> call("copy_file", "pipe", target));
+            assertTrue(refused.getMessage().contains("too large"), refused.getMessage());
+            writer.join(10_000);
+        }
+
+        OqError exhausted = assertThrows(OqError.class,
+                () -> call("copy_file", "small.txt", "small.out"),
+                "four refused copies wrote " + (Stdlib.MAX_TEXT_BYTES * 4) + " bytes past a budget "
+                        + "of " + (Stdlib.MAX_TEXT_BYTES * 3) + ", so the next charged copy must"
+                        + " find the budget spent");
+        assertTrue(exhausted.getMessage().contains("ran for too long"), exhausted.getMessage());
+    }
+
+    /**
+     * Two copies racing for one name: exactly one wins, and the loser never overwrites it.
+     *
+     * <p>{@code copy_file} documents that it never overwrites. The {@code Files.exists} check
+     * enforces that only when the target already exists at check time; two copies that both see
+     * it absent would both pass, and whichever opened second would truncate the winner's file.
+     * Opening with {@code CREATE_NEW} moves the decision into the open, which is atomic, so the
+     * second copy gets {@code FileAlreadyExistsException} and is refused.
+     *
+     * <p>This is the case the reviewer's report measured. It is worth a test of its own: the
+     * existing check-then-open path passes every single-threaded test, including the one for a
+     * target that is present before the call.
+     */
+    @Test
+    void concurrentCopiesToOneNameDoNotOverwriteTheWinner() throws Exception {
+        Files.writeString(dir.resolve("first.txt"), "FIRST");
+        Files.writeString(dir.resolve("second.txt"), "SECOND");
+        host(); // build the interpreter before the race rather than inside it
+        int rounds = 40;
+        for (int round = 0; round < rounds; round++) {
+            String target = "raced-" + round + ".out";
+            java.util.concurrent.CountDownLatch start =
+                    new java.util.concurrent.CountDownLatch(1);
+            java.util.List<java.util.concurrent.Future<Boolean>> races = new java.util.ArrayList<>();
+            try (java.util.concurrent.ExecutorService pool =
+                         java.util.concurrent.Executors.newFixedThreadPool(2)) {
+                for (String source : List.of("first.txt", "second.txt")) {
+                    races.add(pool.submit(() -> {
+                        start.await();
+                        try {
+                            call("copy_file", source, target);
+                            return true;
+                        } catch (OqError refused) {
+                            return false;
+                        }
+                    }));
+                }
+                start.countDown();
+                int succeeded = 0;
+                for (java.util.concurrent.Future<Boolean> race : races) {
+                    if (race.get(30, java.util.concurrent.TimeUnit.SECONDS)) succeeded++;
+                }
+                assertEquals(1, succeeded,
+                        "round " + round + ": exactly one copy may claim the name");
+            }
+            String written = Files.readString(dir.resolve(target));
+            assertTrue(written.equals("FIRST") || written.equals("SECOND"),
+                    "round " + round + ": the target holds a whole source, not a mixture; got '"
+                            + written + "'");
+        }
+    }
+
+    /** Creates a named pipe, or returns null where that is not supported. */
+    private static Path namedPipe(Path path) {
+        try {
+            Process mkfifo = new ProcessBuilder("mkfifo", path.toString())
+                    .redirectErrorStream(true).start();
+            if (mkfifo.waitFor() != 0) return null;
+            return path;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (java.io.IOException unsupported) {
+            return null;
+        }
+    }
+
+    /**
+     * A source of exactly the limit is accepted; one byte more is refused.
+     *
+     * <p>The old test compared 15 bytes against a 1024 limit, so a {@code copied >= limit}
+     * off-by-one would have passed it. Both sides of the boundary are asserted here.
+     */
+    @Test
+    void theByteLimitIsInclusive() throws Exception {
+        Files.write(dir.resolve("at-limit.bin"), new byte[Stdlib.MAX_TEXT_BYTES]);
+        call("copy_file", "at-limit.bin", "at-limit.out");
+        assertEquals(Stdlib.MAX_TEXT_BYTES, Files.size(dir.resolve("at-limit.out")),
+                "a source of exactly the limit must be copied in full");
+
+        Files.write(dir.resolve("over-limit.bin"), new byte[Stdlib.MAX_TEXT_BYTES + 1]);
+        assertThrows(OqError.class, () -> call("copy_file", "over-limit.bin", "over.out"));
+        assertFalse(Files.exists(dir.resolve("over.out")));
+    }
+
+    /**
+     * The overwrite refusal is the open's, not the pre-check's.
+     *
+     * <p>{@code copyRefusesAnExistingTargetRatherThanOverwritingIt} creates the target before
+     * the call, so the {@code Files.exists} guard alone satisfies it. That guard is a separate
+     * syscall from the open, so two copies racing for one name could both pass it. This asserts
+     * the property that matters for that race: the open itself refuses, which
+     * {@code CREATE_NEW} gives and a plain {@code newOutputStream} does not.
+     */
+    @Test
+    void theOverwriteRefusalComesFromTheOpenNotThePreCheck() throws Exception {
+        Files.writeString(dir.resolve("a.txt"), "NEW");
+        Files.writeString(dir.resolve("kept.txt"), "KEEP-ME");
+
+        try (java.io.OutputStream out = Files.newOutputStream(dir.resolve("kept.txt"),
+                java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE)) {
+            out.write("NEW".getBytes(StandardCharsets.UTF_8));
+            fail("CREATE_NEW must refuse an existing file");
+        } catch (java.nio.file.FileAlreadyExistsException expected) {
+            // The open refuses; the pre-check is only a better message.
+        }
+        assertEquals("KEEP-ME", Files.readString(dir.resolve("kept.txt")),
+                "the existing content must survive");
+    }
+
+    /**
+     * A dangling symbolic link is a target that {@code Files.exists} calls absent.
+     *
+     * <p>{@code Files.exists} follows links, so for a link whose destination does not exist it
+     * returns false and the overwrite guard passes. Writing through the link would create the
+     * destination -- a file outside the path the program named. {@code CREATE_NEW} refuses the
+     * link itself, and the link must still be there afterwards, because this call did not
+     * create it and so must not delete it.
+     */
+    @Test
+    void copyRefusesADanglingSymlinkTargetAndLeavesItAlone() throws Exception {
+        assumeTrue(pointsAtLinks(), "this platform cannot create symbolic links here");
+        Files.writeString(dir.resolve("payload.txt"), "payload");
+        Path link = dir.resolve("dangling.out");
+        try {
+            Files.createSymbolicLink(link, dir.resolve("not-there.txt"));
+        } catch (java.nio.file.FileSystemException unsupported) {
+            assumeTrue(false, "symbolic links unavailable: " + unsupported.getMessage());
+            return;
+        }
+
+        OqError error = assertThrows(OqError.class,
+                () -> call("copy_file", "payload.txt", "dangling.out"));
+
+        assertTrue(error.getMessage().contains("already exists"), error.getMessage());
+        assertFalse(Files.exists(dir.resolve("not-there.txt")),
+                "the copy must not create the link's destination");
+        assertTrue(Files.isSymbolicLink(link),
+                "a target this call did not create must not be deleted");
+    }
+
+    /**
+     * The {@code finally} must not delete a target the call never created.
+     *
+     * <p>A missing source fails before the target is opened. With a single {@code completed}
+     * flag the cleanup still ran, and for a dangling link -- which {@code deleteIfExists}
+     * removes as a link without touching its destination -- that silently deleted something
+     * the caller owned.
+     */
+    @Test
+    void aCopyThatFailsBeforeOpeningTheTargetLeavesAnExistingLinkIntact() throws Exception {
+        assumeTrue(pointsAtLinks(), "this platform cannot create symbolic links here");
+        Path link = dir.resolve("preexisting.out");
+        try {
+            Files.createSymbolicLink(link, dir.resolve("also-not-there.txt"));
+        } catch (java.io.IOException unsupported) {
+            assumeTrue(false, "symbolic links unavailable: " + unsupported.getMessage());
+            return;
+        }
+
+        assertThrows(OqError.class, () -> call("copy_file", "no-such-source.txt", "preexisting.out"));
+
+        assertTrue(Files.isSymbolicLink(link),
+                "a failed copy must not delete a target it never created");
+    }
+
+    /** Both platforms can create a symlink in a temp directory, except Windows without rights. */
+    private static boolean pointsAtLinks() {
+        return true;
+    }
+
+    /** A copy under the limit succeeds, transfers every byte, and is charged for what moved. */
     @Test
     void copyUnderTheLimitTransfersEveryByte() throws Exception {
         byte[] payload = "the whole thing".getBytes(StandardCharsets.UTF_8);
