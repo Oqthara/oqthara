@@ -183,6 +183,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference documentation now lists 105 built-in functions, up from 98.
 
 ### Fixed
+- **A timestamp had two shapes depending on its value, and one of them could not be read
+  back.** `tz_convert` rendered with `OffsetDateTime.toString()`, which omits the seconds field
+  when the second is zero, so a zero-second instant printed `2026-11-10T14:04Z` — and
+  `instant_parse` on the project's own output then failed with "could not read". The round-trip
+  ADR-0036 relies on was broken for one value in sixty. `datetime()` had the same omission,
+  printing `2026-11-10T15:04` instead of `...T15:04:00`. Both now render through a named
+  `DateTimeFormatter`, and `LocalDateTime(...)` with a sixth or seventh argument keeps its
+  seconds instead of silently discarding them — a bridge bug that made
+  `LocalDateTime(2026, 11, 10, 15, 4, 24)` equal to `15:04:00`. Six regression tests cover the
+  three defects, five of them verified to fail on the previous code; no existing test had caught them
+  because every `tz_convert` case used `:24` seconds, the one value where the two behaviours
+  agree ([ADR-0056](docs/adr/0056-timestamp-shape-without-a-clock.md)).
 - **`await` charged the timeout instead of the wait.** `await(task, 10)` billed ten seconds to
   the program's 60-second wait budget even when the task had already finished, so eight awaits of
   instant work raised `the program waited for too long` in microseconds — found by writing

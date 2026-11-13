@@ -106,7 +106,7 @@ class DiagnosticsLocaleTest {
     @Test
     void aDecimalFromTheRuntimeKeepsADotInEveryLocale() {
         // Assert the separator, not a digit count. Pinning the exact text made this test break
-        // when ADR-0056 changed the precision rule; the property under test is that the decimal
+        // when #204 changed the decimal precision rule; the property under test is that the
         // separator stays a dot, and it should survive a change to how many digits are shown.
         for (Locale locale : HOSTILE) {
             Locale.setDefault(locale);

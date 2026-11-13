@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -35,6 +36,36 @@ class JavaBridgeExactnessTest {
     @Test
     void aBigIntegerThatFitsALongStaysANumber() {
         assertEquals(42L, JavaBridge.normalize(BigInteger.valueOf(42L)));
+    }
+
+    @Test
+    void everyLocalDateTimeArityKeepsTheSecondsItWasGiven() {
+        // The bridge special-cased `args.size() >= 5` and passed only five fields to
+        // LocalDateTime.of, so a sixth argument was discarded without an error:
+        // LocalDateTime(2026, 11, 10, 15, 4, 24) produced 15:04:00 (ADR-0056).
+        java.time.LocalDateTime five = (java.time.LocalDateTime) JavaBridge.construct(
+                java.time.LocalDateTime.class,
+                List.of(2026L, 11L, 10L, 15L, 4L), dev.oqthara.runtime.Span.synthetic(), null);
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 10, 15, 4, 0), five);
+
+        java.time.LocalDateTime six = (java.time.LocalDateTime) JavaBridge.construct(
+                java.time.LocalDateTime.class,
+                List.of(2026L, 11L, 10L, 15L, 4L, 24L), dev.oqthara.runtime.Span.synthetic(), null);
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 10, 15, 4, 24), six);
+        assertEquals(24, six.getSecond());
+
+        java.time.LocalDateTime seven = (java.time.LocalDateTime) JavaBridge.construct(
+                java.time.LocalDateTime.class,
+                List.of(2026L, 11L, 10L, 15L, 4L, 24L, 123_456_789L),
+                dev.oqthara.runtime.Span.synthetic(), null);
+        assertEquals(java.time.LocalDateTime.of(2026, 11, 10, 15, 4, 24, 123_456_789), seven);
+    }
+
+    @Test
+    void aLocalDateStillTakesExactlyThreeArguments() {
+        assertEquals(java.time.LocalDate.of(2026, 11, 10), JavaBridge.construct(
+                java.time.LocalDate.class, List.of(2026L, 11L, 10L),
+                dev.oqthara.runtime.Span.synthetic(), null));
     }
 
     @Test

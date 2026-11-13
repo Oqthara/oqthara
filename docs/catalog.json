@@ -338,6 +338,12 @@
       "slug": "docs/adr/0055-locale-independent-output"
     },
     {
+      "path": "docs/adr/0056-timestamp-shape-without-a-clock.md",
+      "title": "ADR-0056 — A timestamp's shape does not depend on its value",
+      "section": "adr",
+      "slug": "docs/adr/0056-timestamp-shape-without-a-clock"
+    },
+    {
       "path": "docs/adr/0057-repr-text-pastes-back.md",
       "title": "ADR-0057 — Rendered text pastes back as the text it rendered",
       "section": "adr",
