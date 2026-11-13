@@ -2083,7 +2083,7 @@ public final class Stdlib {
      * advisory for anything that is not a regular file: a FIFO and {@code /dev/zero} both report
      * 0 while yielding unbounded data, so trusting the reported size lets them through.
      */
-    private static String readBounded(OqHost host, Path path, Span span, String what) {
+    static String readBounded(OqHost host, Path path, Span span, String what) {
         try (java.io.InputStream stream = Files.newInputStream(path)) {
             byte[] bytes = stream.readNBytes(MAX_TEXT_BYTES + 1);
             if (bytes.length > MAX_TEXT_BYTES) {
