@@ -107,17 +107,17 @@ Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
 lines is one name and three registrations.
 
-**Core** (21) — `print`:132, `write_text`:145, `write`:152, `input`:159 and 163, `text`:171, `repr`:173, `number`:175, `type_of`:177, `is_nothing`:179, `is_number`:181, `is_text`:183, `length`:185, `range`:187, 191 and 194, `error`:203, `assert`:206 and 213, `args`:219, `exit`:221 and 224, `sort_by`:230, `map`:241, `filter`:243, `clone`:245.
+**Core** (21) — `print`:133, `write_text`:146, `write`:153, `input`:160 and 164, `text`:172, `repr`:174, `number`:176, `type_of`:178, `is_nothing`:180, `is_number`:182, `is_text`:184, `length`:186, `range`:188, 192 and 195, `error`:204, `assert`:207 and 214, `args`:220, `exit`:222 and 225, `sort_by`:231, `map`:242, `filter`:244, `clone`:246.
 
-**Text** (10) — `format`:250, `join`:252, `upper`:265, `lower`:267, `trim`:269, `contains`:271, `split`:273, `replace`:278, `regex`:281, `matches`:298.
+**Text** (10) — `format`:251, `join`:253, `upper`:266, `lower`:268, `trim`:270, `contains`:272, `split`:274, `replace`:279, `regex`:282, `matches`:299.
 
-**Collections** (14) — `keys`:304, `values`:310, `push`:316, `pop`:325, `sum`:330, `sort`:332, `reverse`:334, `unique`:336, `set`:338, `frozenset`:345, `list`:351, `enumerate`:357, `zip`:368, `range_list`:378.
+**Collections** (14) — `keys`:305, `values`:311, `push`:317, `pop`:326, `sum`:331, `sort`:333, `reverse`:335, `unique`:337, `set`:339, `frozenset`:346, `list`:352, `enumerate`:358, `zip`:369, `range_list`:379.
 
-**Math** (29) — `abs`:385, `floor`:387, `ceil`:389, `round`:391 and 393, `sqrt`:412, `pow`:415, `sin`:420, `cos`:423, `tan`:426, `asin`:429, `acos`:432, `atan`:435, `atan2`:438, `hypot`:443, `ln`:449, `log10`:453, `log2`:457, `exp`:461, `degrees`:464, `radians`:467, `pi`:470, `e`:471, `tau`:472, `min`:475, `max`:477, `sorted`:479, `clamp`:481, `random`:487 and 489, `random_item`:495.
+**Math** (29) — `abs`:386, `floor`:388, `ceil`:390, `round`:392 and 394, `sqrt`:413, `pow`:416, `sin`:421, `cos`:424, `tan`:427, `asin`:430, `acos`:433, `atan`:436, `atan2`:439, `hypot`:444, `ln`:450, `log10`:454, `log2`:458, `exp`:462, `degrees`:465, `radians`:468, `pi`:471, `e`:472, `tau`:473, `min`:476, `max`:478, `sorted`:480, `clamp`:482, `random`:488 and 490, `random_item`:496.
 
-**Files** (13) — `read`:503, `read_lines`:507, `save`:518, `append`:531, `exists`:545, `list_files`:547, `delete`:572, `make_dir`:579, `file_size`:587, `path_join`:594, `path_name`:597, `path_parent`:601, `cwd`:605.
+**Files** (13) — `read`:504, `read_lines`:508, `save`:519, `append`:532, `exists`:546, `list_files`:548, `delete`:573, `make_dir`:580, `file_size`:588, `path_join`:595, `path_name`:598, `path_parent`:602, `cwd`:606.
 
-**File operations** (7) — `is_file`:619, `is_dir`:621, `read_bytes`:623, `write_bytes`:639, `copy_file`:651, `move_file`:656, `walk`:671.
+**File operations** (7) — `is_file`:620, `is_dir`:622, `read_bytes`:624, `write_bytes`:640, `copy_file`:652, `move_file`:657, `walk`:672.
 
 **Files and directories** (7) — `stat`:73, `touch`:75, `temp_dir`:79, `copy_tree`:81,
 `read_lines_or_empty`:86, `path_absolute`:89, `path_normalize`:91, all in `FileSystem.java`.
@@ -161,27 +161,27 @@ because `Values` has to name and display it, and whose whole point is that no op
 to a `double`: `fraction_compare` cross-multiplies, and `fraction_to_decimal` is the one
 conversion outward, with the precision stated by the caller.
 
-**JSON** (4) — `json_parse`:868, `json`:870, `json_write`:872, `json_pretty`:874.
+**JSON** (4) — `json_parse`:869, `json`:871, `json_write`:873, `json_pretty`:875.
 
-**Encoding** (11) — `hex_encode`:887, `hex_decode`:889, `base64_encode`:891, `base64_decode`:893, `sha256`:895, `sha1`:897, `md5`:899, `hmac_sha256`:901, `secure_random_hex`:903, `secure_equal`:913, `pbkdf2_sha256`:921.
+**Encoding** (11) — `hex_encode`:888, `hex_decode`:890, `base64_encode`:892, `base64_decode`:894, `sha256`:896, `sha1`:898, `md5`:900, `hmac_sha256`:902, `secure_random_hex`:904, `secure_equal`:914, `pbkdf2_sha256`:922.
 
-**Logging** (6) — `log_debug`:1005, `log_info`:1007, `log_warn`:1009, `log_error`:1011, `log_level`:1013, `log_enabled`:1023.
+**Logging** (6) — `log_debug`:1006, `log_info`:1008, `log_warn`:1010, `log_error`:1012, `log_level`:1014, `log_enabled`:1024.
 
-**Arguments** (1) — `arg_parse`:1049.
+**Arguments** (1) — `arg_parse`:1050.
 
-**CSV** (2) — `csv_parse`:1199, 1201 and 1204, `csv_write`:1208 and 1210.
+**CSV** (2) — `csv_parse`:1200, 1202 and 1205, `csv_write`:1209 and 1211.
 
-**Dates** (2) — `date_parse`:1366, `instant_parse`:1368.
+**Dates** (2) — `date_parse`:1367, `instant_parse`:1369.
 
-**Time** (6) — `now`:1393, `today`:1395, `datetime`:1397, `timestamp`:1399, `tz_convert`:1401, `sleep`:1423.
+**Time** (6) — `now`:1394, `today`:1396, `datetime`:1398, `timestamp`:1400, `tz_convert`:1402, `sleep`:1424.
 
-**URLs** (6) — `url_parse`:1451, `url_encode`:1475, `url_decode`:1479, `query_parse`:1483, `query_encode`:1502, `url_join`:1542.
+**URLs** (6) — `url_parse`:1452, `url_encode`:1476, `url_decode`:1480, `query_parse`:1484, `query_encode`:1503, `url_join`:1543.
 
-**HTTP** (2) — `http_get`:1840, `http_post`:1842.
+**HTTP** (2) — `http_get`:1841, `http_post`:1843.
 
-**Concurrency** (5) — `spawn`:1996, `await`:2004 and 2011, `done`:2025, `mutex`:2032, `par_map`:2034.
+**Concurrency** (5) — `spawn`:1997, `await`:2005 and 2012, `done`:2026, `mutex`:2033, `par_map`:2035.
 
-**Process** (4) — `env`:2062, `run_command`:2064, `cpu_count`:2116, `memory_mb`:2118.
+**Process** (4) — `env`:2063, `run_command`:2065, `cpu_count`:2117, `memory_mb`:2119.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),
@@ -556,15 +556,15 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `html`, `html.parser`, `html.entities` [A]; `xml`, `xml.etree`, `xml.dom`, `xml.dom.minidom`, `xml.dom.pulldom`, `xml.sax`, `xml.sax.handler`, `xml.sax.utils`, `xml.sax.reader`, `pyexpat` [X] |
-| Oqthara equivalent | None. No markup parsing and no HTML escaping builtin |
-| Missing | No escaping (`&` → `&amp;`), no entity table, no element tree, no SAX-style callbacks, no XPath |
+| Modules | `html` [C]; `html.entities` [P]; `html.parser` [A]; `xml`, `xml.etree`, `xml.dom`, `xml.dom.minidom`, `xml.dom.pulldom`, `xml.sax`, `xml.sax.handler`, `xml.sax.utils`, `xml.sax.reader`, `pyexpat` [X] |
+| Oqthara equivalent | `html_escape`:1492, `html_unescape`:1493, `html_escape_attribute`:1494, `html_entity`:1496, built by [ADR-0054](../adr/0054-html-escaping.md) and pinned by 19 tests |
+| Missing | The entity set is the six the HTML specification requires for text (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`) rather than the reference's full HTML5 table, so `html.entities` is partly covered; no element tree, no SAX-style callbacks, no XPath, no HTML tokenizer |
 | JVM fit | Yes for HTML escaping and entities — trivially. Partly for XML: the JVM ships several XML parsers and **every one of them must be configured to disable external entities and DTDs** before it is safe, which is a configuration invariant rather than a default |
 | Lifetime | Per-call, if a tree is built in memory. A SAX callback style would need a callback protocol the language does not have |
-| Security | This is the chapter with the most severe documented reasoning. XXE and the billion-laughs expansion both come from *trusting* a document's own declarations; a hand-written parser is worse, not better, because it re-implements the attack surface. The matrix already records XML as deliberately absent on these grounds. HTML escaping, by contrast, is a *defence* — its absence means a program must hand-roll the replacement, which is where escaping bugs live |
+| Security | This is the chapter with the most severe documented reasoning. XXE and the billion-laughs expansion both come from *trusting* a document's own declarations; a hand-written parser is worse, not better, because it re-implements the attack surface. The matrix already records XML as deliberately absent on these grounds. HTML escaping, by contrast, is a *defence* — its absence means a program must hand-roll the replacement, which is where escaping bugs live. That gap is now closed rather than deferred |
 | Contract | A proposed `html_escape` must escape exactly `&`, `<`, `>`, `"` and `'`, must be idempotent-free (escaping twice must double-escape, so callers know), and must never be applied implicitly. No XML API may be added without external-entity and DTD resolution disabled and a test proving it |
-| Test | `HtmlEscapeTest` — a string containing all five characters plus an already-escaped entity, asserting the exact output and that double-escaping is visible. Proposed `xml`: `XxeRefusedTest` with a document declaring an external entity and asserting the entity is not resolved and the call raises |
-| Acc. | Escaping exact and tested; no XML entry point resolves an external entity or processes a DTD, proven by test |
+| Test | `HtmlTextTest`, 19 tests. The load-bearing cases assert exact output rather than a round-trip, because a round-trip passes under the wrong replacement order and the wrong order is the bug that ships. Proposed `xml`: `XxeRefusedTest` with a document declaring an external entity and asserting the entity is not resolved and the call raises |
+| Acc. | Escaping exact and tested: `HtmlTextTest` asserts the exact output for a string holding all five escaped characters, that escaping is deliberately not idempotent (so a caller cannot smuggle a literal entity through it), that `&` is replaced before the others so its own output is not re-escaped, that a bare `&` survives unescaping as prose, and that numeric references out of range or naming a surrogate raise rather than emitting an unencodable character. No XML entry point exists at all, which satisfies the no-XXE criterion by construction |
 | Excluded | All ten XML modules. Reason: XML parsing is safe only when external entity resolution and DTD processing are disabled, the JVM parsers do not do that by default, and a hand-written parser without that hardening would be a security regression. The gap is recorded rather than filled badly — the same position the requirement matrix already takes |
 
 ### 17. Internet protocols and support — 22 modules
@@ -785,9 +785,9 @@ Across the 30 domains and **231 documented modules**:
 
 | Status | Modules | Share |
 |---|---|---|
-| **Covered** | **20** | 8.7% |
-| **Partly covered** | **36** | 15.6% |
-| **Absent** | **57** | 24.7% |
+| **Covered** | **21** | 9.1% |
+| **Partly covered** | **37** | 16.0% |
+| **Absent** | **55** | 23.8% |
 | **Deliberately excluded** | **118** | 51.1% |
 | **Total** | **231** | 100.0% |
 
@@ -810,7 +810,7 @@ Per domain, in the chapter order used above:
 | 13 | Concurrent execution | 11 | 1 | 2 | 2 | 6 |
 | 14 | Networking and IPC | 7 | 0 | 0 | 1 | 6 |
 | 15 | Internet data handling | 7 | 2 | 1 | 3 | 1 |
-| 16 | Structured markup | 13 | 0 | 0 | 3 | 10 |
+| 16 | Structured markup | 13 | 1 | 1 | 1 | 10 |
 | 17 | Internet protocols | 22 | 2 | 2 | 3 | 15 |
 | 18 | Multimedia | 2 | 0 | 0 | 2 | 0 |
 | 19 | Internationalization | 2 | 0 | 0 | 2 | 0 |
@@ -825,11 +825,11 @@ Per domain, in the chapter order used above:
 | 28 | MS Windows services | 3 | 0 | 0 | 0 | 3 |
 | 29 | Unix-specific services | 10 | 0 | 0 | 1 | 9 |
 | 30 | Superseded modules | 2 | 0 | 0 | 0 | 2 |
-| | **Total** | **231** | **20** | **36** | **57** | **118** |
+| | **Total** | **231** | **21** | **37** | **55** | **118** |
 
 Two readings of this table matter, and only one of them is flattering:
 
-- **Against the whole index, coverage is 24%** (20 covered plus 36 partly, of 231 — and "partly"
+- **Against the whole index, coverage is 25%** (21 covered plus 37 partly, of 231 — and "partly"
   is doing real work in that figure). That is the honest headline, and it is deliberately not
   presented as a percentage of *reachable* surface, because choosing the denominator after
   seeing the answer is how a metrics document stops being trustworthy.
@@ -840,8 +840,8 @@ Two readings of this table matter, and only one of them is flattering:
   services. Excluding them is not modesty, it is scope.
 
 The figure the requirement matrix can now cite is therefore not "89 functions, breadth unknown"
-but: **200 global builtins and 205 documented method names, against 231 documented Python
-modules, with 20 covered, 36 partly covered, 57 absent and 118 excluded for a stated technical
+but: **204 global builtins and 205 documented method names, against 231 documented Python
+modules, with 21 covered, 37 partly covered, 55 absent and 118 excluded for a stated technical
 reason.** Every exclusion above names its reason; none is a silent omission.
 
 ### 2. What this document does not claim

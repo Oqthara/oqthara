@@ -326,6 +326,12 @@
       "slug": "docs/adr/0053-exact-rational-arithmetic"
     },
     {
+      "path": "docs/adr/0054-html-escaping.md",
+      "title": "ADR-0054 — HTML escaping as a defence, with no parser",
+      "section": "adr",
+      "slug": "docs/adr/0054-html-escaping"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
