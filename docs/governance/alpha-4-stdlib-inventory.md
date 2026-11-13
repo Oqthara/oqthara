@@ -25,7 +25,7 @@ document that promises is a document that cannot be checked.
   `DatabaseModule.java`, `Patterns.java` and `MethodResolverImpl.java`, then reconciled
   name-for-name against
   the generated surface in [`docs/stdlib/reference.md`](../stdlib/reference.md). The two agree
-  exactly, in both directions, with zero drift: 189 global names and 205 documented method
+  exactly, in both directions, with zero drift: 200 global names and 205 documented method
   entries on each side. Every name cited in this document was found by grep in the files named
   against it, and `check-docs-sync.py`'s `stdlib_inventory_citations_resolve` re-resolves every
   one of them on every run, because the sentence you are reading was not true when it was first
@@ -54,12 +54,12 @@ document that promises is a document that cannot be checked.
 
 | Measure | Value | Evidence |
 |---|---|---|
-| Global builtin **names** | **189** | 143 in `Stdlib.java` + 3 in `DatabaseModule.java` + 2 in `Patterns.java` + 12 in `Statistics.java` + 6 in `Compression.java` + 6 in `TextWrap.java` + 17 in `Fractions.java` |
-| Callable **registrations** | **200** | 9 names are overloaded, adding 11 extra registrations (`range` and `csv_parse` have three each): `assert`, `await`, `csv_parse`, `csv_write`, `exit`, `input`, `random`, `range`, `round` |
+| Global builtin **names** | **200** | 143 in `Stdlib.java` + 3 in `DatabaseModule.java` + 2 in `Patterns.java` + 12 in `Statistics.java` + 6 in `Compression.java` + 6 in `TextWrap.java` + 17 in `Fractions.java` + 7 in `FileSystem.java` + 4 in `ConfigFormats.java` |
+| Callable **registrations** | **211** | 9 names are overloaded, adding 11 extra registrations (`range` and `csv_parse` have three each): `assert`, `await`, `csv_parse`, `csv_write`, `exit`, `input`, `random`, `range`, `round` |
 | Method **families** | **9** | `MethodResolverImpl.java`, one method per family |
 | Documented method names | **205** | `docs/stdlib/reference.md` L190–L226 |
 | Host-dependent builtins | **36** | `oq-stdlib/.../Builtins.java:45` (`HOST_DEPENDENT`), the compiled-code bridge |
-| Builtins exercised by `examples/` | **67 of 189** | 42 `.oq` files, checked by name |
+| Builtins exercised by `examples/` | **67 of 200** | 42 `.oq` files, checked by name |
 
 The matrix carried "89 global functions and eight method families" when this document was
 drafted. That figure was measured at an earlier commit and had been stale since the date builtins
@@ -80,6 +80,7 @@ name can be located by section and then by the line numbers in the following tab
 | Math | `Stdlib.java:381` | 31 | 29 |
 | Files | `Stdlib.java:514` | 13 | 13 |
 | File operations | `Stdlib.java:630` | 7 | 7 |
+| Files and directories | `FileSystem.java:72` | 7 | 7 |
 | Patterns | `Patterns.java:39` | 2 | 2 |
 | Statistics, identifiers, ordered search | `Statistics.java:32` | 12 | 12 |
 | Text layout | `TextWrap.java:26` | 6 | 6 |
@@ -97,9 +98,10 @@ name can be located by section and then by the line numbers in the following tab
 | Concurrency | `Stdlib.java:1677` | 6 | 5 |
 | Process | `Stdlib.java:1743` | 4 | 4 |
 | Database | `DatabaseModule.java:44` | 3 | 3 |
-| **Total** | | **200** | **189** |
+| Configuration formats | `ConfigFormats.java:53` | 4 | 4 |
+| **Total** | | **211** | **200** |
 
-### The 189 names, by registration site
+### The 200 names, by registration site
 
 Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
@@ -116,6 +118,19 @@ lines is one name and three registrations.
 **Files** (13) — `read`:515, `read_lines`:519, `save`:530, `append`:543, `exists`:557, `list_files`:559, `delete`:584, `make_dir`:591, `file_size`:599, `path_join`:606, `path_name`:609, `path_parent`:613, `cwd`:617.
 
 **File operations** (7) — `is_file`:631, `is_dir`:633, `read_bytes`:635, `write_bytes`:651, `copy_file`:663, `move_file`:668, `walk`:683.
+
+**Files and directories** (7) — `stat`:73, `touch`:75, `temp_dir`:79, `copy_tree`:81,
+`read_lines_or_empty`:86, `path_absolute`:89, `path_normalize`:91, all in `FileSystem.java`.
+One registration per name, so the section adds 7 to both columns. No ADR: the module adds no
+new representation. Its bound is the point worth recording — `copy_tree` charges the bytes it
+moves against a single 16 MiB budget for the whole tree, the same figure `copy_file` allows one
+file, because an entry cap alone would permit a 1.6 TiB tree.
+
+**Configuration formats** (4) — `ini_parse`:54, `ini_write`:56, `properties_parse`:58,
+`toml_get`:60, all in `ConfigFormats.java`. One registration per name, so the section adds 4 to
+both columns. No ADR: `toml_get` deliberately reads one scalar-or-array value at a dotted path
+and refuses tables of tables, inline tables and dates by name rather than guessing, which keeps
+the grammar small enough to state exactly in its Javadoc.
 
 **Patterns** (2) — `fnmatch`:40, `glob`:49, both in `Patterns.java`.
 
@@ -235,17 +250,20 @@ Family membership, for the record:
   log10, log2, radians, round, sin, sqrt, tan, text, to_string.
 - `iterator` (3): has_next, iter, next. `mutex` (2): is_free, lock.
 
-### What the 189 do not include
+### What the 200 do not include
 
 Verified absent by grep across `oq-stdlib/src/main/java/dev/oqthara/stdlib/`, zero matches
 each: `itertools`, `decimal`, `gzip`,
 `tar`, `lzma`, `shelve`, `pickle`, `dbm`, `yaml`, `toml`, `deep_equal`, `random_bytes`,
-`date_add`, `date_diff`, `temp_dir`, `home_dir`, `os_name`, `platform_name`, `shell_quote`,
-`shlex`. Two near-misses worth stating precisely: `pad_start` exists as a **text method**
-only, not as a global, and `sort_by` is a global while `sort`/`sorted` are both globals and
-methods. `glob` and `fnmatch` were on this absent list when the document was drafted and
-shipped since, in `Patterns.java`; `uuid` likewise, in `Statistics.java`; `fraction` likewise,
-in `Fractions.java`. All four are counted in the 189 above. The list is re-grepped whenever it
+`date_add`, `date_diff`, `home_dir`, `os_name`, `platform_name`, `shell_quote`,
+`shlex`. Three near-misses are worth stating precisely, because each would look absent to a
+careless grep and each is a deliberate partial: `pad_start` exists as a **text method** only,
+not as a global; `sort_by` is a global while `sort`/`sorted` are both globals and methods; and
+`toml` is absent while `toml_get` ships in `ConfigFormats.java`, because the format is read by
+dotted path and the rest of TOML is refused by name. `glob` and `fnmatch` were on this absent
+list when the document was drafted and shipped since, in `Patterns.java`; `uuid` likewise, in
+`Statistics.java`; `fraction` likewise, in `Fractions.java`; and `temp_dir` likewise, in
+`FileSystem.java`. All five are counted in the 200 above. The list is re-grepped whenever it
 is edited, because a name that has shipped and stayed on it is a false absence claim rather
 than a stale one.
 
@@ -265,7 +283,10 @@ and no qualified name.
 
 ### How much of it the examples exercise
 
-42 `.oq` files under `examples/`, of which **67** distinct builtins appear as identifiers
+42 `.oq` files under `examples/`, of which **56** distinct builtins appear as identifiers
+(51 of them called as functions; `e`, `matches`, `done`, `assert` and `print` legitimately
+appear bare). Counted over comment- and string-stripped source, so prose that merely names a
+builtin does not count as usage.
 in executable code (comments are stripped first, and a name in method position such as
 `.sort()` is not counted, so the measure is of global use):
 
@@ -278,7 +299,7 @@ in executable code (comments are stripped first, and a name in method position s
 `sort`, `sorted`, `spawn`, `split`, `sqrt`, `sum`, `text`, `timestamp`, `today`, `upper`,
 `url_encode`, `url_join`, `url_parse`, `write`.
 
-122 builtins are exercised by no example. That is a coverage fact about the examples, not about
+144 builtins are exercised by no example. That is a coverage fact about the examples, not about
 the builtins — every name above has unit coverage — but it is the honest measure of how much
 of the surface a reader can learn by example, and it bounds how confidently the surface can be
 called usable rather than merely present.
@@ -385,15 +406,15 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `pathlib` [P]; `glob`, `fnmatch` [C]; `os.path`, `stat`, `shutil` [P]; `filecmp`, `tempfile` [A]; `linecache` [X] |
-| Oqthara equivalent | `read`:443, `read_lines`:447, `save`:458, `append`:471, `exists`:485, `list_files`:487, `delete`:512, `make_dir`:519, `file_size`:527, `path_join`:534, `path_name`:536, `path_parent`:540, `cwd`:544, `is_file`:558, `is_dir`:560, `read_bytes`:562, `write_bytes`:578, `copy_file`:590, `move_file`:595, `walk`:610 |
-| Missing | No temporary directory or file; no recursive copy or delete; no permission, modification-time or ownership inspection; no symbolic-link control beyond `walk` refusing to follow them; no path value — paths are text. `glob`:49 and `fnmatch`:40 in `Patterns.java` cover name matching, with `**` recursion and `*` matching a leading dot (unlike a POSIX shell) |
+| Modules | `pathlib` [P]; `glob`, `fnmatch` [C]; `os.path`, `stat`, `shutil` [P]; `tempfile` [P]; `filecmp` [A]; `linecache` [X] |
+| Oqthara equivalent | `read`:516, `read_lines`:520, `save`:531, `append`:544, `exists`:558, `list_files`:560, `delete`:585, `make_dir`:592, `file_size`:600, `path_join`:607, `path_name`:610, `path_parent`:614, `cwd`:618, `is_file`:632, `is_dir`:634, `read_bytes`:636, `write_bytes`:652, `copy_file`:664, `move_file`:669, `walk`:684, and in `FileSystem.java` `stat`:73, `touch`:75, `temp_dir`:79, `copy_tree`:81, `read_lines_or_empty`:86, `path_absolute`:89, `path_normalize`:91 |
+| Missing | No temporary *file* — only `temp_dir`, and the caller deletes it because there is no `close`; no recursive delete, deliberately, because `delete` removing a tree needs an explicit flag and a flag is a language decision; no file comparison (`filecmp`); no ownership, no ACLs and no nanosecond timestamps; no symbolic-link creation or resolution exposed as a builtin; no path value — paths are text. `stat` reports `size`, `is_file`, `is_dir`, `is_symlink`, `modified`, `created`, `readable`/`writable`/`executable` and `mode`, and omits `mode` rather than inventing one on a platform without POSIX permissions. `copy_tree` refuses a tree over 16 MiB in total, which is the same budget `copy_file` gives one file. `glob`:49 and `fnmatch`:40 in `Patterns.java` cover name matching, with `**` recursion and `*` matching a leading dot (unlike a POSIX shell) |
 | JVM fit | Yes — `PathMatcher("glob:...")`, `Files.walkFileTree`, `Files.createTempDirectory` and `BasicFileAttributes` supply all of it. This is the cheapest high-value chapter on the list |
-| Lifetime | Per-call for everything above, and that is the whole reason it is cheap. `tempfile` is the exception worth naming: a temp *file* that the caller must delete is a lifetime, so a proposed version must be a scoped body (as ADR-0040 did for transactions) or return a directory the caller owns explicitly |
-| Security | The filesystem is trusted by [ADR-0036](../adr/0036-time-zones-and-filesystem.md) Decision 7 and `read("../../../etc/hosts")` is documented to work, so path traversal is a known and accepted property, not a bug. `delete` must never be recursive without an explicit flag, and `copy_file`/`move_file` refusing to overwrite is a safety property to preserve. A glob over an attacker-controlled directory can enumerate a very large tree, so it needs the `MAX_LIST_ENTRIES`-style cap that `list_files` already has |
+| Lifetime | Per-call for everything above, and that is the whole reason it is cheap. `temp_dir` is the one exception and it is handled by refusing to hide it: it returns a directory the caller owns explicitly, says so in its own documentation string, and is not scoped, because the language has no `close` ([ADR-0036](../adr/0036-time-zones-and-filesystem.md)). A temp *file* would be the same shape, so the directory is what shipped |
+| Security | The filesystem is trusted by [ADR-0036](../adr/0036-time-zones-and-filesystem.md) Decision 7 and `read("../../../etc/hosts")` is documented to work, so path traversal is a known and accepted property, not a bug. `delete` must never be recursive without an explicit flag, and `copy_file`/`move_file`/`copy_tree` refusing to overwrite is a safety property to preserve. A glob over an attacker-controlled directory can enumerate a very large tree, so it needs the `MAX_LIST_ENTRIES`-style cap that `list_files` already has — and a copy needs a *byte* cap, not only an entry cap: 100,000 entries of 16 MiB is 1.6 TiB, so `copy_tree` bounds the whole tree at 16 MiB and counts the bytes it moves rather than trusting a reported size |
 | Contract | Every path operation returns text joined with the platform separator and never a `Path` value; `walk` continues not to follow symlinks; glob must define its syntax (the `PathMatcher` dialect, not Python's `**`) and its ordering (sorted, deterministic) so output is reproducible |
-| Test | `GlobTest` — 26 cases. `aStarMatchesWithinOneSegment`, `aGlobstarMatchesAcrossSeparators`, `aQuestionMarkMatchesExactlyOneCharacter`, `aDashInAClassIsARange`, `anUnclosedClassIsRefused` and `resultsUseForwardSlashesOnEveryPlatform` pin the dialect. `TempDirOwnershipTest` (proposed) asserting a scoped body's directory is gone on normal return **and** on raise |
-| Acc. | Documented dialect with a test per metacharacter; deterministic ordering; an entry cap that raises rather than truncating silently |
+| Test | `GlobTest` — 26 cases. `aStarMatchesWithinOneSegment`, `aGlobstarMatchesAcrossSeparators`, `aQuestionMarkMatchesExactlyOneCharacter`, `aDashInAClassIsARange`, `anUnclosedClassIsRefused` and `resultsUseForwardSlashesOnEveryPlatform` pin the dialect. `FileSystemModuleTest` — 36 cases for the new names: `stat` on a file, a directory, a symbolic link and a missing path; `copyTreeRefusesATreeThatExceedsTheByteBudget` asserting a tree over the budget is refused before anything is written; `copyTreeRefusesASymlinkInTheTree`; `copyTreeRefusesANonEmptyTarget`; and `copyBounded` stopping when the reported size is a lie, which lives in `FileOperationsTest` |
+| Acc. | Documented dialect with a test per metacharacter; deterministic ordering; an entry cap and a byte cap that both raise rather than truncating silently |
 | Excluded | `linecache` (source-line caching exists to feed tracebacks in a CPython-style debugger; Oqthara has no `linecache` consumer and adding a cache with no reader is dead surface) |
 
 ### 7. Data persistence — 6 modules
@@ -430,15 +451,15 @@ Conventions used in the tables:
 
 | Attribute | Value |
 |---|---|
-| Modules | `csv` [C]; `configparser`, `tomllib`, `plistlib` [A]; `netrc` [X] |
-| Oqthara equivalent | `csv_parse`:1021/1021/1024, `csv_write`:1031/1029, specified by [ADR-0035](../adr/0035-csv-and-structured-data.md): RFC 4180, quoted fields, embedded delimiters and line breaks, opt-in comments |
-| Missing | No INI parsing, no TOML, no property list; no schema, no typed columns — CSV rows come back as text |
+| Modules | `csv` [C]; `configparser`, `tomllib` [P]; `plistlib` [A]; `netrc` [X] |
+| Oqthara equivalent | `csv_parse`:1149/1151/1154, `csv_write`:1158/1160, specified by [ADR-0035](../adr/0035-csv-and-structured-data.md): RFC 4180, quoted fields, embedded delimiters and line breaks, opt-in comments. In `ConfigFormats.java`: `ini_parse`:54 and `ini_write`:56 for INI, `properties_parse`:58 for Java properties, `toml_get`:60 for one TOML value at a dotted path |
+| Missing | No whole-document TOML: `toml_get` returns one value, so there is no parse of a full document and no writer. No TOML tables of tables, inline tables or dates — each is refused by name with a line number rather than guessed at. No property list, no YAML; no schema, no typed columns — CSV rows come back as text |
 | JVM fit | Yes — a TOML parser is a self-contained algorithm and INI is a small state machine; neither needs a dependency worth carrying for a 13.5 MB jar that already apologises for its size |
 | Lifetime | Per-call. Text in, value out |
-| Security | CSV formula injection is the live risk: a field beginning `=`, `+`, `-` or `@` is executed by spreadsheet software on open. `csv_write` should document this rather than silently escape, because escaping changes the data. Config parsing must not evaluate anything — a config format that can call code is a remote code execution surface |
-| Contract | `csv_parse` must accept embedded delimiters and line breaks inside quotes and must reject an unterminated quote rather than accepting the truncated row; `csv_write` must quote exactly what RFC 4180 requires and no more; a proposed config parser must never interpolate |
-| Test | `CsvAndDatesTest` covers the RFC 4180 cases today. Proposed: `CsvFormulaInjectionTest` asserting `csv_write` is documented to be non-escaping and that a round trip of `=1+1` yields `=1+1` unchanged, plus `TomlParseTest` with a nested table and a duplicate-key rejection |
-| Acc. | Round-trip equality on the RFC's own examples; unterminated input raises; no parser evaluates |
+| Security | CSV formula injection is the live risk: a field beginning `=`, `+`, `-` or `@` is executed by spreadsheet software on open. `csv_write` should document this rather than silently escape, because escaping changes the data. Config parsing must not evaluate anything — a config format that can call code is a remote code execution surface. Both parsers that shipped bound their recursion explicitly (`MAX_NESTING` is 64 in `ConfigFormats.java`) and both name the offending line, so a hostile input is a diagnosable error rather than an unbounded descent or a silent misread |
+| Contract | `csv_parse` must accept embedded delimiters and line breaks inside quotes and must reject an unterminated quote rather than accepting the truncated row; `csv_write` must quote exactly what RFC 4180 requires and no more; a config parser must never interpolate. The shipped parsers state their grammar: `ini_parse` puts a section-less prefix under the empty section name, treats `;` and `#` as comments, trims values and lets the last duplicate key win; `ini_write` sorts sections and keys so output is reproducible; `properties_parse` implements `java.util.Properties` escaping including `\uXXXX` and line continuations, and diverges from the JDK in four documented places (a trailing backslash at end of input raises instead of being dropped, a bad `\u` names its line, values are not trimmed, and an even run of trailing backslashes ends the line); `toml_get` reads one bare-or-quoted string, integer, float, boolean or array of those at a dotted path |
+| Test | `CsvAndDatesTest` covers the RFC 4180 cases today. `ConfigFormatsTest` — 57 cases across the three parsers, including an unterminated string, an escape at end of input and a deeply nested array for each, a line continuation at end of input for properties, and a `toml_get` that names tables of tables, inline tables and dates as unsupported rather than returning a wrong value. `CsvFormulaInjectionTest` remains proposed: `csv_write` is documented to be non-escaping, and a round trip of `=1+1` yields `=1+1` unchanged |
+| Acc. | Round-trip equality on the RFC's own examples; `ini_write` is deterministic; unterminated input raises with a line number; no parser evaluates; an unsupported TOML construct is refused by name |
 | Excluded | `netrc` (a credential file format — reading one would put a password in a text value with no way to clear it, and the language has no secure-string lifetime; a language that cannot wipe a secret should not have a helper that loads one) |
 
 ### 10. Cryptographic services — 3 modules
@@ -765,8 +786,8 @@ Across the 30 domains and **231 documented modules**:
 | Status | Modules | Share |
 |---|---|---|
 | **Covered** | **20** | 8.7% |
-| **Partly covered** | **33** | 14.3% |
-| **Absent** | **60** | 26.0% |
+| **Partly covered** | **36** | 15.6% |
+| **Absent** | **57** | 24.7% |
 | **Deliberately excluded** | **118** | 51.1% |
 | **Total** | **231** | 100.0% |
 
@@ -779,10 +800,10 @@ Per domain, in the chapter order used above:
 | 3 | Data types | 15 | 2 | 5 | 6 | 2 |
 | 4 | Numeric and mathematical | 8 | 1 | 2 | 5 | 0 |
 | 5 | Functional programming | 3 | 0 | 1 | 2 | 0 |
-| 6 | File and directory access | 9 | 2 | 4 | 2 | 1 |
+| 6 | File and directory access | 9 | 2 | 5 | 1 | 1 |
 | 7 | Data persistence | 6 | 1 | 0 | 0 | 5 |
 | 8 | Compression and archiving | 8 | 3 | 0 | 4 | 1 |
-| 9 | File formats | 5 | 1 | 0 | 3 | 1 |
+| 9 | File formats | 5 | 1 | 2 | 1 | 1 |
 | 10 | Cryptographic services | 3 | 0 | 3 | 0 | 0 |
 | 11 | Generic OS services | 9 | 1 | 3 | 4 | 1 |
 | 12 | CLI libraries | 8 | 1 | 0 | 1 | 6 |
@@ -804,11 +825,11 @@ Per domain, in the chapter order used above:
 | 28 | MS Windows services | 3 | 0 | 0 | 0 | 3 |
 | 29 | Unix-specific services | 10 | 0 | 0 | 1 | 9 |
 | 30 | Superseded modules | 2 | 0 | 0 | 0 | 2 |
-| | **Total** | **231** | **20** | **33** | **60** | **118** |
+| | **Total** | **231** | **20** | **36** | **57** | **118** |
 
 Two readings of this table matter, and only one of them is flattering:
 
-- **Against the whole index, coverage is 23%** (20 covered plus 33 partly, of 231 — and "partly"
+- **Against the whole index, coverage is 24%** (20 covered plus 36 partly, of 231 — and "partly"
   is doing real work in that figure). That is the honest headline, and it is deliberately not
   presented as a percentage of *reachable* surface, because choosing the denominator after
   seeing the answer is how a metrics document stops being trustworthy.
@@ -819,8 +840,8 @@ Two readings of this table matter, and only one of them is flattering:
   services. Excluding them is not modesty, it is scope.
 
 The figure the requirement matrix can now cite is therefore not "89 functions, breadth unknown"
-but: **189 global builtins and 205 documented method names, against 231 documented Python
-modules, with 20 covered, 33 partly covered, 60 absent and 118 excluded for a stated technical
+but: **200 global builtins and 205 documented method names, against 231 documented Python
+modules, with 20 covered, 36 partly covered, 57 absent and 118 excluded for a stated technical
 reason.** Every exclusion above names its reason; none is a silent omission.
 
 ### 2. What this document does not claim
