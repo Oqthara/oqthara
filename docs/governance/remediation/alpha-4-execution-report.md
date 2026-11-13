@@ -169,6 +169,10 @@ asserting something false. Provenance is therefore correct and honest, not compl
 | `python3 scripts/check-docs-sync.py` | **exit 0** — 253 test-class citations resolve, 106 cited methods resolve, 3 quoted counts match, matrix pin `2dc3890` reachable |
 | `python3 scripts/check-links.py` | **exit 0** — 221 links resolve |
 | `python3 scripts/check-risk-register.py` | **exit 0** — 28 rows, 1 + 3 + 11 + 13 = 28, matrix and summary agree |
+| `python3 scripts/test_watchdog.py` | **13 tests, OK** |
+| `python3 -m unittest scripts.tests.test_verify_signature` | **OK** |
+| Website `npm test`, no `_site` | **457 tests, 442 pass, 0 fail, 15 skipped** |
+| Website `npm test`, after `npm run build` | **457 tests, 452 pass, 0 fail, 5 skipped** — building `_site` releases 10 built-artifact checks (bundle gzip budget and similar). The remaining 5 are `live:` network tests gated on `OQ_LIVE_DOCS=1`, which reach GitHub to check the published docs and the release list; they are opt-in by design and skipped by default. Neither group is counted as coverage in this report. |
 | Required CI contexts on the final PR | **12 of 12 pass**, each compared individually against the ruleset's own list |
 
 **A note on two transient failures.** The first full suite run showed 2 failures in
