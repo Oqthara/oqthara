@@ -1,0 +1,1 @@
+print zip_decompress(zip_compress({"folder/": ""}))

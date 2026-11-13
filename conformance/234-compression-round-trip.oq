@@ -1,0 +1,5 @@
+# One round trip per container. The zip case carries a directory entry, which the
+# decompressor skips rather than returning as a file that holds no bytes.
+print zlib_decompress(zlib_compress(hex_encode("abc"))) == hex_encode("abc")
+print gzip_decompress(gzip_compress("abc")) == hex_encode("abc")
+print zip_decompress(zip_compress({"folder/": "", "a.txt": hex_encode("abc")}))

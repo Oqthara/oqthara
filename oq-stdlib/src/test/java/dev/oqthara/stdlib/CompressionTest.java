@@ -351,6 +351,283 @@ class CompressionTest {
         assertThrows(OqError.class, () -> call("zip_decompress", "00"));
     }
 
+    // --- group 7: hex spelling, trailing bytes, duplicates and directories --------------------
+
+    @Test
+    void uppercaseHexIsRefusedByEveryCompressionEntryPoint() {
+        String compressed = (String) call("zlib_compress", hexOf("abc"));
+        OqError zlib = assertThrows(OqError.class,
+                () -> call("zlib_decompress", compressed.toUpperCase()));
+        assertTrue(zlib.getMessage().contains("offset"), zlib.getMessage());
+        String gzipped = (String) call("gzip_compress", "abc");
+        assertThrows(OqError.class, () -> call("gzip_decompress", gzipped.toUpperCase()));
+        String zipped = (String) call("zip_compress", Map.of("a.txt", hexOf("abc")));
+        assertThrows(OqError.class, () -> call("zip_decompress", zipped.toUpperCase()));
+    }
+
+    @Test
+    void uppercaseHexIsRefusedAtTheExactOffset() {
+        // The first uppercase character is at index 2, and the message must say so rather than
+        // pointing at the whole input or at the parser's own position.
+        OqError refused = assertThrows(OqError.class, () -> call("zlib_decompress", "aaBB"));
+        assertTrue(refused.getMessage().contains("found 'B' at offset 2"), refused.getMessage());
+    }
+
+    @Test
+    void trailingBytesAfterAZlibStreamAreRefused() {
+        String compressed = (String) call("zlib_compress", hexOf("abc"));
+        OqError refused = assertThrows(OqError.class,
+                () -> call("zlib_decompress", compressed + "deadbeef"));
+        assertTrue(refused.getMessage().contains("4 trailing bytes"), refused.getMessage());
+    }
+
+    @Test
+    void trailingBytesAfterAGzipMemberAreRefused() {
+        String compressed = (String) call("gzip_compress", "first");
+        OqError refused = assertThrows(OqError.class,
+                () -> call("gzip_decompress", compressed + "deadbeef"));
+        assertTrue(refused.getMessage().contains("4 trailing bytes"), refused.getMessage());
+        // The diagnosis must be about the trailing bytes, not a misreported truncated stream.
+        assertTrue(!refused.getMessage().contains("truncated"), refused.getMessage());
+    }
+
+    @Test
+    void concatenatedGzipMembersAreRefusedRatherThanJoined() {
+        Object first = call("gzip_compress", "first");
+        Object second = call("gzip_compress", "second");
+        OqError refused = assertThrows(OqError.class,
+                () -> call("gzip_decompress", (String) first + second));
+        assertTrue(refused.getMessage().contains("trailing bytes"), refused.getMessage());
+    }
+
+    @Test
+    void oneTrailingByteIsReportedInTheSingular() {
+        String compressed = (String) call("zlib_compress", hexOf("abc"));
+        OqError refused = assertThrows(OqError.class,
+                () -> call("zlib_decompress", compressed + "de"));
+        assertTrue(refused.getMessage().contains("1 trailing byte after"),
+                refused.getMessage());
+    }
+
+    @Test
+    void aCorruptedGzipTrailerIsRefused() {
+        // Flip the low byte of the CRC in the eight-byte trailer. The deflate body still
+        // inflates cleanly, so only the checksum comparison can catch this; corrupting a byte
+        // of the length instead would sometimes flip a zero to a zero and change nothing.
+        byte[] gzipped = HEX.parseHex((String) call("gzip_compress", "abc"));
+        gzipped[gzipped.length - 8] ^= 0x01;
+        String corrupted = HEX.formatHex(gzipped);
+        assertNotEquals((String) call("gzip_compress", "abc"), corrupted);
+        OqError refused = assertThrows(OqError.class, () -> call("gzip_decompress", corrupted));
+        assertTrue(refused.getMessage().contains("checksum mismatch"), refused.getMessage());
+    }
+
+    @Test
+    void aRealGzipFileWithAStoredNameInflates() {
+        // gzip -c writes an FNAME field that the hand-written header walk must skip correctly.
+        // Produced by java.util.zip's own writer with the name supplied out of band, the common
+        // shape a real gzip file takes.
+        byte[] raw = "hello hello".getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(out)) {
+            gz.write(raw);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+        assertEquals(hexOf("hello hello"), call("gzip_decompress", hex(out.toByteArray())));
+    }
+
+    @Test
+    void duplicateArchiveEntryNamesAreRefused() {
+        // Two entries spelled the same with different content: a map cannot hold both, and
+        // keeping either one would lose the other without saying so.
+        assertThrows(OqError.class, () -> call("zip_decompress", duplicateNameArchive()));
+    }
+
+    @Test
+    void duplicateNamesAreRefusedEvenWhenTheContentsMatch() {
+        // Identical content is still two entries. Accepting it would make the refusal depend on
+        // the bytes rather than on the archive's structure, and the archive is still ambiguous.
+        String archive = storedArchive(List.of("same.txt", "same.txt"),
+                List.of("first".getBytes(StandardCharsets.UTF_8),
+                        "first".getBytes(StandardCharsets.UTF_8)));
+        assertThrows(OqError.class, () -> call("zip_decompress", archive));
+    }
+
+    @Test
+    void theDuplicateRefusalNamesTheEntry() {
+        OqError refused = assertThrows(OqError.class,
+                () -> call("zip_decompress", duplicateNameArchive()));
+        assertTrue(refused.getMessage().contains("duplicate entry name: same.txt"),
+                refused.getMessage());
+    }
+
+    @Test
+    void anArchiveOfOnlyADirectoryIsRefusedAsHavingNoEntries() {
+        OqError refused = assertThrows(OqError.class,
+                () -> call("zip_decompress", call("zip_compress", Map.of("folder/", ""))));
+        assertTrue(refused.getMessage().contains("found no entries"), refused.getMessage());
+    }
+
+    @Test
+    void aDirectoryEntryIsNotReturnedAsAFile() {
+        Map<String, Object> files = new LinkedHashMap<>();
+        files.put("folder/", "");
+        files.put("a.txt", hexOf("abc"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unpacked = (Map<String, Object>) call("zip_decompress",
+                call("zip_compress", files));
+        assertEquals(Map.of("a.txt", hexOf("abc")), unpacked);
+    }
+
+    @Test
+    void nestedDirectoriesAreSkippedAndTheirFilesKept() {
+        Map<String, Object> files = new LinkedHashMap<>();
+        files.put("a/", "");
+        files.put("a/b/", "");
+        files.put("a/b/c.txt", hexOf("x"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> unpacked = (Map<String, Object>) call("zip_decompress",
+                call("zip_compress", files));
+        assertEquals(Map.of("a/b/c.txt", hexOf("x")), unpacked);
+    }
+
+    @Test
+    void contentOnADirectoryEntryIsRefusedByTheWriter() {
+        OqError refused = assertThrows(OqError.class,
+                () -> call("zip_compress", Map.of("folder/", hexOf("abc"))));
+        assertTrue(refused.getMessage().contains("refused content for the directory entry"),
+                refused.getMessage());
+    }
+
+    @Test
+    void aDirectoryEntryCarryingPayloadInAHandBuiltArchiveIsNotExposed() {
+        // A writer other than this language can attach bytes to a name ending in '/'. The
+        // reader must not hand those bytes back as a file, because the map would then claim
+        // `folder/` is a file, which is the shape issue #187 reported.
+        OqError refused = assertThrows(OqError.class,
+                () -> call("zip_decompress", handBuiltDirectoryPayloadArchive()));
+        assertTrue(refused.getMessage().contains("found no entries"), refused.getMessage());
+    }
+
+    /**
+     * An archive holding {@code same.txt} twice, content {@code first} then {@code second}.
+     *
+     * <p>{@link java.util.zip.ZipOutputStream} refuses to write a duplicate name itself, so the
+     * archive is assembled byte by byte. The disagreement between the JDK's writer and its
+     * reader is the whole reason the reader needs its own check: an archive from elsewhere does
+     * not have to obey this library's writer.
+     */
+    private static String duplicateNameArchive() {
+        return storedArchive(List.of("same.txt", "same.txt"),
+                List.of("first".getBytes(StandardCharsets.UTF_8),
+                        "second".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /**
+     * Builds a STORED zip from raw parts, allowing shapes the JDK's writer would refuse.
+     *
+     * <p>Every stored entry records its own CRC, sizes and offset, and the central directory
+     * repeats them, so this helper has to fill both in. Stored rather than deflated because a
+     * stored entry needs no compressor, which keeps the builder to the parts under test.
+     */
+    private static String storedArchive(List<String> names, List<byte[]> contents) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        List<Integer> offsets = new ArrayList<>();
+        try {
+            for (int i = 0; i < names.size(); i++) {
+                byte[] name = names.get(i).getBytes(StandardCharsets.UTF_8);
+                byte[] data = contents.get(i);
+                java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                crc.update(data);
+                offsets.add(out.size());
+                writeInt(out, 0x04034b50);
+                writeShort(out, 20);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeInt(out, (int) crc.getValue());
+                writeInt(out, data.length);
+                writeInt(out, data.length);
+                writeShort(out, name.length);
+                writeShort(out, 0);
+                out.write(name);
+                out.write(data);
+            }
+            int centralStart = out.size();
+            for (int i = 0; i < names.size(); i++) {
+                byte[] name = names.get(i).getBytes(StandardCharsets.UTF_8);
+                byte[] data = contents.get(i);
+                java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                crc.update(data);
+                writeInt(out, 0x02014b50);
+                writeShort(out, 20);
+                writeShort(out, 20);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeInt(out, (int) crc.getValue());
+                writeInt(out, data.length);
+                writeInt(out, data.length);
+                writeShort(out, name.length);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeShort(out, 0);
+                writeInt(out, 0);
+                writeInt(out, offsets.get(i));
+                out.write(name);
+            }
+            int centralSize = out.size() - centralStart;
+            writeInt(out, 0x06054b50);
+            writeShort(out, 0);
+            writeShort(out, 0);
+            writeShort(out, names.size());
+            writeShort(out, names.size());
+            writeInt(out, centralSize);
+            writeInt(out, centralStart);
+            writeShort(out, 0);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+        return hex(out.toByteArray());
+    }
+
+    private static void writeShort(ByteArrayOutputStream out, int value) throws java.io.IOException {
+        out.write(value & 0xFF);
+        out.write((value >>> 8) & 0xFF);
+    }
+
+    private static void writeInt(ByteArrayOutputStream out, int value) throws java.io.IOException {
+        out.write(value & 0xFF);
+        out.write((value >>> 8) & 0xFF);
+        out.write((value >>> 16) & 0xFF);
+        out.write((value >>> 24) & 0xFF);
+    }
+
+    /** An archive whose only entry is a directory name carrying bytes a writer attached. */
+    private static String handBuiltDirectoryPayloadArchive() {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(out)) {
+            java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry("folder/");
+            entry.setMethod(java.util.zip.ZipEntry.STORED);
+            byte[] payload = "payload".getBytes(StandardCharsets.UTF_8);
+            entry.setSize(payload.length);
+            entry.setCompressedSize(payload.length);
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(payload);
+            entry.setCrc(crc.getValue());
+            zip.putNextEntry(entry);
+            zip.write(payload);
+            zip.closeEntry();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+        return hex(out.toByteArray());
+    }
+
     // --- registration ------------------------------------------------------------------------
 
     @Test

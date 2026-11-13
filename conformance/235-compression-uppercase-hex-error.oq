@@ -1,0 +1,1 @@
+print zlib_decompress(zlib_compress(hex_encode("abc")).upper())
