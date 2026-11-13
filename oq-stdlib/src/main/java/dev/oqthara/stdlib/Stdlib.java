@@ -111,6 +111,7 @@ public final class Stdlib {
         TextWrap.install(interpreter);
         Compression.install(interpreter);
         Statistics.install(interpreter);
+        Fractions.install(interpreter);
         installJson(interpreter);
         installEncoding(interpreter);
         installCsv(interpreter);
