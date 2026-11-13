@@ -929,7 +929,11 @@ error: Point is immutable, so field 'x' cannot be changed
 ```
 
 The hint is written in positional form because that is the only form the constructor
-accepts, and every value is escaped so the line can be pasted back as source.
+accepts, and every value is escaped so the line can be pasted back as source. Escaping covers
+exactly the characters that would otherwise change meaning: `"` and `\` end or continue the
+literal, `{` starts an interpolation, and `}` is doubled only where the parser would read it as
+closing a doubled brace. Other control characters are written as themselves, because the parser
+keeps them and the language defines no escape spelling for them.
 
 `immutable` fixes the **field**, not its contents. A field may still hold a mutable value,
 and changing that value changes the record's rendering — and makes the record unusable as a

@@ -355,6 +355,30 @@ class ValuesTest {
         assertFalse(Values.contains(empty, 1L, span));
     }
 
+    /**
+     * Every text {@code repr} emits must be readable back as source, which
+     * {@link OqData#rebuildHint} relies on when it tells the caller to paste a line back. Two
+     * characters broke that: a brace opens interpolation, so {@code repr("{x}")} was {@code "{x}"}
+     * and pasting it produced the value of {@code x}; and a NUL had no spelling at all.
+     */
+    @Test
+    void reprEscapesTheCharactersThatWouldChangeMeaningWhenPastedBack() {
+        assertEquals("\"\\0\"", Values.repr("\0"));
+        assertEquals("\"\\n\"", Values.repr("\n"));
+        assertEquals("\"\\t\"", Values.repr("\t"));
+        assertEquals("\"\\r\"", Values.repr("\r"));
+        assertEquals("\"\\\"\"", Values.repr("\""));
+        assertEquals("\"\\\\\"", Values.repr("\\"));
+        // Braces follow the parser's pairing: an opening brace is doubled, and a closing brace
+        // is doubled only while an opened one is still owed a partner. A lone closing brace is
+        // already literal, so doubling it would add a character rather than remove one.
+        assertEquals("\"{{x}}\"", Values.repr("{x}"));
+        assertEquals("\"{{a}} and {{b}}\"", Values.repr("{a} and {b}"));
+        assertEquals("\"{{{{not a template}}}}\"", Values.repr("{{not a template}}"));
+        assertEquals("\"a} b\"", Values.repr("a} b"));
+        assertEquals("\"}} a\"", Values.repr("}} a"));
+    }
+
     @Test
     void aFractionalOrNonNumericItemIsNeverInARange() {
         OqRange range = new OqRange(0, 5, true, 1);

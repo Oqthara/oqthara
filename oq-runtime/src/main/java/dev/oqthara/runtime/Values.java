@@ -271,6 +271,7 @@ public final class Values {
 
     public static String quote(String s) {
         StringBuilder sb = new StringBuilder("\"");
+        int openBraces = 0;
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             switch (c) {
@@ -279,7 +280,33 @@ public final class Values {
                 case '\n' -> sb.append("\\n");
                 case '\t' -> sb.append("\\t");
                 case '\r' -> sb.append("\\r");
-                default -> sb.append(c);
+                case 0 -> sb.append("\\0");
+                // An opening brace starts interpolation, so text holding one cannot be pasted
+                // back unless it is doubled — the spelling the parser already reads as a literal
+                // brace (ADR-0057). Without this, repr of `{x}` was `"{x}"` and pasting it
+                // produced the value of x instead of the three characters.
+                case '{' -> {
+                    sb.append("{{");
+                    openBraces++;
+                }
+                // A closing brace is doubled only while an open one is still owed a partner,
+                // mirroring the parser: it collapses `}}` back to `}` exactly when a `{{` came
+                // before. A lone `}` is already literal there, and doubling it would add a
+                // character instead of removing one.
+                case '}' -> {
+                    if (openBraces > 0) {
+                        openBraces--;
+                        sb.append("}}");
+                    } else {
+                        sb.append('}');
+                    }
+                }
+                default -> {
+                    // The remaining control characters are emitted raw. The lexer keeps them, so
+                    // the round trip survives; escaping them as `\\` plus the character would not,
+                    // because the lexer has no rule for that spelling.
+                    sb.append(c);
+                }
             }
         }
         return sb.append('"').toString();
