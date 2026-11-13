@@ -43,6 +43,11 @@ another group's branch. A test class that belongs to a different group is theref
 by its file path rather than by class name, so that a reader on any one branch can tell
 which citations that branch can actually run.
 
+Every defect above was reproduced at `6954a86`, and that stays the reference point for the
+"before" column throughout this document. Each branch has since merged `main` so that it can
+be built and reviewed against current code; see
+[Why CI did not run](#why-ci-did-not-run-and-what-it-taught).
+
 ## Group 1 — numeric semantics
 
 Branch `sentinel/alpha5/group1-numeric`. Four issues, confined to `oq-stdlib` plus one
@@ -509,3 +514,37 @@ history is not silent about it.
 - Scheduled monitoring runs are not available in this environment; this report is
   updated as work proceeds instead of on a timer.
 - No branch here is merged, and `main` is not touched by this work.
+
+## Why CI did not run, and what it taught
+
+Three branches were pushed and left the checks column empty, and the natural reading was that
+Actions had dropped the events. It had not. Both pull requests were `CONFLICTING`, because
+`main` advanced 6,452 lines while they were open (fractions, the filesystem module,
+configuration formats, keyless release signing), and **GitHub does not build a merge ref for
+a conflicting pull request**, so a workflow that triggers only on `pull_request` has no ref to
+run against and emits no run at all. The symptom -- no run, rather than a failed run -- is
+what a merge conflict looks like from the outside.
+
+The diagnostic that settles it is `gh pr view <n> --json mergeable,mergeStateStatus`: the
+third branch reported `MERGEABLE` and had a full set of runs, while the two that reported
+`CONFLICTING` had none. `gh api .../commits/<sha>/check-suites` returning only the third-party
+apps, with no `github-actions` suite, confirms that nothing was queued rather than lost.
+
+Close-and-reopen does not help, because the ref is still unmergeable; neither would an empty
+commit. The only fix is to make the branch mergeable. Merging `main` in costs one conflict per
+branch and, unlike a rebase, keeps the published history intact -- which matters because this
+repository's `AGENTS.md` forbids force-pushes.
+
+- Group 1 conflicted only in `docs/governance/alpha-4-stdlib-inventory.md`, where both sides
+  had repointed the same table: this branch by 223 lines, `main` again by adding three
+  modules. Resolved by taking `main`'s table and re-running `main`'s own
+  `scripts/remap-stdlib-citations.py` over the merged tree, which rewrote 98 citations with 0
+  unresolved.
+- Group 3 conflicted only in `Values.truthy`: this branch had replaced `r.size() > 0` with
+  `!r.isEmpty()` so truthiness stops counting a range, and `main` had added the `OqFraction`
+  arm on the same two lines. Both were kept.
+
+After the merges, both branches produce complete runs on their merge commits, and Group 2 --
+which was already `MERGEABLE` -- had been green throughout. The lesson is worth recording
+because a silently absent CI run looks identical to a broken workflow, and the cheap check
+that tells them apart is one API call on mergeability.
