@@ -60,7 +60,15 @@ class FractionTest {
         return callable.call(host(), values, Span.synthetic());
     }
 
-    /** Runs a program and returns what it printed, so display and {@code ==} are measured. */
+    /**
+     * Runs a program and returns what it printed, so display and {@code ==} are measured.
+     *
+     * <p>{@code print} ends the line with the host separator, which is {@code \r\n} on Windows,
+     * so the captured text is normalised to {@code \n} here rather than in each assertion. The
+     * rest of the suite asserts {@code System.lineSeparator()} for the same reason
+     * ({@code HostBuiltinLimitsTest} line 80); with the assertions left platform-specific this
+     * class failed on Windows on every {@code print} comparison.
+     */
     private String output(String source) {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         PrintStream out = new PrintStream(bytes, true, StandardCharsets.UTF_8);
@@ -68,7 +76,7 @@ class FractionTest {
                 List.of(), dir, new MethodResolverImpl());
         Stdlib.install(interpreter);
         interpreter.run(Parser.parse("test", source));
-        return bytes.toString(StandardCharsets.UTF_8);
+        return bytes.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
     }
 
     private static long whole(Object value) {
