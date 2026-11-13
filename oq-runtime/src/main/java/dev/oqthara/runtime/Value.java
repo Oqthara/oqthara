@@ -122,8 +122,8 @@ public final class Value {
     private static int hash(Object value, int depth) {
         if (value == null) return 0;
         if (depth > MAX_DEPTH) throw new InvalidHashException();
-        if (value instanceof Long l) return Long.hashCode(l);
-        if (value instanceof Double d) return hashDouble(d);
+        if (value instanceof Long l) return hashNumber(l.doubleValue());
+        if (value instanceof Double d) return hashNumber(d);
         if (value instanceof String s) return s.hashCode();
         if (value instanceof Boolean b) return b.hashCode();
         if (value instanceof OqData d) {
@@ -160,11 +160,18 @@ public final class Value {
     }
 
     /**
-     * Hashes a decimal so that it agrees with {@link Values#equal}: a whole decimal must hash
-     * like the whole number it equals. {@code Double.hashCode(1.0)} and {@code Long.hashCode(1)}
-     * differ, so the two are normalised onto the integral hash.
+     * Hashes a number so that it agrees with {@link Values#equal}, which compares both numeric
+     * kinds through {@code double} widening. The hash must therefore be a function of the
+     * widened {@code double} alone, never of the boxed kind.
+     *
+     * <p>Two consequences, both of them load-bearing. A whole decimal has to hash like the whole
+     * number it equals, because {@code Double.hashCode(1.0)} and {@code Long.hashCode(1)} differ;
+     * hence the integral values are normalised onto the whole-number hash. And a whole number has
+     * to go through the same widening, because above {@code 2^53} a {@code long} does not survive
+     * the trip: {@code 9007199254740993L} widens to the double {@code 9007199254740992.0} and is
+     * therefore equal to it, so hashing the {@code long} directly would break the invariant.
      */
-    private static int hashDouble(double value) {
+    private static int hashNumber(double value) {
         if (Values.fitsInLong(value)) return Long.hashCode((long) value);
         return Double.hashCode(value);
     }

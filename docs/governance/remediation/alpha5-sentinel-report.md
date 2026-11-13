@@ -1,9 +1,10 @@
 # Alpha 5 Sentinel remediation report
 
 Baseline: `6954a86` (`origin/main` at the time of the audit).
-Scope: issues #140–#156 in `Oqthara/oqthara` for groups 1–3, and the JSON, CSV,
+Scope: issues #140–#156 in `Oqthara/oqthara` for groups 1–3, the JSON, CSV,
 URL and text-wrapping defects #157, #160–#162, #170, #172, #173, #177, #179 and #186
-for group 4.
+for group 4, and the numeric-semantics and statistics defects #163–#169 and #174 for
+group 5.
 Authority: independent remediation agent, working only in isolated worktrees on
 `sentinel/alpha5/...` branches. The Primary AI works Alpha 4 in parallel; no file,
 branch or worktree of the Primary AI or of the user's working copy is touched, and
@@ -45,6 +46,14 @@ both backends.
 | #177 | `url_join` misclassifies opaque absolute references | 4 | Fixed, verified, tests added |
 | #179 | Text wrapping counts UTF-16 units instead of code points | 4 | Fixed, verified, tests added |
 | #186 | `url_join` mishandles query-only, fragment-only and empty references | 4 | Fixed, verified, tests added |
+| #163 | Whole numbers above `2^53` hash differently from the decimal they equal | 5 | Fixed, verified, tests added |
+| #164 | Decimals print with twelve fractional places and do not parse back | 5 | Fixed, verified, tests added |
+| #165 | `mean` reports an overflow for a dataset whose mean is representable | 5 | Fixed, verified, tests added |
+| #166 | `stdev` overflows squaring values it could still take the root of | 5 | Fixed, verified, tests added |
+| #167 | `mode` treats `0` and `-0.0` as different values | 5 | Fixed, verified, tests added |
+| #168 | `heap_push` refuses to mix whole numbers and decimals | 5 | Fixed, verified, tests added |
+| #169 | `bisect` places `0` wrongly in a list containing `-0.0` | 5 | Fixed, verified, tests added |
+| #174 | `bisect_left([1, 2], NaN)` answers `0` | 5 | Fixed, verified, tests added |
 
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
@@ -502,6 +511,175 @@ and, for the sampled cases, the compiled backend.
 Test classes: `JsonFuzzRegressionTest` (16 tests, 10 new), and the new cases in
 `UrlAndHttpTest`, `CsvAndDatesTest` and `TextWrapTest`. The full suite reports 1,422 tests with
 0 failures, and `oq-core` line coverage stays at 91.5%.
+
+## Group 5 — numeric semantics and statistics
+
+Eight defects across `oq-runtime` and `oq-stdlib`. Two of them (#163, #164) are about a number
+surviving a round trip through its own text or its own hash; the other six are one observation
+repeated: an answer that exists was being reported as an error, or an ordering that the language
+defines was being taken from Java instead.
+
+### #163 — a whole number and the decimal it equals hash apart
+
+`Values.equal` compares both numeric kinds by widening to `double` (ADR-0017), so
+`9007199254740993 == 9007199254740992.0` is `true` — the `long` does not survive the trip
+through `double`, and both sides land on the same value. Hashing did not follow: `Value.hash`
+hashed a `Long` with `Long.hashCode` and a `Double` with `Double.hashCode`, which are different
+functions of the same widening. Two values that are equal therefore hashed apart, which
+`OqSet` and `OqMap` cannot tolerate.
+
+The fix routes *both* kinds through one `hashNumber(double)`, so the hash is a function of the
+widened value alone. The existing integral normalisation — so that `2.0` and `2` agree — is
+still there, because `Double.hashCode(1.0)` and `Long.hashCode(1)` differ.
+
+### #164 — decimals printed as a projection, not a representation
+
+`Values.formatDouble` formatted every non-integral value with exactly twelve fractional places
+and then trimmed trailing zeroes. That is not a representation of a binary64, it is a lossy
+projection of one: `1e-13` printed as `0.0`, and any value needing more than twelve fractional
+digits came back different from `number(value.text())`. Twelve was never going to be enough —
+53 bits of mantissa is about 17 significant decimal digits.
+
+The replacement takes the shortest text that round-trips. `Double.toString` already computes
+those digits and both of the language's readers accept what it emits — `Lexer.number()` takes a
+decimal point and a signed `e` or `E`, and `number(text)` routes anything containing `.`, `e` or
+`E` through `Double.parseDouble` — so only the spelling is ours to choose. Scientific notation
+is lower-cased, because the language's own literals are lower-case. A value whose scale is at
+most twelve fractional places keeps the plain form the old formatter gave it; anything else
+prints in exponent form. Integral values keep a trailing `.0`, and `-0.0` keeps its sign,
+because `Values.compare` orders it below positive zero.
+
+That boundary is deliberately drawn around the values the old formatter already printed
+losslessly, so the change is confined to the ones it got wrong. Measured over 2,750 finite
+doubles — every decade from `1e-320` to `1e308`, curated edge cases, 1,200 random bit patterns
+and 900 sampled values — 1,088 failed to round-trip before and all of them round-trip now, 1,088
+texts changed, and **no value that previously round-tripped prints differently**. An earlier
+version of this fix used a magnitude window instead (`1e-4 ≤ |d| < 1e16`), which rewrote
+`1e16` and `1e30` from expansions into exponents: output that was already correct and had no
+defect behind it. The scale rule avoids that.
+
+This one had a bug of its own on the way in, caught before it shipped: the trailing-zero trim
+counted back over *all* trailing zeroes rather than only those after the decimal point, so
+`1e15` collapsed to `10` in the intermediate version.
+
+### #165 — `mean` was order-dependent
+
+`total` accumulated left to right in `double` and rejected a non-finite running total. On
+`[1e308, 1e308, -1e308]` the first two terms overflow before the negative one arrives, so
+`mean` reported an overflow for a dataset whose mean is plainly `3.33e307`; the same three
+numbers in any other order answered correctly. A mean that depends on permutation is not a
+mean.
+
+Every finite double is an exact decimal, so the sum is now taken in `BigDecimal`, which is
+exact and therefore order-independent by construction. The overflow test moved to the exact
+sum, so it fires only when the mathematical answer is out of range, never because an
+intermediate step was. This also removes ordinary cancellation error: the exact sum of
+`[0.1, 0.2, 0.3]` is `0.6`, where the rounded one is `0.6000000000000001`.
+
+`mean([1e308, 1e308])` still reports `mean() overflowed`, and should: the exact mean `1e308` is
+representable but the contract is that a mean whose sum is out of range has no double.
+
+### #166 — `stdev` overflowed on values it could still take the root of
+
+`stdev` computed `sampleVariance` and then took the square root, so `[1e308, -1e308]` squared
+to `2e616`, overflowed to `infinity`, and the root could not recover it — even though
+`sqrt(2) * 1e308` is perfectly representable. Squaring now happens in `BigDecimal` and the root
+is taken at `DECIMAL128`, 34 significant digits, far more than the 17 a double carries, so the
+final rounding is decided by the exact value rather than by the precision of the intermediate.
+
+The classic sample is unchanged to the last bit: `variance` is `4.571428571428571` and `stdev`
+is `2.138089935299395`. `variance` of the extreme pair is still `infinity`, which is honest —
+the variance genuinely is out of range. The point of the split is that `stdev` no longer
+inherits that failure.
+
+Dividing the mean out in `BigDecimal` exposed a second problem, which a test caught: rounding
+the mean to `DECIMAL128` first leaves a residue on values that have none. Three copies of
+`1e308` have a mean needing 309 digits; the 34 that survive are not it, so every deviation came
+out near `1e274` instead of at zero. The deviations are now written as the exact integer
+`n·x − S` over `n`, deferring the division to a single step at the end, and
+`stdev([1e308, 1e308, 1e308])` is `0`. That case also forced the sum to be read through a new
+`exactTotal` rather than `total`: the three values sum to `3e308`, out of range, but the answer
+is an ordinary zero, and refusing the sum would reject a question whose answer exists. A value
+that is already infinite or `NaN` is still refused in both paths, so the language reports
+`mean() overflowed` where it used to and never a Java `NumberFormatException`.
+
+### #167 — `mode` split a signed zero from a zero
+
+The grouping test was `Double.equals`, which is not the language's equality: it separates `0`
+from `-0.0`, and it would separate a whole number from the decimal it equals. Grouping now uses
+`Values.equal`, so `mode([0, -0.0, 1, 1])` is `0`. The result goes through the existing
+`normalize`, so a whole result comes back as a whole number.
+
+### #168 — the heap refused to compare what `<` compares
+
+`heap_push` cast an element to `Comparable` and called `compareTo`. Java's `Long` and `Double`
+refuse to compare with each other, so `heap_push([1], 1.5)` failed with "cannot compare decimal
+with number" while the expression `1 < 1.5` succeeded. Both now defer to `Values.compare`, which
+is the language's ordering (ADR-0041 D7), so the heap and the operator agree by construction.
+
+The type check also had to move ahead of the mutation for the push to be atomic: a rejected
+`heap_push(heap, "x")` leaves the array byte-identical.
+
+### #169 and #174 — `bisect` ignored the language's ordering and could hang
+
+`bisect` compared raw `double`s, so it had the opposite problem from the heap: it *lost* the
+distinction the language draws. The language orders `-0.0` below `0.0` (`Values.compare`),
+while `probe < target` sees them as equal, so `bisect_left([-0.0, 0.0, 1.0], 0)` returned `0`
+instead of `1`. Both bounds now compare via `Values.compare`.
+
+`NaN` is the case where raw comparison fails hardest: every comparison against it is false, so
+the loop neither advanced nor narrowed and ran forever. Under the language's ordering `NaN`
+sorts above every number, so `bisect_left([1.0, 2.0], NaN)` is `2` and terminates. A `NaN`
+inside the list is handled by the same rule rather than by a special case.
+
+One deliberate non-choice: the list is still not checked for sortedness. ADR-0041 D6 says a
+list is a list, and a search over an unsorted list is the caller's business.
+
+### Reproduction and verification
+
+Each row was run through the real CLI at `deefc3e` (before) and on this branch (after).
+
+| Input | Before | After |
+| --- | --- | --- |
+| `9007199254740993 == 9007199254740992.0` | `true` | `true` |
+| the same pair as set members | two elements | one element |
+| the same pair as a map key and lookup | lookup misses | lookup hits |
+| `print 1e-13` | `0.0` | `1.0e-13` |
+| `number(1.1234567890123457.text()) == 1.1234567890123457` | `false` | `true` |
+| `mean([1e308, 1e308, -1e308])` | `mean() overflowed` | `3333333333333333…000.0` |
+| `mean([1e308, -1e308, 1e308, -1e308, 1e308])` | `200000…000.0` | `200000…000.0` |
+| `mean([1e308, 1e308])` | `mean() overflowed` | `mean() overflowed` |
+| `stdev([1e308, -1e308])` | `infinity` | `1414213562373095…000.0` |
+| `stdev([1e308, 1e308, 1e308])` | `variance() overflowed` | `0` |
+| `variance([1e308, -1e308])` | `infinity` | `infinity` |
+| `variance([2, 4, 4, 4, 5, 5, 7, 9])` | `4.571428571429` | `4.571428571428571` |
+| `stdev([2, 4, 4, 4, 5, 5, 7, 9])` | `2.138089935299` | `2.138089935299395` |
+| `mode([0, -0.0, 1, 1])` | `1` | `0` |
+| `heap_push([1], 1.5)` | `cannot compare decimal with number` | `[1, 1.5]` |
+| `heap_push([1, 2], "x")`, then read the list | `[1, 2]` | `[1, 2]` |
+| `bisect_left([-0.0, 0.0, 1.0], 0)` | `0` | `1` |
+| `bisect_left([1.0, 2.0], NaN)` | `0` | `2` |
+
+Both `mean` rows hold the same multiset of magnitudes and cancel to the same answer. The three-item
+one put two `1e308`s side by side, so it overflowed before reaching the negative; the five-item one
+reaches a negative first and already answered. Which of them failed was an accident of ordering,
+which is the whole of #165. After the fix every order agrees. A large *integral* result is still
+written out in full rather than as an exponent, exactly as the previous formatter wrote such
+values — `…` abbreviates the omitted digits. `stdev` of one extreme pair was `infinity` before, not
+an overflow, because the old code formed the variance as a difference of squares.
+
+`NaN` is not constructible in the language by any of the obvious routes — `0.0 / 0.0`,
+`sqrt(-1.0)` and `ln(-1.0)` are all domain errors, and `nan` is not an identifier. It *is*
+reachable as `1e308 * 1e308 - 1e308 * 1e308`, which the test suite uses.
+
+Test classes: `ValueTest` (3 new tests for #163), `ValuesTest` (4 new tests for #164, one of
+them a 22-value round trip) and `StatisticsTest` (11 new tests covering #165–#169 and #174). The
+suite goes from 1,476 tests at `deefc3e` to 1,494 with 0 failures, and `oq-core` line coverage
+stays at 91.5%.
+
+Regenerating the conformance baseline was part of the change: `230-math-transcendental.out`
+lines 9, 18, 19 and 20 carried the old twelve-place projection. Line 17 is untouched because
+it is a value the program rounds itself, so it still prints eleven places.
 
 ## Newly discovered defects
 

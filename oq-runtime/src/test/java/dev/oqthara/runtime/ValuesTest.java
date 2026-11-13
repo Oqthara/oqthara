@@ -66,6 +66,55 @@ class ValuesTest {
         assertEquals("0.25", Values.formatDouble(0.25));
     }
 
+    /**
+     * The property that made the old twelve-place rule untenable: the text of a decimal must
+     * read back as the same bits. Twelve fractional places cannot hold a value that needs
+     * more, and any value below {@code 5e-13} collapsed to {@code 0.0}.
+     */
+    @Test
+    void formattingADecimalRoundTripsThroughParsing() {
+        double[] values = {
+            1.5, 2.0, 0.25, 0.0001, 1e-4, 9.999999999999999e-5, 1e-13, 1e-320, 4.9e-324,
+            0.1 + 0.2, 1.1234567890123457, Math.PI, Math.sqrt(2), 1e15, 1e16, 1e308, -1e308,
+            1.7e308, 9007199254740992.0, 1234567890123456.0, 1.4142135623730951e308, -0.0,
+        };
+        for (double value : values) {
+            String text = Values.formatDouble(value);
+            assertEquals(value, Double.parseDouble(text),
+                    "text " + text + " did not read back as the value it came from");
+        }
+    }
+
+    @Test
+    void verySmallDecimalsKeepTheirSignificantDigits() {
+        assertEquals("1.0e-13", Values.formatDouble(1e-13));
+        assertEquals("4.9e-324", Values.formatDouble(4.9e-324));
+        assertEquals("1.0e-320", Values.formatDouble(1e-320));
+        assertEquals("1.1234567890123457", Values.formatDouble(1.1234567890123457));
+    }
+
+    @Test
+    void valuesWithFewFractionalPlacesKeepThePlainForm() {
+        // Everything the old formatter already printed losslessly stays spelled the same way,
+        // however large the magnitude, so the change is confined to the values it got wrong.
+        assertEquals("0.0001", Values.formatDouble(1e-4));
+        assertEquals("1000000000000000.0", Values.formatDouble(1e15));
+        assertEquals("1234567890123456.0", Values.formatDouble(1234567890123456.0));
+        assertEquals("10000000000000000.0", Values.formatDouble(1e16));
+        // The twelfth fractional place is the last one the old projection could hold exactly.
+        assertEquals("0.000000000001", Values.formatDouble(1e-12));
+        assertEquals("1.0e-13", Values.formatDouble(1e-13));
+    }
+
+    @Test
+    void signedZeroAndTheNonFiniteSpellingsAreExplicit() {
+        assertEquals("0.0", Values.formatDouble(0.0));
+        assertEquals("-0.0", Values.formatDouble(-0.0));
+        assertEquals("NaN", Values.formatDouble(Double.NaN));
+        assertEquals("infinity", Values.formatDouble(Double.POSITIVE_INFINITY));
+        assertEquals("-infinity", Values.formatDouble(Double.NEGATIVE_INFINITY));
+    }
+
     @Test
     void equalityAcrossNumbers() {
         assertTrue(Values.equal(1L, 1.0));
