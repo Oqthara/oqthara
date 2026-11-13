@@ -459,6 +459,37 @@ class FileOperationsTest {
 
     // --- Traversal ---------------------------------------------------------------------------
 
+    /**
+     * {@code walk} and {@code list_files} refuse at the same entry count.
+     *
+     * <p>They share {@code MAX_LIST_ENTRIES} but checked it at different points: {@code
+     * list_files} compares after adding, {@code walk} compared with {@code >} before adding, so
+     * walk accepted one entry more than the number both messages name. A shared limit that two
+     * builtins apply at different points is not a shared limit.
+     *
+     * <p>The boundary needs the real count, because the constant is what defines it. The tree is
+     * flat and the files are empty, so the cost is directory entries rather than content. It
+     * asserts the exact pair that distinguishes the two comparisons: at {@code MAX_LIST_ENTRIES}
+     * walk returns, and at {@code MAX_LIST_ENTRIES + 1} it refuses. The older {@code >} returned
+     * the second one, so this fails against it.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void bothEntryCapsRefuseAtTheSameCount() throws Exception {
+        Path tree = dir.resolve("many");
+        Files.createDirectories(tree);
+        int limit = Stdlib.MAX_LIST_ENTRIES;
+        for (int i = 0; i < limit; i++) {
+            Files.createFile(tree.resolve("f" + i));
+        }
+        assertEquals(limit, ((List<?>) call("walk", "many")).size(),
+                "walk accepts exactly the limit");
+
+        Files.createFile(tree.resolve("one-more"));
+        OqError refused = assertThrows(OqError.class, () -> call("walk", "many"));
+        assertTrue(refused.getMessage().contains("too many entries"), refused.getMessage());
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void walkListsNestedFilesAsRelativePaths() throws Exception {

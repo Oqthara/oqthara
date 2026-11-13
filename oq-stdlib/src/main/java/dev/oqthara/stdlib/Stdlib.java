@@ -694,7 +694,11 @@ public final class Stdlib {
                 while (entries.hasNext()) {
                     Path entry = entries.next();
                     if (entry.equals(root)) continue;
-                    if (found.size() > MAX_LIST_ENTRIES) {
+                    // Checked before the add, and with >=, so the ceiling is the same one
+                    // list_files enforces: both refuse when a 100,001st entry exists. With the
+                    // previous > this accepted 100,001 entries and refused only the 100,002nd,
+                    // which made walk one entry more generous than the name of the same limit.
+                    if (found.size() >= MAX_LIST_ENTRIES) {
                         throw new OqError("directory tree has too many entries: " + root, span,
                                 "It has more than " + MAX_LIST_ENTRIES + " entries.");
                     }
