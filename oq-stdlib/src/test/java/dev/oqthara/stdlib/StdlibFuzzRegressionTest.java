@@ -90,6 +90,46 @@ class StdlibFuzzRegressionTest {
         // The guard must not change behaviour for real arguments.
         assertEquals("0 until 3", String.valueOf(call("range", 3L)));
         assertEquals("2 until 5", String.valueOf(call("range", 2L, 5L)));
+        // A whole decimal equals the whole number it names, so it is accepted, as `1 == 1.0`.
+        assertEquals("0 until 5", String.valueOf(call("range", 0.0, 5.0, 1.0)));
+        assertEquals("[0, 1, 2, 3, 4]", String.valueOf(call("range_list", 0.0, 5.0)));
+    }
+
+    /**
+     * A count, a position, a step and a decimal-place count are whole numbers. A fractional
+     * argument used to be truncated, so {@code range(0, 5, 1.5)} walked every integer: the
+     * program asked one question and got the answer to another, with no diagnostic.
+     */
+    @Test
+    void aFractionalWholeNumberArgumentIsRefusedInsteadOfTruncated() {
+        rejectsWholeNumber("range", 0L, 5L, 1.5);
+        rejectsWholeNumber("range", 0.5, 5L, 1L);
+        rejectsWholeNumber("range", 0L, 5.5, 1L);
+        rejectsWholeNumber("range_list", 0.5, 5.5);
+        rejectsWholeNumber("range_list", 0L, 5.5);
+        rejectsWholeNumber("random", 1.5, 2.5);
+        rejectsWholeNumber("random", 1L, 2.5);
+        rejectsWholeNumber("round", 1.25, 1.5);
+    }
+
+    /**
+     * The decimal in {@code 1e300} has no fractional part, but its magnitude is past the long
+     * range, so casting saturates at {@link Long#MAX_VALUE} and the program silently walks a
+     * different interval. The refusal names the value so the surprise is visible.
+     */
+    @Test
+    void aWholeNumberArgumentPastTheLongRangeIsRefusedRatherThanSaturated() {
+        for (Object bound : new Object[]{1e300, -1e300, Double.POSITIVE_INFINITY, Double.NaN}) {
+            rejectsWholeNumber("range", bound, 5L, 1L);
+            rejectsWholeNumber("range_list", 0L, bound);
+        }
+    }
+
+    private void rejectsWholeNumber(String name, Object... args) {
+        OqError error = assertThrows(OqError.class, () -> call(name, args),
+                name + " must reject " + java.util.Arrays.toString(args));
+        assertTrue(error.getMessage().contains(name + "() needs a whole number, got "),
+                name + " message was: " + error.getMessage());
     }
 
     @Test

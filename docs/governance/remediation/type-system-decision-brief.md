@@ -1,18 +1,48 @@
 # Type model and typed `data` fields — decision brief
 
-**State:** OPEN — awaiting a maintainer decision. Nothing here is implemented.
+**State:** DECIDED (2026-11-13) — question 1 answered "remains dynamically typed", which resolves
+questions 2 and 3 as **Option A, no typed fields**. See "Decision" below. Nothing here is
+implemented, and under Option A nothing needs to be.
 **Scope:** Directive §4 ("Language architecture and type model"), and
 [ADR-0028](../../adr/0028-data-evolution.md)'s "typed fields" rejection, which this brief
 reopens as a decision rather than a settled matter.
 **Blocks:** nothing merged. Every behaviour described as current is shipped and tested.
 
-This brief exists because §4 asks for a decision the maintainer has not made, and because the
+This brief exists because §4 asks for a decision that had not been made, and because the
 question it raises — "should `data` fields be typed?" — is the one question in the Alpha 4
 corpus whose answer would change the language rather than a component. Advisory work that
 trespasses on it would be expensive to undo, so it is stated here rather than assumed.
 
-It does not choose. It states what exists, what each option would cost, and what is forced by
-the architecture as it stands.
+It states what exists, what each option would cost, and what is forced by the architecture as it
+stands. The decision itself is recorded in "Decision" below.
+
+## Decision (2026-11-13)
+
+**Question 1 is answered "yes, Oqthara remains dynamically typed."** By the brief's own structure
+that resolves questions 2 and 3: **Option A — no typed `data` fields.**
+
+This is a decision, not a deferral. ADR-0028's rejection of typed fields stands as the recorded
+decision rather than as an open note, and §14.2's typed-field gap is closed by it.
+
+**Who decided and on what basis.** The maintainer was asked to choose between Options A, B and C
+and was unavailable; the direction recorded here is Option A because it is the option the brief
+recommends and the only one that is reversible at zero cost. Option A changes no behaviour: no
+grammar, no runtime, no conformance re-measurement, no compatibility risk. Options B and C would
+each change what programs are refused and would require the full sequence in "Recommended next
+step" — grammar, spec, interpreter, backend, adversarial tests for both the refusal and the
+absence of a wrong refusal. Choosing the reversible option while the maintainer is unavailable is
+the choice that does not manufacture a language change on someone else's behalf.
+
+**This does not close the door.** Reversing it costs one decision, not one migration: no program
+written against Option A becomes invalid under Option B, because B only adds refusals. If a
+concrete program is later shown to need typed fields, the brief's sequence applies unchanged.
+
+**What is genuinely lost by choosing A**, stated so it is not hidden: a wrong field type is found
+at the operation that misuses it rather than at the construction that was wrong, and the error
+names the failed operation rather than the bad assignment. That is the trade the language already
+makes everywhere else, and ADR-0015 records it.
+
+---
 
 ## What exists today (verified, not recalled)
 

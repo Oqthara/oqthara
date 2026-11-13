@@ -160,6 +160,54 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void aRefusedCountOrBoundReportsTheSameDiagnosticOnBothBackends(@TempDir Path dir) throws Exception {
+        // The list and text methods share one narrowing rule, Values.integerIndex. A compiled
+        // program resolves methods through the same resolver, so the two backends must word a
+        // refusal identically -- including the programs that used to escape as a JVM failure.
+        List<String> programs = List.of(
+                "xs = [10, 20, 30, 40]\nprint xs.take(1.5)",
+                "xs = [10, 20, 30, 40]\nprint xs.skip(1.5)",
+                "xs = [10, 20, 30, 40]\nprint xs.slice(1.5, 3.5)",
+                "xs = [10, 20, 30, 40]\nprint xs.take(\"a\")",
+                "print \"abcdef\".substring(1.5, 4)",
+                "print \"x\".repeat(-1)",
+                "print \"x\".repeat(2.5)",
+                "print \"x\".pad_start(9.5, \"0\")",
+                "xs = [10, 20]\nprint xs[1e300]");
+        for (String source : programs) {
+            dev.oqthara.compiler.Ir.Program program =
+                    Lowering.lower(Parser.parse("u.oq", source));
+            String reason = BytecodeCompiler.whyNot(program);
+            assertNull(reason, "expected to compile: " + source + " but " + reason);
+            Path jar = dir.resolve("bounds.jar");
+            JarBuilder.build(jar, "oq.generated.Program", source, "u.oq",
+                    BytecodeCompiler.compile(program, "oq.generated.Program"));
+            ProcessResult compiled = runJarProcess(jar, dir);
+            assertEquals(1, compiled.exit(), "exit code for: " + source);
+            assertFalse(compiled.stderr().contains("internal error"),
+                    "a refusal must be a program error: " + compiled.stderr());
+            assertFalse(compiled.stderr().contains("Exception in thread"),
+                    "no stack trace for " + source + ": " + compiled.stderr());
+
+            OqRunner.Result interpreted = OqRunner.run("u.oq", source, List.of(), "", dir);
+            assertEquals(1, interpreted.code(), "interpreter exit code for: " + source);
+            assertFalse(interpreted.stderr().contains("internal error"),
+                    "a refusal must be a program error: " + interpreted.stderr());
+
+            for (String line : interpreted.stderr().lines()
+                    .filter(text -> !text.isBlank())
+                    .filter(text -> !text.trim().startsWith("2 |"))
+                    .filter(text -> !text.trim().startsWith("1 |"))
+                    .filter(text -> !text.trim().startsWith("^"))
+                    .toList()) {
+                assertTrue(compiled.stderr().contains(line.strip()),
+                        "missing [" + line.strip() + "] for " + source
+                                + "\ncompiled stderr was:\n" + compiled.stderr());
+            }
+        }
+    }
+
+    @Test
     void aCaughtErrorIsNotRenderedAsUncaught(@TempDir Path dir) throws Exception {
         // The top-level handler covers the whole body, so it must lose to the program's own
         // exception table row for the try region.
@@ -626,9 +674,29 @@ class BytecodeCompilerTest {
         assertEquals("a\nb\nc\n", compileAndRun("for c in \"abc\"\n  print c\nend", dir));
     }
 
+    /**
+     * A whole-number refusal is worded and positioned the same in both backends.
+     *
+     * <p>The interpreter raises it from the builtin's own code with the call's span, and the
+     * compiler reaches the same helper through {@code Stdlib.install}, which reads the position
+     * the backend marked. Only the framing differs, so the wording, the value and the line are
+     * what a program can observe; that is what this compares.
+     */
     @Test
-    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {
-        for (String source : List.of(
+    void aFractionalRangeBoundIsRefusedIdenticallyOnBothBackends(@TempDir Path dir) throws Exception {
+        String source = "print range(0, 5, 1.5)";
+        OqRunner.Result interpreted = OqRunner.run("<t>", source, List.of(), "", dir);
+        assertEquals(1, interpreted.code(), interpreted.stderr());
+        String compiled = compileAndRunError(source, dir);
+        String fragment = "range() needs a whole number, got 1.5";
+        assertTrue(interpreted.stderr().contains(fragment), interpreted.stderr());
+        assertTrue(compiled.contains(fragment), compiled);
+        assertTrue(interpreted.stderr().contains("<t>:1:12"), interpreted.stderr());
+        assertTrue(compiled.contains("<t>:1:12"), compiled);
+    }
+
+    @Test
+    void redeclaringAConstantIsRefusedByBothBackends(@TempDir Path dir) throws Exception {        for (String source : List.of(
                 "const x = 1\nconst x = 2\nprint x",
                 "x = 1\nconst x = 2\nprint x",
                 "const a = 1\nconst a, b = (2, 3)\nprint a",

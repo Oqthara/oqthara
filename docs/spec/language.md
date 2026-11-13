@@ -119,6 +119,7 @@ bytes and not UTF-16 units, so all of them agree on the same value:
 | `"a😀b".reverse()` | `"b😀a"` | characters reversed |
 | `"a😀b".find("b")` | `2` | a character offset |
 | `"a😀b".substring(1, 2)` | `"😀"` | character bounds |
+| `"𐐨x".capitalize()` | `"𐐀x"` | the case mapping of the first character |
 | `for c in "a😀b"` | three iterations | one character each |
 
 This matches Python 3, which counts code points. Text is stored as UTF-16 internally, so
@@ -128,6 +129,35 @@ language exposes. `.length()` also scans, so hoist it out of a loop that repeats
 Grapheme clusters are *not* the unit: `"é"` written as `e` plus a combining accent has
 length `2`, because it is two code points. [ADR-0024](../adr/0024-text-is-a-sequence-of-code-points.md)
 records why code points were chosen over clusters.
+
+`capitalize()` upper-cases the first character and leaves the rest alone. Because the unit
+is a code point, a letter outside the basic multilingual plane is mapped as one character:
+`"𐐨x"` is `"𐐀x"`, where an implementation working in UTF-16 units would leave the letter
+unchanged. A first character with no upper case — a digit, an emoji, a space — is kept as it
+is.
+
+### Counts and bounds
+
+Every method that takes a count or an index — `.take(n)`, `.skip(n)`, `.slice(from, to)`,
+`.subList(from, to)`, `.substring(from, to)`, `.repeat(n)`, `.pad_start(n, fill)`,
+`.pad_end(n, fill)` — follows the same two rules as `xs[i]`.
+
+A value that is not a whole number is refused rather than truncated: `xs.take(1.5)` raises
+`a count for take must be a whole number, got decimal`, and `xs.take("a")` raises
+`a count for take must be a whole number, got text`. Rounding `1.5` down to `1` would answer
+a question the program did not ask, and a wrong element is harder to notice than an error.
+
+A whole number written as a decimal is still a whole number, because `1 == 1.0`
+([ADR-0017](../adr/0017-equality-and-hashing.md)). `xs.take(2.0)` is `[10, 20]`, the same
+as `xs.take(2)`. A decimal past the 64-bit range, or an infinity, is refused as out of range
+rather than narrowed to the largest whole number: `xs[1e300]` raises
+`an index is out of range: <the value as the language prints it>`, quoting the number the
+program wrote rather than the saturated index it would otherwise have used.
+
+`.repeat(n)` needs a count of zero or more, so `"x".repeat(-1)` raises
+`repeat() needs a count of zero or more, got -1` rather than failing inside the runtime. A
+count whose product with the text length would not fit in memory is refused before anything
+is allocated.
 
 ## Numbers
 
@@ -153,6 +183,23 @@ Built-in functions: `abs`, `floor`, `ceil`, `round`, `round(value, places)`, `sq
 `pow`, `min`, `max`, `clamp`, `random`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`,
 `atan2`, `hypot`, `ln`, `log10`, `log2`, `exp`, `degrees`, `radians`, `pi()`, `e()`,
 `tau()`.
+
+A number's method form and the builtin of the same name are the same operation, and
+they answer identically for every input: `x.floor()` is `floor(x)`, and a method is
+never narrowed to a whole number where the builtin keeps the decimal. The one case
+with no whole-number answer is `abs` of the lowest whole number, whose magnitude is
+one past the highest; both forms return the decimal rather than a negative number.
+
+An argument that counts something — a range bound or step, a decimal-place count, a
+random bound — must be a whole number. A decimal with a fractional part is refused
+rather than truncated, because truncating `range(0, 5, 1.5)` and walking by `1`
+answers a question the program did not ask. A decimal outside the 64-bit range is
+refused for the same reason, and a whole decimal such as `2.0` is accepted, because it
+is the same value as the whole number `2`.
+
+`is_even` and `is_odd` answer the parity the number actually has, never the parity of
+a narrowed `long`: `1e20.is_even()` is `true`. A number with a fractional part has no
+parity and is refused.
 
 `round` breaks a tie *upward*, toward positive infinity: `round(0.5)` is `1`,
 `round(2.5)` is `3`, and `round(-1.5)` is `-1` rather than `-2`. It is not banker's
@@ -1183,7 +1230,7 @@ remains the one for games and shuffling.
 None of the digests is constant-time, and none is claimed to be. Comparison is the one
 operation that is, because that is the one where a fast answer leaks where the inputs differ:
 
-```
+```oq
 print secure_equal("aaaaaaab", "aaaaaaac")   # false
 ```
 
@@ -1278,6 +1325,9 @@ of the two middle values. `mode` returns the **smallest** most-frequent value wh
 so the call always has an answer. `percentile` interpolates linearly between closest ranks, so
 `percentile([1, 2, 3, 4], 50)` is `2.5` rather than `2` or `3`, and a `p` outside `0..100` is an
 error rather than being clamped into range — a clamp would turn a typo into a plausible answer.
+Both are computed so that the ends of the double range are not a special case:
+`median([1e308, 1e308])` is `1e308`, not `infinity`, and two equal subnormals average to
+themselves rather than to `0.0`.
 
 Identifiers: `uuid()` and `is_uuid(text)`. `uuid()` mints a version 4 (random) identifier in
 canonical lowercase `8-4-4-4-12` form. Version 1 is not offered because it embeds the host's
