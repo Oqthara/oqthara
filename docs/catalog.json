@@ -320,6 +320,12 @@
       "slug": "docs/adr/0052-keyless-release-signing"
     },
     {
+      "path": "docs/adr/0053-exact-rational-arithmetic.md",
+      "title": "ADR-0053 — Exact rational arithmetic as a value type",
+      "section": "adr",
+      "slug": "docs/adr/0053-exact-rational-arithmetic"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

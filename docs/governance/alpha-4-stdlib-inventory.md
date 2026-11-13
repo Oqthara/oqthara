@@ -25,7 +25,7 @@ document that promises is a document that cannot be checked.
   `DatabaseModule.java`, `Patterns.java` and `MethodResolverImpl.java`, then reconciled
   name-for-name against
   the generated surface in [`docs/stdlib/reference.md`](../stdlib/reference.md). The two agree
-  exactly, in both directions, with zero drift: 172 global names and 205 documented method
+  exactly, in both directions, with zero drift: 189 global names and 205 documented method
   entries on each side. Every name cited in this document was found by grep in the files named
   against it, and `check-docs-sync.py`'s `stdlib_inventory_citations_resolve` re-resolves every
   one of them on every run, because the sentence you are reading was not true when it was first
@@ -54,12 +54,12 @@ document that promises is a document that cannot be checked.
 
 | Measure | Value | Evidence |
 |---|---|---|
-| Global builtin **names** | **172** | 143 in `Stdlib.java` + 3 in `DatabaseModule.java` + 2 in `Patterns.java` + 12 in `Statistics.java` + 6 in `Compression.java` + 6 in `TextWrap.java` |
-| Callable **registrations** | **183** | 9 names are overloaded, adding 11 extra registrations (`range` and `csv_parse` have three each): `assert`, `await`, `csv_parse`, `csv_write`, `exit`, `input`, `random`, `range`, `round` |
+| Global builtin **names** | **189** | 143 in `Stdlib.java` + 3 in `DatabaseModule.java` + 2 in `Patterns.java` + 12 in `Statistics.java` + 6 in `Compression.java` + 6 in `TextWrap.java` + 17 in `Fractions.java` |
+| Callable **registrations** | **200** | 9 names are overloaded, adding 11 extra registrations (`range` and `csv_parse` have three each): `assert`, `await`, `csv_parse`, `csv_write`, `exit`, `input`, `random`, `range`, `round` |
 | Method **families** | **9** | `MethodResolverImpl.java`, one method per family |
 | Documented method names | **205** | `docs/stdlib/reference.md` L190–L226 |
 | Host-dependent builtins | **36** | `oq-stdlib/.../Builtins.java:45` (`HOST_DEPENDENT`), the compiled-code bridge |
-| Builtins exercised by `examples/` | **67 of 172** | 42 `.oq` files, checked by name |
+| Builtins exercised by `examples/` | **67 of 189** | 42 `.oq` files, checked by name |
 
 The matrix carried "89 global functions and eight method families" when this document was
 drafted. That figure was measured at an earlier commit and had been stale since the date builtins
@@ -74,47 +74,48 @@ name can be located by section and then by the line numbers in the following tab
 
 | Section | Installer | Registrations | Unique names |
 |---|---|---|---|
-| Core | `Stdlib.java:128` | 26 | 21 |
-| Text | `Stdlib.java:246` | 10 | 10 |
-| Collections | `Stdlib.java:300` | 14 | 14 |
-| Math | `Stdlib.java:380` | 31 | 29 |
-| Files | `Stdlib.java:513` | 13 | 13 |
-| File operations | `Stdlib.java:629` | 7 | 7 |
+| Core | `Stdlib.java:129` | 26 | 21 |
+| Text | `Stdlib.java:247` | 10 | 10 |
+| Collections | `Stdlib.java:301` | 14 | 14 |
+| Math | `Stdlib.java:381` | 31 | 29 |
+| Files | `Stdlib.java:514` | 13 | 13 |
+| File operations | `Stdlib.java:630` | 7 | 7 |
 | Patterns | `Patterns.java:39` | 2 | 2 |
 | Statistics, identifiers, ordered search | `Statistics.java:32` | 12 | 12 |
 | Text layout | `TextWrap.java:26` | 6 | 6 |
 | Compression | `Compression.java:49` | 6 | 6 |
-| JSON | `Stdlib.java:763` | 4 | 4 |
-| Encoding | `Stdlib.java:782` | 11 | 11 |
-| Logging | `Stdlib.java:897` | 6 | 6 |
-| Arguments | `Stdlib.java:944` | 1 | 1 |
-| CSV | `Stdlib.java:1094` | 5 | 2 |
-| Dates | `Stdlib.java:1252` | 2 | 2 |
-| Time | `Stdlib.java:1279` | 6 | 6 |
-| URLs | `Stdlib.java:1337` | 6 | 6 |
-| HTTP | `Stdlib.java:1520` | 2 | 2 |
-| Concurrency | `Stdlib.java:1676` | 6 | 5 |
-| Process | `Stdlib.java:1742` | 4 | 4 |
+| Fractions | `Fractions.java:36` | 17 | 17 |
+| JSON | `Stdlib.java:764` | 4 | 4 |
+| Encoding | `Stdlib.java:783` | 11 | 11 |
+| Logging | `Stdlib.java:898` | 6 | 6 |
+| Arguments | `Stdlib.java:945` | 1 | 1 |
+| CSV | `Stdlib.java:1095` | 5 | 2 |
+| Dates | `Stdlib.java:1253` | 2 | 2 |
+| Time | `Stdlib.java:1280` | 6 | 6 |
+| URLs | `Stdlib.java:1338` | 6 | 6 |
+| HTTP | `Stdlib.java:1521` | 2 | 2 |
+| Concurrency | `Stdlib.java:1677` | 6 | 5 |
+| Process | `Stdlib.java:1743` | 4 | 4 |
 | Database | `DatabaseModule.java:44` | 3 | 3 |
-| **Total** | | **183** | **172** |
+| **Total** | | **200** | **189** |
 
-### The 172 names, by registration site
+### The 189 names, by registration site
 
 Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
 lines is one name and three registrations.
 
-**Core** (21) — `print`:129, `write_text`:142, `write`:149, `input`:156 and 160, `text`:168, `repr`:170, `number`:172, `type_of`:174, `is_nothing`:176, `is_number`:178, `is_text`:180, `length`:182, `range`:184, 188 and 191, `error`:200, `assert`:203 and 210, `args`:216, `exit`:218 and 221, `sort_by`:227, `map`:238, `filter`:240, `clone`:242.
+**Core** (21) — `print`:130, `write_text`:143, `write`:150, `input`:157 and 161, `text`:169, `repr`:171, `number`:173, `type_of`:175, `is_nothing`:177, `is_number`:179, `is_text`:181, `length`:183, `range`:185, 189 and 192, `error`:201, `assert`:204 and 211, `args`:217, `exit`:219 and 222, `sort_by`:228, `map`:239, `filter`:241, `clone`:243.
 
-**Text** (10) — `format`:247, `join`:249, `upper`:262, `lower`:264, `trim`:266, `contains`:268, `split`:270, `replace`:275, `regex`:278, `matches`:295.
+**Text** (10) — `format`:248, `join`:250, `upper`:263, `lower`:265, `trim`:267, `contains`:269, `split`:271, `replace`:276, `regex`:279, `matches`:296.
 
-**Collections** (14) — `keys`:301, `values`:307, `push`:313, `pop`:322, `sum`:327, `sort`:329, `reverse`:331, `unique`:333, `set`:335, `frozenset`:342, `list`:348, `enumerate`:354, `zip`:365, `range_list`:375.
+**Collections** (14) — `keys`:302, `values`:308, `push`:314, `pop`:323, `sum`:328, `sort`:330, `reverse`:332, `unique`:334, `set`:336, `frozenset`:343, `list`:349, `enumerate`:355, `zip`:366, `range_list`:376.
 
-**Math** (29) — `abs`:381, `floor`:393, `ceil`:395, `round`:397 and 404, `sqrt`:423, `pow`:426, `sin`:431, `cos`:434, `tan`:437, `asin`:440, `acos`:443, `atan`:446, `atan2`:449, `hypot`:454, `ln`:460, `log10`:464, `log2`:468, `exp`:472, `degrees`:475, `radians`:478, `pi`:481, `e`:482, `tau`:483, `min`:486, `max`:488, `sorted`:490, `clamp`:492, `random`:498 and 500, `random_item`:506.
+**Math** (29) — `abs`:382, `floor`:394, `ceil`:396, `round`:398 and 405, `sqrt`:424, `pow`:427, `sin`:432, `cos`:435, `tan`:438, `asin`:441, `acos`:444, `atan`:447, `atan2`:450, `hypot`:455, `ln`:461, `log10`:465, `log2`:469, `exp`:473, `degrees`:476, `radians`:479, `pi`:482, `e`:483, `tau`:484, `min`:487, `max`:489, `sorted`:491, `clamp`:493, `random`:499 and 501, `random_item`:507.
 
-**Files** (13) — `read`:514, `read_lines`:518, `save`:529, `append`:542, `exists`:556, `list_files`:558, `delete`:583, `make_dir`:590, `file_size`:598, `path_join`:605, `path_name`:608, `path_parent`:612, `cwd`:616.
+**Files** (13) — `read`:515, `read_lines`:519, `save`:530, `append`:543, `exists`:557, `list_files`:559, `delete`:584, `make_dir`:591, `file_size`:599, `path_join`:606, `path_name`:609, `path_parent`:613, `cwd`:617.
 
-**File operations** (7) — `is_file`:630, `is_dir`:632, `read_bytes`:634, `write_bytes`:650, `copy_file`:662, `move_file`:667, `walk`:682.
+**File operations** (7) — `is_file`:631, `is_dir`:633, `read_bytes`:635, `write_bytes`:651, `copy_file`:663, `move_file`:668, `walk`:683.
 
 **Patterns** (2) — `fnmatch`:40, `glob`:49, both in `Patterns.java`.
 
@@ -135,27 +136,37 @@ One registration per name, so the section adds 6 to both columns. Specified by
 the defence counts the bytes actually produced rather than trusting a length field, because a
 hostile producer writes whatever length it likes.
 
-**JSON** (4) — `json_parse`:879, `json`:881, `json_write`:883, `json_pretty`:885.
+**Fractions** (17) — `fraction`:37, `fraction_of`:40, `fraction_text`:42, `fraction_num`:44,
+`fraction_den`:47, `fraction_add`:50, `fraction_sub`:54, `fraction_mul`:58, `fraction_div`:62,
+`fraction_neg`:66, `fraction_abs`:68, `fraction_compare`:70, `fraction_floor`:74,
+`fraction_ceil`:77, `fraction_round`:80, `fraction_pow`:83, `fraction_to_decimal`:87, all
+in `Fractions.java`. One registration per name, so the section adds 17 to both columns. Specified by
+[ADR-0053](../adr/0053-exact-rational-arithmetic.md), whose value type lives in the runtime
+because `Values` has to name and display it, and whose whole point is that no operation converts
+to a `double`: `fraction_compare` cross-multiplies, and `fraction_to_decimal` is the one
+conversion outward, with the precision stated by the caller.
 
-**Encoding** (11) — `hex_encode`:898, `hex_decode`:900, `base64_encode`:902, `base64_decode`:904, `sha256`:906, `sha1`:908, `md5`:910, `hmac_sha256`:912, `secure_random_hex`:914, `secure_equal`:924, `pbkdf2_sha256`:932.
+**JSON** (4) — `json_parse`:880, `json`:882, `json_write`:884, `json_pretty`:886.
 
-**Logging** (6) — `log_debug`:1016, `log_info`:1018, `log_warn`:1020, `log_error`:1022, `log_level`:1024, `log_enabled`:1034.
+**Encoding** (11) — `hex_encode`:899, `hex_decode`:901, `base64_encode`:903, `base64_decode`:905, `sha256`:907, `sha1`:909, `md5`:911, `hmac_sha256`:913, `secure_random_hex`:915, `secure_equal`:925, `pbkdf2_sha256`:933.
 
-**Arguments** (1) — `arg_parse`:1060.
+**Logging** (6) — `log_debug`:1017, `log_info`:1019, `log_warn`:1021, `log_error`:1023, `log_level`:1025, `log_enabled`:1035.
 
-**CSV** (2) — `csv_parse`:1210, 1212 and 1215, `csv_write`:1219 and 1221.
+**Arguments** (1) — `arg_parse`:1061.
 
-**Dates** (2) — `date_parse`:1368, `instant_parse`:1370.
+**CSV** (2) — `csv_parse`:1211, 1213 and 1216, `csv_write`:1220 and 1222.
 
-**Time** (6) — `now`:1395, `today`:1397, `datetime`:1399, `timestamp`:1401, `tz_convert`:1403, `sleep`:1425.
+**Dates** (2) — `date_parse`:1369, `instant_parse`:1371.
 
-**URLs** (6) — `url_parse`:1453, `url_encode`:1477, `url_decode`:1481, `query_parse`:1490, `query_encode`:1509, `url_join`:1549.
+**Time** (6) — `now`:1396, `today`:1398, `datetime`:1400, `timestamp`:1402, `tz_convert`:1404, `sleep`:1426.
 
-**HTTP** (2) — `http_get`:1636, `http_post`:1638.
+**URLs** (6) — `url_parse`:1454, `url_encode`:1478, `url_decode`:1482, `query_parse`:1491, `query_encode`:1510, `url_join`:1550.
 
-**Concurrency** (5) — `spawn`:1792, `await`:1800 and 1807, `done`:1821, `mutex`:1828, `par_map`:1830.
+**HTTP** (2) — `http_get`:1637, `http_post`:1639.
 
-**Process** (4) — `env`:1858, `run_command`:1860, `cpu_count`:1912, `memory_mb`:1914.
+**Concurrency** (5) — `spawn`:1793, `await`:1801 and 1808, `done`:1822, `mutex`:1829, `par_map`:1831.
+
+**Process** (4) — `env`:1859, `run_command`:1861, `cpu_count`:1913, `memory_mb`:1915.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),
@@ -224,18 +235,26 @@ Family membership, for the record:
   log10, log2, radians, round, sin, sqrt, tan, text, to_string.
 - `iterator` (3): has_next, iter, next. `mutex` (2): is_free, lock.
 
-### What the 172 do not include
+### What the 189 do not include
 
 Verified absent by grep across `oq-stdlib/src/main/java/dev/oqthara/stdlib/`, zero matches
-each: `itertools`, `decimal`, `fraction`, `gzip`,
+each: `itertools`, `decimal`, `gzip`,
 `tar`, `lzma`, `shelve`, `pickle`, `dbm`, `yaml`, `toml`, `deep_equal`, `random_bytes`,
 `date_add`, `date_diff`, `temp_dir`, `home_dir`, `os_name`, `platform_name`, `shell_quote`,
 `shlex`. Two near-misses worth stating precisely: `pad_start` exists as a **text method**
 only, not as a global, and `sort_by` is a global while `sort`/`sorted` are both globals and
 methods. `glob` and `fnmatch` were on this absent list when the document was drafted and
-shipped since, in `Patterns.java`; `uuid` likewise, in `Statistics.java`. All three are counted
-in the 172 above. The list is re-grepped whenever it is edited, because a name that has shipped
-and stayed on it is a false absence claim rather than a stale one.
+shipped since, in `Patterns.java`; `uuid` likewise, in `Statistics.java`; `fraction` likewise,
+in `Fractions.java`. All four are counted in the 189 above. The list is re-grepped whenever it
+is edited, because a name that has shipped and stayed on it is a false absence claim rather
+than a stale one.
+
+`decimal` deserves a note of its own, because it is the one entry on that list that is blocked
+by a decision rather than by work. `Values.typeName` answers `"decimal"` for a `Double`, so an
+exact-decimal type cannot take the name without changing what `type_of` reports for every
+floating-point value in every existing program. [ADR-0053](../adr/0053-exact-rational-arithmetic.md)
+adds the rational domain under the name `fraction`, which has no collision; the exact-decimal
+name is left to the maintainer.
 
 Also relevant to the comparison below: there is **no `open` returning a handle**, no `bytes`
 type ([ADR-0033](../adr/0033-encoding-and-hashing.md); binary content travels as hex text), no
@@ -246,20 +265,20 @@ and no qualified name.
 
 ### How much of it the examples exercise
 
-41 `.oq` files under `examples/`, of which **55** distinct builtins appear as identifiers
+42 `.oq` files under `examples/`, of which **67** distinct builtins appear as identifiers
 in executable code (comments are stripped first, and a name in method position such as
 `.sort()` is not counted, so the measure is of global use):
 
-`args`, `assert`, `await`, `contains`, `cwd`, `db_execute`, `db_query`,
-`db_transaction`, `delete`, `done`, `error`, `exists`, `exit`, `hmac_sha256`,
-`input`, `json`, `json_parse`, `length`, `lower`, `map`, `matches`, `max`,
-`md5`, `mutex`, `now`, `number`, `par_map`, `path_join`, `pbkdf2_sha256`,
-`print`, `query_encode`, `query_parse`, `random`, `read`, `read_lines`,
-`round`, `secure_equal`, `secure_random_hex`, `set`, `sha256`, `sleep`, `sort`,
-`sorted`, `spawn`, `split`, `sqrt`, `sum`, `text`, `timestamp`, `today`,
-`upper`, `url_encode`, `url_join`, `url_parse`, `write`.
+`args`, `assert`, `atan2`, `await`, `contains`, `cos`, `cwd`, `db_execute`, `db_query`,
+`db_transaction`, `degrees`, `delete`, `done`, `e`, `error`, `exists`, `exit`, `exp`,
+`hmac_sha256`, `hypot`, `input`, `json`, `json_parse`, `length`, `ln`, `log10`, `log2`,
+`lower`, `map`, `matches`, `max`, `md5`, `mutex`, `now`, `number`, `par_map`, `path_join`,
+`pbkdf2_sha256`, `pi`, `print`, `query_encode`, `query_parse`, `radians`, `random`, `read`,
+`read_lines`, `round`, `secure_equal`, `secure_random_hex`, `set`, `sha256`, `sin`, `sleep`,
+`sort`, `sorted`, `spawn`, `split`, `sqrt`, `sum`, `text`, `timestamp`, `today`, `upper`,
+`url_encode`, `url_join`, `url_parse`, `write`.
 
-74 builtins are exercised by no example. That is a coverage fact about the examples, not about
+122 builtins are exercised by no example. That is a coverage fact about the examples, not about
 the builtins — every name above has unit coverage — but it is the honest measure of how much
 of the surface a reader can learn by example, and it bounds how confidently the surface can be
 called usable rather than merely present.
@@ -800,7 +819,7 @@ Two readings of this table matter, and only one of them is flattering:
   services. Excluding them is not modesty, it is scope.
 
 The figure the requirement matrix can now cite is therefore not "89 functions, breadth unknown"
-but: **172 global builtins and 205 documented method names, against 231 documented Python
+but: **189 global builtins and 205 documented method names, against 231 documented Python
 modules, with 20 covered, 33 partly covered, 60 absent and 118 excluded for a stated technical
 reason.** Every exclusion above names its reason; none is a silent omission.
 

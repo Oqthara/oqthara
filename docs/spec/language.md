@@ -20,6 +20,7 @@ print "Hello, World!"
 |---|---|---|
 | number | `42`, `-7`, `1000` | 64-bit whole numbers |
 | decimal | `3.14`, `1e9` | 64-bit floating point |
+| fraction | `fraction(1, 2)` | exact rational, from the standard library |
 | text | `"hi"`, `'hi'` | UTF-8, immutable |
 | boolean | `true`, `false` | |
 | nothing | `nothing` | the absent value |
@@ -161,8 +162,10 @@ would make `round(-1.5)` equal `-2`.
 The tie rule is stated for the whole number, but the underlying value is a binary
 double, so `round(1.005, 2)` is `1.0` and not `1.01`: the stored double is a little
 below `1.005`, and a tie is never reached. A result that must not depend on how a
-double is stored needs exact decimal arithmetic, which the standard library does not
-yet provide.
+double is stored needs exact arithmetic, which the `fraction` family provides (below);
+an exact *decimal* type is deliberately absent, because `type_of(3.14)` already answers
+`"decimal"` for a `Double` and an exact type taking that name would change what every
+existing program reports.
 
 A number outside the representable range is not the same thing as an input the
 function cannot accept, and the two are treated differently. An input with no
@@ -188,6 +191,34 @@ print n != n   # true
 The transcendental functions use `java.lang.StrictMath`, so a given input yields the
 same bits on every platform and JVM. `log2` is exact on every power of two, so
 `log2(1024)` is `10.0` and `log2(5e-324)` is `-1074.0`.
+
+### Exact fractions
+
+A `fraction` is a rational number held as a `BigInteger` numerator and denominator, always
+in lowest terms with a positive denominator, so `fraction(2, 4)` and `fraction(1, 2)` are the
+same value and print as `1/2`. Every operation on it is exact, including comparison:
+
+```oq
+a = fraction_of("9999999999999999/30000000000000000")
+b = fraction_of("10000000000000001/30000000000000000")
+print fraction_compare(a, b)   # -1 — both are 0.333… as doubles, but a < 1/3 < b
+```
+
+`fraction_compare` cross-multiplies rather than converting to a double, because converting
+would reintroduce the rounding the type exists to avoid. The one conversion outward is
+`fraction_to_decimal(value, places)`, which states its precision; there is no implicit one.
+
+`fraction_round` breaks a tie the way `round` does, upward toward positive infinity, so
+`fraction_round(fraction(-1, 2))` is `0`. `fraction_pow` takes an integer exponent only.
+
+Two bounds keep an exact rational a result rather than a memory request. An exponent whose
+magnitude exceeds `10000` is refused. Each part is also limited to `32768` bits, about 9,865
+decimal digits, and that second bound is the one that holds: it is checked on every
+construction, so a loop that squares a fraction without ever calling `fraction_pow` is refused
+at the same limit, with a message naming the part that grew. A value whose parts reduce back
+below the limit is accepted, however large the intermediates were. When a program needs more
+precision than that, `fraction_to_decimal` states how many places it wants instead. See
+[ADR-0053](../adr/0053-exact-rational-arithmetic.md).
 
 Lists compare lexicographically, so a sort key can itself be a list:
 
@@ -258,8 +289,8 @@ and cannot be nested inside an expression. The left side of a compound assignmen
 be a plain variable; `xs[0] += 1` is rejected with "compound assignment needs a variable
 on the left". Unlike `x = x + 1`, a compound assignment evaluates its target once.
 
-Truthiness: `nothing`, `false`, `0`, `0.0`, `""`, empty collections and empty ranges
-are falsy. Everything else is truthy.
+Truthiness: `nothing`, `false`, `0`, `0.0`, an empty fraction, `""`, empty collections and
+empty ranges are falsy. Everything else is truthy.
 
 ## Loops
 
@@ -750,6 +781,7 @@ The rules per family:
 | Values | Equal when |
 |---|---|
 | numbers | they denote the same value, whether whole or decimal |
+| fractions | same numerator and same denominator, so `fraction(1, 2) == fraction(2, 4)` |
 | text | the characters are the same, case sensitively |
 | booleans | both are the same boolean |
 | lists | same length, and each position equal |
@@ -781,7 +813,7 @@ print set([[1]])
 
 | Family | Usable as a key or member |
 |---|---|
-| number, decimal, text, boolean, `nothing`, range | yes |
+| number, decimal, fraction, text, boolean, `nothing`, range | yes |
 | tuple | yes, when every item is |
 | `frozenset` | yes, when every member is |
 | function | yes, by identity |
@@ -1131,6 +1163,34 @@ not declined — it happens on every `https` request with the JVM defaults and c
 off. What is absent is a key *value*, because a key needs a lifetime and this language has no
 `close`: a key would live until the garbage collector decided otherwise, with no way to write
 "use it, then be sure it is gone".
+
+Exact fractions: `fraction(numerator, denominator)`, `fraction_of(text)`, `fraction_text(f)`,
+`fraction_num(f)`, `fraction_den(f)`, `fraction_add(a, b)`, `fraction_sub(a, b)`,
+`fraction_mul(a, b)`, `fraction_div(a, b)`, `fraction_neg(a)`, `fraction_abs(a)`,
+`fraction_compare(a, b)`, `fraction_floor(f)`, `fraction_ceil(f)`, `fraction_round(f)`,
+`fraction_pow(f, exponent)`, `fraction_to_decimal(f, places)`.
+
+A `fraction` is the language's only exact non-integer number. The constructor takes two whole
+numbers and normalises: the denominator is made positive and the two are reduced, so
+`fraction(2, -4)` and `fraction_of("-1/2")` are the same value. A denominator of zero raises,
+and a non-integral input such as `fraction(0.1, 2)` raises rather than rounding, because a
+fraction built from a float would inherit the float's error and defeat the point.
+
+```
+print fraction_add(fraction(1, 3), fraction(1, 6))   # 1/2
+print fraction_text(fraction(6, 4))                  # 3/2
+print fraction_num(fraction(6, 4))                   # 3
+print fraction_den(fraction(6, 4))                   # 2
+print fraction_to_decimal(fraction(1, 3), 4)         # 0.3333
+```
+
+`fraction_of` reads `"3/4"`, `"-2/5"` and `"7"` and refuses anything else. `fraction_text`
+writes the canonical `"n/d"`, or `"n"` when the denominator is `1`. Comparisons and every
+arithmetic operation stay exact, including `fraction_pow`, whose exponent must be a whole
+number from `-10000` to `10000` and whose result must keep both parts within `32768` bits, the
+limit every operation is held to; `fraction_to_decimal` is the only way out to an inexact value
+and it requires the caller to state the number of places (0 to 15), so the rounding is never
+silent. `fraction_round` follows `round`: a tie goes upward, toward positive infinity.
 
 Statistics: `mean`, `median`, `variance`, `stdev`, `mode`, `percentile(items, p)`.
 Each accepts any iterable of numbers, so a list, a set or a range works.
@@ -1777,7 +1837,7 @@ $ oq build hello.oq
 compiled hello.oq (0 functions, 5 main instructions)
 backend=classfile (self-contained writer, JDK 21)
 codepath: compiled bytecode
-wrote hello.jar (337 classes, 0 skipped)
+wrote hello.jar (343 classes, 0 skipped)
 run it with: java -jar hello.jar
 
 $ java -jar hello.jar
