@@ -41,10 +41,11 @@ Four consequences follow.
 1. **`format` and case conversion name their locale.** `toLowerCase()`/`toUpperCase()` with no
    argument are always defects, because a locale-sensitive mapping exists for every letter the
    default locale differs on. `String.format` without a leading locale argument is a defect only
-   when it can emit a *digit* or a *decimal separator* — the `%d`, `%f`, `%e`, `%g` and `%a`
-   conversions. The `%s`, `%c`, `%x`, `%X`, `%o` and `%%` conversions emit ASCII regardless of
-   default locale, which was verified rather than assumed: under `ar-EG`, `%04X` of 160 is
-   `00A0` while `%d` of 1234 is `١٢٣٤`. The `Json` module's `\u%04X` escapes are therefore correct
+   when it can emit a *digit* or a *decimal separator* — the `%d`, `%f`, `%e` and `%g`
+   conversions. The `%s`, `%c`, `%x`, `%X`, `%o`, `%a` and `%%` conversions emit ASCII regardless
+   of default locale, which was verified rather than assumed: under `ar-EG`, `%04X` of 160 is
+   `00A0`, `%a` of 1.5 is `0x1.8p0`, and `%s` of 1.5 is `1.5`, while `%d` of 1234 is `١٢٣٤` and
+   `%g` of 1500 is `١٥٠٠٫٠٠`. The `Json` module's `\u%04X` escapes are therefore correct
    as they stand and are not the same defect. The fix is mechanical but must not be mechanical
    *only*: the reason is recorded here so the next author does not reintroduce it, and so a later
    audit does not "fix" the hex sites or mistake them for unfixed ones.

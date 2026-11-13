@@ -105,12 +105,25 @@ class DiagnosticsLocaleTest {
 
     @Test
     void aDecimalFromTheRuntimeKeepsADotInEveryLocale() {
+        // Assert the separator, not a digit count. Pinning the exact text made this test break
+        // when ADR-0056 changed the precision rule; the property under test is that the decimal
+        // separator stays a dot, and it should survive a change to how many digits are shown.
         for (Locale locale : HOSTILE) {
             Locale.setDefault(locale);
 
             String shown = dev.oqthara.runtime.Values.display(1.0 / 3);
 
-            assertEquals("0.333333333333", shown, () -> "decimal separator changed under " + locale);
+            assertTrue(
+                    shown.startsWith("0."),
+                    () -> "decimal separator changed under " + locale + ": " + shown);
+            assertFalse(
+                    shown.contains(","),
+                    () -> "decimal separator became a comma under " + locale + ": " + shown);
+            for (char c : shown.toCharArray()) {
+                assertFalse(
+                        Character.isDigit(c) && c > '9',
+                        () -> "non-ASCII digit in decimal under " + locale + ": " + shown);
+            }
         }
     }
 }
