@@ -450,6 +450,37 @@ class FileOperationsTest {
     }
 
     @Test
+    void saveReplacesTheWholeFileWhileCopyRefusesTo() throws Exception {
+        // The spec states this pair explicitly: save truncates, copy_file refuses. They are
+        // easily confused because both take a source of text, so the difference is pinned here.
+        Files.writeString(dir.resolve("out.txt"), "a much longer original");
+        call("save", "out.txt", "short");
+        assertEquals("short", Files.readString(dir.resolve("out.txt")));
+
+        OqError refused = assertThrows(OqError.class,
+                () -> call("copy_file", "out.txt", "out.txt"));
+        assertTrue(refused.getMessage().contains("already exists"), refused.getMessage());
+        assertEquals("short", Files.readString(dir.resolve("out.txt")),
+                "the refusal left the file exactly as it was");
+    }
+
+    @Test
+    void saveAndAppendWriteThroughASymbolicLinkRatherThanReplacingIt() throws Exception {
+        Path link = dir.resolve("link.txt");
+        try {
+            Files.createSymbolicLink(link, dir.resolve("real.txt"));
+        } catch (UnsupportedOperationException | java.io.IOException unsupported) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                    "this platform cannot create symbolic links");
+        }
+        Files.writeString(dir.resolve("real.txt"), "original");
+        call("save", "link.txt", "through");
+        assertEquals("through", Files.readString(dir.resolve("real.txt")),
+                "the destination of the link received the write");
+        assertTrue(Files.isSymbolicLink(link), "and the link itself still exists");
+    }
+
+    @Test
     void moveRemovesTheSource() throws Exception {
         Files.writeString(dir.resolve("a.txt"), "hi");
         call("move_file", "a.txt", "d.txt");
