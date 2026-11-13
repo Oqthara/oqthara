@@ -179,3 +179,27 @@ No decision below has been made. Nothing is presented as approved.
    or explicitly accepted by the maintainer."
 
 **Alpha 4 must not begin until items 5 and 6 are given explicitly.**
+
+---
+
+## H. Current Phase 0 state — re-assessment (2026-11-13)
+
+Sections A–G are a point-in-time record of the first Phase 0 session and are left as written.
+This section states what is true now. Where it contradicts an earlier section, this section is
+correct and the earlier one is preserved only as history.
+
+| Phase 0 requirement | Then (§B) | Now | Evidence |
+| --- | --- | --- | --- |
+| Website synchronization | MET | **MET** | Live `/` and `/docs.html` both HTTP 200; deployed bundle `index-Bw3unu7-.js` is byte-identical to a local build of merged `main`, so the deployed artifact is the merge commit's |
+| Automatic dispatch reliability | untested | **MET** | `site-content-dispatch.yml` succeeded on `b68b970`; the site received `content-updated` at 14:01:36 and synced in the same minute |
+| Outstanding PRs | NOT MET — #38, #39 open | **MET** | Both closed on evidence; see the closure report §2.3 |
+| CI | MET | **MET** | All 12 required contexts verified individually against ruleset `26650412`, not counted in aggregate |
+| Reviews | FAIL | **FAIL — unchanged, and not remediable** | One human maintainer. The exception is recorded, not resolved; the criterion did not pass |
+| Branch protection | weak, pre-PR-rule | **MET** | `pull_request` + `required_status_checks` + `deletion` + `non_fast_forward`; `bypass_actors: []`; direct push attempted and refused |
+| Formal closure artifact | none | **MET** | [`alpha-3-closure-report.md`](alpha-3-closure-report.md) on `main` |
+| Workstream ownership | workstream 12 partly unowned | **MET** | Assigned 2026-11-13 (`315a757`); no workstream unowned |
+| Code-block audit | advisory | **MET** | Blocking in site CI, exit contract true, baseline clean at exit 0 |
+
+The independent-review criterion is the one that cannot be satisfied and is not claimed. It is
+recorded as an accepted, bounded exception, and it must be reconsidered if a second genuine human
+maintainer joins the project.
