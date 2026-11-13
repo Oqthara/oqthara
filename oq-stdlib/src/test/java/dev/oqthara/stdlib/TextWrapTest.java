@@ -448,4 +448,89 @@ class TextWrapTest {
         assertEquals("\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00",
                 call("shorten_text", "\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00", 6L));
     }
+
+    // --- unified_diff resource bound (issue 178) ---------------------------------------------
+
+    @Test
+    void aDiffTooLargeForTheTableIsRefusedRatherThanExhaustingTheHeap() {
+        // The reported reproduction: 5,001 distinct lines on both sides asked for a 25-million
+        // cell matrix, about 100 MB of cell data, and a 96 MiB heap died before anything could
+        // report it. The refusal must be an ordinary Oqthara error with a help line.
+        List<Object> before = new ArrayList<>();
+        List<Object> after = new ArrayList<>();
+        for (int i = 0; i <= 5000; i++) {
+            before.add("a" + i);
+            after.add("b" + i);
+        }
+        OqError error = assertThrows(OqError.class,
+                () -> call("unified_diff", before, after));
+        assertTrue(error.getMessage().contains("5001 lines with 5001 lines"),
+                error.getMessage());
+        assertTrue(error.getMessage().contains("25020004"),
+                "the error must name the size it refused: " + error.getMessage());
+        assertTrue(error.hint() != null && error.hint().contains("another language"),
+                "the error must say what to do instead: " + error.hint());
+    }
+
+    @Test
+    void theRefusalIsSymmetricInTheTwoSides() {
+        // A wide-before/narrow-after input and its transpose must both be refused: the cost is
+        // the product, so neither ordering can slip under the limit.
+        List<Object> wide = new ArrayList<>();
+        for (int i = 0; i < 8000; i++) wide.add("w" + i);
+        List<Object> narrow = new ArrayList<>();
+        for (int i = 0; i < 800; i++) narrow.add("n" + i);
+        assertThrows(OqError.class, () -> call("unified_diff", wide, narrow));
+        assertThrows(OqError.class, () -> call("unified_diff", narrow, wide));
+    }
+
+    @Test
+    void aDiffJustUnderTheLimitStillProducesAFullResult() {
+        // The bound must not be off by a constant that quietly rejects work it could afford.
+        // 1,999 x 1,999 is 4,000,000 cells exactly, which the limit admits.
+        List<Object> before = new ArrayList<>();
+        List<Object> after = new ArrayList<>();
+        for (int i = 0; i < 1999; i++) {
+            before.add("line" + i);
+            after.add(i == 1000 ? "CHANGED" : "line" + i);
+        }
+        List<String> diff = list(call("unified_diff", before, after));
+        assertEquals(1, diff.stream().filter(line -> line.startsWith("@@")).count(),
+                "one change in a large file is still one hunk: " + diff.size() + " lines");
+        assertTrue(diff.contains("-line1000"), diff.toString());
+        assertTrue(diff.contains("+CHANGED"), diff.toString());
+    }
+
+    @Test
+    void oneLineOverTheLimitIsRefused() {
+        // 2,000 x 2,001 is 4,002,000 cells: the first size past the limit, so a boundary test
+        // proves the comparison is `>` and not `>=`.
+        List<Object> before = new ArrayList<>();
+        List<Object> after = new ArrayList<>();
+        for (int i = 0; i < 2000; i++) before.add("x" + i);
+        for (int i = 0; i < 2001; i++) after.add("y" + i);
+        assertThrows(OqError.class, () -> call("unified_diff", before, after));
+    }
+
+    @Test
+    void aHugeButIdenticalPairIsStillRefusedRatherThanCompared() {
+        // Identical inputs produce no diff, but the table is built before that is known, so the
+        // bound applies here too. Returning an empty list would be the right answer and the
+        // wrong expense: the whole matrix would have to be filled to prove it.
+        List<Object> same = new ArrayList<>();
+        for (int i = 0; i < 5000; i++) same.add("s" + i);
+        assertThrows(OqError.class, () -> call("unified_diff", same, same));
+    }
+
+    @Test
+    void anEmptySideCostsNothingAndIsNeverRefused() {
+        // An empty list makes the product zero regardless of the other side's length, so the
+        // bound must not fire: this is the one shape where a huge input is genuinely cheap.
+        List<Object> huge = new ArrayList<>();
+        for (int i = 0; i < 50_000; i++) huge.add("h" + i);
+        assertEquals(List.of("--- ", "+++ ", "@@ -0,0 +1,50000 @@"),
+                list(call("unified_diff", lines(), huge)).subList(0, 3));
+        assertEquals(List.of("--- ", "+++ ", "@@ -1,50000 +0,0 @@"),
+                list(call("unified_diff", huge, lines())).subList(0, 3));
+    }
 }

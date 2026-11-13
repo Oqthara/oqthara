@@ -223,4 +223,37 @@ class TextAndListBoundTest {
         assertEquals("1abc", invoke("1abc", "capitalize"));
         assertEquals("\uD83D\uDE00abc", invoke("\uD83D\uDE00abc", "capitalize"));
     }
+
+    // --- splitting on the empty separator (#147) ---------------------------------------------
+
+    @Test
+    void splittingOnAnEmptySeparatorIsRefusedInsteadOfExposingSurrogateHalves() {
+        // Java's String.split with an empty pattern walks UTF-16 units, so this returned
+        // ["a", <high half>, <low half>, "b", ""] — two values that are not text at all.
+        assertEquals("split() needs a separator that is not empty",
+                refusal("a\uD83D\uDE00b", "split", ""));
+        assertEquals("split() needs a separator that is not empty",
+                refusal("", "split", ""));
+        assertEquals("split() needs a separator that is not empty",
+                refusal("abc", "split", ""));
+    }
+
+    @Test
+    void splittingOnARealSeparatorStillKeepsEmptyFields() {
+        // The refusal above must not narrow the documented behaviour: a trailing separator
+        // still produces a trailing empty field, and a supplementary character inside a field
+        // is still one whole value.
+        assertEquals(List.of("a", "\uD83D\uDE00", "b"),
+                invoke("a,\uD83D\uDE00,b", "split", ","));
+        assertEquals(List.of("a", "", "b", ""), invoke("a,,b,", "split", ","));
+        assertEquals(List.of("", ""), invoke(",", "split", ","));
+        assertEquals(List.of("\uD83D\uDE00", "\uD83D\uDE00"),
+                invoke("\uD83D\uDE00,\uD83D\uDE00", "split", ","));
+    }
+
+    @Test
+    void everyCharacterIsStillReachableThroughChars() {
+        // The refusal points callers at chars(), so that path has to be the answer it promises.
+        assertEquals(List.of("a", "\uD83D\uDE00", "b"), invoke("a\uD83D\uDE00b", "chars"));
+    }
 }
