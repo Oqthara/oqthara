@@ -398,6 +398,12 @@
       "slug": "docs/governance/remediation/alpha-3-release-provenance"
     },
     {
+      "path": "docs/governance/remediation/alpha-4-execution-report.md",
+      "title": "Oqthara Alpha 4 — Consolidated Execution Report",
+      "section": "governance",
+      "slug": "docs/governance/remediation/alpha-4-execution-report"
+    },
+    {
       "path": "docs/governance/remediation/alpha-4-phase-0-first-session-report.md",
       "title": "Alpha 4 Phase 0 — First-Session Report (Directive §66, A–G)",
       "section": "governance",
