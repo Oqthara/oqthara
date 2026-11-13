@@ -26,13 +26,13 @@ both backends.
 | #146 | `"x".repeat(2.5)` truncates; `pad_start`/`pad_end` truncate | 2 | Fixed, verified, tests added |
 | #147 | `"a😀b".split("")` yields lone surrogates | 2 | Reproduced; **blocked on a semantic decision** |
 | #148 | `capitalize` does not upper-case a supplementary-plane first letter | 2 | Fixed, verified, tests added |
-| #149 | `length(0 until MIN)` and friends overflow to a negative size | 3 | Reproduced, not started |
-| #150 | range `.first()`/`.last()`/`iter().next()` materialise the whole range | 3 | Reproduced, not started |
-| #151 | `MAX to MAX` `.to_list()` never terminates | 3 | Reproduced, not started |
-| #152 | `range(MIN, MAX, 3).contains(1)` is wrong through `%` overflow | 3 | Reproduced, not started |
-| #153 | `contains(9.223372036854776e18)` and `2^63 in r` are wrongly true | 3 | Reproduced, not started |
-| #155 | `for n in 0 to 10000000` exhausts memory before the first body run | 3 | Reproduced, not started |
-| #156 | `r[0]` and `r[-1]` materialise the whole range | 3 | Reproduced, not started |
+| #149 | `length(0 until MIN)` and friends overflow to a negative size | 3 | Fixed, verified, tests added |
+| #150 | range `.first()`/`.last()`/`iter().next()` materialise the whole range | 3 | Fixed, verified, tests added |
+| #151 | `MAX to MAX` `.to_list()` never terminates | 3 | Fixed, verified, tests added |
+| #152 | `range(MIN, MAX, 3).contains(1)` is wrong through `%` overflow | 3 | Fixed, verified, tests added |
+| #153 | `contains(9.223372036854776e18)` and `2^63 in r` are wrongly true | 3 | Fixed, verified, tests added |
+| #155 | `for n in 0 to 10000000` exhausts memory before the first body run | 3 | Fixed, verified, tests added |
+| #156 | `r[0]` and `r[-1]` materialise the whole range | 3 | Fixed, verified, tests added |
 
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
@@ -42,6 +42,11 @@ Each group lands as its own Draft PR, so a test added by one group is not presen
 another group's branch. A test class that belongs to a different group is therefore cited
 by its file path rather than by class name, so that a reader on any one branch can tell
 which citations that branch can actually run.
+
+Every defect above was reproduced at `6954a86`, and that stays the reference point for the
+"before" column throughout this document. Each branch has since merged `main` so that it can
+be built and reviewed against current code; see
+[Why CI did not run](#why-ci-did-not-run-and-what-it-taught).
 
 ## Group 1 — numeric semantics
 
@@ -244,18 +249,161 @@ rather than 70 — including `"x".repeat(-1)`, which was a JVM failure before.
 
 Tests added:
 
-- `TextAndListBoundTest` (new, 16 tests) — the refusals for every method, the accepted
+- `oq-stdlib/src/test/java/dev/oqthara/stdlib/TextAndListBoundTest.java` (new, 16 tests,
+  on the Group 2 branch) — the refusals for every method, the accepted
   whole-decimal case, the non-number case, non-finite and past-64-bit bounds, the
   `repeat` domain and its overflow guard, `pad` on both sides, and `capitalize` on a
   supplementary-plane letter, a digit and an emoji.
-- `BytecodeCompilerTest.aRefusedCountOrBoundReportsTheSameDiagnosticOnBothBackends` — nine
-  programs, each asserted to exit 1 on both backends, to contain no `internal error` and
-  no stack trace, and to produce the interpreter's diagnostic lines in the compiled
-  output.
+- a `BytecodeCompilerTest` case on the Group 2 branch (nine programs, each asserted to
+  exit 1 on both backends, to contain no `internal error` and no stack trace, and to
+  produce the interpreter's diagnostic lines in the compiled output).
 
 Documentation: `docs/spec/language.md` gains a "Counts and bounds" subsection stating the
 whole-number rule, the accepted whole-decimal case, the out-of-range refusal and the
 `repeat` domain, and `capitalize` joins the code-point table with `"𐐨x"` → `"𐐀x"`.
+
+## Group 3 — the range model
+
+Branch `sentinel/alpha5/group3-range-model`, cut from `6954a86` so it is reviewable
+without Groups 1 and 2. Seven issues, and they are one defect wearing seven faces: a
+range was **enumerated** everywhere it was used — for a count, a first item, an index, a
+loop, a list — instead of being **described** and walked lazily. Every one of #149–#156
+follows from that.
+
+### Root cause
+
+`OqRange` was a record whose only operations were `size()`, `toList()` and `contains(long)`.
+`Values` implemented `length`, indexing, slicing, ordering and iteration by calling
+`toList()` and working on the resulting `ArrayList`. So any operation on a range, however
+small its answer, allocated one `Object` per element:
+
+- `(0 to 10000000).first()` built ten million boxed `Long`s (#150).
+- `(0 to 10000000)[0]` did the same (#156).
+- `for n in 0 to 10000000` materialised the range before the first body ran (#155).
+- `(MAX to MAX).to_list()` and `length(0 until MIN)` computed the count with arithmetic
+  that wrapped, so the allocation either never stopped (#151) or was written as a negative
+  `int` size (#149).
+- `contains` computed `(value - start) % step`, which overflows for a range spanning the
+  type (#152), and `Values.contains` converted even a `Long` item through `double`
+  (#153).
+- A counter loop lowered to a hidden `_i` variable incremented by a fixed `1` and compared
+  with `<=`, so `for i in MAX to MAX` added one to `MAX` and wrapped to `MIN`, looping
+  forever (#155's sibling, found here).
+
+`for n in a to b` also diverged between backends for fractional bounds: the interpreter
+truncated with `asLong`, while bytecode kept the decimals and compared them generically
+(#149's neighbourhood, reproduced as newly discovered defect 3).
+
+### The fix
+
+`OqRange` is now a lazy, immutable `Iterable`:
+
+- `size()` computes the count with `BigInteger` and raises `this range is too long to count`
+  when the answer has more than 63 bits, instead of wrapping to a negative number. An
+  empty range still counts 0, so `length(0 until -9223372036854775808)` is 0, not `MIN`.
+- `last()` is the last value the walk actually reaches, computed with
+  `Math.floorMod` offsets so `0 to 10 by 3` ends at 9 and neither `bound - start` nor a
+  remainder can overflow.
+- `iterator()` stops at `last()` and throws `NoSuchElementException` correctly, so one pass
+  costs O(1) memory no matter how wide the range is.
+- `toList()` refuses more than `Integer.MAX_VALUE` elements with
+  `this range is too long to turn into a list` rather than exhausting the heap, and
+  pre-sizes only `min(count, 1024)`.
+- `contains(long)` tests congruence with `Math.floorMod`, never `value - start`.
+- `isEmpty()` gives `truthy` an answer that cannot raise even for an uncountable range.
+
+`Values` now asks the range for what it needs instead of calling `toList()`: `index` and
+`slice` compute the value at an offset arithmetically, `size` reports the `BigInteger`
+count, `iterable` returns the range itself, and `contains` keeps a `Long` item exact,
+converting a `Double` only when it is whole and fits. A range slice counts its window
+first and refuses one longer than a list can hold
+(`this slice is too long to produce`), then materialises exactly that many values, so
+neither a huge forward window nor a step that jumps past the end can run away.
+`Collection.rangeInclusive`, `rangeExclusive` and the new `counterRange` validate both
+bounds through one `Values.wholeNumber`, so the interpreter and bytecode read a
+fractional, textual or boolean bound the same way.
+
+The counter loop no longer keeps a variable. `Lowering.forRange` emits the new
+`Ir.CounterRange(boolean inclusive)` opcode, which calls
+`Collections.counterRange(from, to, inclusive)`; the runtime builds the range with the
+direction taken from the bounds, and the loop walks it with the same iterator template
+`for x in xs` already used. **The step and end arithmetic is gone, so it cannot wrap and
+cannot disagree with the interpreter** — the interpreter's `Ast.ForRange` runs the same
+`counterRange` and the same iterator. One new opcode buys parity by construction rather
+than by two implementations agreeing.
+
+`MethodResolverImpl.rangeMethod` follows: `first`, `last`, `min` and `max` are O(1)
+arithmetic on the range's own fields, `contains` keeps the `Double`/`fitsInLong` guard,
+and `reverse` refuses a `Long.MIN_VALUE` step it cannot negate.
+
+### Reproduction and verification
+
+Every row was reproduced at `6954a86` through the real CLI on **both** backends, then
+re-verified the same way after the change.
+
+| Issue | Program | Before | After |
+| --- | --- | --- | --- |
+| #149 | `length(0 until -9223372036854775808)` | `-9223372036854775808` | `0` |
+| #149 | `length(-9223372036854775808 to -1)` | `-9223372036854775808` | raises `this range is too long to count` |
+| #149 | `length(0 to 9223372036854775807)` | `-9223372036854775808` | raises `this range is too long to count` |
+| #149 | `length(0 until 9223372036854775807)` | `-9223372036854775808` | `9223372036854775807` |
+| #150 | `(0 to 10000000).first()` under `-Xmx32m` | out of memory, exit 1 | `0` |
+| #151 | `(9223372036854775807 to 9223372036854775807).to_list()` | out of memory, exit 1 | `[9223372036854775807]` |
+| #152 | `range(MIN, MAX, 3).contains(1)` | `false` | `true` |
+| #153 | range containing `9.223372036854776e18` | `true` | `false` |
+| #155 | `for n in (0 to 10000000)` + `break` under `-Xmx32m` | out of memory, exit 1 | `0` |
+| #156 | `(0 to 10000000)[0]` under `-Xmx32m` | out of memory, exit 1 | `0` |
+| #156 | `(0 to 4000000000)[0:3000000000]` | out of memory, exit 1 | raises `this slice is too long to produce` |
+
+The two memory tests are the load-bearing ones: they run under `-Xmx32m`, which is less
+than a tenth of what the old path needed for a ten-million-element range.
+
+Tests added or extended:
+
+- `RangeArithmeticTest` (new, 17 tests) — the count at all four corners of the type, the
+  `toList` refusal, `contains` past 2^53 and for a strided range spanning the type, the
+  last *reachable* value for an unaligned step, membership agreeing with the walk at both
+  ends, the empty-range `first`/`last` messages, the truthiness of an uncountable
+  range, and the slice guards: a forward window too long for a list, a reversed window
+  counted the same way, and a window at the top of the type whose offset product
+  overflows a `long`.
+- `BytecodeCompilerTest` — `aRefusedCounterLoopBoundReportsTheSameDiagnosticOnBothBackends`
+  (six programs), `aCounterLoopAtTheLargestNumberTerminatesOnBothBackends`, and
+  `aLongRangeLoopDoesNotMaterialiseTheRange`, which runs the jar under `-Xmx32m`.
+- `LoweringTest` — `lowersForRange` now asserts the `CounterRange` opcode and the iterator
+  shape and the **absence** of `_i` and `<=`; `descendingRangeIsNotSimplifiedIntoAnAscendingLoop`
+  and the new `anUntilLoopBuildsAnExclusiveCounterRange` pin the direction rules.
+- `BuildJarTest.anInternalErrorIsClassifiedAsExitCode70` replaces
+  `aCompiledJarReportsAnInternalErrorWithExitCode70`, which existed at baseline. Its only
+  vehicle was `print 1 to true`, which reached the old bound check and threw
+  `IllegalArgumentException`; that program is now an ordinary user error, which is the
+  point of #149's neighbour. The 70-versus-1 contract is asserted directly at
+  `EmbeddedMain.exitCodeFor` and `EmbeddedMain.renderFailure` instead, so the contract stays
+  pinned without depending on a defect existing.
+
+Documentation: `docs/spec/language.md` corrects the claim that a range "counts down" when
+`a > b` (a range *value* is empty; only a counter loop counts down), documents the
+describe-don't-enumerate rule, the two cardinality refusals, and a new "Counter loops"
+subsection. The claim that ranges "were already unaffected because both are converted to a
+list before the loop starts" was also wrong and is corrected.
+
+### A defect found in review, after the group 3 tests were green
+
+The independent pre-merge review found a wrong-answer bug in the group 3 slice path that every
+test above had missed. `Values.rangeValueAt` scaled the slice *offset* by the range step and then
+added the window *start* unscaled, which is only the same thing when the step is 1:
+
+- `range(0, 10, 2)[1:3]` returned `[1, 3]`; the window is positions 1 and 2 of a range that
+  names 0, 2, 4, 6, 8, so it is `[2, 4]`.
+- `(0 to 9).reverse()[1:3]` returned `[10, 9]`; 10 is not a member of the range at all, and the
+  window is `[8, 7]`.
+
+The start is now scaled like the offset. The gap was in the tests rather than in the reasoning:
+every slice assertion in `RangeArithmeticTest` sliced a `to`/`until` literal, whose step is 1.
+Three tests now cover a strided lateral slice, a descending one, and indexing-versus-slicing
+agreement at four positions, so a step that is not 1 cannot pass through this path unnoticed
+again. Reported here rather than quietly amended because it is the reason the merge order below
+puts group 3 last: a fix that is green is not the same as a fix that is right.
 
 ## Newly discovered defects
 
@@ -278,10 +426,35 @@ here rather than bundled into an unrelated fix.
 6. `xs.take("a")` reported `internal error: ClassCastException: class java.lang.String
    cannot be cast to class java.lang.Number` and exited 70, because the count was cast
    before it was type-checked.
+7. `Values.contains` converted every member candidate through `double`, including a
+   `Long` item. For a range spanning more than 2^53 this made `contains` and `in`
+   disagree with the walk: `r = 0 to 9223372036854775806` answered
+   `r.contains(9223372036854775806)` as `true` but `9223372036854775806 in r` as
+   `false`, and `9007199254740993 to 9007199254740993` was the same. ADR-0026 makes
+   `x in r` and `r.contains(x)` the same question, so one of them was wrong.
+8. A counter loop ending at `Long.MAX_VALUE` never terminated:
+   `for i in 9223372036854775807 to 9223372036854775807` printed `9223372036854775807`,
+   then `-9223372036854775808`, `-9223372036854775807`, and so on indefinitely. The loop
+   added a step of `1` to its hidden counter and re-tested `<=`, so the counter wrapped
+   while the condition stayed true.
+9. *(Found while writing the Group 3 tests, then fixed within the same branch.)* The
+   first version of `OqRange.last()` returned the range's bound rather than the last value
+   the walk reaches. For an unaligned step the walk never produces the bound, so a
+   strided walk past the end of the type ran indefinitely. `last()` now returns the last
+   reachable value.
+10. *(Found while reviewing the Group 3 diff, then fixed within the same branch.)* The
+   guard that refuses a range slice too long to hold in a list computed the window's
+   length as `start - end - 1`, which is negative for a forward window. The normal case
+   was therefore never refused: `(0 to 4000000000)[0:3000000000]` was accepted and then
+   exhausted memory instead of raising. The distance is now taken unsigned, and a window
+   is materialised by counting rather than by comparing a moving position against the
+   end — that comparison was also what a step could jump past. Asserted in
+   `RangeArithmeticTest` on the interpreter and in `BytecodeCompilerTest` on a jar.
 
 Items 2 and 6 are fixed by Group 2, which put every count and bound through one
-narrowing rule. Item 1 and item 3 are in the range model that Group 3 rewrites, so they
-are listed for that group rather than patched here.
+narrowing rule. Items 1, 3, 7, 8 and 10 are fixed by Group 3, which is the range model
+rewrite. Item 9 was introduced and corrected inside Group 3 and is recorded so the
+history is not silent about it.
 
 ## Decisions and open questions
 
@@ -311,8 +484,85 @@ are listed for that group rather than patched here.
   not a fractional value; it is an unrepresentable position. `NaN` takes the fractional
   refusal, because it is not whole in any sense.
 
+### Group 3 decisions
+
+- **A count that does not fit in a whole number raises.** `length(0 to
+  Long.MAX_VALUE)` has no whole-number answer. The alternatives were to saturate at
+  `Long.MAX_VALUE` or to wrap. Wrapping is what #149 reports as a defect. Saturation
+  would make `length` answer a number that is not the length, which is a silent
+  lie a program cannot detect. Raising is the only answer that is accurate, and
+  ADR-0051 already prefers a domain error to a silent overflow. An empty range still
+  counts 0, and testing a range for truthiness (`if r`) uses `isEmpty()` so it can never
+  raise for an uncountable range.
+- **`to_list()` refuses rather than exhausting the heap.** A range longer than
+  `Integer.MAX_VALUE` cannot be a Java list at all, and allocating until the JVM dies is
+  not a diagnosable failure. The refusal happens before any allocation. A count above
+  `Long.MAX_VALUE` is refused one step earlier, by `size()`, with the count message.
+- **Counter-loop bounds are validated on both backends.** The interpreter truncated a
+  fractional bound and bytecode kept it, so the same loop printed different numbers
+  depending on how the program was run. Both now call `Values.wholeNumber`, which
+  refuses a fractional, textual or boolean bound with the same words: the compiled
+  backend can no longer invent a different answer, which is newly discovered defect 3.
+- **`first`/`last`/`min`/`max` are O(1) and the pinned messages are unchanged.** The
+  wording of `this range is empty` and its help lines are pinned by existing tests and
+  are preserved verbatim.
+- **`sum`, `sorted`, `to_set` and `to_list` still materialise.** They answer with a
+  collection, so they have to; that is a documented limitation, not an oversight. The
+  operations that answer a single value no longer do.
+- **`reverse` refuses `step == Long.MIN_VALUE`.** Negating it overflows, and there is no
+  honest answer for that step.
+- **Three whole-number rules now exist, and unifying them is deliberate debt.**
+  `Stdlib.wholeNumber` (Group 1, builtin arguments), `Values.integerIndex` (Group 2,
+  counts and bounds reaching the resolver) and `Values.wholeNumber` (Group 3, range
+  bounds) all implement the same idea with the same wording. They live in three modules
+  that Groups 1, 2 and 3 each had to edit, and the grouping rule forbids two concurrent
+  branches rewriting the same method. Unifying them into one helper is the correct
+  follow-up and should be a single small PR **after** all three land; it is recorded here
+  as debt rather than silently left for a reader to discover. The refusal wording is
+  already identical, so unifying them cannot change a diagnostic.
+- **The `CounterRange` opcode is new IR surface.** The compiled backend can only reach a
+  runtime helper through `Builtins.supports`-gated `Ir.Call` — which would expose a
+  user-callable name that the interpreter does not have, and diverge — or through a
+  dedicated opcode. A dedicated opcode keeps the helper private to the two backends and
+  keeps `Ir.format` (an exhaustive switch over a sealed interface) the single place the
+  new shape is described.
+
 ## Execution constraints
 
 - Scheduled monitoring runs are not available in this environment; this report is
   updated as work proceeds instead of on a timer.
 - No branch here is merged, and `main` is not touched by this work.
+
+## Why CI did not run, and what it taught
+
+Three branches were pushed and left the checks column empty, and the natural reading was that
+Actions had dropped the events. It had not. Both pull requests were `CONFLICTING`, because
+`main` advanced 6,452 lines while they were open (fractions, the filesystem module,
+configuration formats, keyless release signing), and **GitHub does not build a merge ref for
+a conflicting pull request**, so a workflow that triggers only on `pull_request` has no ref to
+run against and emits no run at all. The symptom -- no run, rather than a failed run -- is
+what a merge conflict looks like from the outside.
+
+The diagnostic that settles it is `gh pr view <n> --json mergeable,mergeStateStatus`: the
+third branch reported `MERGEABLE` and had a full set of runs, while the two that reported
+`CONFLICTING` had none. `gh api .../commits/<sha>/check-suites` returning only the third-party
+apps, with no `github-actions` suite, confirms that nothing was queued rather than lost.
+
+Close-and-reopen does not help, because the ref is still unmergeable; neither would an empty
+commit. The only fix is to make the branch mergeable. Merging `main` in costs one conflict per
+branch and, unlike a rebase, keeps the published history intact -- which matters because this
+repository's `AGENTS.md` forbids force-pushes.
+
+- Group 1 conflicted only in `docs/governance/alpha-4-stdlib-inventory.md`, where both sides
+  had repointed the same table: this branch by 223 lines, `main` again by adding three
+  modules. Resolved by taking `main`'s table and re-running `main`'s own
+  `scripts/remap-stdlib-citations.py` over the merged tree, which rewrote 98 citations with 0
+  unresolved.
+- Group 3 conflicted only in `Values.truthy`: this branch had replaced `r.size() > 0` with
+  `!r.isEmpty()` so truthiness stops counting a range, and `main` had added the `OqFraction`
+  arm on the same two lines. Both were kept.
+
+After the merges, both branches produce complete runs on their merge commits, and Group 2 --
+which was already `MERGEABLE` -- had been green throughout. The lesson is worth recording
+because a silently absent CI run looks identical to a broken workflow, and the cheap check
+that tells them apart is one API call on mergeability.

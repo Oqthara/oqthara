@@ -84,11 +84,31 @@ public final class Collections {
     }
 
     public static Object rangeInclusive(Object from, Object to) {
-        return new OqRange(Values.asLong(from), Values.asLong(to), true);
+        Span span = Errors.current();
+        return new OqRange(Values.wholeNumber(from, span), Values.wholeNumber(to, span), true);
     }
 
     public static Object rangeExclusive(Object from, Object to) {
-        return new OqRange(Values.asLong(from), Values.asLong(to), false);
+        Span span = Errors.current();
+        return new OqRange(Values.wholeNumber(from, span), Values.wholeNumber(to, span), false);
+    }
+
+    /**
+     * The range a {@code for x in a to b} / {@code a until b} counter loop walks.
+     *
+     * <p>The direction comes from the bounds: counting up when {@code from <= to}, down
+     * otherwise. That is the counter-loop rule, and it is deliberately not the range-literal
+     * rule, where {@code 5 to 1} is an empty range because a literal advances by one. Sharing
+     * this method is what stops the interpreter and compiled code from disagreeing about
+     * fractional bounds, and what stops the loop from ending at {@code Long.MAX_VALUE} by
+     * wrapping to {@code Long.MIN_VALUE} (the old looping form added the step and re-tested the
+     * bound, which never finished).
+     */
+    public static Object counterRange(Object from, Object to, boolean inclusive) {
+        Span span = Errors.current();
+        long start = Values.wholeNumber(from, span);
+        long bound = Values.wholeNumber(to, span);
+        return new OqRange(start, bound, inclusive, start <= bound ? 1 : -1);
     }
 
     public static Object iterator(Object value) {
