@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `c1e08bb` (merge of PR #206: the verification pin now names the merge commit, since squash-merge discards branch SHAs), 2026-11-13. The locale-independence increment was verified on the branch that becomes PR #207 and re-verified against this commit; the figure content is unchanged by it.
+**Last verified:** `6c1b930` (merge of PR #204: numeric equality hashing, decimal round-trip and statistics ordering), 2026-11-13. The pin names a commit already on `main`, because squash-merge discards branch SHAs. The locale-independence increment was rebased onto this commit and every gate re-run against it; the figure content is unchanged by it.
 
 ## Language features (§14)
 
