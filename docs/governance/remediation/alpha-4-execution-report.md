@@ -182,6 +182,13 @@ object and the tests correctly refused to certify a pin they could not verify. A
 `git fetch --unshallow` all 73 passed. The tests were right; the checkout was incomplete. Recording
 this rather than deleting the tests is the point — they caught a real inability to verify.
 
+**A note on a correction made during review.** The website row above first claimed that the 15
+skipped site tests "execute in CI's deploy run". Checking the workflow rather than trusting the
+claim showed `npm test` runs *before* `npm run build` in the same `build` job, so they are skipped
+there too. The row now states both measured configurations and counts neither as coverage. This is
+recorded because a report about honest measurement should show where its own measurement was
+corrected.
+
 ---
 
 ## 11. Security findings and accepted residual risks
