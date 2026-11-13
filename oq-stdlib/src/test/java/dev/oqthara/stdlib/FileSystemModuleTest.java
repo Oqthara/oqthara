@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * {@code stat}, {@code touch}, {@code temp_dir}, {@code copy_tree},
@@ -37,6 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * creating a link needs a privilege the build does not have.
  */
 class FileSystemModuleTest {
+
+    private static final boolean WINDOWS =
+            System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win");
 
     @TempDir
     Path dir;
@@ -349,6 +353,44 @@ class FileSystemModuleTest {
                 100, 10);
         assertEquals("12345", Files.readString(dir.resolve("to/a.txt")));
         assertEquals("67890", Files.readString(dir.resolve("to/b.txt")));
+    }
+
+    /**
+     * A tree is refused mid-copy when a file yields more bytes than the filesystem reported.
+     *
+     * <p>The up-front check counts the sizes the filesystem reports, which for a FIFO is zero
+     * however much the writer sends. A tree holding one is therefore admitted by that check and
+     * has to be stopped by the count in {@code copyBounded}. The refusal has to say so: the
+     * error names the tree rather than the one file, because what the caller is left with is a
+     * whole partial target directory, not a single file {@code copy_file} could have deleted.
+     */
+    @Test
+    void copyTreeRefusesMidCopyWhenAFileYieldsMoreThanItReported() throws Exception {
+        assumeFalse(WINDOWS, "a FIFO cannot be created reliably on Windows");
+        Files.createDirectories(dir.resolve("from"));
+        Files.writeString(dir.resolve("from/a.txt"), "12345");
+        FileOperationsTest.namedPipe(dir.resolve("from/pipe"));
+
+        Thread writer = new Thread(() -> {
+            try (java.io.OutputStream out = Files.newOutputStream(dir.resolve("from/pipe"))) {
+                out.write(new byte[64]);
+            } catch (java.io.IOException stopped) {
+                // The copy stops reading; the writer's own failure is not what this asserts.
+            }
+        });
+        writer.setDaemon(true);
+        writer.start();
+
+        OqError error = assertThrows(OqError.class, () -> FileSystem.copyTree(host(),
+                dir.resolve("from"), dir.resolve("to"), Span.synthetic(), 100, 16));
+
+        assertTrue(error.getMessage().contains("directory tree is too large to copy"),
+                error.getMessage());
+        assertTrue(error.hint().contains("took the tree past the 16 byte limit"), error.hint());
+        assertTrue(error.hint().contains("delete the partial target"), error.hint());
+        assertTrue(Files.exists(dir.resolve("to")),
+                "the refusal happens mid-copy, so a partial target is left to delete");
+        writer.interrupt();
     }
 
     /** A tree under the budget is charged for the bytes it moved, not for its entry count. */
