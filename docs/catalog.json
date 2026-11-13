@@ -314,6 +314,12 @@
       "slug": "docs/adr/0051-non-finite-numbers-and-transcendentals"
     },
     {
+      "path": "docs/adr/0052-keyless-release-signing.md",
+      "title": "ADR-0052: Keyless signing of release artefacts",
+      "section": "adr",
+      "slug": "docs/adr/0052-keyless-release-signing"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

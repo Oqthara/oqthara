@@ -75,6 +75,45 @@ jobs:
           cd oq-cli/build/libs
           sha256sum oq.jar > oq.jar.sha256
           cat oq.jar.sha256
+      # The checksum above detects corruption. It cannot detect tampering: an attacker who
+      # replaces the jar can replace the checksum, because both come from the same release.
+      # The signature below closes that gap, because the verifying key does not. Keyless
+      # signing is used so there is no long-lived private key in this repository; the
+      # certificate identity is the workflow itself, which is what verify-signature.sh
+      # checks by default (ADR-0052).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+        with:
+          cosign-release: "v2.6.5"
+      - name: Sign the jar
+        run: |
+          set -euo pipefail
+          cd oq-cli/build/libs
+          cosign sign-blob --yes \
+            --bundle oq.jar.sigstore.json \
+            oq.jar
+      # Signing is worthless if it is not verified, so the release proves its own
+      # signature before publishing. A signing step whose output is never checked is a
+      # step that silently stops working.
+      - name: Gate - verify the signature just produced
+        run: |
+          set -euo pipefail
+          cd oq-cli/build/libs
+          chmod +x "$GITHUB_WORKSPACE/scripts/verify-signature.sh"
+          OQ_COSIGN_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+            "$GITHUB_WORKSPACE/scripts/verify-signature.sh" oq.jar oq.jar.sigstore.json
+      - name: Gate - a tampered jar fails signature verification
+        run: |
+          set -euo pipefail
+          cd oq-cli/build/libs
+          cp oq.jar /tmp/tampered.jar
+          printf 'tampered' >> /tmp/tampered.jar
+          if OQ_COSIGN_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+               "$GITHUB_WORKSPACE/scripts/verify-signature.sh" /tmp/tampered.jar oq.jar.sigstore.json; then
+            echo "error: a tampered jar verified. The signature check is not working." >&2
+            exit 1
+          fi
+          echo "a tampered jar is rejected, so the check is live"
       - name: Gate - verify the checksum in a fresh directory
         run: |
           set -euo pipefail
@@ -96,6 +135,7 @@ jobs:
           files: |
             oq-cli/build/libs/oq.jar
             oq-cli/build/libs/oq.jar.sha256
+            oq-cli/build/libs/oq.jar.sigstore.json
           prerelease: ${{ contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
           generate_release_notes: true
       # Releases created with GITHUB_TOKEN do not trigger a second release-event workflow.
