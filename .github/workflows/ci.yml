@@ -154,3 +154,10 @@ jobs:
             exit 1
           }
           pwsh -NoProfile -File $path
+      - name: Run signature verifier tests
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          # These drive scripts/verify-signature.sh through a stub cosign, so no
+          # cosign download and no network are needed here.
+          python3 scripts/tests/test_verify_signature.py
