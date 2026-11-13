@@ -134,8 +134,8 @@ the grammar small enough to state exactly in its Javadoc.
 
 **Patterns** (2) — `fnmatch`:40, `glob`:49, both in `Patterns.java`.
 
-**Statistics, identifiers, ordered search** (12) — `mean`:33, `median`:35, `variance`:37,
-`stdev`:39, `mode`:42, `percentile`:44, `uuid`:49`is_uuid`:51`heap_push`:54`heap_pop`:56`bisect_left`:58`bisect_right`:61all in `Statistics.java`. One registration per name, so the
+**Statistics, identifiers, ordered search** (12) — `mean`:35, `median`:37, `variance`:39,
+`stdev`:41, `mode`:44, `percentile`:46, `uuid`:51`is_uuid`:53`heap_push`:56`heap_pop`:58`bisect_left`:60`bisect_right`:63all in `Statistics.java`. One registration per name, so the
 section adds 12 to both columns. Specified by [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md).
 
 **Text layout** (6) — `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39,

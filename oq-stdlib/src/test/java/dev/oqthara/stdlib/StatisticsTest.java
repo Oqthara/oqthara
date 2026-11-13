@@ -166,6 +166,37 @@ class StatisticsTest {
         assertEquals(0.0, number(call("variance", list(7L, 7L))), 1e-12);
     }
 
+    /**
+     * Squaring a delta near the top of the double range overflows long before the deviation
+     * itself does: {@code (2e308)^2} is infinite. The spread of the two extremes is
+     * {@code sqrt(2) * 1e308}, which is representable, so it must come back finite.
+     */
+    @Test
+    void aDeviationOfTheTwoExtremesSurvivesSquaring() {
+        double expected = Math.sqrt(2.0) * 1e308;
+        assertEquals(expected, number(call("stdev", list(1e308, -1e308))));
+        assertTrue(Double.isFinite(number(call("stdev", list(1e308, -1e308)))));
+        // The variance is genuinely unrepresentable, so it reports infinity rather than a lie.
+        assertEquals(Double.POSITIVE_INFINITY, number(call("variance", list(1e308, -1e308))));
+    }
+
+    @Test
+    void aDeviationOfValuesThatCancelStaysFinite() {
+        // The mean is 1e308/3, and each delta is far below the range where squaring overflows.
+        assertEquals(1.1547005383792515e308,
+                number(call("stdev", list(1e308, 1e308, -1e308))));
+        assertEquals(1.1547005383792515e308,
+                number(call("stdev", list(-1e308, 1e308, 1e308))));
+    }
+
+    @Test
+    void identicalExtremesHaveNoSpread() {
+        // The three values sum to 3e308, past the top of the range, but the mean is 1e308 and
+        // every deviation is zero, so the answer is representable and must not be an error.
+        assertEquals(0.0, number(call("stdev", list(1e308, 1e308, 1e308))));
+        assertEquals(0.0, number(call("variance", list(1e308, 1e308, 1e308))));
+    }
+
     @Test
     void aSingletonHasNoSampleVarianceAndSaysSo() {
         OqError error = assertThrows(OqError.class, () -> call("variance", list(5L)));
@@ -194,6 +225,30 @@ class StatisticsTest {
     @Test
     void modeOfAUniformListIsThatValue() {
         assertEquals(4L, call("mode", list(4L, 4L, 4L)));
+    }
+
+    /**
+     * {@code -0.0 == 0.0} in the language, and ADR-0017 makes them the same key, so a list
+     * holding both is two copies of one value. Java's {@code Double.equals} disagrees, which
+     * is why the grouping has to use the language's equality.
+     */
+    @Test
+    void modeGroupsSignedZeroTogether() {
+        assertEquals(0L, call("mode", list(0L, -0.0, 1L, 1L)));
+        // The group is one value of frequency two, and mode normalises a whole result.
+        assertEquals(0L, call("mode", list(-0.0, 0L)));
+        // 1.5 ties with the merged zero group, and the smaller of the two wins.
+        assertEquals(0L, call("mode", list(1.5, -0.0, 0L, 1.5)));
+        // Four copies of zero beat two copies of one, whichever sign each copy carries.
+        assertEquals(0L, call("mode", list(1L, 1L, 0L, -0.0, 0.0, -0.0)));
+    }
+
+    @Test
+    void modeGroupsAWholeNumberWithTheDecimalItEquals() {
+        assertEquals(2L, call("mode", list(2L, 2.0, 3L)));
+        assertEquals(2L, call("mode", list(2.0, 2L, 3L)));
+        // Grouped by the language, {2, 2.0} has frequency two and beats loner 3s.
+        assertEquals(2L, call("mode", list(2L, 2.0, 3L, 3L, 5L)));
     }
 
     // --- percentile --------------------------------------------------------------------------
@@ -259,6 +314,27 @@ class StatisticsTest {
         OqError error = assertThrows(OqError.class,
                 () -> call("mean", list(1e308, 1e308)));
         assertEquals("mean() overflowed", error.getMessage());
+    }
+
+    /**
+     * Summing left to right loses whichever extreme arrives second: {@code 1e308 + 1e308}
+     * is already infinite. The exact sum is {@code 1e308}, so every ordering of the same
+     * three numbers must report the same mean.
+     */
+    @Test
+    void meanIsIndependentOfTheOrderOfTheExtremes() {
+        double expected = 1e308 / 3.0;
+        assertEquals(expected, number(call("mean", list(1e308, 1e308, -1e308))));
+        assertEquals(expected, number(call("mean", list(1e308, -1e308, 1e308))));
+        assertEquals(expected, number(call("mean", list(-1e308, 1e308, 1e308))));
+        assertEquals(-expected, number(call("mean", list(-1e308, -1e308, 1e308))));
+    }
+
+    @Test
+    void anExactSumThatIsRepresentableIsNotReportedAsOverflow() {
+        assertEquals(0.0, number(call("mean", list(1e308, -1e308))));
+        // The naive sum of these five hits infinity; the exact sum is 1e308 and divides by five.
+        assertEquals(2.0e307, number(call("mean", list(1e308, 1e308, -1e308, -1e308, 1e308))));
     }
 
     // --- identifiers -------------------------------------------------------------------------
@@ -328,6 +404,38 @@ class StatisticsTest {
         assertEquals(0L, call("bisect_left", list(), 9L));
     }
 
+    /**
+     * ADR-0017 says {@code -0.0 == 0.0}, so a sorted list holding both is sorted, and the
+     * search must treat the two as one key: the left edge is before both, the right after.
+     */
+    @Test
+    void bisectTreatsSignedZeroAsOneKey() {
+        List<Object> sample = list(-0.0, 0.0, 1.0);
+        assertEquals(1L, call("bisect_left", sample, 0L));
+        assertEquals(2L, call("bisect_right", sample, 0L));
+        // The language orders -0.0 below 0.0, so -0.0 itself sits at the front.
+        assertEquals(0L, call("bisect_left", sample, -0.0));
+        assertEquals(1L, call("bisect_right", sample, -0.0));
+        // A whole-number zero is the same key as 0.0, not as -0.0.
+        assertEquals(0L, call("bisect_left", list(0.0, 1.0), 0L));
+        assertEquals(1L, call("bisect_right", list(0.0, 1.0), 0L));
+    }
+
+    /**
+     * NaN is unordered against everything, including itself, so no comparison can say where
+     * it belongs. The honest answer is one past the end, which is also where the language's
+     * ordering puts it. It must not hang, and it must not report a position it cannot justify.
+     */
+    @Test
+    void bisectWithNaNDoesNotHangAndReportsTheEnd() {
+        double nan = Double.NaN;
+        assertEquals(2L, call("bisect_left", list(1.0, 2.0), nan));
+        assertEquals(2L, call("bisect_right", list(1.0, 2.0), nan));
+        assertEquals(2L, call("bisect_left", list(1.0, 2.0, nan), nan));
+        assertEquals(3L, call("bisect_right", list(1.0, 2.0, nan), nan));
+        assertEquals(0L, call("bisect_left", list(), nan));
+    }
+
     // --- heap --------------------------------------------------------------------------------
 
     @Test
@@ -365,6 +473,39 @@ class StatisticsTest {
     void heapPopOnAnEmptyListIsRejected() {
         OqError error = assertThrows(OqError.class, () -> call("heap_pop", list()));
         assertEquals("heap_pop() needs a non-empty list", error.getMessage());
+    }
+
+    /**
+     * A whole number and a decimal are ordered by the language's {@code <}, so a heap may
+     * hold both. Java's {@code Comparable} cast failed on the pair, which made a mixed heap
+     * unusable even though the values are perfectly comparable.
+     */
+    @Test
+    void aHeapHoldsWholeNumbersAndDecimalsTogether() {
+        assertEquals(list(1L, 1.5), call("heap_push", list(1L), 1.5));
+        assertEquals(list(1L, 1.5), call("heap_push", list(1.5), 1L));
+        assertEquals(list(1L, 2L, 1.5), call("heap_push", list(1L, 2L), 1.5));
+        List<Object> items = list(1L);
+        call("heap_push", items, 1.5);
+        assertEquals(1L, call("heap_pop", items));
+        assertEquals(1.5, call("heap_pop", items));
+    }
+
+    /**
+     * A rejected push must leave the heap as it found it. The type check runs before the
+     * item is added, which is what makes the failure atomic; a heap with a stray string in
+     * it would corrupt every later pop.
+     */
+    @Test
+    void aRejectedPushLeavesTheHeapUntouched() {
+        List<Object> items = list();
+        for (Object value : List.of(3L, 1L, 2L)) call("heap_push", items, value);
+        List<Object> before = new ArrayList<>(items);
+        assertThrows(OqError.class, () -> call("heap_push", items, "x"));
+        assertEquals(before, items, "a rejected push must not disturb the array");
+        assertEquals(1L, call("heap_pop", items));
+        assertEquals(2L, call("heap_pop", items));
+        assertEquals(3L, call("heap_pop", items));
     }
 
     @Test

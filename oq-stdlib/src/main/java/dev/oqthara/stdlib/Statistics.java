@@ -6,6 +6,8 @@ import dev.oqthara.runtime.OqError;
 import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
+import java.math.BigDecimal;
+import java.math.MathContext;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -37,8 +39,8 @@ final class Statistics {
         interpreter.defineBuiltin(NativeFunction.of("variance", 1, (host, args, span) ->
                 normalize(sampleVariance(statisticsItems(args.get(0), "variance", span), span))).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("stdev", 1, (host, args, span) ->
-                normalize(Math.sqrt(
-                        sampleVariance(statisticsItems(args.get(0), "stdev", span), span)))).named("items"));
+                normalize(sampleDeviation(statisticsItems(args.get(0), "stdev", span), span,
+                        true))).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("mode", 1, (host, args, span) ->
                 mode(sorted(statisticsItems(args.get(0), "mode", span)), span)).named("items"));
         interpreter.defineBuiltin(NativeFunction.of("percentile", 2, (host, args, span) ->
@@ -154,18 +156,59 @@ final class Statistics {
 
     /** Sample variance, dividing by {@code n - 1}; see ADR-0041 D2. */
     private static double sampleVariance(List<Double> numbers, Span span) {
+        return sampleDeviation(numbers, span, false);
+    }
+
+    /**
+     * The sample variance, or its square root, computed without squaring in {@code double}.
+     *
+     * <p>The textbook form squares each deviation and sums the squares, which fails on exactly
+     * the inputs that matter most: {@code [1e308, -1e308]} has a sample variance of
+     * {@code 2e616}, past the top of the range, so the intermediate square is {@code infinity}
+     * even though the standard deviation {@code sqrt(2) * 1e308} is perfectly representable.
+     * Taking the root of an overflowed quantity cannot recover it.
+     *
+     * <p>Squaring is therefore done in {@link BigDecimal}, where {@code 2e616} is an ordinary
+     * number. The sum of squares is exact, and the square root is taken at
+     * {@link MathContext#DECIMAL128}: 34 significant digits, far more than the 17 a double can
+     * carry, so the final rounding to double is decided by the exact value rather than by the
+     * precision of the intermediate. This is why the answer for {@code [2, 4, 4, 4, 5, 5, 7,
+     * 9]} is unchanged to the last bit, and why {@code stdev([1e308, -1e308])} is finite.
+     *
+     * <p>{@code variance} on such an input still has no double to return and becomes
+     * {@code infinity}; that is honest, because the variance genuinely is out of range. The
+     * point of the split is that {@code stdev} no longer inherits the failure.
+     *
+     * <p>The sum is read through {@link #exactTotal} rather than {@link #total}. {@code total}
+     * refuses a sum that is out of range, which is right for {@code mean}, whose whole answer
+     * <em>is</em> that sum divided down: {@code mean([1e308, 1e308])} has no double. Here the
+     * sum is only a step. Three copies of {@code 1e308} sum to {@code 3e308}, past the top of
+     * the range, yet the answer is an ordinary zero. Refusing that sum would reject a question
+     * whose answer exists.
+     */
+    private static double sampleDeviation(List<Double> numbers, Span span, boolean root) {
         if (numbers.size() < 2) {
             throw new OqError("variance() needs at least two items", span,
                     "A sample variance of one item is undefined. Use 0 if you mean the"
                             + " population variance of a single value.");
         }
-        double mean = total(numbers, "variance", span) / numbers.size();
-        double sum = 0;
+        BigDecimal count = BigDecimal.valueOf(numbers.size());
+        BigDecimal total = exactTotal(numbers, "variance", span);
+        // Each deviation is written as the exact integer n*x - S over n, so the division is
+        // deferred to a single step at the end. Rounding the mean first would leave a residue
+        // on values that have none: the exact mean of three copies of 1e308 needs 309 digits,
+        // and the 34 kept by DECIMAL128 are not it, so every deviation would come out near
+        // 1e274 instead of at zero.
+        BigDecimal squares = BigDecimal.ZERO;
         for (double number : numbers) {
-            double delta = number - mean;
-            sum += delta * delta;
+            BigDecimal numerator = new BigDecimal(number).multiply(count).subtract(total);
+            squares = squares.add(numerator.multiply(numerator));
         }
-        return sum / (numbers.size() - 1);
+        // Squares of the numerators are exactly n^2 times the sum of squared deviations.
+        BigDecimal divisor = count.multiply(count).multiply(BigDecimal.valueOf(numbers.size() - 1));
+        BigDecimal variance = squares.divide(divisor, MathContext.DECIMAL128);
+        if (!root) return variance.doubleValue();
+        return variance.sqrt(MathContext.DECIMAL128).doubleValue();
     }
 
     /**
@@ -181,7 +224,8 @@ final class Statistics {
         int index = 0;
         while (index < sorted.size()) {
             int next = index;
-            while (next < sorted.size() && sorted.get(next).equals(sorted.get(index))) next++;
+            while (next < sorted.size()
+                    && Values.equal(sorted.get(next), sorted.get(index))) next++;
             int count = next - index;
             if (count > bestCount) {
                 bestCount = count;
@@ -213,14 +257,51 @@ final class Statistics {
         return normalize(interpolate(sorted.get(low), sorted.get(high), rank - low));
     }
 
+    /**
+     * The sum of the items, accumulated exactly rather than left to left-to-right rounding.
+     *
+     * <p>Naive accumulation is order-dependent, and on this range the dependency is not a
+     * rounding curiosity: {@code [1e308, 1e308, -1e308]} overflows to infinity before the
+     * negative term arrives, so {@code mean} reports an overflow for a dataset whose mean is
+     * plainly {@code 3.33e307}, while the same three numbers in another order answer
+     * correctly. A mean that depends on permutation is not a mean.
+     *
+     * <p>Every finite double is an exact decimal, so summing them as {@link BigDecimal} is
+     * exact and therefore independent of order by construction. That also removes the ordinary
+     * cancellation error: on {@code [0.1, 0.2, 0.3]} the rounded sum is
+     * {@code 0.6000000000000001} and the exact one is {@code 0.6}.
+     *
+     * <p>A genuinely infinite total is still an error rather than {@code infinity}. The test
+     * is applied to the exact sum rather than to a running total, so it fires only when the
+     * mathematical answer is out of range, never because an intermediate step was.
+     */
     private static double total(List<Double> numbers, String builtin, Span span) {
-        double sum = 0;
-        for (double number : numbers) {
-            sum += number;
-        }
-        if (Double.isInfinite(sum) || Double.isNaN(sum)) {
+        BigDecimal sum = exactTotal(numbers, builtin, span);
+        double total = sum.doubleValue();
+        if (!Double.isFinite(total)) {
             throw new OqError(builtin + "() overflowed", span,
                     "The values are too large to sum.");
+        }
+        return total;
+    }
+
+    /**
+     * The exact sum of the numbers, with no range limit.
+     *
+     * <p>Separate from {@link #total} because the two callers disagree about the range check:
+     * {@code mean} returns the sum itself, divided down, so an out-of-range sum is an
+     * out-of-range answer. A deviation divides the sum first, so the sum being out of range
+     * says nothing about the answer. Both agree that a value that is already infinite or
+     * {@code NaN} is unsummable, since no exact decimal represents it.
+     */
+    private static BigDecimal exactTotal(List<Double> numbers, String builtin, Span span) {
+        BigDecimal sum = BigDecimal.ZERO;
+        for (double number : numbers) {
+            if (!Double.isFinite(number)) {
+                throw new OqError(builtin + "() overflowed", span,
+                        "The values are too large to sum.");
+            }
+            sum = sum.add(new BigDecimal(number));
         }
         return sum;
     }
@@ -292,13 +373,12 @@ final class Statistics {
         if (!Values.isNumber(value)) {
             throw new OqError("bisect needs a number, got " + Values.typeName(value), span);
         }
-        double target = Values.asDouble(value);
         int low = 0;
         int high = sorted.size();
         while (low < high) {
             int middle = (low + high) >>> 1;
-            double probe = sorted.get(middle);
-            if (probe < target || (right && probe == target)) {
+            int order = Values.compare(sorted.get(middle), value, span);
+            if (order < 0 || (right && order == 0)) {
                 low = middle + 1;
             } else {
                 high = middle;
@@ -316,15 +396,17 @@ final class Statistics {
         throw new OqError(builtin + "() needs a list, got " + Values.typeName(value), span);
     }
 
+    /**
+     * The language's own ordering, so that a heap over mixed numbers behaves like {@code <}.
+     *
+     * <p>Casting to {@code Comparable} was wrong in exactly the way the language is not: Java's
+     * {@code Long} and {@code Double} refuse to compare with each other, so
+     * {@code heap_push([1], 1.5)} failed with "cannot compare decimal with number" while the
+     * expression {@code 1 < 1.5} succeeded. Deferring to {@link Values#compare} makes the heap
+     * and the operator agree by construction instead of by coincidence (ADR-0041 D7).
+     */
     private static int compare(Object left, Object right, Span span) {
-        @SuppressWarnings("unchecked")
-        Comparable<Object> comparable = (Comparable<Object>) left;
-        try {
-            return comparable.compareTo(right);
-        } catch (ClassCastException e) {
-            throw new OqError("cannot compare " + Values.typeName(left) + " with "
-                    + Values.typeName(right), span);
-        }
+        return Values.compare(left, right, span);
     }
 
     private static void swap(List<Object> list, int a, int b) {

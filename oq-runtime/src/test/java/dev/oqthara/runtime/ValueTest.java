@@ -33,6 +33,36 @@ class ValueTest {
         assertHashAgrees(0L, -0.0);
     }
 
+    /**
+     * Above 2^53 a decimal cannot name every whole number, so the pair
+     * {@code 9007199254740993} and {@code 9007199254740992.0} is equal by the language's own
+     * rule: widening the long loses the odd bit. Equal values must hash alike, or a set holds
+     * both and a map loses the entry.
+     */
+    @Test
+    void wholeNumbersThatWidenOntoADecimalHashAlike() {
+        assertHashAgrees(9007199254740993L, 9007199254740992.0);
+        assertHashAgrees(9007199254740995L, 9007199254740996.0);
+        assertHashAgrees(-9007199254740993L, -9007199254740992.0);
+    }
+
+    @Test
+    void aWidenedPairCollapsesInASetAndAMap() {
+        assertEquals(1, new OqSet(List.of(9007199254740993L, 9007199254740992.0)).size());
+        assertEquals(1, new OqSet(List.of(9007199254740992.0, 9007199254740993L)).size());
+        Map<Object, Object> map = new java.util.HashMap<>();
+        map.put(Value.of(9007199254740992.0), "x");
+        assertEquals("x", map.get(Value.of(9007199254740993L)));
+    }
+
+    @Test
+    void wholeNumbersAndDecimalsAgreeEverywhereTheLongFits() {
+        assertHashAgrees(Long.MAX_VALUE, (double) Long.MAX_VALUE);
+        assertHashAgrees(Long.MIN_VALUE, (double) Long.MIN_VALUE);
+        assertHashAgrees(1L << 53, (double) (1L << 53));
+        assertHashAgrees(-(1L << 53), -(double) (1L << 53));
+    }
+
     @Test
     void decimalsThatDifferDoNotCollideByAccident() {
         assertNotEquals(Value.of(1.5), Value.of(1L));

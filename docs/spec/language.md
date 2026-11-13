@@ -1312,8 +1312,8 @@ difference is invisible on large inputs and material on small ones, so the two a
 interchangeable and the language offers only one:
 
 ```
-print variance([2, 4, 4, 4, 5, 5, 7, 9])   # 4.571428571429
-print stdev([2, 4, 4, 4, 5, 5, 7, 9])      # 2.138089935299
+print variance([2, 4, 4, 4, 5, 5, 7, 9])   # 4.571428571428571
+print stdev([2, 4, 4, 4, 5, 5, 7, 9])      # 2.138089935299395
 ```
 
 A sample variance of one item is undefined, so `variance([5])` is an error rather than `0`.
@@ -2399,7 +2399,7 @@ use java.lang.Integer
 use java.lang.Math
 
 print Integer.MAX_VALUE   # 2147483647
-print Math.PI             # 3.14159265359
+print Math.PI             # 3.141592653589793
 ```
 
 Only a field declared `static` is reachable this way. Naming an instance field on the class
