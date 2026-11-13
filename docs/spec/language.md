@@ -1125,7 +1125,7 @@ remains the one for games and shuffling.
 None of the digests is constant-time, and none is claimed to be. Comparison is the one
 operation that is, because that is the one where a fast answer leaks where the inputs differ:
 
-```
+```oq
 print secure_equal("aaaaaaab", "aaaaaaac")   # false
 ```
 
