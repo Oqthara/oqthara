@@ -82,6 +82,24 @@ alone.
   *start* than CircleCI's dedicated macOS executor. The timeout is raised to 40 minutes for
   `macos-latest` (`timeout-minutes: ${{ matrix.os == 'macos-latest' && 40 || 20 }}`) to
   absorb queue time without masking a genuine hang on the other legs.
+- **Correction (2026-11-13): that timeout does not cover queue time.** `timeout-minutes`
+  bounds a job once it holds a runner; it says nothing about how long a job may sit
+  *queued*. GitHub reaps a queued macOS job after roughly fifteen minutes, which produces
+  `cancelled` with **zero steps executed** — indistinguishable from a genuine cancellation
+  unless the job's `steps` array is inspected. Measured three times on PR #202:
+
+  | Attempt | Queued from | Ended | Elapsed | Steps run |
+  | --- | --- | --- | --- | --- |
+  | 1 (JDK 21 and 25) | 15:37:19 | 15:52:20 | 15m01s | 0 |
+  | 2 (JDK 25) | 16:10:46 | 16:25:46 | 15m00s | 0 |
+  | 3 (JDK 25) | 16:28:31 | 16:43:32 | 15m01s | 0 |
+
+  The mitigation is to re-run the failed jobs, not to raise the timeout: on each occasion a
+  re-run found a runner (JDK 25 passed on attempt 1's re-run; JDK 21 waited 10m02s on
+  attempt 3 then completed in 35s). Diagnosing this as a failure wastes time; diagnosing it
+  as an infrastructure queue and re-running is correct. A `cancelled` macOS leg with no
+  steps is **not** evidence of a code defect, and a green macOS leg from an earlier commit
+  on the same content must not be substituted for one on the head commit.
 - **Provider divergence becomes possible.** The two providers run independently pinned
   toolchains, so they can disagree. When they do, both results are visible on the pull
   request, and the release gate fails on either one being red rather than picking a winner.
