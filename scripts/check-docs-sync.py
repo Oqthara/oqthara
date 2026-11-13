@@ -633,6 +633,45 @@ def requirement_matrix_figures_match_the_inventory() -> None:
     note(f"{matrix} figures agree with the inventory and the generated reference")
 
 
+# 9b. A "Last verified" pin must name a commit that exists and is reachable from HEAD. The pin
+#     is a promise that someone re-read the matrix against the tree; left unchecked it silently
+#     ages, which is worse than an absent pin because a reader treats a stale SHA as current
+#     evidence. The previous pin had drifted two merges behind and nothing failed.
+def requirement_matrix_verification_pin_is_real() -> None:
+    matrix = "docs/governance/alpha-4-requirement-matrix.md"
+    match = re.search(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", read(matrix), re.M)
+    if not match:
+        problems.append(f"{matrix} has no 'Last verified' pin to check")
+        return
+    sha = match.group(1)
+    # A shallow clone (CI checks out depth 1) does not contain the pinned commit as an object,
+    # so "not found" there means "not fetched", not "does not exist". Reporting the second as
+    # the first made a correct pin fail the build. `--is-shallow-repository` is the honest
+    # discriminator: in a shallow clone this check can only confirm the pin is well-formed.
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=ROOT, capture_output=True, text=True,
+    ).stdout.strip() == "true"
+
+    resolved = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if resolved.returncode != 0:
+        if shallow:
+            note(f"{matrix} pins {sha}; a shallow clone cannot confirm it exists")
+            return
+        problems.append(
+            f"{matrix} pins verification at {sha}, which is not a commit in this repository")
+        return
+    if subprocess.run(["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+                      cwd=ROOT, capture_output=True).returncode != 0:
+        problems.append(
+            f"{matrix} pins verification at {sha}, which is not an ancestor of HEAD")
+        return
+    note(f"{matrix} is verified against {sha}, a commit reachable from HEAD")
+
+
 # Words that make a test name a statement about absence rather than a claim of evidence:
 # a proposal, a recorded removal, or a note that the class has yet to be written.
 ABSENT_MARKERS = (
@@ -878,6 +917,7 @@ CHECKS = (
     cited_tests_exist,
     cited_test_methods_exist,
     quoted_test_counts_agree,
+    requirement_matrix_verification_pin_is_real,
 )
 
 

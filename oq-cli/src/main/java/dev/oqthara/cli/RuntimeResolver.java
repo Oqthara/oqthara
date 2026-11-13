@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -268,24 +270,93 @@ final class RuntimeResolver {
         }
     }
 
-    /** The real probe: executes the candidate and parses its banner. */
+    /** How long a candidate may take to announce its version before it is refused. */
+    static final Duration PROBE_TIMEOUT = Duration.ofSeconds(10);
+
+    /** How much banner output is read before the candidate is abandoned as unparseable. */
+    static final int PROBE_OUTPUT_LIMIT = 64 * 1024;
+
+    /**
+     * The real probe: executes the candidate and parses its banner.
+     *
+     * <p>Both halves are bounded. A managed runtime comes from a directory an attacker or a
+     * mistaken extraction can write to, so the probe runs a file it did not author; without a
+     * deadline and an output cap, a binary that never exits or never stops printing would hang
+     * {@code oq} forever or exhaust the heap through {@code readAllBytes}. Reading happens on a
+     * daemon thread so the deadline applies to the whole exchange rather than to the wait alone:
+     * a process that has not exited still holds its pipe open, and blocking on the read first
+     * would make the deadline unreachable.
+     */
     static VersionProbe processProbe() {
+        return processProbe(PROBE_TIMEOUT, PROBE_OUTPUT_LIMIT);
+    }
+
+    static VersionProbe processProbe(Duration timeout, int outputLimit) {
         return executable -> {
+            Process process = null;
             try {
-                Process process = new ProcessBuilder(executable, "-version")
+                process = new ProcessBuilder(executable, "-version")
                         .redirectErrorStream(true)
                         .start();
-                String output = new String(process.getInputStream().readAllBytes(),
-                        StandardCharsets.UTF_8);
-                process.waitFor();
-                return parseMajorVersion(output);
+                Process running = process;
+                String[] output = new String[1];
+                boolean[] overflowed = new boolean[1];
+                Thread reader = new Thread(() -> {
+                    String read = readBounded(running, outputLimit);
+                    output[0] = read;
+                    overflowed[0] = read == null;
+                }, "oq-java-probe");
+                reader.setDaemon(true);
+                reader.start();
+                reader.join(timeout.toMillis());
+                if (reader.isAlive() || overflowed[0]) {
+                    return OptionalInt.empty();
+                }
+                if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+                    return OptionalInt.empty();
+                }
+                return parseMajorVersion(output[0]);
             } catch (IOException | InterruptedException failure) {
                 if (failure instanceof InterruptedException) {
                     Thread.currentThread().interrupt();
                 }
                 return OptionalInt.empty();
+            } finally {
+                if (process != null) {
+                    process.destroyForcibly();
+                }
             }
         };
+    }
+
+    /**
+     * Reads the banner, returning {@code null} when the candidate exceeded {@code limit}.
+     *
+     * <p>Truncation is reported rather than returned as a shortened string, because a truncated
+     * banner is not a version: acting on a prefix would authenticate whatever the first bytes
+     * happened to say. The cap is a refusal, not a filter.
+     */
+    private static String readBounded(Process process, int limit) {
+        byte[] buffer = new byte[Math.min(limit, 8192)];
+        java.io.ByteArrayOutputStream collected = new java.io.ByteArrayOutputStream();
+        try (java.io.InputStream in = process.getInputStream()) {
+            int read;
+            while ((read = in.read(buffer, 0,
+                    Math.min(buffer.length, limit - collected.size()))) >= 0) {
+                if (collected.size() + read > limit) {
+                    process.destroyForcibly();
+                    return null;
+                }
+                collected.write(buffer, 0, read);
+                if (collected.size() >= limit) {
+                    process.destroyForcibly();
+                    return null;
+                }
+            }
+        } catch (IOException closed) {
+            // The process was killed at the deadline; whatever arrived is what we parse.
+        }
+        return collected.toString(StandardCharsets.UTF_8);
     }
 
     /**

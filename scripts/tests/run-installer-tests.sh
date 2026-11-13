@@ -190,6 +190,45 @@ install_to() { # dir api-url
       bash "$SCRIPT"
 }
 
+# Installs with a cosign stub on PATH plus any extra env assignments the case needs.
+install_with_cosign() { # dir cosign-dir [KEY=VALUE...]
+  local dir=$1 cosign_dir=$2
+  shift 2
+  env PATH="$cosign_dir:$PATH" \
+      OQ_RELEASE_API="$BASE" \
+      OQ_RELEASE_TAG_BASE="$BASE" \
+      OQ_JAVA="$JAVA_STUB" \
+      OQ_INSTALL_DIR="$dir" \
+      "$@" \
+      bash "$SCRIPT"
+}
+
+# A cosign stand-in. "absent" installs nothing, so `has cosign` stays false.
+# The stub records its argv so a case can prove which files reached it.
+make_cosign_stub() { # dir verdict(ok|deny|absent) -> prints stub dir
+  local dir=$1 verdict=$2
+  mkdir -p "$dir"
+  if [ "$verdict" = "absent" ]; then
+    printf '%s\n' "$dir"
+    return 0
+  fi
+  local rc=0
+  [ "$verdict" = "deny" ] && rc=1
+  cat > "$dir/cosign" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$dir/argv.log"
+exit $rc
+SH
+  chmod +x "$dir/cosign"
+  printf '%s\n' "$dir"
+}
+
+make_signed_release() { # tag content
+  make_release "$1" "$2" good
+  printf '%s' '{"mediaType":"application/vnd.dev.sigstore.bundle+json"}' \
+    > "$WWW/releases/download/$1/oq.jar.sigstore.json"
+}
+
 no_temp_files() { # dir
   local dir=$1
   if find "$dir" -maxdepth 1 -name '.*.tmp.*' -print -quit | grep -q .; then
@@ -379,6 +418,82 @@ case_launcher_self_dir() {
   [ "$(cat "$dir/oq.jar")" = "LAUNCHER JAR" ]
 }
 
+# ---------------------------------------------------------------------------
+case_signed_release_verified() {
+  local dir="$ROOT/s1" out rc cos
+  cos=$(make_cosign_stub "$STUBS/cos-ok" ok)
+  make_signed_release v1.1.0 "SIGNED JAR"
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.1.0 2>&1); rc=$?
+  [ $rc -eq 0 ] || { echo "exit $rc: $out"; return 1; }
+  [ "$(cat "$dir/oq.jar")" = "SIGNED JAR" ] || { echo "wrong jar"; return 1; }
+  grep -q "Signature verified" <<<"$out" || { echo "no verification reported: $out"; return 1; }
+  no_temp_files "$dir" || return 1
+}
+
+case_signature_rejected_aborts() {
+  local dir="$ROOT/s2" out rc cos
+  cos=$(make_cosign_stub "$STUBS/cos-deny" deny)
+  make_signed_release v1.2.0 "REJECTED JAR"
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.2.0 2>&1); rc=$?
+  [ $rc -ne 0 ] || { echo "installer accepted a rejected signature"; return 1; }
+  grep -q "Signature verification FAILED" <<<"$out" || { echo "wrong message: $out"; return 1; }
+  if [ -f "$dir/oq.jar" ]; then echo "a rejected jar was installed"; return 1; fi
+  no_temp_files "$dir" || return 1
+}
+
+case_signed_no_cosign_warns() {
+  local dir="$ROOT/s3" out rc cos
+  cos=$(make_cosign_stub "$STUBS/cos-none" absent)
+  make_signed_release v1.3.0 "SIGNED NO VERIFIER"
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.3.0 2>&1); rc=$?
+  [ $rc -eq 0 ] || { echo "exit $rc: $out"; return 1; }
+  grep -q "NOT tampering" <<<"$out" || { echo "limitation not stated: $out"; return 1; }
+  grep -q "Signature verified" <<<"$out" && { echo "claimed verification without cosign"; return 1; }
+  [ "$(cat "$dir/oq.jar")" = "SIGNED NO VERIFIER" ] || { echo "wrong jar"; return 1; }
+}
+
+case_require_signature_no_cosign() {
+  local dir="$ROOT/s4" out rc cos
+  cos=$(make_cosign_stub "$STUBS/cos-none2" absent)
+  make_signed_release v1.4.0 "STRICT SIGNED"
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.4.0 OQ_REQUIRE_SIGNATURE=1 2>&1); rc=$?
+  [ $rc -ne 0 ] || { echo "OQ_REQUIRE_SIGNATURE=1 passed without a verifier"; return 1; }
+  grep -q "OQ_REQUIRE_SIGNATURE" <<<"$out" || { echo "policy not named: $out"; return 1; }
+  if [ -f "$dir/oq.jar" ]; then echo "jar installed under strict policy"; return 1; fi
+  return 0
+}
+
+case_unsigned_release_warns() {
+  local dir="$ROOT/s5" out rc cos
+  cos=$(make_cosign_stub "$STUBS/cos-ok2" ok)
+  make_release v1.5.0 "UNSIGNED JAR" good
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.5.0 2>&1); rc=$?
+  [ $rc -eq 0 ] || { echo "exit $rc: $out"; return 1; }
+  grep -q "no published signature" <<<"$out" || { echo "unsigned not reported: $out"; return 1; }
+  [ "$(cat "$dir/oq.jar")" = "UNSIGNED JAR" ] || { echo "wrong jar"; return 1; }
+}
+
+case_require_signature_unsigned() {
+  local dir="$ROOT/s6" out rc cos
+  cos=$(make_cosign_stub "$STUBS/cos-ok3" ok)
+  make_release v1.6.0 "STRICT UNSIGNED" good
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.6.0 OQ_REQUIRE_SIGNATURE=1 2>&1); rc=$?
+  [ $rc -ne 0 ] || { echo "OQ_REQUIRE_SIGNATURE=1 accepted an unsigned release"; return 1; }
+  grep -q "no signature" <<<"$out" || { echo "cause not explained: $out"; return 1; }
+}
+
+case_installer_passes_jar_and_bundle() {
+  local dir="$ROOT/s7" out rc cos argv
+  cos=$(make_cosign_stub "$STUBS/cos-argv" ok)
+  make_signed_release v1.7.0 "ARGV JAR"
+  out=$(install_with_cosign "$dir" "$cos" OQ_VERSION=v1.7.0 2>&1); rc=$?
+  [ $rc -eq 0 ] || { echo "exit $rc: $out"; return 1; }
+  argv="$STUBS/cos-argv/argv.log"
+  [ -f "$argv" ] || { echo "cosign was never invoked"; return 1; }
+  grep -q "verify-blob" "$argv" || { echo "not asked to verify: $(cat "$argv")"; return 1; }
+  grep -q -- "--bundle" "$argv" || { echo "no --bundle: $(cat "$argv")"; return 1; }
+}
+
 run_case "API discovery skips drafts and selects the prerelease" case_discovery_skips_draft
 run_case "pinned version without v" case_pinned_without_v
 run_case "pinned version with v" case_pinned_with_v
@@ -392,6 +507,13 @@ run_case "unsupported Java 17 is rejected before download" case_java17_rejected
 run_case "Java 21 is accepted" case_java21_accepted
 run_case "temp files are cleaned up on success and failure" case_temp_cleanup
 run_case "launcher resolves its own directory without readlink -f" case_launcher_self_dir
+run_case "a signed jar is verified and installed" case_signed_release_verified
+run_case "a rejected signature aborts the install" case_signature_rejected_aborts
+run_case "a signed release without cosign warns but installs" case_signed_no_cosign_warns
+run_case "OQ_REQUIRE_SIGNATURE refuses a signed release without cosign" case_require_signature_no_cosign
+run_case "an unsigned release warns and installs" case_unsigned_release_warns
+run_case "OQ_REQUIRE_SIGNATURE refuses an unsigned release" case_require_signature_unsigned
+run_case "cosign receives the jar and its bundle" case_installer_passes_jar_and_bundle
 
 printf '%d passing\n' "$pass"
 if [ "$failed" -ne 0 ]; then
