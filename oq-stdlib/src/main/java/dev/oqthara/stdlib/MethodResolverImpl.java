@@ -568,29 +568,31 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "length", "size" -> fixed(name, 0, (host, args) -> range.size());
             case "iter" -> fixed(name, 0, (host, args) -> Values.iterator(range, span));
             case "to_list", "list", "items" -> fixed(name, 0, (host, args) -> range.toList());
-            case "sum", "min", "max", "sorted" -> fixed(name, 0, (host, args) -> {
-                List<Object> items = range.toList();
-                switch (name) {
-                    case "sum" -> {
-                        Object total = 0L;
-                        for (Object item : items) total = Values.add(total, item, span);
-                        return total;
-                    }
-                    case "sorted" -> {
-                        List<Object> copy = new ArrayList<>(items);
-                        copy.sort((a, b) -> Values.compare(a, b, span));
-                        return copy;
-                    }
-                    default -> {
-                        if (items.isEmpty()) return null;
-                        Object best = items.get(0);
-                        for (Object item : items) {
-                            int c = Values.compare(item, best, span);
-                            if (name.equals("min") ? c < 0 : c > 0) best = item;
-                        }
-                        return best;
-                    }
-                }
+            // `min` and `max` are the two ends of the progression, so neither has to be walked.
+            // They used to build every value first, which meant `(0 to 10000000).max()` died of
+            // memory exhaustion asking a question the bounds already answer.
+            case "min" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
+                if (range.isEmpty()) return null;
+                return range.step() > 0 ? range.start() : range.last();
+            });
+            case "max" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
+                if (range.isEmpty()) return null;
+                return range.step() > 0 ? range.last() : range.start();
+            });
+            // `sum` adds every value, so it genuinely enumerates. It stays materialising and is
+            // therefore bounded by what a list can hold; the report records that limitation
+            // rather than pretending the arithmetic is free.
+            case "sum" -> fixed(name, 0, (host, args) -> {
+                Object total = 0L;
+                for (Object item : range.toList()) total = Values.add(total, item, span);
+                return total;
+            });
+            // `sorted` reverses the walk when the step is negative and copies it when it is
+            // positive, but it still returns a list of every value, so it enumerates by nature.
+            case "sorted" -> fixed(name, 0, (host, args) -> {
+                List<Object> copy = new ArrayList<>(range.toList());
+                copy.sort((a, b) -> Values.compare(a, b, span));
+                return copy;
             });
             // A range is an arithmetic progression, so reversing it gives another range with
             // the same shape — not a list. Returning a list would drop the family for no
@@ -598,19 +600,25 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             //
             // The endpoints come from the arithmetic, not from walking the range: a range can
             // be huge (range(0, 2_000_000_000)) and reversing it must not allocate one element
-            // per step just to read the first and last.
+            // per step just to read the first and last. `last()` is the reachable end, which is
+            // not `end` whenever the step does not divide the span: `range(0, 9, 3)` reaches 6,
+            // so it reverses to `6 to 0 by -3`, not `8 to 0 by -3`.
             //
-            // The new start is the last value the walk reaches, which is not `end` whenever the
-            // step does not divide the span: `range(0, 9, 3)` reaches 6, so it reverses to
-            // `6 to 0 by -3`, not `8 to 0 by -3`.
+            // A step of Long.MIN_VALUE cannot be negated: there is no positive long of that
+            // magnitude. Refusing says so, rather than producing a range with a wrapped step
+            // that would walk in the wrong direction.
             case "reverse" -> fixed(name, 0, (host, args) -> {
-                long size = range.size();
-                if (size == 0) {
+                if (range.isEmpty()) {
                     return new dev.oqthara.runtime.OqRange(range.start(), range.start(), false,
                             range.step());
                 }
-                long last = range.start() + (size - 1) * range.step();
-                return new dev.oqthara.runtime.OqRange(last, range.start(), true, -range.step());
+                if (range.step() == Long.MIN_VALUE) {
+                    throw new dev.oqthara.runtime.OqError(
+                            "this range cannot be reversed", span,
+                            "Its step is -9223372036854775808, and there is no positive step that large.");
+                }
+                return new dev.oqthara.runtime.OqRange(range.last(), range.start(), true,
+                        -range.step());
             });
             case "to_set", "set" -> fixed(name, 0, (host, args) ->
                     new dev.oqthara.runtime.OqSet(range.toList()));
@@ -618,29 +626,31 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 Object item = args.get(0);
                 // `r.contains(x)` and `x in r` are two spellings of one question, so they must
                 // accept the same items. `3.0` is the same number as `3` everywhere else in the
-                // language, so a whole-valued decimal counts here too (ADR-0026).
+                // language, so a whole-valued decimal counts here too (ADR-0026). A decimal
+                // outside the 64-bit range is not a member: casting it would saturate at
+                // Long.MAX_VALUE and match a value it does not equal (issue #153).
                 if (item instanceof Long l) return range.contains(l);
-                if (Values.isNumber(item)) {
-                    double d = Values.asDouble(item);
-                    return d == Math.rint(d) && range.contains((long) d);
+                if (item instanceof Double d) {
+                    return d == Math.rint(d) && Values.fitsInLong(d) && range.contains(d.longValue());
                 }
                 return false;
             });
+            // The first and last values are the start and the reachable end. Both used to build
+            // the whole list first, so `(0 to 10000000).first()` ran out of memory answering
+            // with the number it already had.
             case "first" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
-                List<Object> items = range.toList();
-                if (items.isEmpty()) {
+                if (range.isEmpty()) {
                     throw new dev.oqthara.runtime.OqError("this range is empty", callSpan,
                             "Check length() before asking for the first item.");
                 }
-                return items.get(0);
+                return range.start();
             });
             case "last" -> dev.oqthara.runtime.NativeFunction.of(name, 0, (host, args, callSpan) -> {
-                List<Object> items = range.toList();
-                if (items.isEmpty()) {
+                if (range.isEmpty()) {
                     throw new dev.oqthara.runtime.OqError("this range is empty", callSpan,
                             "Check length() before asking for the last item.");
                 }
-                return items.get(items.size() - 1);
+                return range.last();
             });
             default -> null;
         };

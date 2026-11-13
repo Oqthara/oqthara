@@ -46,7 +46,7 @@ that a successful build means compiled code.
 |---|---|---|
 | `U1` | Both paths produce the same values and the same standard output for the same program. | `scripts/verify-conformance.py`, `BytecodeCompilerTest` |
 | `U2` | Both paths report the same error message, the same hint and the same exit status. | `BuildJarTest.aCompiledJarStillReportsAProgramErrorWithExitCode1` |
-| `U3` | Neither path reports an Oqthara defect for a program's own failure, and both report one for Oqthara's own failures, with status 70. | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70` |
+| `U3` | Neither path reports an Oqthara defect for a program's own failure, and both report one for Oqthara's own failures, with status 70. | `BuildJarTest.anInternalErrorIsClassifiedAsExitCode70` |
 | `U4` | Only the interpreted path can print the source line and caret that locate a failure. A compiled jar carries no program text, so its diagnostics name the position but do not quote the line. | measured; §7.4.2 |
 | `U5` | A construct the compiler cannot emit makes the *build* fall back, not fail. The resulting jar is an interpreter launcher and must be identified as one. | `Oqthara-Backend` manifest header |
 | `U6` | The step budget bounds only the interpreted path. A compiled jar has no step ceiling and runs until it finishes, exhausts memory, or is killed. | measured; §7.4.3 |
@@ -150,7 +150,7 @@ The mechanisms below are why `U1`–`U3` hold, and each one has a test:
 |---|---|---|
 | One AST, one IR, two emitters | values and stdout agree by construction | `scripts/verify-conformance.py` over 223 programs |
 | `Details.render` shared by both entry points | message and hint wording cannot drift | `ErrorMessageContractTest` |
-| `exitCodeFor` shared, not duplicated | status cannot drift | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1` |
+| `exitCodeFor` shared, not duplicated | status cannot drift | `BuildJarTest.anInternalErrorIsClassifiedAsExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1` |
 | `renderFailure` checked before the standard renderer | Oqthara's own failures are never blamed on the program | `BuildJarTest.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
 | Static budgets in `oq-runtime` | output and waiting limits hold on both paths | `HostBuiltinLimitsTest`, `WaitedBudgetTest` |
 | `Oqthara-Backend` in the manifest | a fallback jar is identifiable | `BuildJarTest` |
@@ -194,7 +194,7 @@ Measured consequences worth knowing before writing code that spans the boundary:
 | Clause | Tests |
 |---|---|
 | `U1` | `scripts/verify-conformance.py`; `BytecodeCompilerTest` |
-| `U2`, `U3` | `BuildJarTest.aCompiledJarReportsAnInternalErrorWithExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
+| `U2`, `U3` | `BuildJarTest.anInternalErrorIsClassifiedAsExitCode70`, `.aCompiledJarStillReportsAProgramErrorWithExitCode1`, `.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` |
 | `U4` | no test — measured, documented difference |
 | `U5` | no test — `BuildJarTest.jarContainsManifestProgramAndSource` asserts a manifest is written, but nothing asserts the `Oqthara-Backend` value or that a fallback build exits 0 |
 | `U6`, `U7` | no test — a compiled jar has no ceiling to test; `U7` is exercised only by the JVM |

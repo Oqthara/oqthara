@@ -353,29 +353,46 @@ class BuildJarTest {
      * source exited 70 interpreted and 1 from the jar, with byte-identical text. A script
      * could not tell an Oqthara bug from a program that legitimately failed.
      *
-     * <p>{@code 1 to true} is used because it is the smallest program that both reaches real
-     * bytecode and raises a non-{@code OqError}: the compiler emits the range loop and the
-     * bound check throws {@code IllegalArgumentException}. That the jar really runs compiled
-     * bytecode, rather than falling back to the launcher, was confirmed by hand with
-     * {@code oq run} printing {@code codepath: compiled bytecode} for the same source; this
-     * test does not re-assert it.
+     * <p>The classification is asserted directly at {@link EmbeddedMain#exitCodeFor} and
+     * {@link EmbeddedMain#renderFailure}, because Oqthara no longer offers a program that
+     * reaches real bytecode and still raises a non-{@code OqError}: the last such vehicle was
+     * {@code 1 to true}, whose bound check threw {@code IllegalArgumentException}. Range bounds
+     * are now validated as ordinary user errors (see #149–#156), which is the intended
+     * behaviour. Every remaining refusal reachable from Oqthara's own source is an
+     * {@code OqError}, so a source-driven test can only be written by inventing a bug.
+     *
+     * <p>The contract still matters and is still asserted here: a compiled jar that genuinely
+     * fails inside Oqthara must say so and exit 70, not 1. Testing the two pure functions that
+     * decide that keeps the 70-versus-1 distinction pinned without depending on a defect
+     * existing. {@link #aCompiledJarStillReportsAProgramErrorWithExitCode1} covers the same
+     * renderer end to end from real bytecode for the {@code OqError} side.
      */
     @Test
-    void aCompiledJarReportsAnInternalErrorWithExitCode70(@TempDir Path dir) throws Exception {
-        Path source = dir.resolve("internal.oq");
-        Files.writeString(source, "print 1 to true");
-        Path jar = dir.resolve("internal.jar");
-        assertEquals(0, build(source, jar));
+    void anInternalErrorIsClassifiedAsExitCode70() {
+        RuntimeException internal = new IllegalArgumentException("not a number: class java.lang.String");
+        assertTrue(EmbeddedMain.exitCodeFor(internal) == 70,
+                "a non-OqError RuntimeException is Oqthara's own failure and must be 70");
 
-        ProcessResult result = runJar(jar, dir);
-        assertEquals(70, result.exit(),
-                "a jar must report an Oqthara bug as 70, not as a program error; stderr was:\n"
-                        + result.stderr());
-        assertTrue(result.stderr().contains("internal error"), result.stderr());
-        assertTrue(result.stderr().contains("This is a bug in Oqthara"), result.stderr());
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream err = new java.io.PrintStream(captured, true, StandardCharsets.UTF_8);
+        assertTrue(EmbeddedMain.renderFailure(err, internal));
+        String rendered = captured.toString(StandardCharsets.UTF_8);
+        assertTrue(rendered.contains("internal error"), rendered);
+        assertTrue(rendered.contains("This is a bug in Oqthara"), rendered);
+        assertTrue(rendered.contains("IllegalArgumentException"), rendered);
         // The 70 path must not be reached by mislabelling an ordinary program error.
-        assertFalse(result.stderr().contains("error: division by zero"), result.stderr());
-        assertFalse(result.stderr().contains("Exception in thread"), result.stderr());
+        assertFalse(rendered.contains("error: division by zero"), rendered);
+
+        // And the other direction: an OqError stays a program error at exit 1.
+        dev.oqthara.runtime.OqError programError = new dev.oqthara.runtime.OqError(
+                "division by zero", dev.oqthara.runtime.Span.synthetic());
+        assertEquals(1, EmbeddedMain.exitCodeFor(programError));
+        java.io.ByteArrayOutputStream quiet = new java.io.ByteArrayOutputStream();
+        assertFalse(EmbeddedMain.renderFailure(
+                        new java.io.PrintStream(quiet, true, StandardCharsets.UTF_8), programError),
+                "an OqError belongs to the program and has its own renderer");
+        assertEquals("", quiet.toString(StandardCharsets.UTF_8),
+                "the internal path must not print anything for a program error");
     }
 
     /**

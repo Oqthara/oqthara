@@ -1,5 +1,6 @@
 package dev.oqthara.core;
 
+import dev.oqthara.runtime.Collections;
 import dev.oqthara.runtime.Errors;
 import dev.oqthara.runtime.MethodResolver;
 import dev.oqthara.runtime.NativeFunction;
@@ -382,14 +383,18 @@ public final class Interpreter implements OqHost {
                 }
             }
             case Ast.ForRange loop -> {
-                long from = Values.asLong(evaluate(loop.from(), env));
-                long to = Values.asLong(evaluate(loop.to(), env));
-                long step = from <= to ? 1 : -1;
-                long end = loop.inclusive() ? to : to - step;
-                for (long i = from; step > 0 ? i <= end : i >= end; i += step) {
+                // The bounds go through the same helper compiled code calls, so a fractional or
+                // text bound is refused with one diagnostic on both backends, and the walk is
+                // lazy so a long loop is bounded memory. The old form added the step and retested
+                // the bound, which wrapped at Long.MAX_VALUE and never stopped.
+                Object from = evaluate(loop.from(), env);
+                Object to = evaluate(loop.to(), env);
+                Errors.mark(loop.span());
+                Object counter = Collections.counterRange(from, to, loop.inclusive());
+                for (Object item : Values.iterable(counter, loop.span())) {
                     tick(loop.span());
                     Env local = new Env(env);
-                    local.defineFixed(loop.name(), i, "the loop variable of this 'for'",
+                    local.defineFixed(loop.name(), item, "the loop variable of this 'for'",
                             "Use a different name if you need to modify it.");
                     try {
                         executeBlock(loop.body(), local);
@@ -642,9 +647,14 @@ public final class Interpreter implements OqHost {
             case Ast.InExpr in -> Values.contains(evaluate(in.container(), env),
                     evaluate(in.item(), env), in.span());
             case Ast.RangeExpr range -> {
-                long from = Values.asLong(evaluate(range.from(), env));
-                long to = Values.asLong(evaluate(range.to(), env));
-                yield new OqRange(from, to, range.inclusive());
+                Object from = evaluate(range.from(), env);
+                Object to = evaluate(range.to(), env);
+                // The bounds are validated in the runtime, which can only see Errors.current().
+                // Mark this literal's span first so both backends blame the same source position.
+                Errors.mark(range.span());
+                yield range.inclusive()
+                        ? Collections.rangeInclusive(from, to)
+                        : Collections.rangeExclusive(from, to);
             }
             case Ast.Grouping group -> evaluate(group.expr(), env);
         };

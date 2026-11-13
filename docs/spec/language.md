@@ -304,8 +304,10 @@ print xs
 
 The same applies to sets, to a map's keys, and to the collection methods that take
 a callback — `map`, `filter`, `each`, `any`, `all`, `find`, `find_index`, `reduce`
-and `flatten` all walk a snapshot too. Ranges and text were already unaffected
-because both are converted to a list before the loop starts.
+and `flatten` all walk a snapshot too. Text is also unaffected because it is
+converted to a list before the loop starts. A range is immutable, so there is
+nothing to copy and a loop over one walks it directly; that is what lets a range
+describe a very large sequence without building it (`#155`).
 
 Mutation is neither forbidden nor dangerous, and it is not an error, so a program
 that removes items in the loop simply finishes with those items removed. Writing to
@@ -978,9 +980,65 @@ for n in r
 end
 ```
 
-`a to b` includes `b`. `a until b` excludes it. If `a > b`, the range counts down.
-`length(r)` returns the range count without narrowing it through a 32-bit integer; for
-example, `length(0 to 3000000000)` returns `3000000001`.
+`a to b` includes `b`. `a until b` excludes it. A range value advances by one, so it
+is empty when `a > b`:
+
+```
+print (5 to 1).to_list()
+```
+
+```
+[]
+```
+
+A range value describes the sequence rather than building it, so a range over a very
+large span costs the same as a range over three numbers. That is why `length` can
+answer without enumerating:
+
+```
+print length(0 to 3000000000)
+```
+
+```
+3000000001
+```
+
+Asking for a count that does not fit in a whole number raises instead of wrapping, and
+turning a range into a list requires it to be short enough to hold in memory:
+
+```
+print length(0 to 9223372036854775807)   # error: this range is too long to count
+x = (0 to 3000000000).to_list()          # error: this range is too long to turn into a list
+```
+
+A range is immutable, so it is never copied and a `for` loop walks it directly. A
+`break` therefore stops immediately instead of after the whole range was built.
+
+### Counter loops
+
+`for n in a to b` is a **counter loop**, and its direction comes from the bounds:
+`for n in 5 to 1` counts down. It is not the range-value rule above, because a counter
+loop has no element sequence to describe — it counts.
+
+```
+for n in 5 to 1
+  print n
+end
+```
+
+```
+5
+4
+3
+2
+1
+```
+
+`for n in a until b` excludes `b` and counts down by the same rule. Other bounds, such
+as names or a function call, are matched in direction to the two literal forms, and a
+bound that is not a whole number is refused identically on both backends.
+`range(a, b, step)` is the form that takes an explicit step.
+
 
 ## Errors
 
