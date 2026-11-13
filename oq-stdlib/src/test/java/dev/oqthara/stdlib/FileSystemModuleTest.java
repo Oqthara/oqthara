@@ -462,12 +462,16 @@ class FileSystemModuleTest {
 
     @Test
     void pathNormalizeIsLexicalAndDoesNotTouchTheFilesystem() {
-        assertEquals("a/b", call("path_normalize", "a/./b"));
-        assertEquals("b", call("path_normalize", "a/../b"));
-        assertEquals("a", call("path_normalize", "a/."));
+        // Spelled through Path.of so the assertion is about normalisation rather than about the
+        // host separator: path_normalize returns Path.toString(), which is `a\b` on Windows.
+        // Only glob() promises `/` on every host, and that is stated separately in its own test.
+        assertEquals(Path.of("a/b").toString(), call("path_normalize", "a/./b"));
+        assertEquals(Path.of("b").toString(), call("path_normalize", "a/../b"));
+        assertEquals(Path.of("a").toString(), call("path_normalize", "a/."));
         // A path that does not exist still normalizes, which is what makes this usable before
         // the file is created.
-        assertEquals("no/such/file", call("path_normalize", "no/./such/x/../file"));
+        assertEquals(Path.of("no/such/file").toString(),
+                call("path_normalize", "no/./such/x/../file"));
     }
 
     @Test
