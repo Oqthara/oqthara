@@ -338,6 +338,12 @@
       "slug": "docs/adr/0055-locale-independent-output"
     },
     {
+      "path": "docs/adr/0057-repr-text-pastes-back.md",
+      "title": "ADR-0057 — Rendered text pastes back as the text it rendered",
+      "section": "adr",
+      "slug": "docs/adr/0057-repr-text-pastes-back"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

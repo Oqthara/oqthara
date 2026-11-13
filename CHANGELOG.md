@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`repr` of text containing a brace did not paste back as that text.** `repr` is documented as
+  rendering a value so the line can be pasted back as source, and it escaped only `"`, `\`, and
+  the `\n`, `\t` and `\r` whitespace escapes. An opening brace was emitted verbatim, so with
+  `x = 99` the text `{x}` rendered as `"{x}"` and pasted back as `99` — a different value, with no
+  error to signal it. Opening braces are now doubled, and a closing brace is doubled only where
+  the parser would otherwise pair it with a doubled opening brace. NUL is now escaped as `\0`.
+  Other control characters are still written as themselves: the parser preserves them and has no
+  escape rule for them, so escaping them would not round-trip. (ADR-0057)
 - **`zlib_decompress` and `gzip_decompress` accepted uppercase hex.** The JDK's
   `HexFormat.parseHex` takes `A`-`F` as readily as `a`-`f`, so the compression functions were the
   one place in the language where hex spelling did not matter, while `hex_decode` has always
