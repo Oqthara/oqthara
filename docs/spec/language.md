@@ -147,7 +147,7 @@ A value that is not a whole number is refused rather than truncated: `xs.take(1.
 a question the program did not ask, and a wrong element is harder to notice than an error.
 
 A whole number written as a decimal is still a whole number, because `1 == 1.0`
-([ADR-0017](../adr/0017-numbers-are-not-a-tower.md)). `xs.take(2.0)` is `[10, 20]`, the same
+([ADR-0017](../adr/0017-equality-and-hashing.md)). `xs.take(2.0)` is `[10, 20]`, the same
 as `xs.take(2)`. A decimal past the 64-bit range, or an infinity, is refused as out of range
 rather than narrowed to the largest whole number: `xs[1e300]` raises
 `an index is out of range: <the value as the language prints it>`, quoting the number the
