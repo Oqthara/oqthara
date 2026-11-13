@@ -87,6 +87,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `hex_decode` | built-in |
 | `hex_encode` | built-in |
 | `hmac_sha256` | built-in |
+| `html_entity` | built-in |
+| `html_escape` | built-in |
+| `html_escape_attribute` | built-in |
+| `html_unescape` | built-in |
 | `http_get` | built-in |
 | `http_post` | built-in |
 | `hypot` | built-in |

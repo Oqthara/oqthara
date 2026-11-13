@@ -109,6 +109,7 @@ public final class Stdlib {
         installFileOps(interpreter);
         Patterns.install(interpreter);
         TextWrap.install(interpreter);
+        HtmlText.install(interpreter);
         Compression.install(interpreter);
         Statistics.install(interpreter);
         FileSystem.install(interpreter);
