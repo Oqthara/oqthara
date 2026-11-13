@@ -283,7 +283,7 @@ public final class Main {
                     .append("\",\"platformSupported\":").append(platform.supported());
             if (resolution.found()) {
                 RuntimeResolver.Candidate chosen = resolution.chosen();
-                json.append(",\"origin\":\"").append(chosen.origin().name().toLowerCase())
+                json.append(",\"origin\":\"").append(chosen.origin().name().toLowerCase(java.util.Locale.ROOT))
                         .append("\",\"location\":\"").append(escapeJson(chosen.location()))
                         .append("\",\"major\":").append(chosen.major().getAsInt());
             }
@@ -293,7 +293,7 @@ public final class Main {
                 if (i > 0) {
                     json.append(',');
                 }
-                json.append("{\"origin\":\"").append(skipped.origin().name().toLowerCase())
+                json.append("{\"origin\":\"").append(skipped.origin().name().toLowerCase(java.util.Locale.ROOT))
                         .append("\",\"location\":\"").append(escapeJson(skipped.location()))
                         .append("\",\"reason\":\"").append(escapeJson(skipped.rejection()))
                         .append("\"}");
