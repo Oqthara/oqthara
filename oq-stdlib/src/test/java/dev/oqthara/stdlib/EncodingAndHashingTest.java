@@ -138,6 +138,70 @@ class EncodingAndHashingTest {
     }
 
     @Test
+    void hexDecodeRefusesBytesThatAreNotUtf8() {
+        // 0xff never appears in UTF-8. new String(bytes, UTF_8) turns it into U+FFFD, which
+        // re-encodes to "efbfbd" -- a different value from the one supplied.
+        OqError error = assertThrows(OqError.class, () -> call("hex_decode", "ff"));
+        assertTrue(error.getMessage().contains("not valid UTF-8"), error.getMessage());
+    }
+
+    @Test
+    void base64DecodeRefusesBytesThatAreNotUtf8() {
+        // "/w==" is the base64 spelling of the single byte 0xff.
+        OqError error = assertThrows(OqError.class, () -> call("base64_decode", "/w=="));
+        assertTrue(error.getMessage().contains("not valid UTF-8"), error.getMessage());
+    }
+
+    @Test
+    void aTruncatedUtf8SequenceIsRefusedByBothDecoders() {
+        // "c3" opens a two-byte sequence that never finishes. A lenient decoder replaces it.
+        assertThrows(OqError.class, () -> call("hex_decode", "c3"));
+        // "ww==" is that same lone lead byte in base64.
+        assertThrows(OqError.class, () -> call("base64_decode", "ww=="));
+    }
+
+    @Test
+    void everyValidUtf8ShapeStillRoundTrips() {
+        // The strict decoder must not narrow what is accepted: one-, two-, three- and
+        // four-byte sequences, plus a lone surrogate-free astral pair.
+        for (String text : List.of("", "a", "é", "€", "😀", "aé€😀z")) {
+            assertEquals(text, call("hex_decode", call("hex_encode", text)), text);
+            assertEquals(text, call("base64_decode", call("base64_encode", text)), text);
+        }
+    }
+
+    @Test
+    void nonCanonicalBase64PadBitsAreRefused() {
+        // "Zh==" and "Zg==" both decode to 'f' on the JDK decoder because it ignores the low
+        // four bits of the second sextet. Only "Zg==" is the canonical spelling.
+        OqError error = assertThrows(OqError.class, () -> call("base64_decode", "Zh=="));
+        assertTrue(error.getMessage().contains("non-zero pad bits"), error.getMessage());
+        OqError other = assertThrows(OqError.class, () -> call("base64_decode", "AB=="));
+        assertTrue(other.getMessage().contains("non-zero pad bits"), other.getMessage());
+    }
+
+    @Test
+    void everyAcceptedBase64ValueReEncodesToItself() {
+        // The canonical property from the issue: decoding is a bijection on accepted inputs.
+        for (String text : List.of("", "a", "ab", "abc", "abcd", "é", "€", "😀", "aé€😀z")) {
+            String encoded = (String) call("base64_encode", text);
+            assertEquals(text, call("base64_decode", encoded), encoded);
+            assertEquals(encoded, call("base64_encode", call("base64_decode", encoded)), encoded);
+        }
+    }
+
+    @Test
+    void misplacedPaddingIsReportedWithItsOffset() {
+        // The platform decoder refused these too, but only said "wrong 4-byte ending unit".
+        // ADR-0033 D5 asks a decode failure to name the offset, because the usual source is a
+        // value pasted from a log.
+        OqError error = assertThrows(OqError.class, () -> call("base64_decode", "YW=J"));
+        assertTrue(error.getMessage().contains("found '=' at offset 2"), error.getMessage());
+        OqError tooMuch = assertThrows(OqError.class, () -> call("base64_decode", "A==="));
+        assertTrue(tooMuch.getMessage().contains("found '=' at offset 1"), tooMuch.getMessage());
+    }
+
+    @Test
     void unpaddedBase64IsRefusedRatherThanGuessed() {
         // The platform decoder accepts "YWJ" and returns "ab"; every encoder writes padding,
         // so a value without it is truncated rather than shorter.

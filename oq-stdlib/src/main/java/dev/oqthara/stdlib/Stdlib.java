@@ -20,6 +20,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CoderResult;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -2446,6 +2451,39 @@ public final class Stdlib {
     }
 
     /**
+     * Bytes back to text, refusing anything that is not valid UTF-8.
+     *
+     * <p>{@code new String(bytes, UTF_8)} replaces malformed input with U+FFFD instead of
+     * reporting it, which would let {@code hex_decode("ff")} return a plausible text value that
+     * does not re-encode to {@code ff}. ADR-0033 D1 says decoding is reversible without loss, so
+     * bytes that are not UTF-8 are a caller mistake and are reported as one.
+     */
+    private static String decodeUtf8(byte[] bytes, String builtin, Span span) {
+        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        ByteBuffer input = ByteBuffer.wrap(bytes);
+        // UTF-8 never yields more chars than it consumes bytes, so this cannot overflow.
+        CharBuffer output = CharBuffer.allocate(Math.max(1, bytes.length));
+        CoderResult decoded = decoder.decode(input, output, true);
+        if (decoded.isError()) {
+            throw notUtf8(builtin, input.position(), span);
+        }
+        CoderResult flushed = decoder.flush(output);
+        if (flushed.isError()) {
+            throw notUtf8(builtin, input.position(), span);
+        }
+        output.flip();
+        return output.toString();
+    }
+
+    private static OqError notUtf8(String builtin, int offset, Span span) {
+        return new OqError(builtin + "() decoded bytes that are not valid UTF-8", span,
+                "Byte offset " + offset + " starts a sequence that is not UTF-8. A decode "
+                        + "returns text, so the bytes have to be the UTF-8 encoding of it.");
+    }
+
+    /**
      * Hex back to text, reporting the offset of the first character that is not a hex digit.
      *
      * <p>{@link HexFormat#parseHex} throws {@code NumberFormatException} and
@@ -2466,7 +2504,7 @@ public final class Stdlib {
                         "Expected a lowercase hex digit 0-9 or a-f.");
             }
         }
-        return new String(HexFormat.of().parseHex(text), StandardCharsets.UTF_8);
+        return decodeUtf8(HexFormat.of().parseHex(text), "hex_decode", span);
     }
 
     /**
@@ -2490,11 +2528,67 @@ public final class Stdlib {
             throw new OqError("base64_decode() needs a length divisible by 4, got "
                     + text.length(), span, "Standard base64 pads with '=' to a multiple of four.");
         }
+        int firstPad = text.indexOf('=');
+        int padding = firstPad < 0 ? 0 : text.length() - firstPad;
+        if (firstPad >= 0) {
+            for (int i = firstPad; i < text.length(); i++) {
+                if (text.charAt(i) != '=') {
+                    throw new OqError("base64_decode() found '=' at offset " + firstPad, span,
+                            "Padding may only appear as the last one or two characters.");
+                }
+            }
+            if (padding > 2) {
+                throw new OqError("base64_decode() found '=' at offset " + firstPad, span,
+                        "Padding is at most two characters, and only at the end.");
+            }
+        }
+        checkBase64PadBits(text, padding, span);
         try {
-            return new String(Base64.getDecoder().decode(text), StandardCharsets.UTF_8);
+            return decodeUtf8(Base64.getDecoder().decode(text), "base64_decode", span);
         } catch (IllegalArgumentException e) {
+            // Reachable only from the platform decoder: the alphabet, the length and the pad
+            // bits have all been checked above, so this is a JVM that disagrees with itself.
             throw new OqError("base64_decode() could not decode the value", span, e.getMessage());
         }
+    }
+
+    /**
+     * Refuses a Base64 value whose unused pad bits are not zero.
+     *
+     * <p>The platform decoder ignores those bits, so {@code "Zh=="} and {@code "Zg=="} both
+     * decode to {@code f}. ADR-0033 D3 says decoding refuses values that are not canonically
+     * encoded; accepting both spellings would make {@code base64_encode(base64_decode(x)) == x}
+     * false for an input the decoder agreed to read.
+     */
+    private static void checkBase64PadBits(String text, int padding, Span span) {
+        // One byte in the final quantum uses two sextets and leaves the low four bits of the
+        // second one unused; two bytes use three sextets and leave the low two bits of the third.
+        int unusedBits = padding == 2 ? 4 : padding == 1 ? 2 : 0;
+        if (unusedBits == 0) {
+            return;
+        }
+        int offset = text.length() - padding - 1;
+        char last = text.charAt(offset);
+        if ((sextetValue(last) & ((1 << unusedBits) - 1)) != 0) {
+            throw new OqError("base64_decode() found non-zero pad bits at offset " + offset
+                    + ", got '" + last + "'", span,
+                    "The character before the padding carries only " + (6 - unusedBits)
+                            + " bits, and its other " + unusedBits + " bits must be zero. "
+                            + "Otherwise more than one spelling decodes to the same bytes.");
+        }
+    }
+
+    private static int sextetValue(char c) {
+        if (c >= 'A' && c <= 'Z') {
+            return c - 'A';
+        }
+        if (c >= 'a' && c <= 'z') {
+            return c - 'a' + 26;
+        }
+        if (c >= '0' && c <= '9') {
+            return c - '0' + 52;
+        }
+        return c == '+' ? 62 : 63;
     }
 
     private static String digest(String algorithm, Object value, String builtin, Span span) {
