@@ -55,6 +55,10 @@ class RuntimeInstallerTest {
             zip.write("#!/bin/sh\necho 'openjdk version \"21.0.1\"'\n"
                     .getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
+            // Lets a test tell one installed build from another once both have been activated.
+            zip.putNextEntry(new ZipEntry(topLevel + "/which-build"));
+            zip.write(topLevel.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
             zip.putNextEntry(new ZipEntry(topLevel + "/release"));
             zip.write(("JAVA_VERSION=\"" + major + "\"\n").getBytes(StandardCharsets.UTF_8));
             zip.closeEntry();
@@ -106,6 +110,38 @@ class RuntimeInstallerTest {
         assertTrue(refused.getMessage().contains("bin/" + JAVA), refused.getMessage());
         assertFalse(Files.exists(installer.destination()),
                 "a refused archive must not activate anything");
+    }
+
+    /** ADR-0048 D7: a failed activation must leave the working runtime live, not stranded. */
+    @Test
+    void aFailedActivationRestoresTheRuntimeThatRotationMovedAside(@TempDir Path temp)
+            throws Exception {
+        Path home = temp.resolve("home");
+        Path first = fakeRuntime(temp, "jdk-21.0.1", 21);
+        RuntimeInstaller installer =
+                new RuntimeInstaller(home, Duration.ofSeconds(5), probeAnswering(21));
+        installer.install(first, 21);
+        assertTrue(Files.isDirectory(installer.destination()),
+                "the first install must leave a runtime at the live path");
+        Path marker = installer.destination().resolve("which-build");
+        assertEquals("jdk-21.0.1", Files.readString(marker).strip());
+
+        Path second = fakeRuntime(temp, "jdk-21.0.2", 21);
+        RuntimeInstaller failing = new RuntimeInstaller(home, Duration.ofSeconds(5),
+                probeAnswering(21), null,
+                (extracted, target) -> {
+                    throw new IOException("the filesystem refused the atomic rename");
+                });
+
+        IOException failure = assertThrows(IOException.class, () -> failing.upgrade(second, 21));
+        assertTrue(failure.getMessage().contains("refused the atomic rename"), failure.getMessage());
+
+        assertTrue(Files.isDirectory(installer.destination()),
+                "a failed activation must leave the working runtime at the live path,"
+                        + " not strand it under java.prev");
+        assertEquals("jdk-21.0.1",
+                Files.readString(installer.destination().resolve("which-build")).strip(),
+                "the restored runtime must be the one that was working");
     }
 
     @Test

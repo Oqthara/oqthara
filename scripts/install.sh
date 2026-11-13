@@ -7,6 +7,7 @@
 #
 # OQ_VERSION accepts "latest" (default), "0.1.0-alpha.2" or "v0.1.0-alpha.2".
 # OQ_INSTALL_DIR defaults to "$HOME/.local/bin".
+# OQ_REQUIRE_SIGNATURE=1 refuses a release whose signature is missing or unverifiable.
 #
 # Test seams (defaults are the real endpoints):
 #   OQ_RELEASE_API       default https://api.github.com/repos/Oqthara/oqthara/releases?per_page=30
@@ -141,6 +142,7 @@ tag=$(normalize_tag "$tag")
 
 jar_url="$TAG_BASE/$tag/oq.jar"
 sha_url="$TAG_BASE/$tag/oq.jar.sha256"
+sig_url="$TAG_BASE/$tag/oq.jar.sigstore.json"
 
 info "Downloading oq $tag"
 mkdir -p -- "$INSTALL_DIR"
@@ -163,6 +165,44 @@ fi
 actual=$(sha256_of "$tmp")
 if [ "$actual" != "$expected" ]; then
   fail "Checksum mismatch for oq.jar (expected $expected, got $actual)."
+fi
+
+# A checksum proves the download is intact, not that it came from us: whoever can
+# replace the jar can replace the checksum beside it. A signature closes that gap.
+# Older releases were published before signing existed, so a missing bundle is a
+# documented state rather than a hard failure — but it is reported, and it is never
+# described as "verified". OQ_REQUIRE_SIGNATURE=1 turns it into a failure for anyone
+# who needs the stronger guarantee.
+bundle="$INSTALL_DIR/.oq.jar.sigstore.json.$$"
+if fetch_file "$sig_url" "$bundle" 2>/dev/null && [ -s "$bundle" ]; then
+  if has cosign; then
+    if ! cosign verify-blob --bundle "$bundle" "$tmp" >/dev/null 2>&1; then
+      rm -f -- "$bundle"
+      fail "Signature verification FAILED for $jar_url. The jar does not match its signed bundle; do not run it."
+    fi
+    info "Signature verified (cosign, keyless signer)."
+  else
+    cat >&2 <<EOF
+warning: oq $tag is signed, but 'cosign' is not installed so the signature was not checked.
+         The SHA-256 matched, which detects corruption and NOT tampering.
+         Install cosign (https://docs.sigstore.dev/cosign/installation/) to check it.
+EOF
+    if [ "${OQ_REQUIRE_SIGNATURE:-0}" = "1" ]; then
+      rm -f -- "$bundle"
+      fail "OQ_REQUIRE_SIGNATURE=1 but cosign is not installed."
+    fi
+  fi
+  rm -f -- "$bundle"
+else
+  rm -f -- "$bundle"
+  cat >&2 <<EOF
+warning: oq $tag has no published signature, only a SHA-256.
+         That detects corruption and NOT tampering: a replacement jar could ship with a
+         replacement checksum. Releases from the next tag onward are signed.
+EOF
+  if [ "${OQ_REQUIRE_SIGNATURE:-0}" = "1" ]; then
+    fail "OQ_REQUIRE_SIGNATURE=1 but $tag publishes no signature ($sig_url)."
+  fi
 fi
 
 if ! smoke=$("$JAVA_BIN" -jar "$tmp" --version 2>&1); then

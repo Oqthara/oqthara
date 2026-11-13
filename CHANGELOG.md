@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Exact rational arithmetic under the name `fraction`.** A `fraction` holds a `BigInteger`
+  numerator and denominator, always in lowest terms with a positive denominator, so
+  `fraction(2, 4)` and `fraction(1, 2)` are one value that prints as `1/2`. Seventeen builtins
+  along the `fraction_` prefix construct, parse, format, take apart, add, subtract, multiply,
+  divide, negate, take the absolute value, compare, floor, ceil, round, exponentiate and render
+  one. Every operation is exact, including comparison: `fraction_compare` cross-multiplies
+  rather than converting to a `double`, which is what makes
+  `9999999999999999/30000000000000000` compare as less than `1/3` and
+  `10000000000000001/30000000000000000` as greater, even though both are the same double.
+  `fraction_to_decimal(value, places)` is the only conversion outward and the caller states the
+  precision, so rounding is never silent. Two bounds keep the type from being a memory request:
+  the integer exponent of `fraction_pow` is limited to `10000` in magnitude, and each part is
+  limited to `32768` bits because a bound on an exponent is bypassed by squaring in a loop while
+  a bound in the constructor is not. The type name `fraction` was confirmed free across the
+  repository before it was chosen, and `decimal` remains reserved: `type_of(3.14)` already
+  answers `"decimal"` for a `Double`, so no exact-decimal type can take that name.
+  [ADR-0053](docs/adr/0053-exact-rational-arithmetic.md) records the decisions.
 - **Trigonometry, logarithms and exponentials, and a settled rule for non-finite
   numbers.** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `ln`, `log10`,
   `log2`, `exp`, `degrees` and `radians` join the standard library, along with the constants

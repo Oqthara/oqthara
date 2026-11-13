@@ -1,8 +1,10 @@
 package dev.oqthara.cli;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -304,5 +306,75 @@ class RuntimeResolverTest {
 
         assertEquals(java.toString(),
                 RuntimeResolver.managedJava(Map.of("HOME", home.toString())).orElseThrow());
+    }
+
+    /**
+     * Shell scripts stand in for candidates here, so these three run only on POSIX.
+     *
+     * <p>Windows has no {@code /bin/sh} to write a hanging or flooding probe in, and the
+     * behaviour under test is the deadline and the cap rather than anything platform-specific.
+     * The matrix still exercises the bounded probe on Windows through every other test in this
+     * class, because the real probe runs the JDK there.
+     */
+    private static final boolean POSIX = java.io.File.separatorChar == '/';
+
+    /** A candidate that never exits must be refused, not waited on forever. */
+    @Test
+    @Timeout(30)
+    void aProbeThatNeverExitsIsRefused(@TempDir Path temp) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(POSIX, "needs a POSIX shell");
+        Path script = script(temp, "hangs", "exec sleep 600");
+
+        long started = System.nanoTime();
+        OptionalInt major = RuntimeResolver
+                .processProbe(java.time.Duration.ofMillis(500), 4096)
+                .majorVersion(script.toString());
+        long elapsedMillis = (System.nanoTime() - started) / 1_000_000;
+
+        assertTrue(major.isEmpty(), "a hanging candidate must not report a version");
+        assertTrue(elapsedMillis < 10_000,
+                "the probe must give up at its deadline, but took " + elapsedMillis + "ms");
+    }
+
+    /**
+     * Exceeding the cap is a refusal even when a parseable banner arrives first.
+     *
+     * <p>The candidate exits promptly, so only the cap can decide this. It announces a valid
+     * version and then floods; without the cap the whole stream is read and the banner parses,
+     * which is why this case -- rather than one that never terminates -- is the one that proves
+     * the cap is load-bearing.
+     */
+    @Test
+    @Timeout(60)
+    void aProbeThatFloodsItsOutputIsRefused(@TempDir Path temp) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(POSIX, "needs a POSIX shell");
+        Path script = script(temp, "floods",
+                "echo 'openjdk version \"21.0.1\" 2025-01-21'\n"
+                        + "i=0\n"
+                        + "while [ $i -lt 200 ]; do echo 'padding padding padding padding';"
+                        + " i=$((i+1)); done");
+
+        OptionalInt major = RuntimeResolver
+                .processProbe(java.time.Duration.ofSeconds(20), 1024)
+                .majorVersion(script.toString());
+
+        assertTrue(major.isEmpty(),
+                "exceeding the output cap is a refusal, not a truncated but accepted banner");
+    }
+
+    /** The bounded probe still parses a candidate that behaves. */
+    @Test
+    void aWellBehavedProbeStillReportsItsMajor(@TempDir Path temp) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(POSIX, "needs a POSIX shell");
+        Path script = script(temp, "good", "echo 'openjdk version \"21.0.9\" 2025-01-21'");
+
+        assertEquals(OptionalInt.of(21), RuntimeResolver.processProbe().majorVersion(script.toString()));
+    }
+
+    private static Path script(Path dir, String name, String body) throws IOException {
+        Path script = dir.resolve(name);
+        Files.writeString(script, "#!/bin/sh\n" + body + "\n");
+        assertTrue(script.toFile().setExecutable(true), "the script must be executable");
+        return script;
     }
 }
