@@ -33,6 +33,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `clone` | built-in |
 | `contains` | built-in |
 | `copy_file` | built-in |
+| `copy_tree` | built-in |
 | `cos` | built-in |
 | `cpu_count` | built-in |
 | `csv_parse` | built-in |
@@ -90,6 +91,8 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `http_post` | built-in |
 | `hypot` | built-in |
 | `indent_text` | built-in |
+| `ini_parse` | built-in |
+| `ini_write` | built-in |
 | `input` | built-in |
 | `instant_parse` | built-in |
 | `is_dir` | built-in |
@@ -132,8 +135,10 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `now` | built-in |
 | `number` | built-in |
 | `par_map` | built-in |
+| `path_absolute` | built-in |
 | `path_join` | built-in |
 | `path_name` | built-in |
+| `path_normalize` | built-in |
 | `path_parent` | built-in |
 | `pbkdf2_sha256` | built-in |
 | `percentile` | built-in |
@@ -141,6 +146,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `pop` | built-in |
 | `pow` | built-in |
 | `print` | built-in |
+| `properties_parse` | built-in |
 | `push` | built-in |
 | `query_encode` | built-in |
 | `query_parse` | built-in |
@@ -152,6 +158,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `read` | built-in |
 | `read_bytes` | built-in |
 | `read_lines` | built-in |
+| `read_lines_or_empty` | built-in |
 | `regex` | built-in |
 | `replace` | built-in |
 | `repr` | built-in |
@@ -173,13 +180,17 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `spawn` | built-in |
 | `split` | built-in |
 | `sqrt` | built-in |
+| `stat` | built-in |
 | `stdev` | built-in |
 | `sum` | built-in |
 | `tan` | built-in |
 | `tau` | built-in |
+| `temp_dir` | built-in |
 | `text` | built-in |
 | `timestamp` | built-in |
 | `today` | built-in |
+| `toml_get` | built-in |
+| `touch` | built-in |
 | `trim` | built-in |
 | `type_of` | built-in |
 | `tz_convert` | built-in |

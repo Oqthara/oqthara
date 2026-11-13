@@ -327,7 +327,7 @@ class FileOperationsTest {
     }
 
     /** Creates a named pipe, failing the test rather than returning null on a supported platform. */
-    private static Path namedPipe(Path path) {
+    static Path namedPipe(Path path) {
         try {
             Process mkfifo = new ProcessBuilder("mkfifo", path.toString())
                     .redirectErrorStream(true).start();
@@ -398,7 +398,6 @@ class FileOperationsTest {
      */
     @Test
     void copyRefusesADanglingSymlinkTargetAndLeavesItAlone() throws Exception {
-        assumeTrue(pointsAtLinks(), "this platform cannot create symbolic links here");
         Files.writeString(dir.resolve("payload.txt"), "payload");
         Path link = dir.resolve("dangling.out");
         try {
@@ -428,7 +427,6 @@ class FileOperationsTest {
      */
     @Test
     void aCopyThatFailsBeforeOpeningTheTargetLeavesAnExistingLinkIntact() throws Exception {
-        assumeTrue(pointsAtLinks(), "this platform cannot create symbolic links here");
         Path link = dir.resolve("preexisting.out");
         try {
             Files.createSymbolicLink(link, dir.resolve("also-not-there.txt"));
@@ -441,11 +439,6 @@ class FileOperationsTest {
 
         assertTrue(Files.isSymbolicLink(link),
                 "a failed copy must not delete a target it never created");
-    }
-
-    /** Both platforms can create a symlink in a temp directory, except Windows without rights. */
-    private static boolean pointsAtLinks() {
-        return true;
     }
 
     /** A copy under the limit succeeds, transfers every byte, and is charged for what moved. */

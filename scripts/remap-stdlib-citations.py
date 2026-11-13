@@ -40,6 +40,16 @@ def fix(m):
         file_name = next((c for c in reversed(named) if name in tables.get(c, {})), file_name)
     truth = tables.get(file_name, {}).get(name)
     if not truth:
+        # A section may name its module *after* the function list ("all in
+        # `FileSystem.java`"), which the lookback above cannot see. A name is registered
+        # exactly once in this codebase, so falling back to the module that actually
+        # registers it is sound -- and unlike leaving the entry unresolved, it still
+        # remaps the digits.
+        holders = [t for t, names in tables.items() if name in names]
+        if len(holders) == 1:
+            file_name = holders[0]
+            truth = tables[file_name][name]
+    if not truth:
         unresolved += 1
         return m.group(0)
     if [int(n) for n in nums] == sorted(truth):

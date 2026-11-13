@@ -1415,7 +1415,14 @@ bad argument, rather than escaping as an internal error.
 
 Copying: `copy_file(source, target)` and `move_file(source, target)` refuse an existing target
 rather than overwriting it. Moving copies and then deletes the source, so a failure leaves the
-source intact rather than a half-written target behind.
+source intact rather than a half-written target behind. `copy_tree(from, to)` copies a
+directory recursively, refuses a target that exists and is not empty rather than merging into
+it, refuses to follow a symbolic link anywhere in the tree, and counts the whole tree against
+the same 16 MiB bound `copy_file` gives one file: an entry cap alone would allow a hundred
+thousand files of sixteen megabytes each, and a per-file bound inside a tree that size would
+allow the same 1.6 TiB. A tree refused partway leaves the partial target in place, because
+removing it needs a recursive delete the language does not have; the error names the target
+and says to delete it before retrying.
 
 Binary: `read_bytes(path)` returns lowercase hex text and `write_bytes(path, hex)` accepts it.
 There is no bytes type; hex round-trips through files, JSON and the encoders above, and a
@@ -1556,6 +1563,8 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
 | `http_get`, `http_post` | 15 s to connect, 30 s for headers, 30 s for the body, 16 MiB per body | `cannot reach the host: connection refused`, `no response headers within 30 seconds`, `the response body did not finish in 30 seconds`, `response is too large: <url>` |
 | `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call` |
+| `copy_file`, `move_file` | 16 MiB per file | `file is too large to copy: <path>` |
+| `copy_tree` | 16 MiB per tree, 100,000 entries | `directory tree is too large to copy: <path>`, `directory tree has too many entries: <path>` |
 | `sleep` | 10 seconds per call, 60 seconds total | `cannot sleep for more than 10 seconds`, `the program waited for too long` |
 | `list_files` | 100,000 entries | `directory has too many entries: <path>` |
 
@@ -1583,6 +1592,7 @@ size check used, never a re-derived one:
 | ---- | ----------- | ---- |
 | `read`, `read_lines` | bytes read | UTF-8 bytes |
 | `save`, `append` | bytes written | UTF-8 bytes |
+| `copy_file`, `move_file`, `copy_tree` | bytes copied | bytes |
 | `http_get`, `http_post` | body length | UTF-8 bytes |
 | `run_command` | output length | UTF-8 bytes |
 | `input()` | line length | Java `String` characters |

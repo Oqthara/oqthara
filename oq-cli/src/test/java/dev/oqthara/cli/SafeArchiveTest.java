@@ -187,7 +187,60 @@ class SafeArchiveTest {
         }
     }
 
-// --- executable bits ---
+// --- the archive itself is never read whole ---
+
+    /**
+     * The tail read is bounded, so a very large archive is never held in memory.
+     *
+     * <p>The caps in this class all live below the central directory read, so while that read
+     * was {@code Files.readAllBytes} the one input that most needs a cap -- a large archive --
+     * reached none of them. Asserting this through extraction cannot work: a test big enough to
+     * exhaust the test JVM's heap would have to write gigabytes, and one small enough to run
+     * fits whatever the reader does. So the bound is asserted directly, on the array the reader
+     * returns, which is the thing whose size the caps depend on.
+     */
+    @Test
+    void readsOnlyABoundedTailOfALargeArchive(@TempDir Path temp) throws Exception {
+        Path archive = temp.resolve("big.zip");
+        // Incompressible, so the file on disk is the size the entries claim. A run of zeroes
+        // deflates to almost nothing and would leave the archive small.
+        byte[] chunk = new byte[1024 * 1024];
+        new java.util.Random(20261113L).nextBytes(chunk);
+        try (OutputStream out = Files.newOutputStream(archive);
+             ZipOutputStream zip = new ZipOutputStream(out)) {
+            zip.setLevel(java.util.zip.Deflater.NO_COMPRESSION);
+            zip.putNextEntry(new ZipEntry("bin/java"));
+            for (int i = 0; i < 96; i++) {
+                zip.write(chunk);
+            }
+            zip.closeEntry();
+        }
+        long size = Files.size(archive);
+        assertTrue(size > 90L * 1024 * 1024, "the archive has to be much larger than the tail, was " + size);
+
+        SafeArchive.Tail tail = SafeArchive.readCentralDirectory(archive);
+
+        // 64 MiB of directory plus the 64 KiB end-record window.
+        long bound = 64L * 1024 * 1024 + 0xFFFF + 22;
+        assertTrue(tail.bytes().length <= bound,
+                "the reader held " + tail.bytes().length + " bytes of a " + size
+                        + " byte archive, above the " + bound + " byte bound");
+        assertEquals(size - tail.bytes().length, tail.base(),
+                "the tail is what sits at the end, so base is the size less the tail");
+    }
+
+    /** A small archive is read whole, and the base is zero so its offsets need no shifting. */
+    @Test
+    void readsASmallArchiveFromTheStart(@TempDir Path temp) throws Exception {
+        Path archive = zip(temp, "small.zip", entries("bin/java", "release"));
+
+        SafeArchive.Tail tail = SafeArchive.readCentralDirectory(archive);
+
+        assertEquals(Files.size(archive), tail.bytes().length);
+        assertEquals(0L, tail.base());
+    }
+
+    // --- executable bits ---
 
     @Test
     void restoresTheExecutableBitFromTheArchive(@TempDir Path temp) throws IOException {
