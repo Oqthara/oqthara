@@ -48,12 +48,12 @@ both backends.
 | #186 | `url_join` mishandles query-only, fragment-only and empty references | 4 | Fixed, verified, tests added |
 | #163 | Whole numbers above `2^53` hash differently from the decimal they equal | 5 | Fixed, verified, tests added |
 | #164 | Decimals print with twelve fractional places and do not parse back | 5 | Fixed, verified, tests added |
-| #165 | `mean` reports an overflow for a dataset whose mean is representable | 5 | Fixed, verified, tests added |
-| #166 | `stdev` overflows squaring values it could still take the root of | 5 | Fixed, verified, tests added |
-| #167 | `mode` treats `0` and `-0.0` as different values | 5 | Fixed, verified, tests added |
-| #168 | `heap_push` refuses to mix whole numbers and decimals | 5 | Fixed, verified, tests added |
-| #169 | `bisect` places `0` wrongly in a list containing `-0.0` | 5 | Fixed, verified, tests added |
-| #174 | `bisect_left([1, 2], NaN)` answers `0` | 5 | Fixed, verified, tests added |
+| #165 | `mean` is order-dependent when an intermediate sum overflows | 5 | Fixed, verified, tests added |
+| #166 | `stdev` overflows its intermediate variance even when the result is finite | 5 | Fixed, verified, tests added |
+| #167 | `mode` groups signed zero differently from language equality | 5 | Fixed, verified, tests added |
+| #168 | heap operations reject mixed whole and decimal numbers | 5 | Fixed, verified, tests added |
+| #169 | `bisect_left` disagrees with language ordering for signed zero | 5 | Fixed, verified, tests added |
+| #174 | `bisect` returns the wrong insertion point for `NaN` | 5 | Fixed, verified, tests added |
 
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
@@ -620,7 +620,7 @@ is the language's ordering (ADR-0041 D7), so the heap and the operator agree by 
 The type check also had to move ahead of the mutation for the push to be atomic: a rejected
 `heap_push(heap, "x")` leaves the array byte-identical.
 
-### #169 and #174 — `bisect` ignored the language's ordering and could hang
+### #169 and #174 — `bisect` ignored the language's ordering
 
 `bisect` compared raw `double`s, so it had the opposite problem from the heap: it *lost* the
 distinction the language draws. The language orders `-0.0` below `0.0` (`Values.compare`),
@@ -628,9 +628,10 @@ while `probe < target` sees them as equal, so `bisect_left([-0.0, 0.0, 1.0], 0)`
 instead of `1`. Both bounds now compare via `Values.compare`.
 
 `NaN` is the case where raw comparison fails hardest: every comparison against it is false, so
-the loop neither advanced nor narrowed and ran forever. Under the language's ordering `NaN`
-sorts above every number, so `bisect_left([1.0, 2.0], NaN)` is `2` and terminates. A `NaN`
-inside the list is handled by the same rule rather than by a special case.
+the loop collapses every probe to "not less than" and returns `0` — the bottom of the list,
+whatever the data. Under the language's ordering `NaN` sorts above every number, so
+`bisect_left([1.0, 2.0], NaN)` is `2`. A `NaN` inside the list is handled by the same rule
+rather than by a special case.
 
 One deliberate non-choice: the list is still not checked for sortedness. ADR-0041 D6 says a
 list is a list, and a search over an unsorted list is the caller's business.
@@ -675,7 +676,9 @@ reachable as `1e308 * 1e308 - 1e308 * 1e308`, which the test suite uses.
 Test classes: `ValueTest` (3 new tests for #163), `ValuesTest` (4 new tests for #164, one of
 them a 22-value round trip) and `StatisticsTest` (11 new tests covering #165–#169 and #174). The
 suite goes from 1,476 tests at `deefc3e` to 1,494 with 0 failures, and `oq-core` line coverage
-stays at 91.5%.
+stays at 91.5%. Merged as `6c1b930` (pull request #204); a fresh clone of that commit builds and
+reports 1,513 tests with 0 failures — 1,494 plus the 19 that arrived with #205 — and every row in
+the table above was re-run there and returns the "After" value.
 
 Regenerating the conformance baseline was part of the change: `230-math-transcendental.out`
 lines 9, 18, 19 and 20 carried the old twelve-place projection. Line 17 is untouched because
