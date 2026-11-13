@@ -112,19 +112,24 @@ Because field access works, the refusals are specific to the two excluded featur
 
 ---
 
-## 6. Standard library — 24% of the 231-module index
+## 6. Standard library — 25% of the 231-module index
 
 | Status | Modules | Share |
 | --- | --- | --- |
-| Covered | 20 | 8.7% |
-| Partly covered | 36 | 15.6% |
-| Absent | 57 | 24.7% |
+| Covered | 21 | 9.1% |
+| Partly covered | 37 | 16.0% |
+| Absent | 55 | 23.8% |
 | Deliberately excluded | 118 | 51.1% |
 | **Total** | **231** | **100.0%** |
 
-`§17` is **`PARTIAL` and stays `PARTIAL`.** 57 absent modules is engineering work, not paperwork:
+`§17` is **`PARTIAL` and stays `PARTIAL`.** 55 absent modules is engineering work, not paperwork:
 each domain needs reference behaviour, a semantic contract, JVM feasibility, resource-lifetime
-analysis, an ADR, an implementation, and both-backend tests. The next two ranked domains are
+analysis, an ADR, an implementation, and both-backend tests. One did land: HTML escaping was the single
+remaining item with no language decision in it, and the inventory had recorded its absence as a
+security gap rather than a convenience gap, so `html_escape`, `html_unescape`,
+`html_escape_attribute` and `html_entity` were delivered under ADR-0054 with 19 tests. That moves
+`html` to covered and `html.entities` to partly covered — the arithmetic behind every figure in
+the table above. The next two ranked domains are
 additionally blocked on language decisions — `decimal` on a type-name collision with the existing
 float name, `itertools` on a lazy-iteration construct with no lifetime story.
 
@@ -152,7 +157,7 @@ asserting something false. Provenance is therefore correct and honest, not compl
 
 | Row | State | Technical cause |
 | --- | --- | --- |
-| `§17` Broad standard library | `PARTIAL` | 57 of 231 modules absent (24%). Real per-domain engineering; `decimal` and `itertools` also need language decisions. |
+| `§17` Broad standard library | `PARTIAL` | 55 of 231 modules absent (24%). Real per-domain engineering; `decimal` and `itertools` also need language decisions. |
 | Managed runtime | `PARTIAL` | Digest source, pinned LTS and vendor undecided. Digests must exist before the checker. |
 | Signed distribution | `PARTIAL` | Workflow ready; no signed release published, and publishing is explicitly out of scope without separate authorization. |
 | `§4.2` independent review | `BLOCKED` | One human maintainer. Permanently blocked, not excused. |
