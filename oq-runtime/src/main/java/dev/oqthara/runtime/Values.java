@@ -825,10 +825,12 @@ public final class Values {
      * fits, and {@link java.math.BigInteger#longValueExact()} refuses a result that does not.
      */
     private static Long rangeValueAt(OqRange r, long start, long offset, long stride) {
+        // The window start is a position in the range as well, so it is scaled by the step
+        // exactly like the offset is; adding it unscaled is only right when the step is 1.
         java.math.BigInteger position = java.math.BigInteger.valueOf(offset)
-                .multiply(java.math.BigInteger.valueOf(stride));
+                .multiply(java.math.BigInteger.valueOf(stride))
+                .add(java.math.BigInteger.valueOf(start));
         return java.math.BigInteger.valueOf(r.start())
-                .add(java.math.BigInteger.valueOf(start))
                 .add(position.multiply(java.math.BigInteger.valueOf(r.step())))
                 .longValueExact();
     }

@@ -267,4 +267,36 @@ class RangeArithmeticTest {
         assertTrue(Values.iterable(range, span) == range);
         assertEquals(0L, Values.iterable(range, span).iterator().next());
     }
+
+    @Test
+    void aSliceOfAStridedRangeStartsAtTheStridedPosition() {
+        // The window start is a position in the range, so it scales by the step exactly like
+        // the offset does. Adding it unscaled was invisible on unit steps, which is why only
+        // the strided cases below catch it.
+        OqRange stepped = new OqRange(0L, 10L, true, 2L);
+        assertEquals(List.of(2L, 4L), Values.slice(stepped, 1L, 3L, 1L, span));
+        assertEquals(List.of(0L, 4L, 8L), Values.slice(stepped, 0L, 5L, 2L, span));
+        assertEquals(List.of(8L), Values.slice(stepped, 4L, 5L, 1L, span));
+    }
+
+    @Test
+    void aSliceOfADescendingRangeStartsAtTheStridedPosition() {
+        // The reversed range names 9, 8, 7... so position 1 is 8. Returning 10 was not even a
+        // member of the range, which is the sharpest way to see that the start was unscaled.
+        OqRange descending = new OqRange(9L, 0L, true, -1L);
+        assertEquals(List.of(8L, 7L), Values.slice(descending, 1L, 3L, 1L, span));
+        assertTrue(descending.contains(9L));
+        assertFalse(descending.contains(10L));
+        assertEquals(List.of(9L, 7L, 5L), Values.slice(descending, 0L, 5L, 2L, span));
+    }
+
+    @Test
+    void indexingAndSlicingAStridedRangeAgree() {
+        // They are two spellings of the same position, and the bug made them disagree.
+        OqRange stepped = new OqRange(0L, 9L, true, 3L);
+        for (long position = 0; position < 4; position++) {
+            assertEquals(List.of(Values.index(stepped, position, span)),
+                    Values.slice(stepped, position, position + 1L, 1L, span));
+        }
+    }
 }

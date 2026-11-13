@@ -387,6 +387,24 @@ describe-don't-enumerate rule, the two cardinality refusals, and a new "Counter 
 subsection. The claim that ranges "were already unaffected because both are converted to a
 list before the loop starts" was also wrong and is corrected.
 
+### A defect found in review, after the group 3 tests were green
+
+The independent pre-merge review found a wrong-answer bug in the group 3 slice path that every
+test above had missed. `Values.rangeValueAt` scaled the slice *offset* by the range step and then
+added the window *start* unscaled, which is only the same thing when the step is 1:
+
+- `range(0, 10, 2)[1:3]` returned `[1, 3]`; the window is positions 1 and 2 of a range that
+  names 0, 2, 4, 6, 8, so it is `[2, 4]`.
+- `(0 to 9).reverse()[1:3]` returned `[10, 9]`; 10 is not a member of the range at all, and the
+  window is `[8, 7]`.
+
+The start is now scaled like the offset. The gap was in the tests rather than in the reasoning:
+every slice assertion in `RangeArithmeticTest` sliced a `to`/`until` literal, whose step is 1.
+Three tests now cover a strided lateral slice, a descending one, and indexing-versus-slicing
+agreement at four positions, so a step that is not 1 cannot pass through this path unnoticed
+again. Reported here rather than quietly amended because it is the reason the merge order below
+puts group 3 last: a fix that is green is not the same as a fix that is right.
+
 ## Newly discovered defects
 
 These are not in the audit backlog. Each was reproduced at `6954a86` and is reported
