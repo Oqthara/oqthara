@@ -70,32 +70,50 @@ final class Patterns {
         // Symbolic links are not followed: walk() settled this already. Following one can
         // revisit a directory, and the entry cap would then trip for the wrong reason.
         List<Object> found = new ArrayList<>();
+        List<Path> visited = new ArrayList<>();
         try (Stream<Path> entries = glob.recursive()
                 ? Files.walk(directory)
                 : Files.list(directory)) {
-            Iterator<Path> iterator = entries.sorted().iterator();
+            // Drained into a bounded list, then sorted, rather than entries.sorted(): sorting the
+            // stream is stateful and buffers every Path before yielding the first one, so a
+            // pattern that matched nothing still walked and buffered the whole tree and could
+            // exhaust the heap before any cap applied (issue 185). Counting matches alone cannot
+            // bound that, because a non-matching entry is still an entry traversal paid for.
+            Iterator<Path> iterator = entries.iterator();
             while (iterator.hasNext()) {
                 Path entry = iterator.next();
                 if (entry.equals(directory)) continue;
-                Path relative = directory.relativize(entry);
-                if (!glob.matches(relative)) continue;
-                if (found.size() >= Stdlib.MAX_LIST_ENTRIES) {
-                    throw new OqError("pattern matched too many entries: " + pattern, span,
-                            "It matched at least " + Stdlib.MAX_LIST_ENTRIES + " entries under "
-                                    + directory + ". Narrow the pattern.");
+                if (visited.size() >= Stdlib.MAX_VISITED_ENTRIES) {
+                    throw new OqError("patterns visited too many entries: " + directory, span,
+                            "It visited at least " + Stdlib.MAX_VISITED_ENTRIES
+                                    + " entries under " + directory
+                                    + " without finishing the pattern. Narrow the pattern, or "
+                                    + "search a smaller directory.");
                 }
-                found.add(relative.toString().replace(java.io.File.separatorChar, '/'));
+                visited.add(entry);
             }
         } catch (OqError error) {
             throw error;
         } catch (java.io.UncheckedIOException e) {
             // Files.walk and Files.list report a traversal failure as an unchecked wrapper, so
             // the IOException branch below never sees it and the failure would surface as an
-            // internal error with exit 70. walk() has the same shape on main; this is the
-            // corrected form for new code.
+            // internal error with exit 70. This is the same form walk() now uses.
             throw new OqError("cannot search '" + directory + "'", span, e.getCause().getMessage());
         } catch (IOException e) {
             throw new OqError("cannot search '" + directory + "'", span, e.getMessage());
+        }
+        // Sorted on Paths, not on the rendered strings, so the order is the one
+        // Stream.sorted() produced before: Path.compareTo compares element by element.
+        visited.sort(null);
+        for (Path entry : visited) {
+            Path relative = directory.relativize(entry);
+            if (!glob.matches(relative)) continue;
+            if (found.size() >= Stdlib.MAX_LIST_ENTRIES) {
+                throw new OqError("pattern matched too many entries: " + pattern, span,
+                        "It matched at least " + Stdlib.MAX_LIST_ENTRIES + " entries under "
+                                + directory + ". Narrow the pattern.");
+            }
+            found.add(relative.toString().replace(java.io.File.separatorChar, '/'));
         }
         Stdlib.chargeTransfer(host, found.size());
         return found;

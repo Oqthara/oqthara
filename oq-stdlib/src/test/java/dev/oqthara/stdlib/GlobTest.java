@@ -280,6 +280,39 @@ class GlobTest {
         assertEquals(List.of(), call("glob", ".", "*.nomatch"));
     }
 
+    /**
+     * A pattern that matches nothing still refuses once the traversal itself is too large.
+     *
+     * <p>The result cap counts matches, so it cannot bound a search that never matches: every
+     * non-matching entry is traversal the call paid for and buffered but never returned. The
+     * previous form drained {@code Files.walk(dir).sorted()} — a stateful, exhaustive stream —
+     * before applying any cap, so a big enough tree exhausted the heap and the program died with
+     * {@code the program ran out of memory} instead of a diagnostic naming the directory (issue
+     * 185). This asserts the visited budget instead: the same tree now refuses by name.
+     *
+     * <p>The tree is the size of the real budget, so it costs a few seconds of empty-file
+     * creation. It is worth that: the refusal is the only observable difference, and on the
+     * previous code this exact call returned an empty list.
+     */
+    @Test
+    void aNonMatchingPatternOverTooManyEntriesIsRefusedByName() throws IOException {
+        Path many = dir.resolve("many");
+        Files.createDirectories(many);
+        for (int i = 0; i < Stdlib.MAX_VISITED_ENTRIES; i++) {
+            Files.createFile(many.resolve("f" + i));
+        }
+        // Exactly the budget is accepted: the cap bounds how much is buffered, so the boundary
+        // belongs to the same inclusive point walk() and list_files use.
+        assertEquals(List.of(), call("glob", "many", "**/*.nomatch"));
+
+        Files.createFile(many.resolve("one-more"));
+        OqError error = assertThrows(OqError.class,
+                () -> call("glob", "many", "**/*.nomatch"));
+        assertTrue(error.getMessage().contains("patterns visited too many entries"),
+                error.getMessage());
+        assertTrue(error.getMessage().contains("many"), error.getMessage());
+    }
+
     /** The search must not descend into a directory a non-recursive pattern cannot use. */
     @Test
     void aNonRecursivePatternDoesNotListNestedFiles() throws IOException {

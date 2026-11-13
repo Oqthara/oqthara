@@ -1484,7 +1484,7 @@ Also `is_file(path)` and `is_dir(path)`, because `exists` answers true for a dir
 `file_size` reports a directory's own size rather than failing. `walk(directory)` returns every
 path under a directory as relative text, sorted, and does **not** follow symbolic links:
 following one can revisit a directory already walked, and no entry cap stops a short cycle for
-the right reason.
+the right reason. It refuses a tree with more than 100,000 entries rather than walking it.
 
 `save` replaces the file's whole contents, so it truncates an existing file; that is the
 difference from `copy_file` and `move_file`, which never overwrite a target and refuse one that
@@ -1521,7 +1521,10 @@ the pattern rather than a flag: only a pattern that can reach past one segment �
 inheriting it would be a wrong answer rather than an error, so the pattern is translated to a
 regex here instead. Symbolic links are not followed, for the reason `walk` gives: following one
 can revisit a directory, and an entry cap would then trip for the wrong reason. A pattern that
-matches more entries than a list may hold is an error rather than a truncated result.
+matches more entries than a list may hold is an error rather than a truncated result, and so is
+one whose search has to visit more entries than it may buffer: the visited budget is separate
+from, and larger than, the 100,000-result cap, because a pattern that rarely matches still has
+to look at every entry to answer.
 
 Inside a class, only a leading `!` negates. Every other member is literal, so `[^a]` is "a caret
 or an a" and not a negated class, and `[a&&b]` is three characters with a repeated `&` rather
@@ -1714,11 +1717,12 @@ program cannot exhaust the machine by accident. These limits are part of the con
 | `input()` | 16,777,216 characters per line | `input line is too large` |
 | `run_command` | 30 seconds total, 16 MiB of output | `command timed out after 30 seconds: <path>`, `command output is too large: <path>` |
 | `http_get`, `http_post` | 15 s to connect, 30 s for headers, 30 s for the body, 16 MiB per body | `cannot reach the host: connection refused`, `no response headers within 30 seconds`, `the response body did not finish in 30 seconds`, `response is too large: <url>` |
-| `save`, `append` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call` |
+| `save`, `append`, `write_bytes` | 16 MiB per call | `cannot save <N> bytes in one call`, `cannot append <N> bytes in one call`, `cannot write <N> bytes in one call` |
 | `copy_file`, `move_file` | 16 MiB per file | `file is too large to copy: <path>` |
 | `copy_tree` | 16 MiB per tree, 100,000 entries | `directory tree is too large to copy: <path>`, `directory tree has too many entries: <path>` |
 | `sleep` | 10 seconds per call, 60 seconds total | `cannot sleep for more than 10 seconds`, `the program waited for too long` |
-| `list_files` | 100,000 entries | `directory has too many entries: <path>` |
+| `list_files`, `walk` | 100,000 entries | `directory has too many entries: <path>`, `directory tree has too many entries: <path>` |
+| `glob` | 100,000 matches, 200,000 entries visited | `pattern matched too many entries: <pattern>`, `patterns visited too many entries: <path>` |
 
 A limit of 16 MiB means 16,777,216 bytes; a payload of exactly that size is allowed and one
 byte more is refused. `input` is the exception: its 16,777,216 ceiling counts characters, so
@@ -1748,7 +1752,7 @@ size check used, never a re-derived one:
 | `http_get`, `http_post` | body length | UTF-8 bytes |
 | `run_command` | output length | UTF-8 bytes |
 | `input()` | line length | Java `String` characters |
-| `list_files` | entry count | directory entries |
+| `list_files`, `walk`, `glob` | entry count, entries returned | directory entries |
 | `print`, `write`, `write_text` | none | — |
 
 The blank row is deliberate: those three calls are bounded by the output counter and are never
@@ -1758,7 +1762,10 @@ charged against the step budget, so they have no billing unit to state.
 `StringBuilder` and charges `sb.length()`. Its 16 MiB ceiling is also counted in characters, so
 a line of astral characters is billed and refused by character count, not byte count.
 `list_files` bills one unit per directory entry, so its 100,000-entry cap and its step charge
-are the same number.
+are the same number. `walk` bills one unit per entry it returns, and `glob` one unit per entry
+it returns rather than per entry it visited: the visited budget bounds the work, and the charge
+is the result, so a pattern that visits a large tree and matches nothing is refused by the
+budget rather than billed for entries it never returned.
 
 The per-byte rate is not itself a bound. At one step per byte the 50,000,000-step budget would
 allow 50,000,000 bytes — about 47.68 MiB, or 2.98 calls of 16,777,216 bytes — so two full
