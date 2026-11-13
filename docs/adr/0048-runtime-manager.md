@@ -1,7 +1,8 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4, D5, D6, D7, D8 and D9 implemented; provenance and
-  signing are not)
+- **Status:** Proposed (D1, D2, D4, D5, D6, D7, D8 and D9 implemented; jar signing is
+  implemented by [ADR-0052](0052-keyless-release-signing.md); managed-runtime provenance D3
+  is not)
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 
@@ -27,7 +28,8 @@ What it does **not** ship, stated plainly because the gaps are the point of this
    older than 21 (`scripts/install.sh:101-122`). There is no bundled JRE and no download of one.
 2. **No signature.** Integrity is a SHA-256 in the same release as the jar. Anyone who can
    replace the jar can replace the checksum beside it, so this detects corruption and not
-   tampering.
+   tampering. ([ADR-0052](0052-keyless-release-signing.md) closes this gap for jar releases;
+   the paragraph describes the state this ADR was written against.)
 3. **No update or rollback.** Re-running the installer is the only upgrade. There is no
    previous-version retention and no way to return to one.
 4. **No version pinning beyond `OQ_VERSION`.** There is no lockfile, no per-project runtime
