@@ -7,6 +7,7 @@ import dev.oqthara.runtime.Values;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -83,6 +84,13 @@ public final class Json {
             if (peek() != ':') throw fail("expected ':' after object key");
             pos++;
             skipWhitespace();
+            // ADR-0035 records duplicate member names as invalid input. Silently keeping the
+            // last value is also the one behaviour that cannot be interoperable, because
+            // implementations disagree on which member wins. Checked before the value is
+            // read so the reported position is the duplicate key, not the end of its value.
+            if (map.containsKey(key)) {
+                throw fail("duplicate object key '" + key + "'");
+            }
             map.put(key, value());
             skipWhitespace();
             char c = peek();
@@ -141,18 +149,28 @@ public final class Json {
                     case 'n' -> sb.append('\n');
                     case 'r' -> sb.append('\r');
                     case 't' -> sb.append('\t');
-                    case 'u' -> {
-                        if (pos + 4 > src.length()) throw fail("invalid unicode escape");
-                        String hex = src.substring(pos, pos + 4);
-                        pos += 4;
-                        try {
-                            sb.append((char) Integer.parseInt(hex, 16));
-                        } catch (NumberFormatException e) {
-                            throw fail("invalid unicode escape \\u" + hex);
-                        }
-                    }
+                    case 'u' -> appendUnicodeEscape(sb);
                     default -> throw fail("unknown escape '\\" + esc + "'");
                 }
+                continue;
+            }
+            // RFC 8259 §7: unescaped control characters (U+0000 through U+001F) are not
+            // permitted inside a string. Accepting them yields values that the writer
+            // re-escapes, so a parse/print round-trip would silently rewrite the input.
+            if (c < 0x20) {
+                throw fail("unescaped control character U+" + String.format("%04X", (int) c)
+                        + " in text; use an escape such as '\\u" + String.format("%04X", (int) c) + "'");
+            }
+            // A lone surrogate cannot be encoded as UTF-8 on the way out, so it is a
+            // corrupt document rather than a character.
+            if (Character.isSurrogate(c)) {
+                char next = pos < src.length() ? src.charAt(pos) : '\0';
+                if (!Character.isSurrogatePair(c, next)) {
+                    throw fail("unpaired surrogate U+" + String.format("%04X", (int) c)
+                            + " in text; use a \\u escape for both halves of the pair");
+                }
+                sb.append(c).append(next);
+                pos++;
                 continue;
             }
             sb.append(c);
@@ -160,31 +178,83 @@ public final class Json {
         throw fail("unterminated text in JSON");
     }
 
+    /**
+     * Reads the body of a {@code \\u} escape, which {@link #string()} has already located at
+     * {@code pos}. JSON permits a surrogate pair to be written as two consecutive escapes; a
+     * lone half is rejected because it is not a character and cannot survive a UTF-8 encode.
+     */
+    private void appendUnicodeEscape(StringBuilder sb) {
+        char unit = readHex4();
+        if (Character.isLowSurrogate(unit)) {
+            throw fail("unpaired low surrogate U+" + String.format("%04X", (int) unit) + " in text");
+        }
+        if (!Character.isHighSurrogate(unit)) {
+            sb.append(unit);
+            return;
+        }
+        if (pos + 1 >= src.length() || src.charAt(pos) != '\\' || src.charAt(pos + 1) != 'u') {
+            throw fail("unpaired high surrogate U+" + String.format("%04X", (int) unit)
+                    + " in text; escape the low surrogate as a second \\u");
+        }
+        pos += 2;
+        char low = readHex4();
+        if (!Character.isLowSurrogate(low)) {
+            throw fail("high surrogate U+" + String.format("%04X", (int) unit)
+                    + " is not followed by a low surrogate");
+        }
+        sb.append(unit).append(low);
+    }
+
+    private char readHex4() {
+        if (pos + 4 > src.length()) throw fail("invalid unicode escape");
+        String hex = src.substring(pos, pos + 4);
+        char unit;
+        try {
+            unit = (char) Integer.parseInt(hex, 16);
+        } catch (NumberFormatException e) {
+            throw fail("invalid unicode escape \\u" + hex);
+        }
+        pos += 4;
+        return unit;
+    }
+
     private Object number() {
         int start = pos;
         if (peek() == '-') pos++;
-        // JSON requires at least one integer digit before any fraction or exponent.
-        if (pos >= src.length() || !Character.isDigit(src.charAt(pos))) {
+        // JSON requires at least one integer digit before any fraction or exponent, and the
+        // digits are the ASCII ten: Character.isDigit would also accept Arabic-Indic and
+        // fullwidth digits, which Long.parseLong then rejects as a crash rather than a
+        // diagnostic.
+        if (pos >= src.length() || !isJsonDigit(src.charAt(pos))) {
             throw fail("invalid number");
         }
-        while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
+        if (src.charAt(pos) == '0') {
+            pos++;
+            // RFC 8259 §6: an integer part is either a lone 0 or a nonzero digit followed by
+            // any digits. "01" is therefore invalid, not one.
+            if (pos < src.length() && isJsonDigit(src.charAt(pos))) {
+                throw fail("invalid number: leading zero in '" + src.substring(start, pos + 1) + "'");
+            }
+        } else {
+            while (pos < src.length() && isJsonDigit(src.charAt(pos))) pos++;
+        }
         boolean decimal = false;
         if (pos < src.length() && src.charAt(pos) == '.') {
             decimal = true;
             pos++;
-            if (pos >= src.length() || !Character.isDigit(src.charAt(pos))) {
+            if (pos >= src.length() || !isJsonDigit(src.charAt(pos))) {
                 throw fail("invalid number: expected a digit after '.'");
             }
-            while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
+            while (pos < src.length() && isJsonDigit(src.charAt(pos))) pos++;
         }
         if (pos < src.length() && (src.charAt(pos) == 'e' || src.charAt(pos) == 'E')) {
             decimal = true;
             pos++;
             if (pos < src.length() && (src.charAt(pos) == '+' || src.charAt(pos) == '-')) pos++;
-            if (pos >= src.length() || !Character.isDigit(src.charAt(pos))) {
+            if (pos >= src.length() || !isJsonDigit(src.charAt(pos))) {
                 throw fail("invalid number: expected a digit in the exponent");
             }
-            while (pos < src.length() && Character.isDigit(src.charAt(pos))) pos++;
+            while (pos < src.length() && isJsonDigit(src.charAt(pos))) pos++;
         }
         String text = src.substring(start, pos);
         try {
@@ -226,8 +296,22 @@ public final class Json {
         return src.charAt(pos);
     }
 
+    /**
+     * JSON defines exactly four insignificant whitespace characters (RFC 8259 §2). Using
+     * {@link Character#isWhitespace} here would also accept a vertical tab, a form feed, a
+     * no-break space and the whole Unicode space category, none of which a strict reader
+     * may skip.
+     */
     private void skipWhitespace() {
-        while (pos < src.length() && Character.isWhitespace(src.charAt(pos))) pos++;
+        while (pos < src.length() && isJsonWhitespace(src.charAt(pos))) pos++;
+    }
+
+    private static boolean isJsonWhitespace(char c) {
+        return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+    }
+
+    private static boolean isJsonDigit(char c) {
+        return c >= '0' && c <= '9';
     }
 
     private OqError fail(String message) {
@@ -287,11 +371,20 @@ public final class Json {
         }
         if (value instanceof Map<?, ?> map) {
             sb.append('{');
+            // Two distinct map keys can render to the same member name: the number 1 and the
+            // string "1" both display as 1. Emitting both would produce JSON that this very
+            // reader now rejects (and that no other parser agrees on), so refuse instead.
+            Set<String> emitted = new LinkedHashSet<>();
             int i = 0;
             for (Map.Entry<?, ?> entry : map.entrySet()) {
+                String name = Values.display(entry.getKey());
+                if (!emitted.add(name)) {
+                    throw new OqError("cannot write two map keys as the JSON member '" + name + "'",
+                            Span.synthetic());
+                }
                 if (i++ > 0) sb.append(',');
                 if (indent >= 0) sb.append('\n').append("  ".repeat(indent + 1));
-                writeString(sb, Values.display(entry.getKey()));
+                writeString(sb, name);
                 sb.append(':');
                 if (indent >= 0) sb.append(' ');
                 writeValue(sb, entry.getValue(), indent < 0 ? -1 : indent + 1);
