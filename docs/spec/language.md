@@ -119,6 +119,7 @@ bytes and not UTF-16 units, so all of them agree on the same value:
 | `"a😀b".reverse()` | `"b😀a"` | characters reversed |
 | `"a😀b".find("b")` | `2` | a character offset |
 | `"a😀b".substring(1, 2)` | `"😀"` | character bounds |
+| `"𐐨x".capitalize()` | `"𐐀x"` | the case mapping of the first character |
 | `for c in "a😀b"` | three iterations | one character each |
 
 This matches Python 3, which counts code points. Text is stored as UTF-16 internally, so
@@ -128,6 +129,35 @@ language exposes. `.length()` also scans, so hoist it out of a loop that repeats
 Grapheme clusters are *not* the unit: `"é"` written as `e` plus a combining accent has
 length `2`, because it is two code points. [ADR-0024](../adr/0024-text-is-a-sequence-of-code-points.md)
 records why code points were chosen over clusters.
+
+`capitalize()` upper-cases the first character and leaves the rest alone. Because the unit
+is a code point, a letter outside the basic multilingual plane is mapped as one character:
+`"𐐨x"` is `"𐐀x"`, where an implementation working in UTF-16 units would leave the letter
+unchanged. A first character with no upper case — a digit, an emoji, a space — is kept as it
+is.
+
+### Counts and bounds
+
+Every method that takes a count or an index — `.take(n)`, `.skip(n)`, `.slice(from, to)`,
+`.subList(from, to)`, `.substring(from, to)`, `.repeat(n)`, `.pad_start(n, fill)`,
+`.pad_end(n, fill)` — follows the same two rules as `xs[i]`.
+
+A value that is not a whole number is refused rather than truncated: `xs.take(1.5)` raises
+`a count for take must be a whole number, got decimal`, and `xs.take("a")` raises
+`a count for take must be a whole number, got text`. Rounding `1.5` down to `1` would answer
+a question the program did not ask, and a wrong element is harder to notice than an error.
+
+A whole number written as a decimal is still a whole number, because `1 == 1.0`
+([ADR-0017](../adr/0017-equality-and-hashing.md)). `xs.take(2.0)` is `[10, 20]`, the same
+as `xs.take(2)`. A decimal past the 64-bit range, or an infinity, is refused as out of range
+rather than narrowed to the largest whole number: `xs[1e300]` raises
+`an index is out of range: <the value as the language prints it>`, quoting the number the
+program wrote rather than the saturated index it would otherwise have used.
+
+`.repeat(n)` needs a count of zero or more, so `"x".repeat(-1)` raises
+`repeat() needs a count of zero or more, got -1` rather than failing inside the runtime. A
+count whose product with the text length would not fit in memory is refused before anything
+is allocated.
 
 ## Numbers
 

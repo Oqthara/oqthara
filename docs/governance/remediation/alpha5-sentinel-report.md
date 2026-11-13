@@ -20,12 +20,12 @@ both backends.
 | #143 | `is_even`/`is_odd` narrow the decimal to `long` first | 1 | Fixed, verified, tests added |
 | #144 | `abs`/`floor`/`ceil`/`round` methods disagree with the builtins | 1 | Fixed, verified, tests added |
 | #154 | `range`-family builtins silently truncate fractional bounds | 1 | Fixed for `range`, `range_list`, `round(x, places)`, `random(a, b)`; tests added |
-| #141 | list `slice`/`subList`/`take`/`skip` truncate or saturate fractional bounds | 2 | Reproduced, not started |
-| #142 | text `substring`/`slice` truncate fractional bounds | 2 | Reproduced, not started |
-| #145 | `"x".repeat(-1)` reports an internal error and exits 70 | 2 | Reproduced, not started |
-| #146 | `"x".repeat(2.5)` truncates; `pad_start`/`pad_end` truncate | 2 | Reproduced, not started |
+| #141 | list `slice`/`subList`/`take`/`skip` truncate or saturate fractional bounds | 2 | Fixed, verified, tests added |
+| #142 | text `substring`/`slice` truncate fractional bounds | 2 | Fixed, verified, tests added |
+| #145 | `"x".repeat(-1)` reports an internal error and exits 70 | 2 | Fixed, verified, tests added |
+| #146 | `"x".repeat(2.5)` truncates; `pad_start`/`pad_end` truncate | 2 | Fixed, verified, tests added |
 | #147 | `"a😀b".split("")` yields lone surrogates | 2 | Reproduced; **blocked on a semantic decision** |
-| #148 | `capitalize` does not upper-case a supplementary-plane first letter | 2 | Reproduced, not started |
+| #148 | `capitalize` does not upper-case a supplementary-plane first letter | 2 | Fixed, verified, tests added |
 | #149 | `length(0 until MIN)` and friends overflow to a negative size | 3 | Reproduced, not started |
 | #150 | range `.first()`/`.last()`/`iter().next()` materialise the whole range | 3 | Reproduced, not started |
 | #151 | `MAX to MAX` `.to_list()` never terminates | 3 | Reproduced, not started |
@@ -37,6 +37,11 @@ both backends.
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
 silently folded into the fixes above.
+
+Each group lands as its own Draft PR, so a test added by one group is not present on
+another group's branch. A test class that belongs to a different group is therefore cited
+by its file path rather than by class name, so that a reader on any one branch can tell
+which citations that branch can actually run.
 
 ## Group 1 — numeric semantics
 
@@ -119,9 +124,10 @@ Tests added or extended:
 
 - `StatisticsTest` — three tests at both ends of the double range and in the subnormal
   range.
-- `NumberMethodBuiltinParityTest` (new) — method and builtin answers past the 64-bit
-  range, the lowest-whole-number `abs`, the wrong-receiver refusal, and parity of
-  values with no `long` representation.
+- `oq-stdlib/src/test/java/dev/oqthara/stdlib/NumberMethodBuiltinParityTest.java` (new,
+  on the Group 1 branch) — method and builtin answers past the 64-bit range, the
+  lowest-whole-number `abs`, the wrong-receiver refusal, and parity of values with no
+  `long` representation.
 - `StdlibFuzzRegressionTest` — fractional and out-of-range whole-number arguments are
   refused rather than truncated.
 - `BytecodeCompilerTest` — a fractional range bound is refused identically on both
@@ -131,6 +137,125 @@ Documentation: `docs/spec/language.md` now states the whole-number rule and the
 method/builtin parity promise, and notes that the statistics ends of the range are not
 a special case; `docs/stdlib/reference.md` repeats the parity promise on the number
 section.
+
+## Group 2 — text and sequence bounds
+
+Branch `sentinel/alpha5/group2-text-and-index`, cut from `6954a86` so that it is
+reviewable without Group 1. Five issues plus the #147 analysis. The whole group is one
+rule — how a count or an index argument is read — applied at the points that were each
+narrowing on their own.
+
+### #141 and #142 — fractional and non-finite bounds
+
+Reproduction at baseline:
+
+```
+xs = [10, 20, 30, 40]
+xs.take(1.5)      -> [10]              xs.take(2.0)  -> [10, 20]
+xs.skip(1.5)      -> [20, 30, 40]      xs.take(NaN)  -> []
+xs.slice(1.5, 3.5)   -> [20, 30]       xs.take(1e300) -> [10, 20, 30, 40]
+xs.subList(1.5, 3.5) -> [20, 30]       xs.skip(1e300) -> []
+"abcdef".substring(1.5, 4) -> "bcd"    "abcdef".slice(1.5, 4) -> "bcd"
+```
+
+Root cause: `MethodResolverImpl.resolvedBound` and `clampIndex` narrowed a `Double` with
+`longValue()` before clamping or checking a range, so `1.5` became `1`, `NaN` became `0`
+and `1e300` saturated to `Long.MAX_VALUE`. The text methods had their own copy of the same
+narrowing. `xs.take("a")` reached a raw cast and escaped as
+`internal error: ClassCastException`, exit code 70 — a defect found while reproducing, not
+in the audit backlog.
+
+Fix: `Values.integerIndex(Object, Span, String)` is now the single place a count or a bound
+is read, and the resolver's bound handling and the text methods both call it. A `Long` is
+returned as is; a `Double` must be whole (`must be a whole number, got decimal`) and must
+fit in a 64-bit value (`is out of range: <value>`, with a help line naming the bounds); a
+non-number is refused as `must be a whole number, got <type>`. Bounds are then clamped in
+`long` arithmetic, so the clamp cannot overflow either.
+
+A whole decimal is still accepted — `xs.take(2.0)` is `xs.take(2)` — because
+`1 == 1.0` (ADR-0017) makes them the same value. Refusing `2.0` while accepting `2` would
+contradict the language's own equality rule, so the tests assert that half of the contract
+too.
+
+### #145 and #146 — repeat and pad counts
+
+Reproduction at baseline: `"x".repeat(-1)` reported
+`internal error: IllegalArgumentException: count is negative: -1` and exited 70;
+`"x".repeat(2.5)` was `"xx"`; `"x".pad_start(9.5, "0")` and `pad_end` produced nine
+characters, one short of the requested width.
+
+Root cause: `repeat` passed the count straight to `String.repeat`, whose contract allows
+only a non-negative count, and both `repeat` and `pad` narrowed with `longValue()`
+first.
+
+Fix: both go through `Values.integerIndex` for the whole-number rule.
+`repeat` additionally refuses a negative count as
+`repeat() needs a count of zero or more, got -1` with a help line, and refuses a product
+that would not fit in a `String` as `repeat() count is too large: <n>` **before**
+allocating, guarded on `times > Integer.MAX_VALUE / text.length()` so the guard itself
+cannot overflow. `pad` refuses a width that would not fit in an `int`.
+
+### #148 — capitalize and the supplementary plane
+
+Reproduction at baseline: `"𐐨x".capitalize()` returned `"𐐨x"` unchanged, while
+`"hello".capitalize()` returned `"Hello"`.
+
+Root cause: `Character.toUpperCase(text.charAt(0))` reads the first UTF-16 unit, not the
+first code point. The letter U+10428 is a surrogate pair, so `charAt(0)` returns half of
+it, and the `char` overload of `toUpperCase` cannot map a character outside the basic
+multilingual plane at all.
+
+Fix: `capitalize` reads `text.codePointAt(0)`, maps with `Character.toUpperCase(int)`,
+writes the result with `Character.toChars`, and appends the rest from
+`Character.charCount(first)`. `"𐐨x"` is now `"𐐀x"`, and a first character with no upper
+case (a digit, an emoji) is kept as written rather than truncated to one half of a pair.
+
+### #147 — split on the empty string
+
+`"a😀b".split("")` returns five entries, and the first and last are empty. That is
+Java's `String.split` semantics for an empty pattern, not a decision this language made.
+Two readings are defensible:
+
+- **(a) One entry per code point**, `["a", "😀", "b"]`. Consistent with ADR-0024, in
+  which text is a sequence of code points: `chars()`, `to_list()` and `reverse()` all
+  produce exactly this. The result has one entry per character, which is what a caller
+  splitting on `""` almost always wants.
+- **(b) One boundary between every pair of code points**,
+  `["", "a", "😀", "b", ""]`. This is what Python, Ruby and JavaScript do for a
+  zero-length separator, and it preserves the identity that joining the result with the
+  separator restores the input.
+
+**Recommendation: (a).** Under (b) the result length is `n + 1` for a separator that is
+not in the text, which is a surprising answer for the one separator that cannot appear;
+under (a) `split("")` is the inverse of `join("")`, and the "restores the input" identity
+becomes `join("")` of the characters. (b) is the more familiar answer to a programmer
+arriving from another language, which is the argument for it.
+
+No behaviour change is proposed here. Changing the result to (a) would change every
+program that splits on the empty string, and the alternative is a one-line decision a
+maintainer can make without re-reading this branch; the analysis is attached instead.
+
+### Verification
+
+Every Group 2 reproduction was re-run on both backends after the fix. The fractional,
+non-number, non-finite and out-of-range refusals are byte-identical between the
+interpreter and bytecode, including the `--> file:line:col` mark, and exit with status 1
+rather than 70 — including `"x".repeat(-1)`, which was a JVM failure before.
+
+Tests added:
+
+- `TextAndListBoundTest` (new, 16 tests) — the refusals for every method, the accepted
+  whole-decimal case, the non-number case, non-finite and past-64-bit bounds, the
+  `repeat` domain and its overflow guard, `pad` on both sides, and `capitalize` on a
+  supplementary-plane letter, a digit and an emoji.
+- `BytecodeCompilerTest.aRefusedCountOrBoundReportsTheSameDiagnosticOnBothBackends` — nine
+  programs, each asserted to exit 1 on both backends, to contain no `internal error` and
+  no stack trace, and to produce the interpreter's diagnostic lines in the compiled
+  output.
+
+Documentation: `docs/spec/language.md` gains a "Counts and bounds" subsection stating the
+whole-number rule, the accepted whole-decimal case, the out-of-range refusal and the
+`repeat` domain, and `capitalize` joins the code-point table with `"𐐨x"` → `"𐐀x"`.
 
 ## Newly discovered defects
 
@@ -150,9 +275,13 @@ here rather than bundled into an unrelated fix.
    #140 but on a different code path, and is fixed by the same change.
 5. At `Long.MAX_VALUE` scale the method and builtin forms disagreed by more than the
    #144 examples, which is the same root cause and is covered by the parity test.
+6. `xs.take("a")` reported `internal error: ClassCastException: class java.lang.String
+   cannot be cast to class java.lang.Number` and exited 70, because the count was cast
+   before it was type-checked.
 
-Item 1 and item 2 are in the range/index area that Group 2 and Group 3 rewrite, so they
-are listed for the owning group rather than patched here.
+Items 2 and 6 are fixed by Group 2, which put every count and bound through one
+narrowing rule. Item 1 and item 3 are in the range model that Group 3 rewrites, so they
+are listed for that group rather than patched here.
 
 ## Decisions and open questions
 
@@ -168,6 +297,19 @@ are listed for the owning group rather than patched here.
 - Group 1 deliberately does **not** validate range-literal or counter-loop bounds.
   Those belong to #141/#142 (index bounds) and to the range model in Group 3, and
   teaching two branches to edit the same methods would break the grouping rule.
+- **Group 2 refuses a fractional count instead of rounding it.** The alternative was to
+  round to nearest, which would make `xs.take(1.5)` mean `xs.take(2)`. Truncation was
+  the old behaviour and is what the issue reports. Rounding is defensible for a length
+  and not for an index, and the language has no precedent for a method that rounds an
+  index, so the reading that matches `xs[i]` was chosen: a bound that is not a whole
+  number is a mistake in the program.
+- **Group 2 keeps `xs.take(2.0)` working.** `1 == 1.0` (ADR-0017) makes an integral
+  decimal the same value as the whole number it equals, so refusing `2.0` as a count
+  would contradict equality. The refusal is reserved for values with no whole-number
+  equivalent.
+- **An infinite bound is reported as out of range, not as fractional.** `infinity` is
+  not a fractional value; it is an unrepresentable position. `NaN` takes the fractional
+  refusal, because it is not whole in any sense.
 
 ## Execution constraints
 
