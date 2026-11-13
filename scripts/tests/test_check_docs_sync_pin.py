@@ -94,6 +94,32 @@ class BadPinsAreRejected(unittest.TestCase):
         message = self._pin_to(orphan.stdout.strip())
         self.assertIn("not an ancestor of HEAD", message)
 
+    def test_the_message_names_squash_merge_as_the_likely_cause(self):
+        """The pin can break *after* the branch is merged, on `main`, where it blocks everyone.
+
+        A pin written to the commit that did the verifying is unreachable from the default
+        branch as soon as the branch is squash-merged, because squash rewrites the branch into
+        one new commit and discards the original SHAs. That happened to this repository: PR #205
+        passed every check and then main's documentation gate failed on the merge commit. The
+        ancestry failure is the symptom; squash-merge is the cause, and a message that only says
+        "not an ancestor" sends the reader looking for a typo. This test pins the diagnosis.
+        """
+        probe = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "HEAD~1"],
+            cwd=SCRIPTS.parent, capture_output=True, text=True,
+        )
+        if probe.returncode != 0:
+            self.skipTest("no parent commit to use as an unreachable probe")
+        orphan = subprocess.run(
+            ["git", "commit-tree", probe.stdout.strip() + "^{tree}", "-m", "probe"],
+            cwd=SCRIPTS.parent, capture_output=True, text=True,
+        )
+        if orphan.returncode != 0:
+            self.skipTest("cannot create a probe commit tree here")
+        message = self._pin_to(orphan.stdout.strip())
+        self.assertIn("squash-merged", message)
+        self.assertIn("pin the merge commit instead", message)
+
     def test_a_missing_pin_is_rejected(self):
         MATRIX.write_text(PIN.sub("**Last verified:** none", self.original, count=1),
                           encoding="utf-8")
