@@ -12,8 +12,10 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -611,5 +613,75 @@ class FileOperationsTest {
         assertTrue(found.contains("x/loop"), found.toString());
         assertEquals(0, found.stream().filter(p -> p.toString().startsWith("x/loop/")).count(),
                 found.toString());
+    }
+
+    /**
+     * A traversal failure is a user error, not an internal one.
+     *
+     * <p>{@code Files.walk} reports an unreadable directory as an {@link
+     * java.io.UncheckedIOException} from the iterator, not as an {@code IOException} from the
+     * call, so the {@code IOException} branch never saw it and the failure escaped as an internal
+     * error with exit 70 and no named diagnostic. {@code glob} already caught the unchecked form;
+     * this pins the same guarantee for {@code walk}.
+     */
+    @Test
+    void anUnreadableDirectoryMakesWalkAUserErrorNotAnInternalOne() throws Exception {
+        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"),
+                "this host has no POSIX permissions, so a directory cannot be made unreadable");
+        Path locked = dir.resolve("locked");
+        Files.createDirectories(locked);
+        Files.writeString(dir.resolve("a.txt"), "1");
+        Set<PosixFilePermission> open = Files.getPosixFilePermissions(locked);
+        Files.setPosixFilePermissions(locked, Set.of());
+        try {
+            assumeTrue(!Files.isReadable(locked),
+                    "this host ignores directory permissions, so there is nothing to refuse");
+            OqError error = assertThrows(OqError.class, () -> call("walk", "."));
+            assertTrue(error.getMessage().contains("cannot walk"), error.getMessage());
+        } finally {
+            Files.setPosixFilePermissions(locked, open);
+        }
+    }
+
+    // --- Binary write limit ------------------------------------------------------------------
+
+    /**
+     * {@code write_bytes} accepts exactly the limit and refuses one byte more.
+     *
+     * <p>{@code read_bytes} has always refused more than {@code MAX_TEXT_BYTES}, but {@code
+     * write_bytes} decoded and wrote whatever it was given, so a program could create a file it
+     * could not read back. Both sides of the boundary are asserted, in both directions.
+     */
+    @Test
+    void writeBytesAcceptsTheLimitAndRefusesOneByteMore() throws Exception {
+        String atLimit = "00".repeat(Stdlib.MAX_TEXT_BYTES);
+        call("write_bytes", "at-limit.bin", atLimit);
+        assertEquals(Stdlib.MAX_TEXT_BYTES, Files.size(dir.resolve("at-limit.bin")));
+        assertEquals(Stdlib.MAX_TEXT_BYTES, ((String) call("read_bytes", "at-limit.bin")).length() / 2,
+                "a file at the limit must be readable back at the limit");
+
+        String overLimit = "00".repeat(Stdlib.MAX_TEXT_BYTES + 1);
+        OqError error = assertThrows(OqError.class,
+                () -> call("write_bytes", "over-limit.bin", overLimit));
+        assertTrue(error.getMessage().contains("cannot write"), error.getMessage());
+        assertFalse(Files.exists(dir.resolve("over-limit.bin")),
+                "a refused write must not create the target");
+    }
+
+    /**
+     * A refused {@code write_bytes} leaves an existing target untouched.
+     *
+     * <p>The size check has to happen before the file is created or truncated, not after: {@code
+     * Files.write} truncates on open, so a check placed after it would leave the caller's file
+     * empty — a failed write that destroyed the file it refused to write.
+     */
+    @Test
+    void aRefusedWriteBytesLeavesTheExistingTargetUnchanged() throws Exception {
+        Files.writeString(dir.resolve("keep.bin"), "original");
+        OqError error = assertThrows(OqError.class,
+                () -> call("write_bytes", "keep.bin", "00".repeat(Stdlib.MAX_TEXT_BYTES + 1)));
+        assertTrue(error.getMessage().contains("cannot write"), error.getMessage());
+        assertEquals("original", Files.readString(dir.resolve("keep.bin")),
+                "a refused write must not have truncated the target");
     }
 }

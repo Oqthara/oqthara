@@ -107,81 +107,73 @@ Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
 lines is one name and three registrations.
 
-**Core** (21) — `print`:133, `write_text`:146, `write`:153, `input`:160 and 164, `text`:172, `repr`:174, `number`:176, `type_of`:178, `is_nothing`:180, `is_number`:182, `is_text`:184, `length`:186, `range`:188, 192 and 195, `error`:204, `assert`:207 and 214, `args`:220, `exit`:222 and 225, `sort_by`:231, `map`:242, `filter`:244, `clone`:246.
+**Core** (21) — `print`:144`write_text`:157`write`:164`input`:171, 175`text`:183`repr`:185`number`:187`type_of`:189`is_nothing`:191`is_number`:193`is_text`:195`length`:197`range`:199, 203, 206`error`:215`assert`:218, 225`args`:231`exit`:233, 236`sort_by`:242`map`:253`filter`:255`clone`:257.
 
-**Text** (10) — `format`:251, `join`:253, `upper`:266, `lower`:268, `trim`:270, `contains`:272, `split`:274, `replace`:279, `regex`:282, `matches`:299.
+**Text** (10) — `format`:262`join`:264`upper`:277`lower`:279`trim`:281`contains`:283`split`:285`replace`:290`regex`:293`matches`:310.
 
-**Collections** (14) — `keys`:305, `values`:311, `push`:317, `pop`:326, `sum`:331, `sort`:333, `reverse`:335, `unique`:337, `set`:339, `frozenset`:346, `list`:352, `enumerate`:358, `zip`:369, `range_list`:379.
+**Collections** (14) — `keys`:316`values`:322`push`:328`pop`:337`sum`:342`sort`:344`reverse`:346`unique`:348`set`:350`frozenset`:357`list`:363`enumerate`:369`zip`:380`range_list`:390.
 
-**Math** (29) — `abs`:386, `floor`:388, `ceil`:390, `round`:392 and 394, `sqrt`:413, `pow`:416, `sin`:421, `cos`:424, `tan`:427, `asin`:430, `acos`:433, `atan`:436, `atan2`:439, `hypot`:444, `ln`:450, `log10`:454, `log2`:458, `exp`:462, `degrees`:465, `radians`:468, `pi`:471, `e`:472, `tau`:473, `min`:476, `max`:478, `sorted`:480, `clamp`:482, `random`:488 and 490, `random_item`:496.
+**Math** (29) — `abs`:397`floor`:399`ceil`:401`round`:403, 405`sqrt`:424`pow`:427`sin`:432`cos`:435`tan`:438`asin`:441`acos`:444`atan`:447`atan2`:450`hypot`:455`ln`:461`log10`:465`log2`:469`exp`:473`degrees`:476`radians`:479`pi`:482`e`:483`tau`:484`min`:487`max`:489`sorted`:491`clamp`:493`random`:499, 501`random_item`:507.
 
-**Files** (13) — `read`:504, `read_lines`:508, `save`:519, `append`:532, `exists`:546, `list_files`:548, `delete`:573, `make_dir`:580, `file_size`:588, `path_join`:595, `path_name`:598, `path_parent`:602, `cwd`:606.
+**Files** (13) — `read`:515`read_lines`:519`save`:530`append`:543`exists`:557`list_files`:559`delete`:590`make_dir`:597`file_size`:605`path_join`:612`path_name`:615`path_parent`:619`cwd`:623.
 
-**File operations** (7) — `is_file`:620, `is_dir`:622, `read_bytes`:624, `write_bytes`:640, `copy_file`:652, `move_file`:657, `walk`:672.
+**File operations** (7) — `is_file`:637`is_dir`:639`read_bytes`:641`write_bytes`:657`copy_file`:680`move_file`:685`walk`:700.
 
-**Files and directories** (7) — `stat`:73, `touch`:75, `temp_dir`:79, `copy_tree`:81,
-`read_lines_or_empty`:86, `path_absolute`:89, `path_normalize`:91, all in `FileSystem.java`.
+**Files and directories** (7) — `stat`:73`touch`:75`temp_dir`:79`copy_tree`:81`read_lines_or_empty`:86`path_absolute`:89`path_normalize`:91all in `FileSystem.java`.
 One registration per name, so the section adds 7 to both columns. No ADR: the module adds no
 new representation. Its bound is the point worth recording — `copy_tree` charges the bytes it
 moves against a single 16 MiB budget for the whole tree, the same figure `copy_file` allows one
 file, because an entry cap alone would permit a 1.6 TiB tree.
 
-**Configuration formats** (4) — `ini_parse`:54, `ini_write`:56, `properties_parse`:58,
-`toml_get`:60, all in `ConfigFormats.java`. One registration per name, so the section adds 4 to
+**Configuration formats** (4) — `ini_parse`:54`ini_write`:56`properties_parse`:58`toml_get`:60all in `ConfigFormats.java`. One registration per name, so the section adds 4 to
 both columns. No ADR: `toml_get` deliberately reads one scalar-or-array value at a dotted path
 and refuses tables of tables, inline tables and dates by name rather than guessing, which keeps
 the grammar small enough to state exactly in its Javadoc.
 
-**Patterns** (2) — `fnmatch`:40, `glob`:49, both in `Patterns.java`.
+**Patterns** (2) — `fnmatch`:40`glob`:49both in `Patterns.java`.
 
-**Statistics, identifiers, ordered search** (12) — `mean`:35, `median`:37, `variance`:39,
-`stdev`:41, `mode`:44, `percentile`:46, `uuid`:51`is_uuid`:53`heap_push`:56`heap_pop`:58`bisect_left`:60`bisect_right`:63all in `Statistics.java`. One registration per name, so the
+**Statistics, identifiers, ordered search** (12) — `mean`:35`median`:37`variance`:39`stdev`:41`mode`:44`percentile`:46`uuid`:51`is_uuid`:53`heap_push`:56`heap_pop`:58`bisect_left`:60`bisect_right`:63all in `Statistics.java`. One registration per name, so the
 section adds 12 to both columns. Specified by [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md).
 
-**Text layout** (6) — `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39,
-`shorten_text`:44, `unified_diff`:49, all in `TextWrap.java`. One registration per name, so the
+**Text layout** (6) — `wrap_text`:27`fill_text`:32`dedent_text`:37`indent_text`:39`shorten_text`:44`unified_diff`:49all in `TextWrap.java`. One registration per name, so the
 section adds 6 to both columns. Specified by
 [ADR-0043](../adr/0043-word-wrapping-and-text-diffs.md), whose one deliberate divergence from
 Python is that a hyphen is an ordinary character rather than a break opportunity.
 
-**Compression** (6) — `zlib_compress`:50, `zlib_decompress`:52, `gzip_compress`:55,
-`gzip_decompress`:57, `zip_compress`:60, `zip_decompress`:62, all in `Compression.java`.
+**Compression** (6) — `zlib_compress`:50`zlib_decompress`:52`gzip_compress`:55`gzip_decompress`:57`zip_compress`:60`zip_decompress`:62all in `Compression.java`.
 One registration per name, so the section adds 6 to both columns. Specified by
 [ADR-0042](../adr/0042-whole-value-compression.md), whose reason for existing is the output cap:
 the defence counts the bytes actually produced rather than trusting a length field, because a
 hostile producer writes whatever length it likes.
 
-**Fractions** (17) — `fraction`:37, `fraction_of`:40, `fraction_text`:42, `fraction_num`:44,
-`fraction_den`:47, `fraction_add`:50, `fraction_sub`:54, `fraction_mul`:58, `fraction_div`:62,
-`fraction_neg`:66, `fraction_abs`:68, `fraction_compare`:70, `fraction_floor`:74,
-`fraction_ceil`:77, `fraction_round`:80, `fraction_pow`:83, `fraction_to_decimal`:87, all
+**Fractions** (17) — `fraction`:37`fraction_of`:40`fraction_text`:42`fraction_num`:44`fraction_den`:47`fraction_add`:50`fraction_sub`:54`fraction_mul`:58`fraction_div`:62`fraction_neg`:66`fraction_abs`:68`fraction_compare`:70`fraction_floor`:74`fraction_ceil`:77`fraction_round`:80`fraction_pow`:83`fraction_to_decimal`:87all
 in `Fractions.java`. One registration per name, so the section adds 17 to both columns. Specified by
 [ADR-0053](../adr/0053-exact-rational-arithmetic.md), whose value type lives in the runtime
 because `Values` has to name and display it, and whose whole point is that no operation converts
 to a `double`: `fraction_compare` cross-multiplies, and `fraction_to_decimal` is the one
 conversion outward, with the precision stated by the caller.
 
-**JSON** (4) — `json_parse`:869, `json`:871, `json_write`:873, `json_pretty`:875.
+**JSON** (4) — `json_parse`:914`json`:916`json_write`:918`json_pretty`:920.
 
-**Encoding** (11) — `hex_encode`:888, `hex_decode`:890, `base64_encode`:892, `base64_decode`:894, `sha256`:896, `sha1`:898, `md5`:900, `hmac_sha256`:902, `secure_random_hex`:904, `secure_equal`:914, `pbkdf2_sha256`:922.
+**Encoding** (11) — `hex_encode`:933`hex_decode`:935`base64_encode`:937`base64_decode`:939`sha256`:941`sha1`:943`md5`:945`hmac_sha256`:947`secure_random_hex`:949`secure_equal`:959`pbkdf2_sha256`:967.
 
-**Logging** (6) — `log_debug`:1006, `log_info`:1008, `log_warn`:1010, `log_error`:1012, `log_level`:1014, `log_enabled`:1024.
+**Logging** (6) — `log_debug`:1051`log_info`:1053`log_warn`:1055`log_error`:1057`log_level`:1059`log_enabled`:1069.
 
-**Arguments** (1) — `arg_parse`:1050.
+**Arguments** (1) — `arg_parse`:1095.
 
-**CSV** (2) — `csv_parse`:1200, 1202 and 1205, `csv_write`:1209 and 1211.
+**CSV** (2) — `csv_parse`:1245, 1247, 1250`csv_write`:1254, 1256.
 
-**Dates** (2) — `date_parse`:1367, `instant_parse`:1369.
+**Dates** (2) — `date_parse`:1412`instant_parse`:1414.
 
-**Time** (6) — `now`:1406, `today`:1408, `datetime`:1410, `timestamp`:1412, `tz_convert`:1414, `sleep`:1441.
+**Time** (6) — `now`:1451, `today`:1453, `datetime`:1455, `timestamp`:1457, `tz_convert`:1459, `sleep`:1486.
 
-**URLs** (6) — `url_parse`:1469, `url_encode`:1493, `url_decode`:1497, `query_parse`:1501, `query_encode`:1520, `url_join`:1560.
+**URLs** (6) — `url_parse`:1514, `url_encode`:1538, `url_decode`:1542, `query_parse`:1546, `query_encode`:1565, `url_join`:1605.
 
-**HTTP** (2) — `http_get`:1858, `http_post`:1860.
+**HTTP** (2) — `http_get`:1903, `http_post`:1905.
 
-**Concurrency** (5) — `spawn`:2014, `await`:2022 and 2029, `done`:2043, `mutex`:2050, `par_map`:2052.
+**Concurrency** (5) — `spawn`:2059, `await`:2067 and 2074, `done`:2088, `mutex`:2095, `par_map`:2097.
 
-**Process** (4) — `env`:2080, `run_command`:2082, `cpu_count`:2134, `memory_mb`:2136.
+**Process** (4) — `env`:2125, `run_command`:2127, `cpu_count`:2179, `memory_mb`:2181.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),

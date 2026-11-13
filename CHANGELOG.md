@@ -195,6 +195,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   three defects, five of them verified to fail on the previous code; no existing test had caught them
   because every `tz_convert` case used `:24` seconds, the one value where the two behaviours
   agree ([ADR-0056](docs/adr/0056-timestamp-shape-without-a-clock.md)).
+- **`walk`, `glob` and `list_files` sorted before they bounded, so a large tree killed the
+  program instead of being refused.** `Files.walk(dir).sorted()` is a stateful operation: it
+  buffers every entry before yielding the first one, so the 100,000-entry check ran only after
+  the whole tree had been materialised. A directory of 700,001 files therefore died with `the
+  program ran out of memory` under a 32 MiB heap instead of reporting that the tree was too
+  large. `glob` was worse, because its cap counts matches: a pattern that matched nothing was
+  unbounded by definition, since every non-matching entry is traversal it paid for and never
+  returned. All three now drain the stream into a bounded list and sort afterwards, so the cap
+  applies before the allocation. Sorting still uses `Path.compareTo`, not a string comparison,
+  so the documented order is unchanged: `a-x` still precedes `a/b`. `glob` also gains a visited
+  budget of 200,000 entries, deliberately larger than the 100,000-result cap, because a
+  pattern that rarely matches still has to look at every entry to answer; exceeding it raises
+  `patterns visited too many entries`. All four traversal functions also report an unreadable
+  directory as a named user error now: `Files.walk` reports it as an `UncheckedIOException`, so
+  the `IOException` branch never saw it and the failure escaped as an internal error with exit
+  70 and no diagnostic.
+- **`write_bytes` accepted more than `read_bytes` would give back.** `read_bytes` has always
+  refused a file over 16 MiB, but the writer had no limit, so a program could create a file it
+  could not read. Worse, the hex was decoded and the target truncated before anything was
+  checked: an oversized write destroyed the existing file and only then failed. The size is now
+  checked against the hex length before the decode allocates, so the refused write creates
+  nothing and leaves an existing target byte-identical.
 - **`await` charged the timeout instead of the wait.** `await(task, 10)` billed ten seconds to
   the program's 60-second wait budget even when the task had already finished, so eight awaits of
   instant work raised `the program waited for too long` in microseconds — found by writing

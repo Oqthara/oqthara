@@ -97,6 +97,17 @@ public final class Stdlib {
     /** The most names {@code list_files} will return from one directory. */
     static final int MAX_LIST_ENTRIES = 100_000;
 
+    /**
+     * The most entries a {@code glob} may visit, whether or not they match.
+     *
+     * <p>Separate from {@link #MAX_LIST_ENTRIES} and deliberately larger: a pattern that matches
+     * rarely has to look at more entries than it returns, so one shared number would either
+     * reject a tree that fits the result cap or let a non-matching pattern traverse the whole
+     * filesystem. {@code walk} and {@code list_files} do not need this second budget, because
+     * they return every entry they visit and their own cap already bounds the traversal.
+     */
+    static final int MAX_VISITED_ENTRIES = 200_000;
+
     private Stdlib() {
     }
 
@@ -548,14 +559,14 @@ public final class Stdlib {
         interpreter.defineBuiltin(NativeFunction.of("list_files", 1, (host, args, span) -> {
             Path dir = resolve(host, args.get(0));
             try (var stream = Files.list(dir)) {
-                Iterator<Path> entries = stream.sorted().iterator();
-                List<Object> names = new ArrayList<>();
-                // The names list now holds at most the cap plus one, where it used to hold the
-                // whole directory. java.util.stream.Stream.sorted() is a stateful operation and
-                // still buffers every Path internally before yielding the first one, so this
-                // bounds Oqthara's own list, not the sort. Removing that buffer would mean
-                // dropping sorted() and changing the returned order, which the spec fixes; the
-                // residual is recorded as debt rather than fixed by an ordering change here.
+                Iterator<Path> entries = stream.iterator();
+                List<String> names = new ArrayList<>();
+                // Collected unsorted up to the cap and sorted afterwards, because
+                // Stream.sorted() is stateful and buffers every Path before yielding the first
+                // one: sorting the stream let a directory far larger than the cap exhaust the
+                // heap before the cap could refuse it (issue 185). The sort below still gives
+                // the documented order, which is what Stream.sorted() used, since Path.compareTo
+                // compares element by element.
                 while (names.size() <= MAX_LIST_ENTRIES && entries.hasNext()) {
                     names.add(entries.next().getFileName().toString());
                 }
@@ -564,8 +575,14 @@ public final class Stdlib {
                             "It has more than " + MAX_LIST_ENTRIES + " entries; the limit is "
                                     + MAX_LIST_ENTRIES + ". List it in another language.");
                 }
+                names.sort(null);
                 chargeTransfer(host, names.size());
-                return names;
+                return new ArrayList<>(names);
+            } catch (OqError error) {
+                throw error;
+            } catch (java.io.UncheckedIOException e) {
+                throw new OqError("cannot list directory '" + dir + "'", span,
+                        e.getCause().getMessage());
             } catch (IOException e) {
                 throw new OqError("cannot list directory '" + dir + "'", span, e.getMessage());
             }
@@ -639,7 +656,18 @@ public final class Stdlib {
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("write_bytes", 2, (host, args, span) -> {
             Path path = resolve(host, args.get(0));
-            byte[] bytes = bytesOfHex(Values.display(args.get(1)), span);
+            String hex = Values.display(args.get(1));
+            // Refuse on the hex length before decoding it: bytesOfHex allocates the array up
+            // front, so an oversized payload would be allocated in full and only then refused,
+            // and the write below would already have truncated the target. read_bytes() has
+            // always refused more than MAX_TEXT_BYTES; without this check write_bytes accepted
+            // a byte more than the function that reads it back.
+            if (hex.length() / 2 > MAX_TEXT_BYTES) {
+                throw new OqError("cannot write " + (hex.length() / 2) + " bytes in one call", span,
+                        "A single write is limited to " + MAX_TEXT_BYTES
+                                + " bytes. Write it in pieces, or use append.");
+            }
+            byte[] bytes = bytesOfHex(hex, span);
             chargeTransfer(host, bytes.length);
             try {
                 if (path.getParent() != null) Files.createDirectories(path.getParent());
@@ -675,12 +703,15 @@ public final class Stdlib {
                 throw new OqError("not a directory: " + root, span,
                         "walk() lists the files under a directory. Use list_files for one level.");
             }
-            List<Object> found = new ArrayList<>();
+            List<Path> visited = new ArrayList<>();
             // Files.walk without FOLLOW_LINKS: following a link can revisit a directory already
             // walked, and the entry cap alone would not stop a short cycle from repeating until
-            // it was hit for the wrong reason.
+            // it was hit for the wrong reason. The stream is drained into a bounded list and the
+            // list is sorted afterwards: Stream.sorted() is stateful and buffers every Path
+            // before yielding the first one, so sorting the stream let a tree far larger than
+            // the cap exhaust the heap before the cap could refuse it (issue 185).
             try (var stream = Files.walk(root)) {
-                Iterator<Path> entries = stream.sorted().iterator();
+                Iterator<Path> entries = stream.iterator();
                 while (entries.hasNext()) {
                     Path entry = entries.next();
                     if (entry.equals(root)) continue;
@@ -688,16 +719,30 @@ public final class Stdlib {
                     // list_files enforces: both refuse when a 100,001st entry exists. With the
                     // previous > this accepted 100,001 entries and refused only the 100,002nd,
                     // which made walk one entry more generous than the name of the same limit.
-                    if (found.size() >= MAX_LIST_ENTRIES) {
+                    if (visited.size() >= MAX_LIST_ENTRIES) {
                         throw new OqError("directory tree has too many entries: " + root, span,
                                 "It has more than " + MAX_LIST_ENTRIES + " entries.");
                     }
-                    found.add(root.relativize(entry).toString().replace(java.io.File.separatorChar, '/'));
+                    visited.add(entry);
                 }
             } catch (OqError error) {
                 throw error;
+            } catch (java.io.UncheckedIOException e) {
+                // Files.walk reports a traversal failure as an unchecked wrapper, so the
+                // IOException branch below never sees it and the failure surfaced as an internal
+                // error with exit 70 instead of a named diagnostic.
+                throw new OqError("cannot walk '" + root + "'", span, e.getCause().getMessage());
             } catch (IOException e) {
                 throw new OqError("cannot walk '" + root + "'", span, e.getMessage());
+            }
+            // Sorted after the bounded traversal, and on Paths rather than on the rendered
+            // strings: Path.compareTo compares element by element, so it orders "a-x" before
+            // "a/b" where a String comparison orders them by separator value. Sorting the strings
+            // would have quietly changed the documented order.
+            visited.sort(null);
+            List<Object> found = new ArrayList<>(visited.size());
+            for (Path entry : visited) {
+                found.add(root.relativize(entry).toString().replace(java.io.File.separatorChar, '/'));
             }
             chargeTransfer(host, found.size());
             return found;
