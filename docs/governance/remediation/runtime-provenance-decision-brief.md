@@ -47,9 +47,11 @@ signing item implies. Option C is least work and least portable.
 ## Decision 2 — the pinned runtime
 
 ADR-0048's open question names a single pinned LTS per `oq` release as the default and
-user-selectable LTS as deferred. **D2 supports six platform combinations** (Linux x86_64 and
-aarch64, macOS x86_64 and aarch64, Windows x86_64), so a single pinned LTS means six archives,
-six digests, and six upgrade paths per release.
+user-selectable LTS as deferred. **D2 supports five platform combinations** (Linux x86_64 and
+aarch64, macOS x86_64 and aarch64, Windows x86_64), so a single pinned LTS means five archives,
+five digests, and five upgrade paths per release. The count is five rather than six because
+Windows on aarch64 is not in `PlatformSupport.SUPPORTED`, which lists exactly what ADR-0048 D2
+names; this brief said six until it was checked against the code.
 
 ## Decision 3 — the vendor
 
