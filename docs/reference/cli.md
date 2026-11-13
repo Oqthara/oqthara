@@ -89,7 +89,7 @@ wins:
 1. `OQ_JAVA`, if set to an executable;
 2. a `.oq/java` pin, found by walking up from the working directory so a pin at a project root
    applies to every directory beneath it;
-3. a managed runtime under `OQ_HOME` (or `~/.oq`), used only once installed;
+3. a managed runtime under `OQ_HOME` (or `~/.oq`), used once installed by `oq runtime install`;
 4. `java` on `PATH`.
 
 A candidate that is below the floor is reported and skipped rather than aborting the search, so
@@ -104,6 +104,43 @@ spellings of the same processor (`amd64`, `x64` and `x86_64`; `arm64` and `aarch
 one name first, so support does not depend on which JDK happens to be running. Platform support
 governs installation only; setting `OQ_JAVA` or putting a Java 21+ on `PATH` still works anywhere
 Oqthara runs.
+
+## `oq runtime`
+
+Manages the JDK Oqthara runs on, when you would rather not install one yourself.
+
+### `oq runtime status`
+
+Reports the detected platform, the pinned JDK release, whether a runtime is installed and whether
+an older one is retained for rollback, and which Java `oq` would actually use right now. It reads
+the environment and the filesystem only; it never contacts the network.
+
+### `oq runtime install`
+
+Downloads the JDK pinned for this platform, verifies it, and installs it under `OQ_HOME` (or
+`~/.oq`) so the resolver prefers it over `java` on `PATH`. The pinned release is Eclipse Temurin
+21.0.13+9, and the digest of every platform's archive is compiled into `oq` rather than fetched
+beside it: an archive that does not match is refused before anything is unpacked, and that refusal
+is the whole point of the pin. A mirror that substitutes bytes has nothing to overwrite.
+
+Installation is atomic. The archive is unpacked into a staging directory, its `bin/java` is run to
+check it reports Java 21 or newer, and only then is it renamed into place — so the reachable states
+are "nothing installed" or "a validated runtime installed", never a half-extracted one. Two
+installs at once cannot corrupt it: the second waits, and if the first succeeds the second finds
+the work already done.
+
+An existing runtime is replaced rather than overwritten, and the one being replaced is kept at
+`runtime/java.prev`. Rolling back is renaming the two back; at most two are kept. `--force`
+reinstalls the pinned runtime even when it is already installed.
+
+If a cached download is corrupt, `oq` discards it and fetches it again rather than failing on the
+same bytes forever. If the download is interrupted, the partial file is deleted, so nothing that
+looks like a complete archive is ever left behind. Nothing is installed when the network is
+unreachable, and an already installed runtime keeps working offline.
+
+Platform support is the list given under `oq java`: Linux x86_64 and aarch64, macOS x86_64 and
+aarch64, and Windows x86_64. On any other platform `oq runtime install` explains what it detected
+and does not attempt a download.
 
 ## `oq version`
 

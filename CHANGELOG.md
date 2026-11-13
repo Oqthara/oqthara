@@ -72,6 +72,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ending unit". Canonical inputs are unchanged. (#159)
 
 ### Added
+- **`oq runtime install` fetches and installs the JDK Oqthara runs on.** Until now `oq` could
+  resolve a managed runtime but nothing could put one there, so a machine with no Java 21+ had to
+  install a JDK by hand before `oq` would start. The command downloads the pinned Eclipse Temurin
+  21.0.13+9 archive for the platform, verifies it, and installs it under `OQ_HOME` — where the
+  resolver already prefers it over `java` on `PATH`. The SHA-256 of all five platform archives is
+  compiled into `oq` rather than fetched beside the archive, so a mirror that substitutes bytes
+  has nothing to overwrite; an archive that does not match is refused before anything is unpacked.
+  `oq runtime status` reports the platform, the pin, whether a runtime is installed, whether an
+  older one is retained, and which Java would actually be used. (ADR-0048 D3)
+- **Runtime archives are unpacked from tarballs as well as ZIPs.** Only Windows publishes a ZIP;
+  the Linux and macOS archives are gzip-compressed tar, so the installer could not have consumed
+  them. Tar extraction goes through the same containment rules and the same expansion caps as ZIP
+  — traversal, absolute paths, duplicates and write-through-symlink are all refused — and follows
+  ADR-0048 D4's rule for links by creating one only when its target resolves inside the
+  destination. The archives really do contain links: the Linux JDKs carry 205 relative `legal/`
+  cross-links, so refusing every link would have made every non-Windows install impossible.
+- **A corrupt cached download repairs itself.** The cache was consulted before the network and
+  never invalidated, so one bad archive made every later install fail on the same bytes with no
+  remedy but deleting the file by hand. The cached archive is now verified before it is trusted
+  and discarded when verification fails, so the next attempt re-downloads.
 - **Exact rational arithmetic under the name `fraction`.** A `fraction` holds a `BigInteger`
   numerator and denominator, always in lowest terms with a positive denominator, so
   `fraction(2, 4)` and `fraction(1, 2)` are one value that prints as `1/2`. Seventeen builtins

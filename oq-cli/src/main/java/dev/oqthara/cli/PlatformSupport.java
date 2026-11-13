@@ -18,9 +18,11 @@ import java.util.Optional;
  * exists to remove. Every spelling is folded to one canonical name first, and only then compared
  * against the supported set.
  *
- * <p>This says nothing about whether a runtime is *available*; it answers only whether the
- * platform is one the manager is able to serve. Acquisition is ADR-0048 D3 onwards and is not
- * implemented.
+ * <p>This says nothing about whether a runtime is *available* on the machine; it answers only
+ * whether the platform is one the manager is able to serve. Acquisition is ADR-0048 D3 and is
+ * implemented by {@link RuntimeDownloader} against the archives {@link RuntimeProvenance} pins;
+ * {@link #archiveSuffix} exists because that table mixes formats — the vendor publishes ZIP for
+ * Windows and tarballs for everything else, so the suffix cannot be derived from the OS alone.
  */
 final class PlatformSupport {
 
@@ -42,6 +44,16 @@ final class PlatformSupport {
             new Platform("macos", "x86_64"),
             new Platform("macos", "aarch64"),
             new Platform("windows", "x86_64"));
+
+    /**
+     * Every platform the manager can serve, for a caller that must not guess the set.
+     *
+     * <p>Returned as a copy so a caller cannot add one: the table is the whole claim ADR-0048 D2
+     * makes, and a caller that could extend it would make the claim unverifiable.
+     */
+    static java.util.List<Platform> supportedPlatforms() {
+        return SUPPORTED;
+    }
 
     private PlatformSupport() {
     }
@@ -122,6 +134,18 @@ final class PlatformSupport {
                 .append(RuntimeResolver.FLOOR)
                 .append("+ executable, or put one on PATH.");
         return message.toString();
+    }
+
+    /**
+     * The archive suffix the pinned artefact for {@code platform} carries.
+     *
+     * <p>Denoted here rather than on the platform record because it is a property of the
+     * published artefact, not of the machine. Only Windows is a ZIP; everything else is a tarball.
+     * Kept as a lookup by operating system so it cannot disagree with the table in
+     * {@link RuntimeProvenance} without a test failing.
+     */
+    static String archiveSuffix(Platform platform) {
+        return "windows".equals(platform.os()) ? ".zip" : ".tar.gz";
     }
 
     private static String describeRaw(String value) {

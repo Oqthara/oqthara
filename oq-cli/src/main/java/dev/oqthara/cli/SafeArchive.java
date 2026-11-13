@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -82,6 +83,32 @@ final class SafeArchive {
             throw new ArchiveRejected("extraction root is not a directory: " + destination);
         }
         Path root = destination.toRealPath();
+        // The format is read from the bytes, not from the file name. A name is a claim made by
+        // whoever wrote the file, and this method exists because that claim is not trustworthy:
+        // dispatching on the suffix would let a gzip stream named `.zip` reach the ZIP reader,
+        // which would find no entries and report a corrupt archive rather than the real problem.
+        if (isGzip(archive)) {
+            extractTarGz(archive, root);
+        } else {
+            extractZip(archive, root);
+        }
+    }
+
+    /** True when {@code archive} begins with the two-byte gzip magic number. */
+    private static boolean isGzip(Path archive) throws IOException {
+        byte[] magic = new byte[2];
+        try (InputStream in = Files.newInputStream(archive)) {
+            int read = in.readNBytes(magic, 0, 2);
+            return read == 2 && (magic[0] & 0xFF) == 0x1F && (magic[1] & 0xFF) == 0x8B;
+        }
+    }
+
+    /**
+     * Extracts a ZIP archive.
+     *
+     * <p>ZIP is what the Windows artefact is, and the JDK ships no others.
+     */
+    private static void extractZip(Path archive, Path root) throws IOException {
 
         // Every path already claimed, so a later entry cannot overwrite an earlier one. Two
         // spellings of one path are the same collision, which is why the key is lowercased on
@@ -156,6 +183,287 @@ final class SafeArchive {
 
         if (count == 0) {
             throw new ArchiveRejected("archive contains no entries");
+        }
+    }
+
+    /**
+     * Extracts a gzipped tar archive.
+     *
+     * <p>Four of the five pinned artefacts are tarballs, so this is the common path rather than an
+     * afterthought: the ZIP reader alone could install on Windows and nowhere else.
+     *
+     * <p>The same rule applies as for ZIP — every entry's resolved destination must be inside the
+     * root — with one difference. The Temurin tarballs contain 205 symbolic links, all of them
+     * relative references between the {@code legal/} directories, so refusing links outright
+     * would make every non-Windows install impossible. ADR-0048 D4 allows exactly this: links may
+     * be created "only when their target is inside the destination". The containment test is
+     * applied to the resolved target before the link is created, and the write-through check runs
+     * for every later entry, so a link that somehow did escape cannot be used as a foothold.
+     *
+     * <p>Hard links are refused. They are the same escape (a name for a file outside the root) and
+     * no pinned archive contains one, so there is no case to support.
+     *
+     * <p>Every header checksum is verified. A tar header carries its own checksum and a corrupt
+     * one would make the field offsets — including the size — meaningless, so a mismatch is
+     * refused rather than trusted.
+     */
+    private static void extractTarGz(Path archive, Path root) throws IOException {
+        Set<String> claimed = new HashSet<>();
+        Set<Path> executableTargets = new java.util.LinkedHashSet<>();
+        List<Path> written = new ArrayList<>();
+        long total = 0;
+        int count = 0;
+
+        try (InputStream raw = Files.newInputStream(archive);
+             GZIPInputStream gz = new GZIPInputStream(raw, 64 * 1024)) {
+            byte[] header = new byte[512];
+            String pendingName = null;
+            while (true) {
+                int read = gz.readNBytes(header, 0, header.length);
+                if (read == 0) {
+                    break;
+                }
+                if (read < header.length) {
+                    throw new ArchiveRejected("tar header is truncated: " + read
+                            + " of 512 bytes were present");
+                }
+                if (isZeroBlock(header)) {
+                    // The end-of-archive marker. Reading on would parse padding, or a second
+                    // concatenated member's contents, as if it were an entry.
+                    break;
+                }
+                verifyHeaderChecksum(header);
+
+                char type = (char) (header[156] & 0xFF);
+                long size = octal(header, 124, 12, "size");
+                String name = pendingName != null ? pendingName : entryName(header);
+                pendingName = null;
+
+                if (type == 'L') {
+                    // GNU long name: the payload is the name of the *next* entry.
+                    if (size <= 0 || size > 8192) {
+                        throw new ArchiveRejected("tar long-name entry has an implausible size: "
+                                + size);
+                    }
+                    pendingName = new String(readExactly(gz, (int) size),
+                            java.nio.charset.StandardCharsets.UTF_8)
+                            .replace("\0", "").strip();
+                    skipPadding(gz, size);
+                    continue;
+                }
+                if (++count > MAX_ENTRIES) {
+                    throw new ArchiveRejected("archive has more than " + MAX_ENTRIES + " entries");
+                }
+                if (type == '1') {
+                    throw new ArchiveRejected("archive contains a hard link: " + name);
+                }
+                if (type != '0' && type != '\0' && type != '5' && type != '2') {
+                    throw new ArchiveRejected("archive contains an unsupported entry type '"
+                            + type + "': " + name);
+                }
+
+                Path target = destinationOf(root, name);
+                String key = collisionKey(root, target);
+                if (!claimed.add(key)) {
+                    throw new ArchiveRejected("archive contains a duplicate path: " + name);
+                }
+                refuseSymlinkOnPath(root, target, name);
+                Files.createDirectories(target.getParent());
+                refuseSymlinkOnPath(root, target, name);
+
+                if (type == '5') {
+                    Files.createDirectories(target);
+                    skipPadding(gz, size);
+                    continue;
+                }
+                if (type == '2') {
+                    Path linkTarget = linkTargetOf(root, target,
+                            text(header, 157, 100), name);
+                    Files.deleteIfExists(target);
+                    Files.createSymbolicLink(target, linkTarget);
+                    written.add(target);
+                    skipPadding(gz, size);
+                    continue;
+                }
+
+                long n = copyExactly(gz, target, size);
+                total += n;
+                if (total > MAX_TOTAL_BYTES) {
+                    throw new ArchiveRejected("archive expands beyond " + MAX_TOTAL_BYTES + " bytes");
+                }
+                written.add(target);
+                if ((octal(header, 100, 8, "mode") & 0100) != 0) {
+                    executableTargets.add(target);
+                }
+                skipPadding(gz, size);
+            }
+
+            for (Path target : executableTargets) {
+                makeExecutable(target);
+            }
+        } catch (IOException | RuntimeException failure) {
+            for (int i = written.size() - 1; i >= 0; i--) {
+                try {
+                    Files.deleteIfExists(written.get(i));
+                } catch (IOException ignored) {
+                    // Best effort; the caller deletes the temporary root regardless.
+                }
+            }
+            throw failure;
+        }
+
+        if (count == 0) {
+            throw new ArchiveRejected("archive contains no entries");
+        }
+    }
+
+    /** The entry name, joining the ustar {@code prefix} field when one is present. */
+    private static String entryName(byte[] header) {
+        String name = text(header, 0, 100);
+        String prefix = text(header, 345, 155);
+        return prefix.isEmpty() ? name : prefix + "/" + name;
+    }
+
+    /**
+     * The target a symbolic link may be created with, or a refusal.
+     *
+     * <p>The target is resolved lexically against the link's own directory and checked against the
+     * root, which is the containment test ADR-0048 D4 names. Resolution is deliberately lexical
+     * rather than {@code toRealPath}: the target may not have been written yet, so asking the
+     * filesystem would refuse the legal/{@code java.base} references that are the whole reason
+     * links are supported. Nothing is written through the link by this class, and
+     * {@link #refuseSymlinkOnPath} refuses any later entry that would be.
+     */
+    private static Path linkTargetOf(Path root, Path link, String linkName, String entryName)
+            throws ArchiveRejected {
+        if (linkName.isEmpty()) {
+            throw new ArchiveRejected("archive contains a symbolic link with no target: "
+                    + entryName);
+        }
+        Path declared = Path.of(linkName);
+        if (declared.isAbsolute()) {
+            throw new ArchiveRejected("archive contains a symbolic link to an absolute path: "
+                    + entryName + " -> " + linkName);
+        }
+        Path parent = link.getParent();
+        if (parent == null) {
+            throw new ArchiveRejected("archive symbolic link has no parent: " + entryName);
+        }
+        Path resolved = parent.resolve(declared).normalize();
+        if (!resolved.startsWith(root)) {
+            throw new ArchiveRejected("archive contains a symbolic link that leaves the"
+                    + " extraction root: " + entryName + " -> " + linkName);
+        }
+        return declared;
+    }
+
+    /** True when every byte of {@code block} is zero, which marks the end of a tar archive. */
+    private static boolean isZeroBlock(byte[] block) {
+        for (byte b : block) {
+            if (b != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Refuses a header whose recorded checksum does not match its contents.
+     *
+     * <p>Everything after this point trusts the header's offsets, including the size used to
+     * advance the stream, so an unverified header is a stream-position error as much as an
+     * integrity one.
+     */
+    private static void verifyHeaderChecksum(byte[] header) throws ArchiveRejected {
+        long recorded = octal(header, 148, 8, "checksum");
+        long actual = 0;
+        for (int i = 0; i < header.length; i++) {
+            actual += (i >= 148 && i < 156) ? 0x20 : (header[i] & 0xFF);
+        }
+        if (recorded != actual) {
+            throw new ArchiveRejected("tar header checksum mismatch: recorded " + recorded
+                    + ", computed " + actual);
+        }
+    }
+
+    /**
+     * Reads a fixed-width octal field.
+     *
+     * <p>A GNU base-256 field is refused rather than decoded: it exists for sizes above 8 GiB,
+     * no JDK archive uses one, and accepting it would mean this parser had a second numeric
+     * format to be wrong about.
+     */
+    private static long octal(byte[] header, int offset, int length, String field)
+            throws ArchiveRejected {
+        if ((header[offset] & 0x80) != 0) {
+            throw new ArchiveRejected("tar " + field + " field uses base-256, which is not supported");
+        }
+        String raw = text(header, offset, length).strip();
+        if (raw.isEmpty()) {
+            return 0;
+        }
+        long value = 0;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c < '0' || c > '7') {
+                throw new ArchiveRejected("tar " + field + " field is not octal: '" + raw + "'");
+            }
+            value = value * 8 + (c - '0');
+            if (value < 0) {
+                throw new ArchiveRejected("tar " + field + " field overflows a long");
+            }
+        }
+        return value;
+    }
+
+    /** Reads a NUL-terminated field as text. */
+    private static String text(byte[] header, int offset, int length) {
+        int end = offset;
+        while (end < offset + length && header[end] != 0) {
+            end++;
+        }
+        return new String(header, offset, end - offset,
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Reads exactly {@code n} bytes, refusing a stream that ends early. */
+    private static byte[] readExactly(InputStream in, int n) throws IOException {
+        byte[] data = in.readNBytes(n);
+        if (data.length != n) {
+            throw new ArchiveRejected("tar entry is truncated: expected " + n
+                    + " bytes, read " + data.length);
+        }
+        return data;
+    }
+
+    /** Writes exactly {@code size} bytes from the stream, bounded by the per-entry limit. */
+    private static long copyExactly(InputStream in, Path target, long size) throws IOException {
+        if (size > MAX_ENTRY_BYTES) {
+            throw new ArchiveRejected("archive entry declares " + size
+                    + " bytes, beyond the " + MAX_ENTRY_BYTES + " limit");
+        }
+        byte[] buffer = new byte[64 * 1024];
+        long remaining = size;
+        try (java.io.OutputStream out = Files.newOutputStream(target)) {
+            while (remaining > 0) {
+                int want = (int) Math.min(buffer.length, remaining);
+                int n = in.readNBytes(buffer, 0, want);
+                if (n <= 0) {
+                    throw new ArchiveRejected("tar entry is truncated: " + remaining
+                            + " bytes missing from " + target.getFileName());
+                }
+                out.write(buffer, 0, n);
+                remaining -= n;
+            }
+        }
+        return size;
+    }
+
+    /** Discards the padding that brings an entry's payload up to a whole block. */
+    private static void skipPadding(InputStream in, long size) throws IOException {
+        long padding = (512 - (size % 512)) % 512;
+        if (padding > 0) {
+            readExactly(in, (int) padding);
         }
     }
 

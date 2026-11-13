@@ -41,6 +41,7 @@ final class RuntimeInstaller {
     private final RuntimeResolver.VersionProbe probe;
     private final Path compatibilityJar;
     private final Activation activation;
+    private final PlatformSupport.Platform provenancePlatform;
 
     RuntimeInstaller(Path home) {
         this(home, DEFAULT_TIMEOUT, RuntimeResolver.processProbe(), null);
@@ -68,11 +69,40 @@ final class RuntimeInstaller {
      */
     RuntimeInstaller(Path home, Duration lockTimeout, RuntimeResolver.VersionProbe probe,
             Path compatibilityJar, Activation activation) {
+        this(home, lockTimeout, probe, compatibilityJar, activation, null);
+    }
+
+    /**
+     * @param provenancePlatform the platform whose pinned digest {@code archive} must match, or
+     *     {@code null} to install without a provenance check.
+     *
+     *     <p>{@code null} is what every test that builds a fake archive wants: a hand-built ZIP
+     *     cannot hash to a vendor digest, and requiring one would mean the D5/D6/D7/D9 ordering
+     *     tests could not be written at all. It is deliberately not the default for a caller that
+     *     has a real archive — {@link #installDownloaded} passes the platform, so the install path
+     *     a user reaches always checks, and only the test seam can turn it off.
+     */
+    RuntimeInstaller(Path home, Duration lockTimeout, RuntimeResolver.VersionProbe probe,
+            Path compatibilityJar, Activation activation,
+            PlatformSupport.Platform provenancePlatform) {
         this.home = home.toAbsolutePath().normalize();
         this.lockTimeout = lockTimeout;
         this.probe = probe;
         this.compatibilityJar = compatibilityJar;
         this.activation = activation;
+        this.provenancePlatform = provenancePlatform;
+    }
+
+    /**
+     * An installer configured the way the {@code oq runtime install} command needs it.
+     *
+     * <p>A factory rather than a public constructor because the command must not be able to
+     * choose the lock timeout or supply its own activation: those are the D5/D6 guarantees, and
+     * an entry point that could weaken them from outside the class would make them advisory.
+     */
+    static RuntimeInstaller forCommand(Path home, Path compatibilityJar) {
+        return new RuntimeInstaller(home, DEFAULT_TIMEOUT, RuntimeResolver.processProbe(),
+                compatibilityJar);
     }
 
     /** The rename that publishes a validated runtime at the live path. */
@@ -83,6 +113,60 @@ final class RuntimeInstaller {
     /** Where a validated runtime ends up. */
     Path destination() {
         return home.resolve("runtime").resolve("java");
+    }
+
+    /**
+     * Downloads the archive pinned for {@code platform}, verifies it, and installs it.
+     *
+     * <p>This is the acquisition path ADR-0048 D3 implies and the matrix recorded as absent:
+     * without it D3 had nothing to verify, because nothing fetched an archive. The sequence is
+     * download, verify, extract, validate, activate, and the verify step is not optional — this
+     * method builds an installer that knows the platform, so the check runs inside the install
+     * lock before any byte of the archive becomes a runtime.
+     *
+     * <p>The download is deliberately outside the install lock. Holding the lock for a transfer
+     * that can take ten minutes would make a second install wait on a network this process does
+     * not control, and D6's purpose is to prevent concurrent <em>activation</em>, not concurrent
+     * transfer. Two processes may both download; only one may activate, and the second finds the
+     * lock, validates, and rotates or refuses as it would have anyway.
+     *
+     * <p>An existing runtime is upgraded rather than replaced: {@link RuntimeRetention} moves it
+     * to {@code java.prev} so a first run of a new JDK can be undone without downloading again.
+     * On a machine with nothing installed there is nothing to retain, so the plain install path
+     * runs.
+     *
+     * @param platform the platform to fetch for, normally the host's own
+     * @param minimumMajor the lowest major version that may be activated
+     * @return the path of the activated {@code java}
+     * @throws InstallRefusedException if the downloaded archive does not match its pinned digest,
+     *     or if it extracts to something that must not be activated
+     */
+    Path installDownloaded(PlatformSupport.Platform platform, int minimumMajor)
+            throws IOException, InterruptedException, InstallRefusedException {
+        Path cache = home.resolve("downloads");
+        Path archive = cache.resolve("oq-runtime-" + RuntimeProvenance.PINNED_RELEASE
+                + PlatformSupport.archiveSuffix(platform));
+        // A cached archive is checked before it is trusted, and deleted when it does not check
+        // out. Without that second half a single truncated transfer would be permanent: the cache
+        // is consulted before the network, so every later run would refuse the same bytes and the
+        // only remedy would be finding the file by hand. Only this method's own cache entry is
+        // ever removed, and only after it has already failed the check it is about to fail again.
+        if (Files.isRegularFile(archive)) {
+            try {
+                RuntimeProvenance.verify(archive, platform);
+            } catch (InstallRefusedException e) {
+                Files.deleteIfExists(archive);
+            }
+        }
+        if (!Files.isRegularFile(archive)) {
+            new RuntimeDownloader().download(platform, archive);
+        }
+        RuntimeInstaller checked = new RuntimeInstaller(home, lockTimeout, probe, compatibilityJar,
+                activation, platform);
+        boolean upgrading = Files.isDirectory(checked.destination());
+        return upgrading
+                ? checked.upgrade(archive, minimumMajor)
+                : checked.install(archive, minimumMajor);
     }
 
     /** Why an installation was refused, as opposed to failing. */
@@ -180,6 +264,12 @@ final class RuntimeInstaller {
         try (InstallLock lock = InstallLock.acquire(home, lockTimeout)) {
             assert lock.file().getParent().equals(home);
             discardAbandonedStaging();
+            // ADR-0048 D3, and the placement is the point: verification happens inside the lock
+            // and before extraction, so a substituted archive is refused while it is still an
+            // opaque file and no byte of it is ever written to disk as a runtime.
+            if (provenancePlatform != null) {
+                RuntimeProvenance.verify(archive, provenancePlatform);
+            }
 
             Path staging = home.resolve(STAGING_PREFIX + UUID.randomUUID());
             Files.createDirectory(staging);

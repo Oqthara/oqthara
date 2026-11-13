@@ -66,6 +66,36 @@ class RuntimeInstallerTest {
         return archive;
     }
 
+    /**
+     * A provenance check that fails stops the install before anything is extracted.
+     *
+     * <p>The assertion is about what is <em>not</em> on disk: a refusal that happened after
+     * extraction would still leave the bytes in a staging directory, and a later run would have
+     * to reason about them. ADR-0048 D3 says verification happens before extraction, so the
+     * observable consequence is that the managed home holds no staging directory at all.
+     */
+    @Test
+    void refusesAnUnverifiedArchiveBeforeExtractingAnything(@TempDir Path temp) throws Exception {
+        Path home = temp.resolve("home");
+        Path archive = fakeRuntime(temp, "jdk-21.0.1", 21);
+        RuntimeInstaller installer = new RuntimeInstaller(home, Duration.ofSeconds(5),
+                probeAnswering(21), null,
+                (extracted, target) -> {
+                    throw new AssertionError("activation must not be reached");
+                },
+                new PlatformSupport.Platform("macos", "aarch64"));
+
+        assertThrows(RuntimeInstaller.InstallRefusedException.class,
+                () -> installer.install(archive, 21));
+
+        assertFalse(Files.exists(home.resolve("runtime")),
+                "nothing may be activated when provenance fails");
+        try (java.util.stream.Stream<Path> entries = Files.list(home)) {
+            assertFalse(entries.anyMatch(p -> p.getFileName().toString().startsWith(".staging-")),
+                    "no staging directory may be created before verification");
+        }
+    }
+
     @Test
     void installsAndActivatesAValidRuntime(@TempDir Path temp) throws Exception {
         Path home = temp.resolve("home");
