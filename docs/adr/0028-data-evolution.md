@@ -144,7 +144,7 @@ span and the declared field list and can produce the full diagnostic with the re
 | Drop the map-key refusal and accept mutable keys | Reintroduces exactly the defect the diagnostic describes: a stored key whose hash changes becomes unfindable. |
 | Let `data` implement contracts and gain a `text()` override | Wanted eventually, but it is §14.1/§16 work, not §14.2, and mixing the two would make the class/value distinction harder to see rather than easier. |
 | Destructuring for `data` | ADR-0013 deliberately rejected positional access: `data` fields are named, and a positional order is not promised by the declaration. `immutable` does not change that argument. |
-| Typed fields (`data Point(x: Int)`) | Requires a type system the language does not have. Rejected for Alpha 4; the whole language is dynamically typed and `data` is not the place to start introducing static types. |
+| Typed fields (`data Point(x: Int)`) | Requires a type system the language does not have. Rejected for Alpha 4, and confirmed as the standing decision on 2026-11-13: the whole language is dynamically typed and `data` is not the place to start introducing static types. [`type-system-decision-brief.md`](../governance/remediation/type-system-decision-brief.md) records the reasoning and the cost of reversing it. |
 
 ## Consequences
 
