@@ -18,8 +18,10 @@ only ever passed cannot be told apart from one that never runs:
 import importlib.util
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
@@ -102,6 +104,60 @@ class BadPinsAreRejected(unittest.TestCase):
     def test_the_real_pin_still_passes_after_the_round_trip(self):
         self._pin_to(self.sha)
         self.assertEqual([], checker.problems)
+
+
+class AShallowCloneDoesNotCondemnAGoodPin(unittest.TestCase):
+    """CI checks out depth 1, where the pinned commit is not an object.
+
+    The check used to report "not a commit in this repository" there, which turned a
+    correct pin into a red build -- it did exactly that on the first CI run. The
+    distinction that matters is "not fetched" versus "does not exist", and only
+    `git rev-parse --is-shallow-repository` can tell them apart.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        clone = subprocess.run(
+            ["git", "clone", "--quiet", "--depth", "1",
+             pathlib.Path(checker.ROOT).as_uri(), self.tmp + "/shallow"],
+            capture_output=True, text=True,
+        )
+        if clone.returncode != 0:
+            shutil.rmtree(self.tmp, ignore_errors=True)
+            self.skipTest(f"cannot clone here: {clone.stderr.strip()}")
+        self.repo = pathlib.Path(self.tmp) / "shallow"
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            cwd=self.repo, capture_output=True, text=True,
+        ).stdout.strip()
+        if shallow != "true":
+            shutil.rmtree(self.tmp, ignore_errors=True)
+            self.skipTest("clone turned out not to be shallow")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_a_pin_the_clone_lacks_is_reported_as_unfetched(self):
+        original_root = checker.ROOT
+        checker.ROOT = self.repo
+        try:
+            matrix = self.repo / "docs" / "governance" / "alpha-4-requirement-matrix.md"
+            text = matrix.read_text(encoding="utf-8")
+            # A commit that cannot exist in a depth-1 clone, but is well formed.
+            matrix.write_text(PIN.sub("**Last verified:** `0badc0de`", text, count=1),
+                              encoding="utf-8")
+            checker.problems.clear()
+            checker.checked.clear()
+            checker.requirement_matrix_verification_pin_is_real()
+        finally:
+            checker.ROOT = original_root
+
+        self.assertEqual([], checker.problems,
+                         "a shallow clone must not condemn a pin it simply has not fetched")
+        self.assertTrue(
+            any("shallow clone cannot confirm" in item for item in checker.checked),
+            "the check must say plainly that it could not confirm the pin",
+        )
 
 
 if __name__ == "__main__":

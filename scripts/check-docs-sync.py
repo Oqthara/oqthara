@@ -644,11 +644,23 @@ def requirement_matrix_verification_pin_is_real() -> None:
         problems.append(f"{matrix} has no 'Last verified' pin to check")
         return
     sha = match.group(1)
+    # A shallow clone (CI checks out depth 1) does not contain the pinned commit as an object,
+    # so "not found" there means "not fetched", not "does not exist". Reporting the second as
+    # the first made a correct pin fail the build. `--is-shallow-repository` is the honest
+    # discriminator: in a shallow clone this check can only confirm the pin is well-formed.
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=ROOT, capture_output=True, text=True,
+    ).stdout.strip() == "true"
+
     resolved = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
         cwd=ROOT, capture_output=True, text=True,
     )
     if resolved.returncode != 0:
+        if shallow:
+            note(f"{matrix} pins {sha}; a shallow clone cannot confirm it exists")
+            return
         problems.append(
             f"{matrix} pins verification at {sha}, which is not a commit in this repository")
         return

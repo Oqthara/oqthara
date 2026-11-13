@@ -33,6 +33,12 @@ jobs:
         java: ["21", "25"]
     steps:
       - uses: actions/checkout@v7
+        with:
+          # check-docs-sync.py resolves the matrix's "Last verified" pin and proves it is an
+          # ancestor of HEAD. A depth-1 clone has neither, so the check would degrade to a
+          # well-formedness test and the drift it exists to catch would go unguarded. The
+          # whole history is a few megabytes, which is cheaper than a check that cannot fail.
+          fetch-depth: 0
       - name: Set up JDK ${{ matrix.java }}
         uses: actions/setup-java@v6
         with:
