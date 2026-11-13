@@ -61,7 +61,7 @@ at the moment `#40` merged, the rule did not exist, so nothing was overridden. F
 | File | Change |
 | --- | --- |
 | `scripts/verify-conformance.py` | Replaced stale `FLOOR_COMPILED = 182` / `EXPECTED_EXECUTABLE = 197` with a single measured `BASELINE`; extracted `measure_corpus()` and `evaluate()`; `evaluate()` now reports every problem rather than stopping at the first. |
-| `scripts/tests/test_verify_conformance.py` | New. 8 tests covering the baseline, the executable pin, the compiled floor, and the divergence path. |
+| `scripts/tests/test_verify_conformance.py` | New. 8 tests at closure, 19 today, covering the baseline, the executable pin, the compiled floor, and the divergence path. |
 | `.github/workflows/ci.yml` | Two required steps: script self-tests, and `standaloneJar` + `verify-conformance.py`. |
 | `scripts/check-docs-sync.py` | Keyword check now parses `Lexer.KEYWORDS` instead of holding its own copy; added a `CONTRIBUTING.md` count cross-check. |
 | `CONTRIBUTING.md` | Keyword count 18 → 20. |
@@ -308,6 +308,10 @@ This document is that mapping.
 ---
 
 ## 3. Validation actually run
+
+These are the results of the closure run at `a104629e`. They are a dated record, not a live
+measurement; the suite has grown since (the verifier's self-tests were 8 then and 19 today), so
+do not read any count here as the current one.
 
 | Command | Result |
 | --- | --- |
