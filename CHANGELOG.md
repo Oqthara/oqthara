@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`zlib_decompress` and `gzip_decompress` accepted uppercase hex.** The JDK's
+  `HexFormat.parseHex` takes `A`-`F` as readily as `a`-`f`, so the compression functions were the
+  one place in the language where hex spelling did not matter, while `hex_decode` has always
+  refused it. They now refuse it with the same wording, naming the offending character and its
+  offset. (#175)
+- **Trailing bytes after a compressed stream were silently ignored.** `zlib_decompress`
+  returned the value and discarded whatever followed the stream, and `gzip_decompress` did the
+  same, so a second gzip member was silently dropped instead of being reported. Both now refuse
+  with `found N trailing bytes after the compressed stream`, singular for one. The gzip trailer
+  is located from where the deflate stream actually stopped rather than from the end of the
+  input, so appended bytes are reported as trailing instead of being misdiagnosed as a truncated
+  stream; the stored CRC and length are then verified, where before `GZIPInputStream` did it.
+  (#176, #188)
+- **`zip_decompress` returned directory entries as files.** An archive containing only
+  `folder/` came back as `{"folder/": ""}` instead of raising the documented
+  `zip_decompress() found no entries`, and content a foreign writer attached to a directory name
+  was exposed as a file. Directory entries are now skipped, so an archive of only directories
+  has no entries and is refused. `zip_compress` refuses the matching contradiction rather than
+  resolving it, raising `zip_compress() refused content for the directory entry: <name>` when a
+  `/`-terminated name is given non-empty content. (#187)
+- **`zip_decompress` silently overwrote duplicate entry names.** An archive naming `same.txt`
+  twice returned only the last, losing the first without saying so. It now refuses with
+  `zip_decompress() found a duplicate entry name: <name>`; identical content does not make the
+  archive unambiguous. The JDK's own `ZipOutputStream` will not write such an archive, which is
+  how the defect stayed hidden. (#171)
+
 ### Added
 - **Exact rational arithmetic under the name `fraction`.** A `fraction` holds a `BigInteger`
   numerator and denominator, always in lowest terms with a positive denominator, so

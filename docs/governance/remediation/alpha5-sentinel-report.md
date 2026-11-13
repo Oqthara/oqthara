@@ -54,10 +54,18 @@ both backends.
 | #168 | heap operations reject mixed whole and decimal numbers | 5 | Fixed, verified, tests added |
 | #169 | `bisect_left` disagrees with language ordering for signed zero | 5 | Fixed, verified, tests added |
 | #174 | `bisect` returns the wrong insertion point for `NaN` | 5 | Fixed, verified, tests added |
+| #171 | `zip_decompress` silently overwrites duplicate archive entry names | 7 | Fixed, verified, tests added |
+| #175 | Compression APIs accept uppercase hex despite the lowercase-only contract | 7 | Fixed, verified, tests added |
+| #176 | `zlib_decompress` silently ignores trailing bytes after a valid stream | 7 | Fixed, verified, tests added |
+| #187 | `zip_decompress` returns directory entries as files | 7 | Fixed, verified, tests added |
+| #188 | `gzip_decompress` ignores arbitrary trailing bytes after a valid member | 7 | Fixed, verified, tests added |
 
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
 silently folded into the fixes above.
+
+Groups 1 through 5 are merged on `main`. Group 6 is pull request #209; group 7 is the branch
+`sentinel/alpha5/group7-compression`.
 
 Each group lands as its own Draft PR, so a test added by one group is not present on
 another group's branch. A test class that belongs to a different group is therefore cited
@@ -683,6 +691,105 @@ the table above was re-run there and returns the "After" value.
 Regenerating the conformance baseline was part of the change: `230-math-transcendental.out`
 lines 9, 18, 19 and 20 carried the old twelve-place projection. Line 17 is untouched because
 it is a value the program rounds itself, so it still prints eleven places.
+
+## Group 7 — compression
+
+Five defects, all in `oq-stdlib/src/main/java/dev/oqthara/stdlib/Compression.java`. They share a
+cause: the decompressors trusted their input more than the language's own rules allow. The JDK
+readers accept a wider spelling, a longer input and a looser structure than the contract states,
+so every one of these was a case where the library was more permissive than the specification it
+implements. Each is now checked in this module rather than inherited from a JDK reader.
+
+| Question | Before | After |
+| --- | --- | --- |
+| `zlib_decompress(zlib_compress("616263").upper())` | `616263` | `zlib_decompress() needs hex text: found 'C' at offset 3` |
+| `zlib_decompress("aaBB")` | error at the parser's own position | `zlib_decompress() needs hex text: found 'B' at offset 2` |
+| `zlib_decompress(zlib_compress("616263") + "deadbeef")` | `616263` | `zlib_decompress() found 4 trailing bytes after the compressed stream` |
+| `gzip_decompress(gzip_compress("first") + "deadbeef")` | `6669727374` | `gzip_decompress() found 4 trailing bytes after the compressed stream` |
+| `gzip_decompress(gzip_compress("first") + gzip_compress("second"))` | only `first` | refused, `26 trailing bytes` |
+| `zip_decompress` of `same.txt` twice, `first` then `second` | `{"same.txt": "7365636f6e64"}` | `zip_decompress() found a duplicate entry name: same.txt` |
+| `zip_decompress(zip_compress({"folder/": ""}))` | `{"folder/": ""}` | `zip_decompress() found no entries` |
+| `zip_decompress(zip_compress({"folder/": "", "a.txt": hex_encode("abc")}))` | `{"folder/": "", "a.txt": "616263"}` | `{"a.txt": "616263"}` |
+| `zip_compress({"folder/": hex_encode("abc")})` | wrote a file named `folder/` | `zip_compress() refused content for the directory entry: folder/` |
+| hand-built archive, directory entry carrying `payload` | `{"folder/": "7061796c6f6164"}` | `zip_decompress() found no entries` |
+
+**#175 — the spelling.** `HexFormat.parseHex` accepts `A`-`F` as readily as `a`-`f`, so the
+compression functions were the one family of calls where hex spelling did not matter, while
+`hex_decode` has always refused it. The alphabet is now checked before the parser sees it, using
+`hex_decode`'s wording and its offset so the two agree character for character. This is a
+compatibility break in the narrow sense: a program that passed uppercase hex now fails. That is
+the intended reading of "every input and output is lowercase hex", and accepting the wider
+spelling silently would have kept the two hex consumers disagreeing.
+
+**#176 and #188 — the length.** `Inflater` stops at the end of the stream, not at the end of the
+array, and reports the difference as `getRemaining()`; `zlib_decompress` simply never asked.
+`GZIPInputStream` is worse for this purpose: it reads through its own buffer, so bytes belonging
+to a second member are already consumed and lost before it reports the first member finished.
+Counting them afterwards is impossible. The gzip path therefore parses the header itself, inflates
+the body with a raw `Inflater`, and takes the trailer's position from where the deflate stream
+stopped. That distinction is the whole of the fix: #188 reported `6669727374` for input with four
+appended bytes, and the first version of this repair, which anchored the trailer at the end of
+the array, refused the input but called it a truncated stream. Anchoring at the deflate
+boundary makes the remainder exactly the count of appended bytes, so the message is about the
+trailing bytes. The stored CRC and length are then verified by this module rather than by
+`GZIPInputStream`, and a one-bit flip of the CRC is caught.
+
+Concatenated members are refused rather than joined. RFC 1952 permits a gzip file to be a series
+of members, and `gunzip` joins them; that is a decision about a file format, while this is a
+function that consumes one value and returns one value. Joining two values the caller passed as
+one would invent a concatenation the language has nowhere else, and silently returning only the
+first — what happened before — loses input without saying so. Refusing says which of the two
+happened.
+
+The amplification cap moved into a single `drain` method shared by both containers, so the cap
+now has exactly one implementation and neither path can be edited to forget it. The tests that
+pin it still pass: a highly compressible bomb is refused rather than allocated.
+
+**#187 — the directory policy.** The language has no directory type, so a name ending in `/` is
+structure rather than content. Returning one as a map entry claimed `folder/` held bytes it did
+not, and the final `entries.isEmpty()` guard never fired because the directory had already been
+inserted. Directory entries are now skipped, which means an archive of only directories has no
+entries and reaches the documented `zip_decompress() found no entries` refusal by the route it
+was always meant to take.
+
+The issue asked for the policy to be stated rather than left implicit, so both directions are
+stated. Reading skips a directory entry and any payload a foreign writer attached to it: a writer
+other than this language can attach bytes to a `/`-terminated name, and handing those bytes back
+would expose a file the archive does not describe. Writing refuses the same contradiction instead
+of resolving it — `zip_compress` raises `zip_compress() refused content for the directory entry`
+when a `/`-terminated name is given non-empty content. Silently dropping the content would be the
+wrong-answer failure this language treats as a defect, and storing it as a file is precisely the
+shape #187 reported.
+
+**#171 — the duplicate names.** The result is a map, so it cannot hold one name twice; keeping the
+last entry lost the first without reporting it, and an archive that names one entry twice is
+ambiguous rather than merely redundant. The check runs before insertion, so nothing is returned.
+Identical content does not make the archive unambiguous: the refusal is about the archive's
+structure, not about whether the bytes happen to differ.
+
+This defect stayed hidden because `java.util.zip.ZipOutputStream` will not write a duplicate name
+itself — `putNextEntry` throws — so an archive built with the JDK's writer cannot reproduce it.
+The test therefore assembles the archive byte by byte, writing both local headers, both central
+directory records and the end record. That the JDK's own writer and reader disagree is the reason
+the reader needs its own check: an archive from elsewhere does not have to obey this library's
+writer.
+
+**Tests.** Sixteen new tests in `CompressionTest`. Fifteen of them fail against the pre-fix
+source — verified by stashing `Compression.java` and re-running — which is the evidence that they
+test the fixes rather than restating them. The sixteenth, a corrupted gzip trailer, passed before
+and after, because `GZIPInputStream` already verified the CRC; it is retained as a regression
+guard for the hand-written trailer check that now replaces it. The pre-fix failure count of 15
+is measured, not asserted.
+
+Four conformance cases were added, one executable and three expected-error:
+`234-compression-round-trip` (one round trip per container, with a directory entry alongside a
+file), `235-compression-uppercase-hex-error`, `236-compression-trailing-bytes-error` and
+`237-compression-directory-only-error`. The corpus grows from 233 programs to 237, and the
+executable count from 213 to 214, so `BASELINE` in `scripts/verify-conformance.py` and the pinned
+count in `BytecodeCompilerTest` both move: 205 compiled over 214 executable, 0 divergences. Those
+four are the first conformance cases for the compression module, which had none.
+
+Suite: 1,513 tests before, 1,529 after, 0 failures; `oq-core` line coverage stays at 91.5%.
 
 ## Newly discovered defects
 

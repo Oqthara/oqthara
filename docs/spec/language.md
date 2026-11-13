@@ -1563,6 +1563,14 @@ failure — and the whole of a zip archive counts against one total, so a thousa
 under the limit cannot add up to an attack. Compressed input that ends early raises
 `zlib_decompress() needs more input` rather than returning a partial value.
 
+Input is exactly one complete stream. Bytes after the stream are refused with
+`zlib_decompress() found 4 trailing bytes after the compressed stream` — singular for one — and
+a second gzip member is refused the same way rather than joined to the first. Neither is a
+decompression that silently discards what it did not read, and neither joins two values the
+caller passed as one. A gzip member's trailer is read from where the deflate stream actually
+stopped, not from the end of the input, so appended bytes are reported as trailing rather than
+misdiagnosed as a truncated stream. The stored CRC and length are then verified.
+
 Entry names given to `zip_compress` may not be absolute, may not contain a `..` segment, a
 backslash or a NUL, and are refused with `zip_compress() refused entry name: <name>`. The name
 is refused rather than rewritten: a name that had to be changed to be safe is not the name the
@@ -1578,6 +1586,26 @@ arbitrary-file-write. Nothing is returned when any name is refused, so the failu
 and not a partial map the caller might act on. Names that merely contain dots, such as `..txt`
 or `a/b..c`, are not traversal and are accepted in both directions. `tar` is not provided; zip covers the archive case and needs no
 separate reader.
+
+Hex is lowercase in both directions. `zlib_decompress("616263".upper())` raises
+`zlib_decompress() needs hex text: found 'C' at offset 3`, the same rule and the same wording
+`hex_decode` already enforces, because a decoder that accepted either case would make these the
+one family of calls where the spelling did not matter.
+
+A zip archive is a map of file entries, and a name ending in `/` is a directory rather than a
+file. Directory entries are skipped when reading: the language has no directory type, so
+returning one would claim `folder/` holds bytes it does not, and any payload a foreign writer
+attached to a directory name is skipped with it rather than exposed as a file. An archive
+containing only directories therefore has no entries and is refused with
+`zip_decompress() found no entries`. `zip_compress` refuses the matching contradiction rather
+than resolving it, raising `zip_compress() refused content for the directory entry: folder/`
+when a `/`-terminated name is given non-empty content.
+
+The result is a map, so it cannot hold one name twice. An archive that names an entry twice is
+refused with `zip_decompress() found a duplicate entry name: <name>` — not resolved in favour of
+the first or the last, either of which would lose archive content silently. Identical content
+does not make the archive unambiguous. Nothing is returned when any entry is refused.
+
 
 Text layout: `wrap_text(text, width)` returns the text as a list of lines no longer than
 `width`, `fill_text(text, width)` returns the same thing joined by `\n`, and `shorten_text(text,
