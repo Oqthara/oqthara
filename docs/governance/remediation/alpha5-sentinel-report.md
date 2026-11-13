@@ -1,7 +1,9 @@
 # Alpha 5 Sentinel remediation report
 
 Baseline: `6954a86` (`origin/main` at the time of the audit).
-Scope: issues #140–#156 in `Oqthara/oqthara`.
+Scope: issues #140–#156 in `Oqthara/oqthara` for groups 1–3, and the JSON, CSV,
+URL and text-wrapping defects #157, #160–#162, #170, #172, #173, #177, #179 and #186
+for group 4.
 Authority: independent remediation agent, working only in isolated worktrees on
 `sentinel/alpha5/...` branches. The Primary AI works Alpha 4 in parallel; no file,
 branch or worktree of the Primary AI or of the user's working copy is touched, and
@@ -33,6 +35,16 @@ both backends.
 | #153 | `contains(9.223372036854776e18)` and `2^63 in r` are wrongly true | 3 | Fixed, verified, tests added |
 | #155 | `for n in 0 to 10000000` exhausts memory before the first body run | 3 | Fixed, verified, tests added |
 | #156 | `r[0]` and `r[-1]` materialise the whole range | 3 | Fixed, verified, tests added |
+| #157 | A supplementary-character CSV delimiter is rejected | 4 | Fixed, verified, tests added |
+| #160 | `url_join` removes dot segments above the root | 4 | Fixed, verified, tests added |
+| #161 | `json_parse` silently overwrites duplicate keys | 4 | Fixed, verified, tests added |
+| #162 | `json_parse` accepts raw control characters and non-JSON whitespace | 4 | Fixed, verified, tests added |
+| #170 | `json_parse` accepts numbers with leading zeroes | 4 | Fixed, verified, tests added |
+| #172 | The JSON writer can emit duplicate member names | 4 | Fixed, verified, tests added |
+| #173 | `url_decode`/`query_parse` silently replace malformed UTF-8 | 4 | Fixed, verified, tests added |
+| #177 | `url_join` misclassifies opaque absolute references | 4 | Fixed, verified, tests added |
+| #179 | Text wrapping counts UTF-16 units instead of code points | 4 | Fixed, verified, tests added |
+| #186 | `url_join` mishandles query-only, fragment-only and empty references | 4 | Fixed, verified, tests added |
 
 Additional defects found while reproducing the backlog are recorded in
 [Newly discovered defects](#newly-discovered-defects); they are reported rather than
@@ -360,7 +372,7 @@ than a tenth of what the old path needed for a ten-million-element range.
 
 Tests added or extended:
 
-- `RangeArithmeticTest` (new, 17 tests) — the count at all four corners of the type, the
+- `oq-core/src/test/java/dev/oqthara/runtime/RangeArithmeticTest.java` (new, 17 tests) — the count at all four corners of the type, the
   `toList` refusal, `contains` past 2^53 and for a strided range spanning the type, the
   last *reachable* value for an unaligned step, membership agreeing with the walk at both
   ends, the empty-range `first`/`last` messages, the truthiness of an uncountable
@@ -373,7 +385,7 @@ Tests added or extended:
 - `LoweringTest` — `lowersForRange` now asserts the `CounterRange` opcode and the iterator
   shape and the **absence** of `_i` and `<=`; `descendingRangeIsNotSimplifiedIntoAnAscendingLoop`
   and the new `anUntilLoopBuildsAnExclusiveCounterRange` pin the direction rules.
-- `BuildJarTest.anInternalErrorIsClassifiedAsExitCode70` replaces
+- `anInternalErrorIsClassifiedAsExitCode70` in `BuildJarTest.java` replaces
   `aCompiledJarReportsAnInternalErrorWithExitCode70`, which existed at baseline. Its only
   vehicle was `print 1 to true`, which reached the old bound check and threw
   `IllegalArgumentException`; that program is now an ordinary user error, which is the
@@ -387,23 +399,109 @@ describe-don't-enumerate rule, the two cardinality refusals, and a new "Counter 
 subsection. The claim that ranges "were already unaffected because both are converted to a
 list before the loop starts" was also wrong and is corrected.
 
-### A defect found in review, after the group 3 tests were green
+## Group 4 — JSON, CSV, URLs and text measurement
 
-The independent pre-merge review found a wrong-answer bug in the group 3 slice path that every
-test above had missed. `Values.rangeValueAt` scaled the slice *offset* by the range step and then
-added the window *start* unscaled, which is only the same thing when the step is 1:
+Ten defects, all in `oq-stdlib`, all reproduced through the real CLI before a line changed.
+The two families share a cause: a helper measured with the wrong unit (a UTF-16 unit where the
+language counts a code point, or a Java API's idea of a URL where RFC 3986 has its own), and a
+parser that accepted inputs its specification excludes.
 
-- `range(0, 10, 2)[1:3]` returned `[1, 3]`; the window is positions 1 and 2 of a range that
-  names 0, 2, 4, 6, 8, so it is `[2, 4]`.
-- `(0 to 9).reverse()[1:3]` returned `[10, 9]`; 10 is not a member of the range at all, and the
-  window is `[8, 7]`.
+### #161, #162 and #170 — the JSON reader is stricter
 
-The start is now scaled like the offset. The gap was in the tests rather than in the reasoning:
-every slice assertion in `RangeArithmeticTest` sliced a `to`/`until` literal, whose step is 1.
-Three tests now cover a strided lateral slice, a descending one, and indexing-versus-slicing
-agreement at four positions, so a step that is not 1 cannot pass through this path unnoticed
-again. Reported here rather than quietly amended because it is the reason the merge order below
-puts group 3 last: a fix that is green is not the same as a fix that is right.
+`Json.object()` read a member's value before it could notice a repeated name, so
+`{"x":1,"x":2}` kept only the last one and said nothing. It now remembers the names it has
+already seen and refuses a repeat before reading the value. The comparison is on the
+*decoded* name, so `{"a":1,"\u0061":2}` collides — an earlier version that compared the raw
+source text would have let that through.
+
+`skipWhitespace()` used `Character.isWhitespace`, which accepts `U+00A0`, `U+2028` and
+`U+3000`; JSON allows exactly four characters. `string()` accepted raw `U+0000`–`U+001F` and
+unpaired surrogates, both raw and through `\u` escapes. Both now refuse, naming the offending
+code point.
+
+`number()` accepted a leading zero (`01`, `-01`, `01.5`) and measured digits with
+`Character.isDigit`, which accepts Arabic-Indic and fullwidth digits and then failed inside
+`NumberFormatException`, escaping as an internal error instead of a diagnosed one. Leading
+zeroes are refused with the offending text, and `isJsonDigit` now admits only `0`–`9`.
+
+### #172 — the writer cannot produce what the reader refuses
+
+Closing the reader makes the writer's `Map` branch able to emit a document that Oqthara itself
+would reject: `1` and `"1"` are distinct keys but render as the same member name. `writeValue`
+now tracks the names it has already emitted and refuses a collision rather than writing a file
+that cannot be read back. The check is on the rendered name, so it catches the case the reader
+catches.
+
+### #160, #177 and #186 — `url_join` follows RFC 3986
+
+The old implementation delegated to `java.net.URI.resolve`, which is not the algorithm the RFC
+describes: it lets dot segments climb above the root (`/b/c/d;p?q` joined with `../../../g`
+produced `/../../g`), it rejects the opaque absolute references `mailto:`, `urn:` and
+`file:/`, and it mishandles the reference forms that have no path at all. `urlJoin` is now
+transcribed from RFC 3986 section 5.2 — `refScheme`, `refAuthority`, `refPath`, `refQuery`,
+`refFragment`, `mergePaths`, `removeDotSegments` as the literal 5.2.4 loop, and `buildUrl` —
+with `URI.create` used only to validate the result. A reference whose first segment contains a
+colon is a scheme only when the text before the colon is a valid scheme, and the RFC 3986
+section 5.4 normal and abnormal examples all resolve as the RFC says they should.
+
+The repository has a deliberate policy of percent-escaping path segments, which
+`url_join` preserves: only the *path of a relative reference* is escaped, absolute references
+pass through untouched. That is why `;x` and `g;x` come back escaped rather than verbatim; the
+RFC's own table has no opinion on escaping and #186 asks for the policy to be kept.
+
+### #173 — malformed percent-escapes are diagnosed
+
+`url_decode` and `query_parse` decoded through a default `URLDecoder`-style path that replaced
+every malformed byte with `U+FFFD`, so `%E9` and `%FF` produced a valid-looking string that had
+never been in the input. Both now share `decodeFormComponent`, which decodes `+` to a space,
+validates the `%XX` hex itself, and runs a strict `CharsetDecoder` with
+`CodingErrorAction.REPORT`, so the error names the input and says what was wrong. Supplementary
+characters are handled by encoding the surrogate pair together before decoding.
+
+### #157 — a CSV delimiter is a code point
+
+`csv_delimiter` validated its argument with `String.length()`, so a single emoji — one code
+point, two UTF-16 units — was rejected as "more than one character". The delimiter is now an
+`int` code point throughout (`csvDelimiter`, `csvParse`, `csvWrite`, `csvField`), compared with
+`codePointAt` and counted with `codePointCount`, so a supplementary delimiter parses as one
+separator and is quoted when it appears in data. A genuine multi-character string is still
+refused.
+
+### #179 — text is measured in code points
+
+`wrap_text` and `shorten_text` measured and split with `String.length()` and `substring`, which
+count UTF-16 units, so a width of 1 halved a surrogate pair and produced two lone surrogates.
+Both now measure with `codePointCount` and split at a code-point offset, so an emoji is one
+character wide and is never split.
+
+### Reproduction and verification
+
+Each row below was run through `java -jar oq-cli/build/libs/oq.jar run` on both the interpreter
+and, for the sampled cases, the compiled backend.
+
+| Input | Result |
+| --- | --- |
+| `{"x":1,"x":2}` | `duplicate object key 'x'` |
+| `{"a":1,"\u0061":2}` | `duplicate object key 'a'` |
+| a raw TAB inside a string | `unescaped control character U+0009` |
+| `U+000B`, `\f`, `U+00A0`, `U+2028`, `U+3000` used as whitespace | rejected; ordinary spaces still parse |
+| `{"n":01}` | `leading zero in '01'` |
+| `\ud800` alone, `\ude00` alone, `\ud83d\ud83d` | rejected, naming the surrogate |
+| `\ud83d\ude00` and a raw emoji | both parse to one character |
+| a map with keys `1` and `"1"` | `cannot write two map keys as the JSON member '1'` |
+| `csv_parse("left😀right", "😀")` | `[["left", "right"]]` |
+| `url_join("http://a/b/c/d;p?q", "../../../g")` | `http://a/g` |
+| `mailto:`, `urn:`, `file:/` references | returned verbatim |
+| `?q=1`, `#new`, `""`, `?q=1#f`, `c/d?x=1#y`, `/root?z=2`, `//other.test/p` | each matches the RFC 3986 section 5.4 table |
+| the 39-reference RFC 3986 section 5.4 matrix | all match except the two `;x` cases, which take the escaping policy above |
+| `url_decode("a%20b+%C3%A9")` | `a b é` |
+| `query_parse("q=x&r=%E9")` | `invalid UTF-8 in query 'q=x&r=%E9'` |
+| `wrap_text("😀a", 1)` | `["😀", "a"]`, no surrogate split |
+| `shorten_text("😀" repeated five times, 6)` | unchanged — five characters, not ten |
+
+Test classes: `JsonFuzzRegressionTest` (16 tests, 10 new), and the new cases in
+`UrlAndHttpTest`, `CsvAndDatesTest` and `TextWrapTest`. The full suite reports 1,422 tests with
+0 failures, and `oq-core` line coverage stays at 91.5%.
 
 ## Newly discovered defects
 
@@ -449,7 +547,8 @@ here rather than bundled into an unrelated fix.
    exhausted memory instead of raising. The distance is now taken unsigned, and a window
    is materialised by counting rather than by comparing a moving position against the
    end — that comparison was also what a step could jump past. Asserted in
-   `RangeArithmeticTest` on the interpreter and in `BytecodeCompilerTest` on a jar.
+   `oq-core/src/test/java/dev/oqthara/runtime/RangeArithmeticTest.java` on the interpreter
+   and in `BytecodeCompilerTest` on a jar.
 
 Items 2 and 6 are fixed by Group 2, which put every count and bound through one
 narrowing rule. Items 1, 3, 7, 8 and 10 are fixed by Group 3, which is the range model
@@ -531,7 +630,7 @@ history is not silent about it.
 
 - Scheduled monitoring runs are not available in this environment; this report is
   updated as work proceeds instead of on a timer.
-- No branch here is merged, and `main` is not touched by this work.
+- No branch in groups 1–4 is merged, and `main` is not touched by this work.
 
 ## Why CI did not run, and what it taught
 

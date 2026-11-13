@@ -185,4 +185,35 @@ class CsvAndDatesTest {
         assertTrue(instant.hint().contains("offset"),
                 "a date with no offset is not silently given one: " + instant.hint());
     }
+
+    // --- The delimiter is one code point (#157) ---------------------------
+
+    @Test
+    void aSupplementaryDelimiterIsOneCharacter() {
+        // U+1F600 is one character (ADR-0024) but two UTF-16 units; rejecting it on length
+        // contradicted the language's own text model.
+        assertEquals(List.of(List.of("left", "right")),
+                parse("left\uD83D\uDE00right", "\uD83D\uDE00"));
+        // csv_write always terminates the row, so the newline is part of the contract.
+        assertEquals("left\uD83D\uDE00right\n",
+                call("csv_write", List.of(List.of("left", "right")), "\uD83D\uDE00"));
+    }
+
+    @Test
+    void aSupplementaryDelimiterIsQuotedWhenItAppearsInData() {
+        String emoji = "\uD83D\uDE00";
+        String written = (String) call("csv_write", List.of(List.of("a" + emoji + "b")), emoji);
+        assertEquals("\"a" + emoji + "b\"\n", written);
+        assertEquals(List.of(List.of("a" + emoji + "b")), parse(written, emoji));
+    }
+
+    @Test
+    void aMultiCharacterDelimiterIsStillRejected() {
+        OqError error = assertThrows(OqError.class, () -> parse("a,b", ",,"));
+        assertTrue(error.getMessage().contains("exactly one character"), error.getMessage());
+        // Two supplementary characters are two characters, not one.
+        OqError two = assertThrows(OqError.class,
+                () -> parse("a", "\uD83D\uDE00\uD83D\uDE00"));
+        assertTrue(two.getMessage().contains("exactly one character"), two.getMessage());
+    }
 }

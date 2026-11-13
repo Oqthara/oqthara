@@ -1212,24 +1212,29 @@ public final class Stdlib {
     }
 
     /**
-     * The delimiter is one character.
+     * The delimiter is one character — one Unicode code point, not one UTF-16 unit.
+     *
+     * <p>Oqthara text counts code points (ADR-0024), so a supplementary character such as U+1F600
+     * is one character and a legal delimiter. Testing {@code String.length() != 1} rejected it
+     * (#157) even though it occupies two UTF-16 units.
      *
      * <p>A multi-character delimiter does not exist in any CSV dialect, and accepting one turns
      * {@code csv_parse} into a general splitter that callers will reach for when CSV is not what
      * they have.
      */
-    private static char csvDelimiter(Object value, Span span) {
+    private static int csvDelimiter(Object value, Span span) {
         String delimiter = text(value, "csv_parse", span);
-        if (delimiter.length() != 1) {
+        int codePoints = delimiter.codePointCount(0, delimiter.length());
+        if (codePoints != 1) {
             throw new OqError("a delimiter must be exactly one character, got \""
                     + delimiter + "\"", span,
                     "Use , or ; or \t. A longer delimiter is not a CSV dialect.");
         }
-        if (delimiter.charAt(0) == '"' || delimiter.charAt(0) == '\n'
-                || delimiter.charAt(0) == '\r') {
+        int codePoint = delimiter.codePointAt(0);
+        if (codePoint == '"' || codePoint == '\n' || codePoint == '\r') {
             throw new OqError("a delimiter cannot be a quote or a line break", span);
         }
-        return delimiter.charAt(0);
+        return codePoint;
     }
 
     /**
@@ -1238,7 +1243,7 @@ public final class Stdlib {
      * <p>Malformed input raises rather than being repaired: a repaired table has the wrong shape
      * and no one is told, which is worse than a program that stops.
      */
-    private static Object csvParse(String source, char delimiter, boolean comment, Span span) {
+    private static Object csvParse(String source, int delimiter, boolean comment, Span span) {
         List<Object> rows = new ArrayList<>();
         List<Object> row = new ArrayList<>();
         StringBuilder field = new StringBuilder();
@@ -1259,7 +1264,7 @@ public final class Stdlib {
                         quoted = false;
                         // Text after a closing quote would be silently glued onto the field by a
                         // lenient parser, so it is refused instead.
-                        if (i + 1 < source.length() && source.charAt(i + 1) != delimiter
+                        if (i + 1 < source.length() && source.codePointAt(i + 1) != delimiter
                                 && source.charAt(i + 1) != '\n' && source.charAt(i + 1) != '\r') {
                             throw new OqError("csv_parse() found text after a closing quote on line "
                                     + line, span,
@@ -1273,7 +1278,10 @@ public final class Stdlib {
                 }
                 continue;
             }
-            if (c == delimiter) {
+            // Compared as a code point: a supplementary delimiter spans two chars, and charAt
+            // would see two halves that match nothing (#157).
+            if (source.codePointAt(i) == delimiter) {
+                i += Character.charCount(delimiter) - 1;
                 row.add(field.toString());
                 field.setLength(0);
             } else if (c == '\n' || c == '\r') {
@@ -1315,7 +1323,7 @@ public final class Stdlib {
     }
 
     /** Quote exactly the fields that need it, and escape a quote by doubling it. */
-    private static String csvWrite(Object value, char delimiter, Span span) {
+    private static String csvWrite(Object value, int delimiter, Span span) {
         if (!(value instanceof List<?> rows)) {
             throw new OqError("csv_write() needs a list of rows, got " + Values.typeName(value),
                     span);
@@ -1327,7 +1335,7 @@ public final class Stdlib {
                         + Values.typeName(rowValue), span);
             }
             for (int i = 0; i < row.size(); i++) {
-                if (i > 0) sb.append(delimiter);
+                if (i > 0) sb.appendCodePoint(delimiter);
                 sb.append(csvField(Values.display(row.get(i)), delimiter));
             }
             sb.append('\n');
@@ -1339,8 +1347,9 @@ public final class Stdlib {
         return result;
     }
 
-    private static String csvField(String value, char delimiter) {
-        boolean needsQuotes = value.indexOf(delimiter) >= 0 || value.indexOf('"') >= 0
+    private static String csvField(String value, int delimiter) {
+        boolean needsQuotes = value.codePoints().anyMatch(cp -> cp == delimiter)
+                || value.indexOf('"') >= 0
                 || value.indexOf('\n') >= 0 || value.indexOf('\r') >= 0;
         if (!needsQuotes) return value;
         return "\"" + value.replace("\"", "\"\"") + "\"";
@@ -1469,12 +1478,7 @@ public final class Stdlib {
         }).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("url_decode", 1, (host, args, span) -> {
             String text = Values.display(args.get(0));
-            try {
-                return java.net.URLDecoder.decode(text, StandardCharsets.UTF_8);
-            } catch (IllegalArgumentException e) {
-                throw new OqError("invalid percent-encoding in '" + text + "'", span,
-                        e.getMessage() + ". A literal % must be written %25.");
-            }
+            return decodeFormComponent(text, "URL '" + text + "'", span);
         }).named("text"));
         interpreter.defineBuiltin(NativeFunction.of("query_parse", 1, (host, args, span) -> {
             String text = Values.display(args.get(0));
@@ -1539,24 +1543,77 @@ public final class Stdlib {
                 urlJoin(Values.display(args.get(0)), Values.display(args.get(1)), span)).named("base", "reference"));
     }
 
-    /** Decodes one query component, naming the whole query when the component is malformed. */
+    /**
+     * Decodes one query component, naming the whole query when the component is malformed.
+     */
     private static String decodeQueryComponent(String component, String whole, Span span) {
+        return decodeFormComponent(component, "query '" + whole + "'", span);
+    }
+
+    /**
+     * Decodes one application/x-www-form-urlencoded component as strict UTF-8.
+     *
+     * <p>{@code URLDecoder} replaces a malformed byte sequence with U+FFFD, so {@code %FF} came
+     * back as a replacement character: a silent substitution that turns corrupt input into a
+     * plausible but different value (#173). The bytes are decoded here with a strict decoder that
+     * reports what failed instead.
+     */
+    private static String decodeFormComponent(String component, String what, Span span) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        for (int i = 0; i < component.length(); i++) {
+            char c = component.charAt(i);
+            if (c == '+') {
+                // '+' is a space in this encoding; that is the one substitution form decoding
+                // makes, and it is the documented contract rather than a repair of bad input.
+                bytes.write(' ');
+            } else if (c == '%') {
+                if (i + 2 >= component.length()) {
+                    throw new OqError("invalid percent-encoding in " + what, span,
+                            "A literal % must be written %25.");
+                }
+                int high = Character.digit(component.charAt(i + 1), 16);
+                int low = Character.digit(component.charAt(i + 2), 16);
+                if (high < 0 || low < 0) {
+                    throw new OqError("invalid percent-encoding in " + what, span,
+                            "'%" + component.substring(i + 1, i + 3)
+                                    + "' is not a hexadecimal byte. A literal % must be written %25.");
+                }
+                bytes.write((high << 4) | low);
+                i += 2;
+            } else {
+                // A supplementary character arrives as two chars; encoding each half separately
+                // would produce two malformed sequences.
+                int count = Character.isHighSurrogate(c) && i + 1 < component.length()
+                        && Character.isLowSurrogate(component.charAt(i + 1)) ? 2 : 1;
+                byte[] encoded = component.substring(i, i + count).getBytes(StandardCharsets.UTF_8);
+                bytes.write(encoded, 0, encoded.length);
+                i += count - 1;
+            }
+        }
+        java.nio.charset.CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT);
         try {
-            return java.net.URLDecoder.decode(component, StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException e) {
-            throw new OqError("invalid percent-encoding in query '" + whole + "'", span,
-                    e.getMessage() + ". A literal % must be written %25.");
+            return decoder.decode(java.nio.ByteBuffer.wrap(bytes.toByteArray())).toString();
+        } catch (java.nio.charset.CharacterCodingException e) {
+            throw new OqError("invalid UTF-8 in " + what, span,
+                    "The percent-encoded bytes are not valid UTF-8, so they do not name a text "
+                            + "character. Encode the value with url_encode() first.");
         }
     }
 
     /**
-     * Resolves {@code reference} against {@code base}, escaping it per segment.
+     * Resolves {@code reference} against {@code base} per RFC 3986 §5.2, escaping the reference
+     * path segment by segment first.
      *
-     * <p>{@code URI.resolve} does the joining, but it refuses a reference containing a space, and
-     * it would also treat a leading {@code /} as replacing the base path. Both behaviours are
-     * correct HTTP; the first is inconvenient and the second is surprising. The reference is
-     * therefore escaped first, segment by segment, so {@code url_join(base, "a b/c")} means
-     * {@code a%20b/c} and not a single path component with an escaped slash.
+     * <p>{@code URI.resolve} cannot be used directly: it refuses a reference containing a space,
+     * and it treats the whole reference as a path, so {@code ?q=1} becomes {@code %3Fq%3D1}. Both
+     * are fixed here by splitting the reference into its five RFC components and escaping only the
+     * path — a query or a fragment is already legal as written and must survive verbatim.
+     *
+     * <p>Resolution itself is implemented rather than delegated because {@code URI.resolve} does
+     * not discard dot segments that climb above the root (#160) and treats an opaque absolute
+     * reference such as {@code mailto:} as a relative path (#177).
      */
     private static String urlJoin(String base, String reference, Span span) {
         URI baseUri;
@@ -1565,34 +1622,192 @@ public final class Stdlib {
         } catch (IllegalArgumentException e) {
             throw new OqError("invalid base URL '" + base + "'", span, e.getMessage());
         }
-        // Absolute references replace the base entirely; escaping a full URL would destroy its
-        // own scheme separator.
-        if (reference.contains("://")) {
-            try {
-                return URI.create(reference).toString();
-            } catch (IllegalArgumentException e) {
-                throw new OqError("invalid reference URL '" + reference + "'", span, e.getMessage());
-            }
+        if (!baseUri.isAbsolute()) {
+            throw new OqError("invalid base URL '" + base + "'", span,
+                    "A base URL needs a scheme, as in https://example.com/a/.");
         }
+        String scheme = refScheme(reference);
+        String authority = refAuthority(reference, scheme);
+        String rawPath = refPath(reference, scheme, authority);
+        String query = refQuery(reference, scheme, authority);
+        String fragment = refFragment(reference);
+        // Only a relative reference is escaped. An absolute one is already a URI the caller wrote
+        // in full, and re-escaping it would destroy its own delimiters: mailto:user@example.com
+        // became mailto:user%40example.com, and urn:isbn:… lost its colon (#177).
+        String path = scheme == null ? escapePath(rawPath) : rawPath;
+
+        String result;
+        if (scheme != null) {
+            // An absolute reference replaces the base entirely, including an opaque one such as
+            // mailto: or urn:, which has neither an authority nor a path to merge.
+            result = buildUrl(scheme, authority, removeDotSegments(path), query, fragment);
+        } else if (authority != null) {
+            // A network-path reference takes the base scheme and replaces everything else.
+            result = buildUrl(baseUri.getScheme(), authority, removeDotSegments(path), query,
+                    fragment);
+        } else if (rawPath.isEmpty()) {
+            // §5.2.2: an empty path keeps the base path, and keeps its query unless the reference
+            // supplies one. This is what makes "" and "?q=1" resolve correctly (#186).
+            String mergedQuery = query != null ? query : baseUri.getRawQuery();
+            result = buildUrl(baseUri.getScheme(), baseUri.getRawAuthority(),
+                    baseUri.isOpaque() ? "" : baseUri.getRawPath(), mergedQuery, fragment);
+        } else if (path.startsWith("/")) {
+            result = buildUrl(baseUri.getScheme(), baseUri.getRawAuthority(),
+                    removeDotSegments(path), query, fragment);
+        } else {
+            result = buildUrl(baseUri.getScheme(), baseUri.getRawAuthority(),
+                    removeDotSegments(mergePaths(baseUri, path)), query, fragment);
+        }
+        // One last check: an absolute reference arrives unescaped, so a space or a stray bracket in
+        // it must be reported here rather than returned as a string http_get cannot use.
+        try {
+            URI.create(result);
+        } catch (IllegalArgumentException e) {
+            throw new OqError("cannot join '" + reference + "' to '" + base + "'", span,
+                    e.getMessage() + ". A URL must escape spaces and other reserved characters; "
+                            + "url_encode() escapes a value, url_join() escapes a reference.");
+        }
+        return result;
+    }
+
+    /** The scheme of {@code reference} when it is absolute, else {@code null} (RFC 3986 §5.2.1). */
+    private static String refScheme(String reference) {
+        int colon = reference.indexOf(':');
+        if (colon <= 0) return null;
+        // A scheme is ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) and is followed by ':'. Requiring
+        // a real scheme is what separates "mailto:x" from a relative path such as "a:b/c".
+        if (!Character.isLetter(reference.charAt(0))) return null;
+        for (int i = 1; i < colon; i++) {
+            char c = reference.charAt(i);
+            if (!Character.isLetterOrDigit(c) && c != '+' && c != '-' && c != '.') return null;
+        }
+        // Only the first segment may carry the scheme; "a/b:c" is a path.
+        if (reference.lastIndexOf('/', colon) >= 0) return null;
+        return reference.substring(0, colon);
+    }
+
+    /** The authority of an absolute or network-path reference, else {@code null} (§5.2.2). */
+    private static String refAuthority(String reference, String scheme) {
+        int start = scheme == null ? 0 : scheme.length() + 1;
+        if (!reference.startsWith("//", start)) return null;
+        int end = start + 2;
+        while (end < reference.length() && "/?#".indexOf(reference.charAt(end)) < 0) end++;
+        return reference.substring(start + 2, end);
+    }
+
+    /** The raw reference path, with no authority, query or fragment. */
+    private static String refPath(String reference, String scheme, String authority) {
+        int start = scheme == null ? 0 : scheme.length() + 1;
+        if (authority != null) start += authority.length() + 2;
+        int end = start;
+        while (end < reference.length() && "?#".indexOf(reference.charAt(end)) < 0) end++;
+        return reference.substring(start, end);
+    }
+
+    /**
+     * Escapes raw path text one segment at a time, so {@code url_join(base, "a b/c")} means
+     * {@code a%20b/c} and not one segment with an escaped separator. Dot segments are path syntax
+     * rather than characters and stay literal so §5.2.4 can still apply them.
+     */
+    private static String escapePath(String raw) {
         StringBuilder escaped = new StringBuilder();
-        String[] segments = reference.split("/", -1);
+        String[] segments = raw.split("/", -1);
         for (int i = 0; i < segments.length; i++) {
             if (i > 0) escaped.append('/');
             String segment = segments[i];
-            // "." and ".." are path syntax, not characters to encode, so they stay literal and
-            // URI.resolve still gets to apply them.
             if (segment.equals(".") || segment.equals("..")) {
                 escaped.append(segment);
             } else {
                 escaped.append(encodePathSegment(segment));
             }
         }
-        try {
-            return baseUri.resolve(escaped.toString()).toString();
-        } catch (IllegalArgumentException e) {
-            throw new OqError("cannot join '" + reference + "' to '" + base + "'", span,
-                    e.getMessage());
+        return escaped.toString();
+    }
+
+    /** The query component without its '?', or {@code null} when the reference has none. */
+    private static String refQuery(String reference, String scheme, String authority) {
+        int start = scheme == null ? 0 : scheme.length() + 1;
+        if (authority != null) start += authority.length() + 2;
+        int question = reference.indexOf('?', start);
+        if (question < 0) return null;
+        int hash = reference.indexOf('#', question + 1);
+        return reference.substring(question + 1, hash < 0 ? reference.length() : hash);
+    }
+
+    /** The fragment without its '#', or {@code null} when the reference has none. */
+    private static String refFragment(String reference) {
+        int hash = reference.indexOf('#');
+        return hash < 0 ? null : reference.substring(hash + 1);
+    }
+
+    /**
+     * RFC 3986 §5.3: a relative path is appended to everything of the base path before its last
+     * segment, or to "/" when the base has an authority and no path at all.
+     */
+    private static String mergePaths(URI baseUri, String path) {
+        String basePath = baseUri.isOpaque() ? "" : baseUri.getRawPath();
+        if (baseUri.getRawAuthority() != null && basePath.isEmpty()) return "/" + path;
+        int lastSlash = basePath.lastIndexOf('/');
+        return lastSlash < 0 ? path : basePath.substring(0, lastSlash + 1) + path;
+    }
+
+    /**
+     * RFC 3986 §5.2.4, transcribed step by step.
+     *
+     * <p>Written out because {@code URI.normalize()} never discards the segments that climb above
+     * the root — {@code http://a/../../../g} comes back as {@code http://a/../g} — which is
+     * exactly the case #160 reports. Segments keep their leading '/' as the RFC moves them, so
+     * the rebuilt path cannot grow a doubled separator.
+     */
+    private static String removeDotSegments(String path) {
+        StringBuilder out = new StringBuilder();
+        String input = path;
+        while (!input.isEmpty()) {
+            if (input.startsWith("../")) {
+                input = input.substring(3);
+            } else if (input.startsWith("./")) {
+                input = input.substring(2);
+            } else if (input.startsWith("/./")) {
+                input = "/" + input.substring(3);
+            } else if (input.equals("/.")) {
+                input = "/";
+            } else if (input.startsWith("/../")) {
+                input = "/" + input.substring(4);
+                dropLastSegment(out);
+            } else if (input.equals("/..")) {
+                input = "/";
+                dropLastSegment(out);
+            } else if (input.equals(".") || input.equals("..")) {
+                input = "";
+            } else {
+                int next = input.indexOf('/', input.startsWith("/") ? 1 : 0);
+                if (next < 0) {
+                    out.append(input);
+                    input = "";
+                } else {
+                    out.append(input, 0, next);
+                    input = input.substring(next);
+                }
+            }
         }
+        return out.toString();
+    }
+
+    private static void dropLastSegment(StringBuilder out) {
+        int last = out.lastIndexOf("/");
+        out.setLength(Math.max(last, 0));
+    }
+
+    /** Reassembles the five components. Each is omitted when absent, never written empty. */
+    private static String buildUrl(String scheme, String authority, String path, String query,
+            String fragment) {
+        StringBuilder out = new StringBuilder();
+        if (scheme != null) out.append(scheme).append(':');
+        if (authority != null) out.append("//").append(authority);
+        out.append(path);
+        if (query != null) out.append('?').append(query);
+        if (fragment != null) out.append('#').append(fragment);
+        return out.toString();
     }
 
     /**

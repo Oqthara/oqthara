@@ -415,4 +415,37 @@ class TextWrapTest {
         assertEquals(List.of("--- ", "+++ ", "@@ -1 +1 @@", "-a", "+b"),
                 list(call("unified_diff", lines("a"), lines("b"))));
     }
+
+    // --- Characters are code points, not UTF-16 units (#179) --------------
+
+    @Test
+    void aSupplementaryCharacterIsOneCharacterWide() {
+        // "😀a" is two characters, so width 1 wraps it into two lines. String.length() said
+        // three and split the surrogate pair, producing two unpaired halves.
+        assertEquals(List.of("\uD83D\uDE00", "a"), list(call("wrap_text", "\uD83D\uDE00a", 1L)));
+        assertEquals(List.of("\uD83D\uDE00\uD83D\uDE00", "\uD83D\uDE00"),
+                list(call("wrap_text", "\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00", 2L)));
+    }
+
+    @Test
+    void wrappingNeverSplitsASurrogatePair() {
+        for (String line : list(call("wrap_text", "\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00", 1L))) {
+            for (int i = 0; i < line.length(); i++) {
+                char c = line.charAt(i);
+                assertTrue(!Character.isHighSurrogate(c) || i + 1 < line.length()
+                                && Character.isLowSurrogate(line.charAt(i + 1)),
+                        "line starts a pair it does not finish: " + line);
+                assertTrue(!Character.isLowSurrogate(c) || i > 0
+                                && Character.isHighSurrogate(line.charAt(i - 1)),
+                        "line ends with an unpaired low surrogate: " + line);
+            }
+        }
+    }
+
+    @Test
+    void shorteningCountsSupplementaryCharactersOnce() {
+        // Five characters in a width of 6 needs no ellipsis; counting units said 10 and shortened.
+        assertEquals("\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00",
+                call("shorten_text", "\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00\uD83D\uDE00", 6L));
+    }
 }

@@ -270,4 +270,128 @@ class UrlAndHttpTest {
         assertTrue(error.getMessage().contains("cannot resolve the host"), error.getMessage());
         assertFalse(error.getMessage().contains("connection refused"), error.getMessage());
     }
+
+    @Test
+    void dotSegmentsNeverClimbAboveTheRoot() {
+        // RFC 3986 5.4.1: this base and these references resolve to http://a/g. URI.resolve
+        // returned http://a/../g, leaving the segments in place (#160).
+        String base = "http://a/b/c/d;p?q";
+        for (String reference : new String[] {"../../../g", "../../../../g", "/./g", "/../g"}) {
+            assertEquals("http://a/g", call("url_join", base, reference),
+                    "reference " + reference);
+        }
+    }
+
+    @Test
+    void theRfcNormalExampleMatrixResolves() {
+        // RFC 3986 5.4.1, normal examples, transcribed. The separator-free cases are the ones
+        // the component splitter has to get right.
+        String base = "http://a/b/c/d;p?q";
+        String[][] cases = {
+            {"g:h", "g:h"},
+            {"g", "http://a/b/c/g"},
+            {"./g", "http://a/b/c/g"},
+            {"g/", "http://a/b/c/g/"},
+            {"/g", "http://a/g"},
+            {"//g", "http://g"},
+            {"?y", "http://a/b/c/d;p?y"},
+            {"g?y", "http://a/b/c/g?y"},
+            {"#s", "http://a/b/c/d;p?q#s"},
+            {"g#s", "http://a/b/c/g#s"},
+            {"g?y#s", "http://a/b/c/g?y#s"},
+            {"", "http://a/b/c/d;p?q"},
+            {".", "http://a/b/c/"},
+            {"./", "http://a/b/c/"},
+            {"..", "http://a/b/"},
+            {"../", "http://a/b/"},
+            {"../g", "http://a/b/g"},
+            {"../..", "http://a/"},
+            {"../../g", "http://a/g"},
+            {"g.", "http://a/b/c/g."},
+            {".g", "http://a/b/c/.g"},
+            {"g..", "http://a/b/c/g.."},
+            {"..g", "http://a/b/c/..g"},
+            {"./../g", "http://a/b/g"},
+            {"./g/.", "http://a/b/c/g/"},
+            {"g/./h", "http://a/b/c/g/h"},
+            {"g/../h", "http://a/b/c/h"},
+            {"g?y/./x", "http://a/b/c/g?y/./x"},
+            {"g?y/../x", "http://a/b/c/g?y/../x"},
+            {"g#s/./x", "http://a/b/c/g#s/./x"},
+            {"g#s/../x", "http://a/b/c/g#s/../x"},
+        };
+        for (String[] c : cases) {
+            assertEquals(c[1], call("url_join", base, c[0]), "reference '" + c[0] + "'");
+        }
+    }
+
+    @Test
+    void anOpaqueAbsoluteReferenceReplacesTheBaseEntirely() {
+        // These have a scheme but no "//", so sniffing for "://" escaped them into the base
+        // path and produced https://example.com/a/mailto%3Auser%40example.com (#177).
+        String base = "https://example.com/a/";
+        assertEquals("mailto:user@example.com", call("url_join", base, "mailto:user@example.com"));
+        assertEquals("urn:isbn:9780306406157",
+                call("url_join", base, "urn:isbn:9780306406157"));
+        assertEquals("file:/tmp/test", call("url_join", base, "file:/tmp/test"));
+    }
+
+    @Test
+    void aColonInTheFirstSegmentCanBeASchemeOrAPath() {
+        // "a:b/c" is a URI with scheme a; "a/b:c" is a relative path, because a scheme cannot
+        // contain a separator.
+        assertEquals("a:b/c", call("url_join", "https://example.com/x/", "a:b/c"));
+        assertEquals("https://example.com/x/a/b%3Ac",
+                call("url_join", "https://example.com/x/", "a/b:c"));
+    }
+
+    @Test
+    void queryAndFragmentReferencesAreNotEscapedIntoThePath() {
+        // Splitting the whole reference on '/' turned '?' into %3F and '#' into %23 (#186).
+        String base = "https://example.com/a/b?old=1#old";
+        assertEquals("https://example.com/a/b?q=1", call("url_join", base, "?q=1"));
+        assertEquals("https://example.com/a/b?old=1#new", call("url_join", base, "#new"));
+        assertEquals("https://example.com/a/b?old=1", call("url_join", base, ""));
+        assertEquals("https://example.com/a/b?q=1#f", call("url_join", base, "?q=1#f"));
+        assertEquals("https://example.com/a/c?x=1#y", call("url_join", base, "c?x=1#y"));
+    }
+
+    @Test
+    void aQueryInARelativeReferenceDoesNotDisturbItsPath() {
+        assertEquals("https://example.com/a/c/d?x=1#y",
+                call("url_join", "https://example.com/a/b", "c/d?x=1#y"));
+    }
+
+    @Test
+    void aNetworkPathReferenceKeepsTheBaseScheme() {
+        assertEquals("https://other.test/p", call("url_join", "https://example.com/a/", "//other.test/p"));
+    }
+
+    @Test
+    void malformedUtf8InAPercentEscapeIsReportedNotReplaced() {
+        // URLDecoder substituted U+FFFD, turning corrupt input into a plausible value (#173).
+        OqError decode = assertThrows(OqError.class, () -> call("url_decode", "%FF"));
+        assertTrue(decode.getMessage().contains("invalid UTF-8"), decode.getMessage());
+        OqError parse = assertThrows(OqError.class, () -> call("query_parse", "q=%FF"));
+        assertTrue(parse.getMessage().contains("invalid UTF-8"), parse.getMessage());
+    }
+
+    @Test
+    void truncatedOrNonHexEscapesAreStillReported() {
+        // Both name the input and point at the %25 escape, which is the mistake being made.
+        OqError truncated = assertThrows(OqError.class, () -> call("url_decode", "a%2"));
+        assertTrue(truncated.getMessage().contains("a%2"), truncated.getMessage());
+        assertTrue(truncated.hint().contains("%25"), truncated.hint());
+        OqError nonHex = assertThrows(OqError.class, () -> call("url_decode", "a%ZZ"));
+        assertTrue(nonHex.hint().contains("hexadecimal"), nonHex.hint());
+    }
+
+    @Test
+    void validUtf8StillDecodes() {
+        assertEquals("a b \u00e9", call("url_decode", "a%20b+%C3%A9"));
+        // A plus is a space here, which is the form-encoding contract rather than a repair.
+        assertEquals("a b", call("url_decode", "a+b"));
+        // A supplementary character survives both directions.
+        assertEquals("\uD83D\uDE00", call("url_decode", "%F0%9F%98%80"));
+    }
 }
