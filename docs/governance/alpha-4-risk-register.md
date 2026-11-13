@@ -572,51 +572,6 @@ existing gate.
 `oq-cli/src/test/java/dev/oqthara/cli/ExamplesRunTest.java` ·
 `oq-compiler/src/test/java/dev/oqthara/compiler/LoweringTest.java`.
 
-**R-025 — Nothing executes the specification's code examples, so a wrong one ships silently.**
-`docs/spec/language.md` carries well over a hundred fenced examples. `scripts/check-docs-sync.py`
-checks that the document states a version, that its version matches the build, and that certain
-named constructs are described; `scripts/check-links.py` checks that its links resolve. Neither
-runs an example. The conformance corpus is the only executed body of programs, and it is a
-separate corpus under `conformance/`, so an example may be wrong in the specification while
-every test passes.
-
-This is not hypothetical. While promoting §16 of the requirement matrix, a drafted example read
-`Lexer().tokenize("1 + 2")`. Executing it against the built CLI refused it —
-`cannot create Lexer with 0 arguments` — because `Lexer` declares a two-argument constructor and
-a static `lex`. The same draft would have merged had it not been tried, and nothing in CI would
-have objected.
-
-*Mitigation.* Every example added in this change was executed before being written down, and the
-habit is worth keeping. The exposure stays `Low` rather than `Medium` because a wrong example
-misleads a reader rather than corrupting a program, and because the examples that matter most —
-the ones a reader copies into a file — are the ones most likely to be tried by that reader too.
-
-The habit has since been made mechanical for the section it was learned in: the three examples
-added under "Interoperability with Java" are pinned by tests in `JavaInteropTest` —
-`aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow`,
-`exactJavaNumbersKeepTheirScaleAndTheirPrecision` and
-`aClassFromTheProgramsOwnClasspathIsImportable` — each asserting the exact annotated output, so
-an example that stops matching fails the build. The non-finite-numbers example added to
-`docs/spec/language.md` by ADR-0051 is pinned the same way, by
-`theSpecificationExampleForNonFiniteNumbersPrintsWhatItClaims` in `TranscendentalTest`, which
-asserts both operator results and the two exact logarithms the surrounding paragraph quotes.
-
-That covers four of the document's examples and is a precedent rather than a fix: nothing stops
-the next example from being wrong, and the mechanism does not generalise without the work
-described below. The count is worth stating plainly because the difference between "the examples
-are checked" and "four examples are checked" is the difference between a control and a habit, and
-the paragraph above is a case of the habit failing to generalise even within one document.
-
-*Why accepted rather than fixed now.* Executing fenced blocks requires deciding which blocks are
-runnable (many are deliberate error transcripts, or fragments that only make sense in context),
-building the CLI in the documentation check, and pinning expected output per block. That is a
-real piece of work with its own failure modes, and it belongs in workstream 16 as a defined
-deliverable rather than bolted onto the documentation gate that currently runs in seconds.
-
-*Evidence.* `scripts/check-docs-sync.py` (states a version, matches the build) ·
-`scripts/check-links.py` (195 links) · the `Lexer` example in `docs/spec/language.md`
-"Interoperability with Java", which is the corrected form of the draft that failed.
-
 ### Distribution and publication
 
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
@@ -744,6 +699,51 @@ compare, rather than reading it.
 (`stdlib_inventory_tallies_agree`, `stdlib_inventory_citations_resolve`) ·
 `oq-stdlib/src/main/java/dev/oqthara/stdlib/Stdlib.java`.
 
+**R-025 — Nothing executes the specification's code examples, so a wrong one ships silently.**
+`docs/spec/language.md` carries well over a hundred fenced examples. `scripts/check-docs-sync.py`
+checks that the document states a version, that its version matches the build, and that certain
+named constructs are described; `scripts/check-links.py` checks that its links resolve. Neither
+runs an example. The conformance corpus is the only executed body of programs, and it is a
+separate corpus under `conformance/`, so an example may be wrong in the specification while
+every test passes.
+
+This is not hypothetical. While promoting §16 of the requirement matrix, a drafted example read
+`Lexer().tokenize("1 + 2")`. Executing it against the built CLI refused it —
+`cannot create Lexer with 0 arguments` — because `Lexer` declares a two-argument constructor and
+a static `lex`. The same draft would have merged had it not been tried, and nothing in CI would
+have objected.
+
+*Mitigation.* Every example added in this change was executed before being written down, and the
+habit is worth keeping. The exposure stays `Low` rather than `Medium` because a wrong example
+misleads a reader rather than corrupting a program, and because the examples that matter most —
+the ones a reader copies into a file — are the ones most likely to be tried by that reader too.
+
+The habit has since been made mechanical for the section it was learned in: the three examples
+added under "Interoperability with Java" are pinned by tests in `JavaInteropTest` —
+`aThrownJavaExceptionArrivesAsAnErrorWhoseSpanIsTheThrow`,
+`exactJavaNumbersKeepTheirScaleAndTheirPrecision` and
+`aClassFromTheProgramsOwnClasspathIsImportable` — each asserting the exact annotated output, so
+an example that stops matching fails the build. The non-finite-numbers example added to
+`docs/spec/language.md` by ADR-0051 is pinned the same way, by
+`theSpecificationExampleForNonFiniteNumbersPrintsWhatItClaims` in `TranscendentalTest`, which
+asserts both operator results and the two exact logarithms the surrounding paragraph quotes.
+
+That covers four of the document's examples and is a precedent rather than a fix: nothing stops
+the next example from being wrong, and the mechanism does not generalise without the work
+described below. The count is worth stating plainly because the difference between "the examples
+are checked" and "four examples are checked" is the difference between a control and a habit, and
+the paragraph above is a case of the habit failing to generalise even within one document.
+
+*Why accepted rather than fixed now.* Executing fenced blocks requires deciding which blocks are
+runnable (many are deliberate error transcripts, or fragments that only make sense in context),
+building the CLI in the documentation check, and pinning expected output per block. That is a
+real piece of work with its own failure modes, and it belongs in workstream 16 as a defined
+deliverable rather than bolted onto the documentation gate that currently runs in seconds.
+
+*Evidence.* `scripts/check-docs-sync.py` (states a version, matches the build) ·
+`scripts/check-links.py` (213 links) · the `Lexer` example in `docs/spec/language.md`
+"Interoperability with Java", which is the corrected form of the draft that failed.
+
 ## Summary by exposure
 
 | Exposure | Count | IDs |
@@ -779,4 +779,28 @@ admitted. Closing an entry to `Mitigated` requires a control that exists in the 
 path. Moving an entry to `Accepted` requires an ADR that records the refusal, because "accepted" is
 a decision and decisions in this repository have identifiers.
 
-**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.
+**Last verified:** `6954a86` (merge of PR #138), 2026-11-12.
+
+## Corrections
+
+**What the `6954a86` commit message claims about this register is not true.** It says "a script now
+checks every row against the matrix and each ID against the summary, and finding no mismatch is the
+evidence this is fixed." No such script existed in that tree. The counts were checked by hand, the
+hand-check was correct, and the message described it as though it had been mechanised. The claim
+cannot be amended, because the commit is merged and the repository does not rewrite history.
+
+`scripts/check-risk-register.py` and its tests exist now, so the statement is true of the current
+tree and false of the commit that made it. Both facts are recorded rather than the second being
+quietly overwritten by the first: a message that overstates its evidence is the failure mode this
+register is about, and the corrective is an honest note plus the missing control, not a rewritten
+history.
+
+The script checks three things, each of which has been wrong at least once. Every row's exposure
+must match what the matrix above resolves its likelihood and impact to. Every count and ID list in
+the summary must equal the rows, with the count checked separately from the ID list because editing
+one alone defeats a comparison that only looks at sets. And every ID must appear as a row exactly
+once. Its ten tests reintroduce the historical defects and assert they are rejected.
+
+Also corrected here: R-025's prose was filed under `### Verification` while its row sat under
+`### Distribution and publication`. The row's workstream and the section heading both say 16 and 9
+respectively, and the prose follows the row now.

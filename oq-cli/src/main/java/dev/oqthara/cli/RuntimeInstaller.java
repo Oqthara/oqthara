@@ -40,6 +40,7 @@ final class RuntimeInstaller {
     private final Duration lockTimeout;
     private final RuntimeResolver.VersionProbe probe;
     private final Path compatibilityJar;
+    private final Activation activation;
 
     RuntimeInstaller(Path home) {
         this(home, DEFAULT_TIMEOUT, RuntimeResolver.processProbe(), null);
@@ -57,10 +58,26 @@ final class RuntimeInstaller {
      */
     RuntimeInstaller(Path home, Duration lockTimeout, RuntimeResolver.VersionProbe probe,
             Path compatibilityJar) {
+        this(home, lockTimeout, probe, compatibilityJar, RuntimeInstaller::activateAtomically);
+    }
+
+    /**
+     * @param activation the rename that makes a runtime live. Overridable only so a test can make
+     *     activation fail after rotation has already happened; ADR-0048 D7 promises the working
+     *     runtime survives that case, and a promise about an unreachable state is an untested one.
+     */
+    RuntimeInstaller(Path home, Duration lockTimeout, RuntimeResolver.VersionProbe probe,
+            Path compatibilityJar, Activation activation) {
         this.home = home.toAbsolutePath().normalize();
         this.lockTimeout = lockTimeout;
         this.probe = probe;
         this.compatibilityJar = compatibilityJar;
+        this.activation = activation;
+    }
+
+    /** The rename that publishes a validated runtime at the live path. */
+    interface Activation {
+        void activate(Path extracted, Path target) throws IOException;
     }
 
     /** Where a validated runtime ends up. */
@@ -143,6 +160,15 @@ final class RuntimeInstaller {
      * <p>Rotation happens after validation and immediately before activation, so a refusal never
      * displaces a working runtime. A {@code null} policy installs without rotating, which is what
      * a first install wants: there is nothing to keep.
+     *
+     * <p>Activation can still fail after the rotation has moved the working runtime aside — the
+     * filesystem may refuse the atomic rename (ADR-0048 D5) or the live path may be unrenamable.
+     * ADR-0048 D7 promises that a refused upgrade leaves the working runtime active, so that case
+     * is undone explicitly: the retained runtime is restored and the caller sees the original
+     * failure. Without this the failure mode would be the one D7 says cannot happen, an upgrade
+     * that destroys the only working runtime and leaves it one directory away under
+     * {@code java.prev}, where {@link RuntimeResolver} does not look and nothing reaches
+     * {@link RuntimeRetention#rollback()}.
      */
     private Path installWith(Path archive, int minimumMajor, RuntimeRetention retention)
             throws IOException, InterruptedException, InstallRefusedException {
@@ -157,19 +183,42 @@ final class RuntimeInstaller {
 
             Path staging = home.resolve(STAGING_PREFIX + UUID.randomUUID());
             Files.createDirectory(staging);
+            boolean rotated = false;
             try {
                 SafeArchive.extract(archive, staging);
                 Path extracted = locate(staging);
                 validate(extracted.resolve("bin").resolve(executableName()), minimumMajor);
                 if (retention != null) {
-                    retention.rotate();
+                    rotated = retention.rotate();
                 }
-                activate(extracted);
+                activation.activate(extracted, destination());
                 return destination();
             } catch (IOException | InstallRefusedException | RuntimeException e) {
                 deleteRecursively(staging);
+                if (rotated) {
+                    restoreAfterFailedActivation(retention, e);
+                }
                 throw e;
             }
+        }
+    }
+
+    /**
+     * Puts the runtime that rotation moved aside back at the live path.
+     *
+     * <p>The activation failure is what the caller needs to see, so a failure here is reported on
+     * the exception that is about to be thrown rather than replacing it. If this also fails the
+     * state is genuinely ambiguous — the retained runtime is still on disk under
+     * {@code java.prev} — so the message says where it is and how to restore it by hand.
+     */
+    private void restoreAfterFailedActivation(RuntimeRetention retention, Exception cause) {
+        try {
+            retention.rollback();
+        } catch (IOException | RuntimeException rollbackFailure) {
+            cause.addSuppressed(rollbackFailure);
+            cause.addSuppressed(new IOException(
+                    "the runtime being replaced is still retained at " + retention.previous()
+                            + "; restore it by renaming it to " + retention.active()));
         }
     }
 
@@ -260,8 +309,7 @@ final class RuntimeInstaller {
      * <p>No copy fallback. A filesystem that will not rename atomically is reported, because the
      * alternative is a window in which a partial runtime sits at the live path.
      */
-    private void activate(Path extracted) throws IOException {
-        Path target = destination();
+    private static void activateAtomically(Path extracted, Path target) throws IOException {
         Files.createDirectories(target.getParent());
         try {
             Files.move(extracted, target, StandardCopyOption.ATOMIC_MOVE);

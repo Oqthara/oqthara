@@ -1302,6 +1302,14 @@ path under a directory as relative text, sorted, and does **not** follow symboli
 following one can revisit a directory already walked, and no entry cap stops a short cycle for
 the right reason.
 
+`save` replaces the file's whole contents, so it truncates an existing file; that is the
+difference from `copy_file` and `move_file`, which never overwrite a target and refuse one that
+is already there. `append` adds to the end, creating the file if it is missing. Both create
+missing parent directories. Because they open the path rather than the file behind it, `save`,
+`append` and `write_bytes` follow a symbolic link and write to what it points at, unlike `walk`
+and `glob`, which do not follow links. Writing through a link is what a shell's `>` does; it is
+stated here because it is otherwise indistinguishable from writing the link itself.
+
 ```oq
 print walk("src")   # ["main", "main/Main.java", "test", "test/MainTest.java"]
 ```
@@ -1578,6 +1586,13 @@ Oqthara is **not** a sandbox. A program that is allowed to run can read the file
 read, start the processes the user can start, and reach the network the user can reach. The
 limits above prevent accidental exhaustion; they do not contain hostile code. See
 [SECURITY.md](../../SECURITY.md).
+
+That includes the environment. `env(name)` reads any variable the interpreter process holds, and
+a process started by `run_command` inherits the whole environment, because its
+`ProcessBuilder` sets no environment of its own. Tokens and cloud keys live in exactly those
+variables, so `env("GITHUB_TOKEN")` and `run_command` to a script that prints its environment
+both disclose them. There is no allow-list on either path; the trust statement above is what
+covers them, and adding a supervisor mode for untrusted programs would have to add one.
 
 ## Concurrency
 
