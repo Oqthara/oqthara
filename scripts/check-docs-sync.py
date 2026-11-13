@@ -666,8 +666,15 @@ def requirement_matrix_verification_pin_is_real() -> None:
         return
     if subprocess.run(["git", "merge-base", "--is-ancestor", sha, "HEAD"],
                       cwd=ROOT, capture_output=True).returncode != 0:
+        # The pin must survive the merge strategy, not just the branch. A pin written to the
+        # commit that did the verifying is unreachable from `main` as soon as the branch is
+        # squash-merged, because squash rewrites the branch into one new commit and the original
+        # SHAs are discarded. That failure only shows up after the merge, on `main`, where it
+        # blocks everyone -- so the message names the cause rather than the symptom.
         problems.append(
-            f"{matrix} pins verification at {sha}, which is not an ancestor of HEAD")
+            f"{matrix} pins verification at {sha}, which is not an ancestor of HEAD. If this "
+            f"branch was squash-merged, the pinned commit no longer exists on the default "
+            f"branch; pin the merge commit instead.")
         return
     note(f"{matrix} is verified against {sha}, a commit reachable from HEAD")
 
