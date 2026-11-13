@@ -270,7 +270,7 @@ public final class Ir {
     private static void disassemble(Function function, StringBuilder sb) {
         List<Instr> body = function.body();
         for (int i = 0; i < body.size(); i++) {
-            sb.append(String.format("  %04d  %s%n", i, format(body.get(i))));
+            sb.append(String.format(java.util.Locale.ROOT, "  %04d  %s%n", i, format(body.get(i))));
         }
         if (body.isEmpty()) {
             sb.append("  (empty)\n");
