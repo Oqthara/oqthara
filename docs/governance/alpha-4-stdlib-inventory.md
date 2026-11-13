@@ -602,14 +602,14 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `gettext`, `locale` [both A] |
-| Oqthara equivalent | None. Text is UTF-8 and the JVM default locale is not consulted by any builtin |
-| Missing | No message catalogues, no plural forms, no locale-sensitive formatting or collation, no currency or number formats |
+| Oqthara equivalent | **Locale independence, but no i18n features.** Text is UTF-8, and since [ADR-0055](../adr/0055-locale-independent-output.md) no builtin or diagnostic consults `Locale.getDefault()`: every `String.format` and case conversion names `Locale.ROOT`, so output is byte-identical under `tr-TR`, `ar-EG` and `de-DE`. What is still absent is the chapter's actual subject — message catalogues, plural rules, collation and currency formatting |
+| Missing | No message catalogues, no plural forms, no locale-sensitive formatting or collation, no currency or number formats. Locale-*sensitivity* is a defect and is fixed; locale *awareness* is a feature and remains absent |
 | JVM fit | Yes — `ResourceBundle` and `MessageFormat` are direct equivalents, and `Collator` covers collation |
 | Lifetime | Per-call, if a catalogue is loaded whole. A gettext API that keeps a catalogue open is a lifetime, and `ResourceBundle` caches internally, which would need to be documented as invisible state |
 | Security | Low direct risk. The real risk is silent substitution: a missing translation key that yields the key itself looks like a bug rather than an error, so a proposed API should make "missing" observable. Locale-dependent parsing is a correctness trap — `1,5` is one-and-a-half in some locales and a list in others |
 | Contract | A proposed API must never use the host default locale implicitly; formatting must take an explicit locale or none, and "none" must mean a fixed documented locale rather than the machine's |
-| Test | `LocaleIndependentFormatTest` running with `-Duser.language=tr` and asserting that `upper("i")` and number formatting are unchanged — Turkish dotless-i is the classic counter-example |
-| Acc. | Output independent of host locale, proven by running the suite under at least one non-English default |
+| Test | `DiagnosticsLocaleTest` — **delivered**, and it caught three real defects rather than confirming a claim: it holds `Locale.getDefault()` at `tr-TR`, `ar-EG`, `de-DE` and `hi-IN-u-nu-deva` and asserts byte-identical diagnostic output. Before [ADR-0055](../adr/0055-locale-independent-output.md) the compiler gutter wrote Arabic-Indic digits under `ar_EG` (changing width, so the caret misaligned), the IR listing did the same, and the runtime-resolver JSON emitted `origin: "overrıde"` under `tr_TR` — a dotless i that matches no consumer. Two of the three assertions fail against the pre-fix code. The other two sites are guarded by `DisassemblyLocaleTest` and `JavaCommandTest.theJsonReportIsByteIdenticalInEveryLocale`, both checked to fail against the pre-fix code. `upper("i")` in the stdlib was already `Locale.ROOT` and stays pinned |
+| Acc. | Output independent of host locale, proven by running the suite under at least one non-English default — **this half now holds**, enforced across five locales by `DiagnosticsLocaleTest`, `DisassemblyLocaleTest` and `JavaCommandTest`, one per site that was defective; the remaining acceptance criteria belong to the features that are still absent |
 | Excluded | Nothing excluded. Both are absent and plausible; they lose to other chapters on value per unit of work |
 
 ### 20. Graphical user interfaces with Tk — 10 modules

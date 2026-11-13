@@ -332,6 +332,12 @@
       "slug": "docs/adr/0054-html-escaping"
     },
     {
+      "path": "docs/adr/0055-locale-independent-output.md",
+      "title": "ADR-0055 — Output is byte-identical in every host locale",
+      "section": "adr",
+      "slug": "docs/adr/0055-locale-independent-output"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

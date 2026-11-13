@@ -36,7 +36,7 @@ public final class Diagnostics {
         }
         if (sourceLines != null && span.line() >= 1 && span.line() <= sourceLines.size()) {
             String lineText = sourceLines.get(span.line() - 1);
-            String number = String.format("%4d", span.line());
+            String number = String.format(java.util.Locale.ROOT, "%4d", span.line());
             err.println(dim(number + " | ") + lineText);
             int start = Math.max(0, span.column() - 1);
             int width = Math.max(1, span.width());
