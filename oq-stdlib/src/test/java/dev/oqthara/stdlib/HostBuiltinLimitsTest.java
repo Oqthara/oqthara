@@ -25,6 +25,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -260,6 +261,31 @@ class HostBuiltinLimitsTest {
         OqError error = assertThrows(OqError.class,
                 () -> call("run_command", "/bin/echo one; /bin/echo two"));
         assertTrue(error.getMessage().contains("cannot run command"), error.getMessage());
+    }
+
+    @Test
+    void aChildProcessInheritsTheWholeEnvironment() throws Exception {
+        // Documented in docs/spec/language.md: a child started by run_command gets the parent's
+        // environment, because the ProcessBuilder sets none of its own. Asserting it keeps that
+        // disclosure, and the security consequence written beside it, from quietly becoming
+        // wrong -- if an allow-list is ever added this fails, and the spec has to change with it.
+        //
+        // The probe reads a variable this process already has rather than injecting one:
+        // ProcessEnvironment.theUnmodifiableEnvironment is unreachable under the module system
+        // (InaccessibleObjectException), and every JVM sets something. PATH is the one variable
+        // that exists on every platform the build runs on.
+        String name = "PATH";
+        String inherited = System.getenv(name);
+        assertNotNull(inherited, "PATH is set on every supported platform");
+        assertFalse(inherited.isEmpty(), "PATH is never empty on a working build machine");
+
+        OqData result = (OqData) call("run_command",
+                script("printf %s \"$" + name + "\"", "Write-Output $env:" + name));
+        assertEquals(0L, result.get("code"));
+        assertEquals(inherited, String.valueOf(result.get("output")),
+                "the child saw the same PATH this process holds, so it inherited the environment");
+        assertEquals(inherited, call("env", name),
+                "env() reads the same environment the child inherited");
     }
 
     @Test

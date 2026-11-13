@@ -1579,6 +1579,13 @@ read, start the processes the user can start, and reach the network the user can
 limits above prevent accidental exhaustion; they do not contain hostile code. See
 [SECURITY.md](../../SECURITY.md).
 
+That includes the environment. `env(name)` reads any variable the interpreter process holds, and
+a process started by `run_command` inherits the whole environment, because its
+`ProcessBuilder` sets no environment of its own. Tokens and cloud keys live in exactly those
+variables, so `env("GITHUB_TOKEN")` and `run_command` to a script that prints its environment
+both disclose them. There is no allow-list on either path; the trust statement above is what
+covers them, and adding a supervisor mode for untrusted programs would have to add one.
+
 ## Concurrency
 
 Oqthara runs concurrent work on **virtual threads**, so blocking is cheap and there is no
