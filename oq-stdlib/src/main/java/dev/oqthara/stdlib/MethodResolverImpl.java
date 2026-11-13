@@ -752,11 +752,13 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
 
     private OqCallable numberMethod(Object number, String name, Span span) {
         return switch (name) {
-            case "abs" -> fixed(name, 0, (host, args) -> number instanceof Long l
-                    ? (Object) Math.abs(l) : (Object) Math.abs(((Number) number).doubleValue()));
-            case "floor" -> fixed(name, 0, (host, args) -> (long) Math.floor(((Number) number).doubleValue()));
-            case "ceil" -> fixed(name, 0, (host, args) -> (long) Math.ceil(((Number) number).doubleValue()));
-            case "round" -> fixed(name, 0, (host, args) -> Math.round(((Number) number).doubleValue()));
+            // Every method that has a builtin counterpart delegates to the same code, so the two
+            // forms cannot drift: `1e300.floor()` used to saturate at Long.MAX_VALUE because the
+            // cast to long was local to this method, while floor(1e300) kept the decimal.
+            case "abs" -> fixed(name, 0, (host, args) -> Stdlib.abs(number, span));
+            case "floor" -> fixed(name, 0, (host, args) -> Stdlib.floor(number, span));
+            case "ceil" -> fixed(name, 0, (host, args) -> Stdlib.ceil(number, span));
+            case "round" -> fixed(name, 0, (host, args) -> Stdlib.round(number, span));
             case "sqrt" -> fixed(name, 0, (host, args) -> Stdlib.real(
                     StrictMath.sqrt(((Number) number).doubleValue()), "sqrt", number));
             // The method form and the builtin must agree, including on what they refuse: a
@@ -775,10 +777,41 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "degrees" -> transcendentalMethod(name, number, v -> v * (180.0 / StrictMath.PI));
             case "radians" -> transcendentalMethod(name, number, v -> v * (StrictMath.PI / 180.0));
             case "text", "to_string" -> fixed(name, 0, (host, args) -> Values.repr(number));
-            case "is_even" -> fixed(name, 0, (host, args) -> ((Number) number).longValue() % 2 == 0);
-            case "is_odd" -> fixed(name, 0, (host, args) -> ((Number) number).longValue() % 2 != 0);
+            case "is_even" -> fixed(name, 0, (host, args) -> isMultipleOfTwo(number, name, true, span));
+            case "is_odd" -> fixed(name, 0, (host, args) -> isMultipleOfTwo(number, name, false, span));
             default -> null;
         };
+    }
+
+    /**
+     * Whether a number is a multiple of two, without narrowing it first.
+     *
+     * <p>Converting to {@code long} first was wrong for every value outside the long range: a
+     * decimal like {@code 1e20} is exactly even (its spacing is far wider than 2), but it used to
+     * saturate at {@link Long#MAX_VALUE} and report odd. A decimal is answered directly, with no
+     * conversion at all, so the parity is the one the value really has.
+     *
+     * <p>A decimal with a fractional part has no parity, so it is refused rather than truncated:
+     * {@code 1.5.is_even()} answering {@code false} is indistinguishable from {@code 1.5} being
+     * odd, which is not what a caller asked. The whole decimal {@code 2.0} is accepted because it
+     * equals the whole number {@code 2}.
+     */
+    private static boolean isMultipleOfTwo(Object number, String name, boolean even, Span span) {
+        boolean multiple;
+        if (number instanceof Long l) {
+            multiple = l % 2 == 0;
+        } else {
+            double d = (Double) number;
+            if (!Double.isFinite(d) || d != Math.rint(d)) {
+                throw new OqError(name + "() needs a whole number, got " + Values.display(number),
+                        span,
+                        "Only a number with no fractional part has a parity.");
+            }
+            // Every double at or beyond 2^53 is a multiple of two, and `%` on a smaller integral
+            // double is exact, so no conversion to long is needed.
+            multiple = d % 2 == 0;
+        }
+        return even == multiple;
     }
 
     private static dev.oqthara.runtime.NativeFunction transcendentalMethod(
