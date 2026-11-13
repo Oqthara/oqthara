@@ -52,7 +52,8 @@ final class TextWrap {
                     List<String> after = lines(args.get(1), "unified_diff", span);
                     String beforeLabel = args.size() > 2 ? text(args.get(2), "unified_diff", span) : "";
                     String afterLabel = args.size() > 3 ? text(args.get(3), "unified_diff", span) : "";
-                    return new ArrayList<Object>(diff(before, after, beforeLabel, afterLabel));
+                    return new ArrayList<Object>(diff(before, after, beforeLabel, afterLabel,
+                            span));
                 }).named("before", "after", "before_label", "after_label"));
     }
 
@@ -61,6 +62,22 @@ final class TextWrap {
 
     /** Lines of context shown before and after each change in a hunk. */
     private static final int CONTEXT = 3;
+
+    /**
+     * The largest longest-common-subsequence table {@code unified_diff} will build.
+     *
+     * <p>The table is a full {@code (n + 1) x (m + 1)} matrix, so its cost is the product of the
+     * two line counts rather than their sum: two 5,000-line inputs ask for a hundred megabytes
+     * before anything else runs, and a program that reaches that request dies of an
+     * out-of-memory error it cannot catch or act on (issue 178). Refusing at a named limit turns
+     * an unpredictable machine failure into an ordinary error a program can see and handle.
+     *
+     * <p>Four million cells is sixteen megabytes of cell data, which covers a 2,000-line file on
+     * both sides. That is well past any generated text these tools compare, and a diff larger
+     * than it is a job to hand to a dedicated tool in another language rather than something to
+     * answer inside a program's heap.
+     */
+    static final int MAX_DIFF_CELLS = 4_000_000;
 
     /**
      * Wraps {@code text} to {@code width} columns.
@@ -210,12 +227,22 @@ final class TextWrap {
      * <p>Longest-common-subsequence over whole lines rather than a character diff: every
      * consumer of a diff here compares generated text against a committed copy, which is a
      * line-oriented question.
+     *
+     * <p>The table is quadratic in memory, so inputs whose product would exceed
+     * {@link #MAX_DIFF_CELLS} are refused with an ordinary {@link OqError} instead of being
+     * allowed to exhaust the heap. A refused diff is never partially returned.
      */
     static List<String> diff(List<String> before, List<String> after,
-                             String beforeLabel, String afterLabel) {
+                             String beforeLabel, String afterLabel, Span span) {
         List<String> out = new ArrayList<>();
         int n = before.size();
         int m = after.size();
+        if ((long) (n + 1) * (m + 1) > MAX_DIFF_CELLS) {
+            throw new OqError("unified_diff() cannot compare " + n + " lines with " + m
+                    + " lines: that needs " + ((long) (n + 1) * (m + 1)) + " table cells, "
+                    + "and the limit is " + MAX_DIFF_CELLS, span,
+                    "Compare fewer lines at a time, or run a diff tool in another language.");
+        }
         // length[i][j] is the LCS length of before[i..] and after[j..].
         int[][] length = new int[n + 1][m + 1];
         for (int i = n - 1; i >= 0; i--) {

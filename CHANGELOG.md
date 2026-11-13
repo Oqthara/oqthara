@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`split("")` returned values that were not text.** With an empty separator, Java's
+  `String.split` walks UTF-16 units, so `"a😀b".split("")` came back as five entries — `a`, an
+  unpaired high surrogate, an unpaired low surrogate, `b`, and `""` — and the two halves are
+  values no program can render, compare, or print. Every other text method works in code points
+  (ADR-0024), so this was the one place one leaked out. The call is now refused with
+  `split() needs a separator that is not empty`, which is also what Python does for the same
+  input, and the help line points at `chars()` and `join()`. Real separators still keep their
+  trailing empty fields. (#147)
+- **`unified_diff` could exhaust the heap on a few thousand lines.** The longest-common-
+  subsequence table is a full `(n + 1) x (m + 1)` matrix, so two 5,001-line inputs asked for a
+  25-million-cell allocation — roughly 100 MB of cell data — and a program running under a
+  96 MiB heap died with an out-of-memory error it had no way to catch or report. Inputs whose
+  table would exceed `TextWrap.MAX_DIFF_CELLS` (4,000,000 cells, about a 2,000-line file
+  compared against another) are now refused with an ordinary `OqError` naming both line counts,
+  the size it refused, and the limit. A refused diff is never partially returned. (#178)
 - **`repr` of text containing a brace did not paste back as that text.** `repr` is documented as
   rendering a value so the line can be pasted back as source, and it escaped only `"`, `\`, and
   the `\n`, `\t` and `\r` whitespace escapes. An opening brace was emitted verbatim, so with

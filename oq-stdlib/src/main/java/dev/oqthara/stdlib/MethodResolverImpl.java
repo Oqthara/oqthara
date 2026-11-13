@@ -668,9 +668,22 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
             case "trim", "strip" -> fixed(name, 0, (host, args) -> text.strip());
             case "trim_start", "strip_start" -> fixed(name, 0, (host, args) -> text.stripLeading());
             case "trim_end", "strip_end" -> fixed(name, 0, (host, args) -> text.stripTrailing());
-            case "split" -> fixed(name, 1, (host, args) ->
-                    new ArrayList<Object>(List.of(text.split(java.util.regex.Pattern.quote(
-                            Values.display(args.get(0))), -1))));
+            // An empty separator is refused rather than honoured. Java's String.split with an
+            // empty pattern walks UTF-16 units, so "a😀b".split("") returned five entries, two
+            // of them lone surrogate halves — values no Oqthara program can render or compare,
+            // and the only place a text method exposed one (ADR-0024 says text is a sequence of
+            // code points). Splitting at code-point boundaries instead would be a semantic
+            // choice the reference does not make: Python raises for the same call, so refusing
+            // keeps the two in step and leaves chars()/to_list() as the way to walk characters.
+            case "split" -> fixed(name, 1, (host, args) -> {
+                String separator = Values.display(args.get(0));
+                if (separator.isEmpty()) {
+                    throw new OqError("split() needs a separator that is not empty", span,
+                            "Use chars() to get one value per character, or join() to reverse it.");
+                }
+                return new ArrayList<Object>(List.of(text.split(
+                        java.util.regex.Pattern.quote(separator), -1)));
+            });
             case "lines" -> fixed(name, 0, (host, args) -> new ArrayList<Object>(
                     List.of(text.split("\\R", -1))));
             case "chars" -> fixed(name, 0, (host, args) -> Values.textCharacters(text));
