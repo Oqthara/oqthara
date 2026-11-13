@@ -770,9 +770,36 @@ public final class Values {
         return integerIndex(key, span, "an index");
     }
 
-    private static long integerIndex(Object key, Span span, String what) {
+    /**
+     * A whole number read out of {@code key}, or a refusal naming {@code what}.
+     *
+     * <p>An integral decimal is accepted, because {@code 2.0} and {@code 2} are the same value
+     * (ADR-0017). A decimal that is not integral is refused rather than truncated: silently
+     * turning {@code 1.5} into {@code 1} answers a question the program did not ask.
+     *
+     * <p>Containing the value to the 64-bit range is the second half of the same rule. Every
+     * double at or beyond 2^63 is integral, so it used to pass the {@code rint} test and then
+     * saturate at {@link Long#MAX_VALUE} on the cast -- {@code xs[1e300]} reported an
+     * out-of-range index of {@code 9223372036854775807} instead of the one that was written.
+     * An infinity is refused the same way, since it names no position either; a NaN is not
+     * whole in any sense and takes the fractional refusal above.
+     *
+     * <p>Public so that the standard library's bound and count arguments go through the same
+     * rule as indexing and slicing, instead of each method narrowing on its own.
+     */
+    public static long integerIndex(Object key, Span span, String what) {
         if (key instanceof Long l) return l;
-        if (key instanceof Double d && d == Math.rint(d)) return d.longValue();
+        if (key instanceof Double d) {
+            if (d != Math.rint(d)) {
+                throw new OqError(what + " must be a whole number, got " + typeName(key), span);
+            }
+            if (fitsInLong(d)) return d.longValue();
+            // A decimal past the 64-bit range is whole but names no position a collection can
+            // have, so it is reported as out of range rather than as a fractional value.
+            throw new OqError(what + " is out of range: " + display(key), span,
+                    "Indexes and bounds are whole numbers between " + Long.MIN_VALUE
+                            + " and " + Long.MAX_VALUE + ".");
+        }
         throw new OqError(what + " must be a whole number, got " + typeName(key), span);
     }
 
