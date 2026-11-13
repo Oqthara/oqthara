@@ -171,17 +171,17 @@ conversion outward, with the precision stated by the caller.
 
 **CSV** (2) — `csv_parse`:1213, 1215 and 1218, `csv_write`:1222 and 1224.
 
-**Dates** (2) — `date_parse`:1371, `instant_parse`:1373.
+**Dates** (2) — `date_parse`:1380, `instant_parse`:1382.
 
-**Time** (6) — `now`:1398, `today`:1400, `datetime`:1402, `timestamp`:1404, `tz_convert`:1406, `sleep`:1428.
+**Time** (6) — `now`:1407, `today`:1409, `datetime`:1411, `timestamp`:1413, `tz_convert`:1415, `sleep`:1437.
 
-**URLs** (6) — `url_parse`:1456, `url_encode`:1480, `url_decode`:1484, `query_parse`:1493, `query_encode`:1512, `url_join`:1552.
+**URLs** (6) — `url_parse`:1465, `url_encode`:1489, `url_decode`:1493, `query_parse`:1497, `query_encode`:1516, `url_join`:1556.
 
-**HTTP** (2) — `http_get`:1639, `http_post`:1641.
+**HTTP** (2) — `http_get`:1854, `http_post`:1856.
 
-**Concurrency** (5) — `spawn`:1795, `await`:1803 and 1810, `done`:1824, `mutex`:1831, `par_map`:1833.
+**Concurrency** (5) — `spawn`:2010, `await`:2018 and 2025, `done`:2039, `mutex`:2046, `par_map`:2048.
 
-**Process** (4) — `env`:1861, `run_command`:1863, `cpu_count`:1915, `memory_mb`:1917.
+**Process** (4) — `env`:2076, `run_command`:2078, `cpu_count`:2130, `memory_mb`:2132.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),

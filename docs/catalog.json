@@ -404,6 +404,12 @@
       "slug": "docs/governance/remediation/alpha-4-phase-0-first-session-report"
     },
     {
+      "path": "docs/governance/remediation/alpha5-sentinel-report.md",
+      "title": "Alpha 5 Sentinel remediation report",
+      "section": "governance",
+      "slug": "docs/governance/remediation/alpha5-sentinel-report"
+    },
+    {
       "path": "docs/governance/remediation/pr-37-retrospective.md",
       "title": "PR #37 retrospective review",
       "section": "governance",
