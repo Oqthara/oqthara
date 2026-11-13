@@ -148,6 +148,27 @@ class FileOperationsTest {
         assertEquals("hi", Files.readString(dir.resolve("a.txt")));
     }
 
+    /**
+     * A copy refused by the step budget must not leave the target behind.
+     *
+     * <p>The transfer is charged after the bytes are written, and {@code chargeSteps} raises
+     * {@code OqError} when the budget is spent. The language has {@code try}/{@code catch}, so
+     * that error is catchable: charging after declaring success therefore produced a call that
+     * raised an error the program could swallow while leaving a complete file on disk, and the
+     * only way to retry was to delete it by hand. Charging before the success flag means the
+     * refusal path is the same one an over-limit source takes, and the target is removed.
+     */
+    @Test
+    void copyRefusedByTheStepBudgetLeavesNoTarget() throws Exception {
+        Files.writeString(dir.resolve("a.txt"), "some content to charge for");
+        host().setMaxSteps(0);
+
+        assertThrows(OqError.class, () -> call("copy_file", "a.txt", "c.txt"));
+
+        assertFalse(Files.exists(dir.resolve("c.txt")),
+                "a refused copy must not leave a target behind");
+    }
+
     @Test
     void copyRefusesAnExistingTargetRatherThanOverwritingIt() throws Exception {
         Files.writeString(dir.resolve("a.txt"), "hi");

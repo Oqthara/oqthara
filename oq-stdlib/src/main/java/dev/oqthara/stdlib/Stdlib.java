@@ -767,8 +767,13 @@ public final class Stdlib {
             try (java.io.OutputStream out = Files.newOutputStream(target)) {
                 copied = copyBounded(in, out, MAX_TEXT_BYTES, source, span);
             }
-            completed = true;
+            // Charge before declaring success. chargeSteps raises OqError when the budget is
+            // spent, and `try`/`catch` can absorb it, so charging after `completed = true`
+            // left a fully written target behind while reporting failure -- the copy would
+            // then have to be deleted by hand before any retry. Charging first means a
+            // refused copy is still a refused copy: the finally below removes the target.
             chargeTransfer(host, copied);
+            completed = true;
             return null;
         } catch (OqError error) {
             throw error;
