@@ -279,9 +279,15 @@ class HostBuiltinLimitsTest {
         assertNotNull(inherited, "PATH is set on every supported platform");
         assertFalse(inherited.isEmpty(), "PATH is never empty on a working build machine");
 
-        OqData result = (OqData) call("run_command",
-                script("printf %s \"$" + name + "\"", "Write-Output $env:" + name));
-        assertEquals(0L, result.get("code"));
+        // The Windows fixture is a .bat, so its body must be cmd.exe syntax: the earlier
+        // "$env:PATH" was PowerShell pasted into cmd, which cmd cannot parse and exits 1 for.
+        // Calling into PowerShell from the .bat keeps the two bodies equivalent -- both write the
+        // value with no trailing terminator, so the comparison below stays exact. `echo %PATH%`
+        // would have appended CRLF, and a cmd variable containing & or ^ would be re-parsed.
+        OqData result = (OqData) call("run_command", script(
+                "printf %s \"$" + name + "\"",
+                powershell("[Console]::Out.Write($env:" + name + ")")));
+        assertEquals(0L, result.get("code"), String.valueOf(result.get("output")));
         assertEquals(inherited, String.valueOf(result.get("output")),
                 "the child saw the same PATH this process holds, so it inherited the environment");
         assertEquals(inherited, call("env", name),

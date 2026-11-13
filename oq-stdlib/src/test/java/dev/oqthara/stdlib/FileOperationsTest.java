@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -30,6 +31,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * anything about the local zone would pass only on the machine that wrote the test.
  */
 class FileOperationsTest {
+
+    private static final boolean WINDOWS = System.getProperty("os.name", "")
+            .toLowerCase(java.util.Locale.ROOT).startsWith("windows");
 
     @TempDir
     Path dir;
@@ -195,7 +199,12 @@ class FileOperationsTest {
      */
     @Test
     void copyStopsAtTheLimitEvenWhenTheReportedSizeIsSmall() throws Exception {
-        assumeTrue(namedPipe(dir.resolve("pipe")) != null, "this platform has no FIFOs");
+        // Guarded by the platform rather than by probing for mkfifo. On Windows the probe found
+        // an mkfifo from a POSIX tool bundle, so the test ran and then failed on "cannot copy"
+        // instead of skipping: the tool existed but did not produce a pipe that behaves like one.
+        // A capability probe that can report yes without the capability is worse than none.
+        assumeFalse(WINDOWS, "a FIFO cannot be created reliably on Windows");
+        namedPipe(dir.resolve("pipe"));
         Path pipe = dir.resolve("pipe");
         assertEquals(0, Files.size(pipe), "a FIFO reports no size; that is the premise");
 
@@ -232,7 +241,8 @@ class FileOperationsTest {
      */
     @Test
     void aRefusedCopyIsChargedForTheBytesItWrote() throws Exception {
-        assumeTrue(namedPipe(dir.resolve("pipe")) != null, "this platform has no FIFOs");
+        assumeFalse(WINDOWS, "a FIFO cannot be created reliably on Windows");
+        namedPipe(dir.resolve("pipe"));
         Path pipe = dir.resolve("pipe");
         Files.writeString(dir.resolve("small.txt"), "abc");
         // Four refused copies bill 4 x MAX_TEXT_BYTES, which is past the budget; without the
@@ -316,12 +326,14 @@ class FileOperationsTest {
         }
     }
 
-    /** Creates a named pipe, or returns null where that is not supported. */
+    /** Creates a named pipe, failing the test rather than returning null on a supported platform. */
     private static Path namedPipe(Path path) {
         try {
             Process mkfifo = new ProcessBuilder("mkfifo", path.toString())
                     .redirectErrorStream(true).start();
-            if (mkfifo.waitFor() != 0) return null;
+            int status = mkfifo.waitFor();
+            assertTrue(status == 0, "mkfifo exited " + status);
+            assertTrue(Files.exists(path), "mkfifo reported success without creating the pipe");
             return path;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
