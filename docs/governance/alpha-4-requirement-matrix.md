@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `b93fc15` (merge of PR #212: `repr` text pastes back as itself, ADR-0057), 2026-11-14. The pin names a commit already on `main`, because squash-merge discards branch SHAs. The timestamp-shape increment was rebased onto this commit and every gate re-run against it.
+**Last verified:** `7331c00` (merge of PR #215: `split("")` refused and `unified_diff`'s table bounded), 2026-11-14. The pin names a commit already on `main`, because squash-merge discards branch SHAs. Every gate was re-run against this commit, and the three merges since the previous pin (#213, #214, #215) change no row: they tighten existing behaviour rather than add requirements.
 
 ## Language features (§14)
 
