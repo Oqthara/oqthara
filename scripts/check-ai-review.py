@@ -52,6 +52,12 @@ SEVERITIES = ("critical", "high", "medium", "low")
 # A finding at these severities must carry a resolution. ADR-0059 requires critical and high
 # findings to be resolved and validated before integration.
 MUST_RESOLVE = {"critical", "high"}
+
+# Cell values that mean "still open" however they are spelled.
+DEFERRED = {
+    "deferred", "won't fix", "wont fix", "will not fix", "tbd", "todo", "still open",
+    "open", "pending", "later", "backlog", "accepted risk", "no action",
+}
 VERDICTS = {"pass", "fail"}
 
 problems: list[str] = []
@@ -149,9 +155,43 @@ def check_paragraph(text: str, label: str) -> str | None:
 # record that named the model precisely, so either form is accepted.
 MODEL_SLUG = re.compile(r"[\w.-]+/[\w.-]+")
 
+# A claim of independence has to describe *how* it was preserved, not just assert it. Thirteen
+# words is not a quality bar -- it only rules out "yes" and "yes, trust me".
+MIN_INDEPENDENCE_WORDS = 13
 
-def names_a_model(text: str) -> bool:
-    return bool(MODEL_SLUG.search(text)) or "model" in text.lower()
+
+def models_named(text: str) -> list[str]:
+    return [slug.lower() for slug in MODEL_SLUG.findall(text)]
+
+
+# What the agents in this repository pin. This is the fallback for a checkout that does not
+# carry .github/agents -- a test fixture, or a partial export. scripts/check-docs-sync.py checks
+# it against the agent files, so the two cannot drift apart silently.
+FALLBACK_PINNED = {"deepseek-ai/deepseek-v4.1-flash-1017"}
+
+
+def pinned_models(root: pathlib.Path) -> set[str]:
+    """Every model an agent in this repository pins, lowercased."""
+    pinned = set()
+    agents = root / ".github" / "agents"
+    if agents.is_dir():
+        for agent in agents.glob("*.agent.md"):
+            match = re.search(r"^model:[ \t]*(\S+)[ \t]*$", read(agent), re.M)
+            if match:
+                pinned.add(match.group(1).strip("\"'").lower())
+    return pinned or set(FALLBACK_PINNED)
+
+
+def cites_a_commit(root: pathlib.Path, resolution: str) -> bool:
+    """True when a resolution names a commit that resolves in this repository.
+
+    The resolution cell must carry evidence, not just a claim that the fix happened. A SHA in
+    backticks is the convention; a cell with no SHA at all has no evidence to check.
+    """
+    shas = re.findall(r"`([0-9a-f]{7,40})`", resolution)
+    if not shas:
+        return False
+    return any(commit_exists(root, sha)[0] for sha in shas)
 
 
 def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
@@ -169,11 +209,37 @@ def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
     return result.returncode == 0, shallow
 
 
-def validate(root: pathlib.Path, number: str) -> None:
+# Automated pull requests cannot author a review record about themselves, and requiring one
+# would stop every dependency update. The exemption is narrow, is a login check rather than a
+# label a contributor can set, and the change still passes every other required context.
+AUTOMATED_AUTHORS = {"dependabot[bot]", "renovate[bot]", "github-actions[bot]"}
+
+
+def automated_author(root: pathlib.Path, number: str) -> str | None:
+    """Return the automated login that opened this pull request, if any."""
+    if not os.environ.get("CI"):
+        return None
+    try:
+        author = subprocess.run(
+            ["gh", "pr", "view", number, "--json", "author", "--jq", ".author.login"],
+            cwd=root, capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return author if author in AUTOMATED_AUTHORS else None
+
+
+def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> None:
     path = record_path(root, number)
     display = path.relative_to(root)
 
     if not path.exists():
+        bot = automated_author(root, number)
+        if bot:
+            note(f"{display} is absent, and PR #{number} was opened by {bot}, an automated "
+                 f"author that cannot review its own change; every other required context "
+                 f"still applies")
+            return
         problems.append(
             f"{display} is missing: PR #{number} has no AI review record. "
             f"ADR-0059 requires one per pull request; see "
@@ -210,8 +276,14 @@ def validate(root: pathlib.Path, number: str) -> None:
         sha = reviewed_at.strip("`").split()[0] if reviewed_at.strip("`").split() else ""
         exists, shallow = commit_exists(root, sha)
         if not exists:
-            if shallow:
+            if shallow and allow_shallow:
                 note(f"{display} reviewed {sha}; a shallow clone cannot confirm it exists")
+            elif shallow:
+                problems.append(
+                    f"{display} says it reviewed '{sha}', which this shallow clone cannot "
+                    f"resolve. Fetch the full history, or pass --allow-shallow if the "
+                    f"degradation is acceptable"
+                )
             else:
                 problems.append(
                     f"{display} says it reviewed '{sha}', which is not a commit in this repository"
@@ -231,11 +303,36 @@ def validate(root: pathlib.Path, number: str) -> None:
         problems.append(
             f"{display} '**Independent:**' must start with 'yes' or 'no', got '{independence}'"
         )
-    elif independence.lower().startswith("no") and not names_a_model(independence):
-        problems.append(
-            f"{display} says it is not independent but does not name the shared model, so a "
-            f"reader cannot tell why"
-        )
+    else:
+        claimed_independent = independence.lower().startswith("yes")
+        named = set(models_named(independence))
+        pinned = pinned_models(root)
+        if claimed_independent:
+            # ADR-0059: independence needs a different model *and* a mechanism that stops the
+            # reviewer inheriting the implementer's framing. Checking only the first word
+            # would accept "yes", which is a claim with nothing behind it.
+            if not named:
+                problems.append(
+                    f"{display} claims independence but names no model, so there is nothing to "
+                    f"check the claim against (ADR-0059)"
+                )
+            elif not named - pinned:
+                problems.append(
+                    f"{display} claims independence but names only {sorted(named)}, which every "
+                    f"agent in this repository pins; a reviewer running the same model is not "
+                    f"independent of the implementer"
+                )
+            elif len(independence.split()) < MIN_INDEPENDENCE_WORDS:
+                problems.append(
+                    f"{display} claims independence without describing the mechanism that keeps "
+                    f"the reviewer from inheriting the implementer's framing; a different model "
+                    f"alone is not enough (ADR-0059)"
+                )
+        elif not named:
+            problems.append(
+                f"{display} says it is not independent but does not name any model, so a reader "
+                f"cannot tell what the reviewer ran or why the two are related"
+            )
 
     # The categories table.
     category_table = None
@@ -280,7 +377,14 @@ def validate(root: pathlib.Path, number: str) -> None:
                 f"{sorted(NOT_APPLICABLE_ALLOWED)} may be omitted"
             )
         try:
-            seen[name] = int(row[count_at].strip("*` "))
+            count = int(row[count_at].strip("*` "))
+            if count < 0:
+                problems.append(
+                    f"{display} gives '{name}' the finding count {count}; a count cannot be "
+                    f"negative, and negative counts let the totals cancel out"
+                )
+            else:
+                seen[name] = count
         except ValueError:
             problems.append(
                 f"{display} gives '{name}' the finding count '{row[count_at]}', which is not a "
@@ -342,12 +446,19 @@ def validate(root: pathlib.Path, number: str) -> None:
                 )
                 continue
             resolution = row[resolution_at].strip()
-            if severity in MUST_RESOLVE and (not resolution or resolution in {"—", "-", "n/a"}):
-                problems.append(
-                    f"{display} leaves a {severity} finding unresolved: "
-                    f"'{' | '.join(row)[:90]}'. ADR-0059 requires critical and high findings "
-                    f"to be resolved and validated before integration"
-                )
+            if severity in MUST_RESOLVE:
+                absent = not resolution or resolution in {"—", "-", "n/a"}
+                # A non-empty cell is not a resolution. "deferred", "won't fix" and "TBD" are
+                # all non-empty and all mean the finding is still open, which is exactly what
+                # the policy says cannot happen for these severities.
+                deferred = resolution.lower().strip(" .*`") in DEFERRED
+                if absent or deferred or not cites_a_commit(root, resolution):
+                    problems.append(
+                        f"{display} leaves a {severity} finding unresolved: "
+                        f"'{' | '.join(row)[:90]}'. ADR-0059 requires critical and high "
+                        f"findings to be resolved and validated in the pull request that "
+                        f"found them, with a commit that exists here as the evidence"
+                    )
 
     note(f"{display} is a well-formed review record for PR #{number} "
          f"({len(seen)}/7 categories, {declared_findings} finding(s))")
@@ -357,6 +468,11 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--pr", help="pull request number (default: from the environment)")
     parser.add_argument("--root", default=".", help="repository root (default: .)")
+    parser.add_argument(
+        "--allow-shallow",
+        action="store_true",
+        help="accept a reviewed commit that a shallow clone cannot resolve",
+    )
     args = parser.parse_args(argv)
 
     root = pathlib.Path(args.root).resolve()
@@ -373,7 +489,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     try:
-        validate(root, number)
+        validate(root, number, args.allow_shallow)
     except Exception as error:  # a broken check must fail loudly, never pass silently
         problems.append(f"validation raised {type(error).__name__}: {error}")
 

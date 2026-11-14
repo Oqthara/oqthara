@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `f12719a` (the merge of the signature-verifier repair, which closed the last `PARTIAL` row), 2026-11-14. The pin must name a commit reachable from the branch under review, because squash-merge discards branch SHAs and a pin to one of them stops resolving. Every gate was re-run against this commit, and the pin is moved to the merge commit when this work lands. This round closes row 27 (the §17 standard library) and with it the last `PARTIAL` row. A later round closes §4.2 on ADR-0059 and the AI review gate; the pin stays at `f12719a` until that merge lands, because a pin must name a commit that already resolves.
+**Last verified:** `f12719a` (the merge of the signature-verifier repair, which closed the last `PARTIAL` row), 2026-11-14. The pin must name a commit reachable from the branch under review, because squash-merge discards branch SHAs and a pin to one of them stops resolving. Every gate was re-run against this commit, and the pin is moved to the merge commit when this work lands. This round closes row 27 (the §17 standard library) and with it the last `PARTIAL` row. §4.2 is closed by a later round than the pin: ADR-0059 and the AI review gate postdate `f12719a`, so the row cites evidence that does not exist at the pinned commit. The pin moves to the merge commit of that round, which is the first commit at which every row's evidence is present.
 
 ## Language features (§14)
 

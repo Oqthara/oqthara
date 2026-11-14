@@ -18,6 +18,7 @@ never runs, so each rejection path is exercised here against a throwaway reposit
 The passing case is tested too, because a validator that rejects everything is not a gate.
 """
 import importlib.util
+import os
 import pathlib
 import subprocess
 import sys
@@ -122,7 +123,7 @@ class ItPassesOnAWellFormedRecord(Repository):
     def test_resolved_high_finding(self):
         findings = (
             "| 1 | high | `a.kt:3` | an unhandled empty list | "
-            "fixed and pinned by a test in `abc1234` |\n"
+            f"fixed and pinned by a test in `{self.sha}` |\n"
         )
         self.write(
             "1",
@@ -207,7 +208,7 @@ class ItRejects(Repository):
             "no")
         self.write("1", body=body)
         problems = self.run_gate()
-        self.assertTrue(any("does not name the shared model" in p for p in problems))
+        self.assertTrue(any("does not name any model" in p for p in problems))
 
     def test_unknown_reviewed_commit(self):
         body = GOOD_RECORD.format(number=1, sha="0" * 40)
@@ -225,6 +226,73 @@ class ItRejects(Repository):
         problems = self.run_gate("2")
         self.assertTrue(any("heading says PR #9" in p for p in problems))
 
+    def test_a_deferred_high_finding_is_unresolved(self):
+        # A non-empty resolution cell is not a resolution.
+        for phrase in ("deferred to a later PR", "won't fix", "TBD", "still open"):
+            with self.subTest(phrase=phrase):
+                findings = f"| 1 | high | `a.kt:1` | data loss on write | {phrase} |\n"
+                self.write(
+                    "1",
+                    body=GOOD_RECORD.format(number=1, sha=self.sha).replace(
+                        "| functional correctness | pass | 0 |",
+                        "| functional correctness | pass | 1 |"),
+                    findings=findings,
+                )
+                problems = self.run_gate()
+                self.assertTrue(any("unresolved" in p for p in problems), problems)
+
+    def test_a_resolution_without_a_real_commit_is_unresolved(self):
+        findings = "| 1 | high | `a.kt:1` | data loss on write | fixed in `deadbee` |\n"
+        self.write(
+            "1",
+            body=GOOD_RECORD.format(number=1, sha=self.sha).replace(
+                "| functional correctness | pass | 0 |",
+                "| functional correctness | pass | 1 |"),
+            findings=findings,
+        )
+        problems = self.run_gate()
+        self.assertTrue(any("unresolved" in p for p in problems), problems)
+
+    def test_a_negative_count_cannot_cancel_a_finding(self):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| functional correctness | pass | 0 |",
+            "| functional correctness | pass | 1 |").replace(
+            "| security and privacy | pass | 0 |",
+            "| security and privacy | pass | -1 |")
+        self.write("1", body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("negative" in p for p in problems), problems)
+
+    def test_a_bare_claim_of_independence_is_rejected(self):
+        for claim in ("yes", "yes — trust me", "yes — deepseek-ai/deepseek-v4.1-flash-1017"):
+            with self.subTest(claim=claim):
+                body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+                    "no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the reviewer\n"
+                    "shares the implementer's blind spots (ADR-0059).",
+                    claim)
+                self.write("1", body=body)
+                problems = self.run_gate()
+                self.assertTrue(problems, f"'{claim}' should not pass")
+
+    def test_independence_claiming_the_shared_model_is_rejected(self):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the reviewer\n"
+            "shares the implementer's blind spots (ADR-0059).",
+            "yes — deepseek-ai/deepseek-v4.1-flash-1017 ran the review on a fresh context, "
+            "so no state carried over from the implementation")
+        self.write("1", body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("not independent" in p or "every agent" in p for p in problems), problems)
+
+    def test_independence_needs_a_mechanism_not_only_a_model(self):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the reviewer\n"
+            "shares the implementer's blind spots (ADR-0059).",
+            "yes — other-vendor/different-model")
+        self.write("1", body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("mechanism" in p for p in problems), problems)
+
     def test_only_release_integrity_may_be_na(self):
         body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
             "| security and privacy | pass | 0 |",
@@ -235,11 +303,25 @@ class ItRejects(Repository):
 
 
 class TheCommandLine(Repository):
-    def invoke(self, *args):
+    # CI runs this suite on a pull_request event, where GITHUB_EVENT_PATH and GITHUB_REF both
+    # name the pull request under test. Inheriting them makes a test that asserts "no number"
+    # resolve a number instead, so the environment is scrubbed rather than trusted.
+    SCRUBBED = ("GH_PR_NUMBER", "GITHUB_EVENT_PATH", "GITHUB_REF")
+
+    def invoke(self, *args, extra_env=None):
+        env = {k: v for k, v in os.environ.items() if k not in self.SCRUBBED}
+        env.update(extra_env or {})
         return subprocess.run(
             [sys.executable, str(SCRIPTS / "check-ai-review.py"), *args],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=env,
         )
+
+    def test_the_gate_reads_the_pull_request_number_from_the_event(self):
+        self.write("7")
+        event = self.root / "event.json"
+        event.write_text('{"pull_request": {"number": 7}}', encoding="utf-8")
+        result = self.invoke("--root", str(self.root), extra_env={"GITHUB_EVENT_PATH": str(event)})
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_exit_zero_when_the_record_is_good(self):
         self.write("1")

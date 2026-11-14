@@ -33,7 +33,7 @@ Three parts, each of which can fail independently:
    `docs/governance/reviews/PR-<number>.md`, following the template below. A pull request
    with no record does not pass the gate.
 2. **A validator**, `scripts/check-ai-review.py`, which parses the record and fails when it is
-   missing, malformed, incomplete, or cites evidence that does not exist. It is wired into
+   missing, malformed, incomplete, or cites a commit that does not resolve. It is wired into
    `ci.yml` as a step of an existing required context.
 3. **A stated independence limit**, in the record and in the policy, so that no reader can
    mistake model-driven review for an independent human opinion.
@@ -50,8 +50,14 @@ The validator enforces the structure rather than trusting the prose. Each record
 - an explicit independence statement.
 
 A record that says "reviewed, no findings" with no categories enumerated is rejected. A record
-whose findings cite a commit that does not exist is rejected. A record that omits the
-independence statement is rejected.
+that omits the independence statement is rejected.
+
+For a `critical` or `high` finding the resolution cell must name, in backticks, a commit that
+resolves in this repository, and it may not be a deferral in any wording — `deferred`,
+`won't fix`, `TBD` and `still open` are all rejected, because all of them mean the finding is
+still open. A resolution that claims a fix without pointing at a commit has no evidence behind
+it and is rejected. This is a bar on evidence, not on truthfulness: a record can still cite a
+commit that does not contain the fix, and no check in this repository can tell the difference.
 
 ## Independence, stated honestly
 

@@ -47,11 +47,33 @@ Which commands were run, which files were read, and what the reviewer did **not*
 - the heading and the filename name the same pull request number;
 - `**Pull request:**`, `**Reviewer:**`, `**Implementer:**`, `**Reviewed at:**` and
   `**Independent:**` are all present;
-- `**Reviewed at:**` names a commit that exists in this repository (in a shallow clone the
-  check degrades to well-formedness rather than reporting a false failure);
-- `**Independent:**` starts with `yes` or `no`, and `no` names the shared model;
+- `**Reviewed at:**` names a commit that exists in this repository. A shallow clone cannot
+  confirm this, so it fails rather than silently passing; pass `--allow-shallow` to accept the
+  degradation knowingly;
+- `**Independent:**` starts with `yes` or `no`. `no` must name a model, so a reader can see what
+  the reviewer ran. `yes` must name a model that is **not** one the agents pin, and must describe
+  the mechanism that kept the reviewer from inheriting the implementer's framing — a bare `yes`
+  is the claim this check exists to stop;
 - all seven categories appear, each with `pass` or `fail`, and only `release integrity` may be
   `not applicable`;
-- the number of findings listed equals the number the category table claims;
-- no `critical` or `high` finding has an empty resolution;
-- no category has a `fail` verdict.
+- the number of findings listed equals the number the category table claims, and no count may be
+  negative;
+- no category has a `fail` verdict;
+- a `critical` or `high` finding is unresolved if its resolution cell is empty, is a deferral in
+  any wording (`deferred`, `won't fix`, `TBD`, `still open`, …), or does not name in backticks a
+  commit that resolves in this repository. Evidence is required, not a sentence saying the fix
+  happened;
+- the gate reads the pull request number from `--pr`, then `GH_PR_NUMBER`, then the event
+  payload, then `GITHUB_REF`.
+
+A pull request opened by an automated author — `dependabot[bot]`, `renovate[bot]`,
+`github-actions[bot]` — is exempt from carrying a record, because it cannot review its own
+change. Every other required context still applies, and the exemption is a login check rather
+than a label anyone can set.
+
+## Adding a record
+
+Records are excluded from `docs/catalog.json`, so adding one does not require regenerating the
+catalog. Write `docs/governance/reviews/PR-<number>.md` in the same pull request it describes,
+against the commit you reviewed, and push. The gate fails until it exists and is well-formed,
+which is the intended order: the pull request demonstrates the gate it introduces.

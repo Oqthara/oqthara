@@ -32,6 +32,17 @@ def note(what: str) -> None:
     checked.append(what)
 
 
+def load_module(name: str):
+    """Import a sibling script by file name, so checks can read its constants."""
+    import importlib.util
+
+    path = ROOT / "scripts" / name
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_").replace(".py", ""), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 # 1. The stdlib reference must match a fresh generation from the implementation.
 def stdlib_reference_is_current() -> None:
     reference = ROOT / "docs" / "stdlib" / "reference.md"
@@ -637,6 +648,71 @@ def requirement_matrix_figures_match_the_inventory() -> None:
 #     is a promise that someone re-read the matrix against the tree; left unchecked it silently
 #     ages, which is worse than an absent pin because a reader treats a stale SHA as current
 #     evidence. The previous pin had drifted two merges behind and nothing failed.
+def requirement_matrix_evidence_exists() -> None:
+    """A `DONE` row must cite evidence that is present, not just a commit that resolves.
+
+    Checks that the pin is reachable say nothing about whether the files a row cites exist at
+    that pin. A row marked `DONE` against evidence added in a later pull request is reachable
+    from `main` and still wrong: a reader who opens the pin finds the claim without its support.
+    This check resolves each cited path at the pin when the pin is available, and at HEAD
+    otherwise, and says which it used.
+    """
+    matrix = "docs/governance/alpha-4-requirement-matrix.md"
+    text = read(matrix)
+    pin = re.search(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", text, re.M)
+
+    def at(sha: str, path: str) -> bool:
+        return subprocess.run(["git", "cat-file", "-e", f"{sha}:{path}"],
+                              cwd=ROOT, capture_output=True).returncode == 0
+
+    missing = []
+    checked_against = "HEAD"
+    if pin and subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{pin.group(1)}^{{commit}}"],
+                              cwd=ROOT, capture_output=True).returncode == 0:
+        checked_against = pin.group(1)
+
+    for line in text.splitlines():
+        if not line.startswith("|") or "`DONE`" not in line:
+            continue
+        for path in re.findall(r"\]\(([^)#]+)\)", line):
+            if path.startswith(("http://", "https://", "#")):
+                continue
+            resolved = path if not path.startswith(".") else path
+            candidate = (pathlib.PurePosixPath("docs/governance") / resolved).as_posix()
+            normalized = pathlib.PurePosixPath(candidate).as_posix().replace("/./", "/")
+            parts: list[str] = []
+            for part in pathlib.PurePosixPath(normalized).parts:
+                if part == "..":
+                    if parts:
+                        parts.pop()
+                elif part != ".":
+                    parts.append(part)
+            target = "/".join(parts)
+            if not at(checked_against, target):
+                missing.append(f"{target} (cited by a DONE row)")
+
+    # A citation that resolves nowhere is a dead reference and always fails.
+    dead = [item for item in missing if not at("HEAD", item.split(" (cited by")[0])]
+    if dead:
+        for item in sorted(set(dead)):
+            problems.append(
+                f"{matrix} cites {item}, which does not exist in the repository; a DONE row must "
+                f"cite evidence a reader can open")
+        return
+
+    # A citation that exists now but not at the pin is a row whose evidence postdates the pin.
+    # The pin moves to the merge commit of the round that added it, so this window is expected;
+    # it is reported rather than hidden, because a reader who opens the pin finds the claim
+    # without its support.
+    postdating = sorted(set(missing))
+    if postdating:
+        note(f"every file cited by a DONE row in {matrix} exists; {len(postdating)} postdate the "
+             f"pin at {checked_against} and are listed in the pin note: "
+             + ", ".join(postdating))
+    else:
+        note(f"every file cited by a DONE row in {matrix} exists at {checked_against}")
+
+
 def requirement_matrix_verification_pin_is_real() -> None:
     matrix = "docs/governance/alpha-4-requirement-matrix.md"
     match = re.search(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", read(matrix), re.M)
@@ -921,7 +997,93 @@ def examples_readme_lists_every_program() -> None:
     note(f"examples/README.md lists all {len(present)} example programs")
 
 
+def ai_review_categories_match_the_validator() -> None:
+    """The seven review categories live in three places and must agree.
+
+    scripts/check-ai-review.py is the enforcement, so it is the source of truth. The policy
+    states them for a reader and the template repeats them for a contributor. If a name drifts,
+    every future record becomes invalid, and the contributor sees a gate rejection instead of a
+    documentation error -- which is the wrong place to discover it.
+    """
+    validator = load_module("check-ai-review.py")
+    expected = list(validator.CATEGORIES)
+
+    for document in ("docs/governance/ai-review-policy.md",
+                     "docs/governance/reviews/README.md"):
+        text = read(document)
+        for category in expected:
+            if category not in text.lower():
+                problems.append(
+                    f"{document} does not mention the review category '{category}', which "
+                    f"scripts/check-ai-review.py requires")
+
+    stray = []
+    for document in ("docs/governance/ai-review-policy.md",
+                     "docs/governance/reviews/README.md"):
+        for row in re.finditer(r"^\|\s*([a-z][a-z ]+?)\s*\|", read(document), re.M):
+            name = row.group(1).strip()
+            if name.endswith("category") or name in {"severity", "resolved", "page"}:
+                continue
+            if name not in expected:
+                stray.append(f"{document} lists '{name}', which the validator does not require")
+    problems.extend(stray)
+
+    note(f"all {len(expected)} review categories are named identically in the validator, the "
+         f"policy and the template")
+
+
+def ai_review_pinned_models_match_the_agents() -> None:
+    """The independence rule compares against the models the agent files pin.
+
+    scripts/check-ai-review.py falls back to a hardcoded set when .github/agents is absent. That
+    fallback is what decides whether a claim of independence is rejected, so it must not drift
+    away from the agent files it stands in for.
+    """
+    validator = load_module("check-ai-review.py")
+    fallback = set(validator.FALLBACK_PINNED)
+
+    pinned = set()
+    for agent in sorted((ROOT / ".github" / "agents").glob("*.agent.md")):
+        match = re.search(r"^model:[ \t]*(\S+)[ \t]*$", read(str(agent.relative_to(ROOT))), re.M)
+        if match:
+            pinned.add(match.group(1).strip("\"'").lower())
+
+    if not pinned:
+        problems.append(".github/agents pins no model, so the independence rule has nothing to "
+                        "compare against")
+        return
+    if pinned != fallback:
+        problems.append(
+            f"scripts/check-ai-review.py falls back to {sorted(fallback)} but the agents pin "
+            f"{sorted(pinned)}; update FALLBACK_PINNED so the independence rule compares against "
+            f"the models actually in use")
+
+    note(f"the independence rule compares against {sorted(pinned)}, matching the agent files")
+
+
+def review_records_are_not_in_the_docs_catalog() -> None:
+    """A review record is per-pull-request paperwork, not published documentation.
+
+    docs/catalog.json is generated from every Markdown file under docs/, so a record in that
+    tree makes the catalog stale on every pull request and turns a documentation gate into a
+    recurring merge obstacle for something no reader navigates to.
+    """
+    catalog = json.loads(read("docs/catalog.json"))
+    entries = catalog if isinstance(catalog, list) else catalog.get("documents", [])
+    offenders = [entry.get("path", "") for entry in entries
+                 if isinstance(entry, dict) and "/reviews/PR-" in entry.get("path", "")]
+    if offenders:
+        problems.append(
+            "docs/catalog.json lists review records, which are per-pull-request paperwork rather "
+            f"than documentation: {offenders[:3]}. Exclude docs/governance/reviews/PR-*.md from "
+            "scripts/gen-docs-catalog.py")
+
+
 CHECKS = (
+    requirement_matrix_evidence_exists,
+    ai_review_categories_match_the_validator,
+    ai_review_pinned_models_match_the_agents,
+    review_records_are_not_in_the_docs_catalog,
     stdlib_reference_is_current,
     keyword_budget_is_honest,
     command_form_matches_the_spec,

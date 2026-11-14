@@ -52,8 +52,20 @@ model shares its blind spots: a defect both find natural is one neither will fla
 
 The record therefore states `**Independent:** no — <shared model>` in the ordinary case. It may
 say `yes` only when the reviewer ran on a different model *and* was given the diff and evidence
-rather than the implementer's conclusions. The validator requires one of those two forms, so the
-question cannot be left unanswered.
+rather than the implementer's conclusions.
+
+The validator enforces that distinction rather than accepting the first word:
+
+| Statement | What the validator requires |
+| --- | --- |
+| `no — …` | that a model is named at all, so a reader can see what the reviewer ran |
+| `yes — …` | a model that is **not** one the agents pin, plus a description of the mechanism that kept the reviewer from inheriting the implementer's framing |
+
+A bare `yes` is rejected, and so is `yes` naming the shared model with no mechanism, because
+both are the claim the whole mechanism exists to stop. The mechanism bar is a word count, not a
+judgement of quality: it rules out `yes` and `yes, trust me`, and nothing more. A reviewer that
+writes a plausible sentence about a mechanism it did not use still passes, and no check in this
+repository can detect that.
 
 What the mechanism actually buys:
 
@@ -67,7 +79,10 @@ upgraded by this document.
 
 ## Severity handling
 
-Findings are recorded with a severity. Critical and high findings must be resolved **in the pull
+Findings are recorded with a severity. A finding whose resolution cell says `deferred`,
+`won't fix`, `TBD` or `still open` is unresolved whatever severity it carries, and for a
+`critical` or `high` finding the resolution must name a commit, in backticks, that resolves in
+this repository. Critical and high findings must be resolved **in the pull
 request that found them**, with the resolution recorded in the finding row. The validator fails a
 record that leaves either severity unresolved.
 
