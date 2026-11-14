@@ -46,9 +46,13 @@ final class RuntimeCompatibility {
 
     /**
      * Exercises the bytecode backend with a function, a loop, a collection and arithmetic, and
-     * the standard library with a list sort and a JSON encode.
+     * the standard library with a sort and a JSON encode.
+     *
+     * <p>Named rather than inlined because a test runs it through the interpreter. Every other
+     * test of this class drives a fake JVM that prints the expected output, so none of them can
+     * tell a working program from one that would be refused.
      */
-    private static final Check LANGUAGE = new Check("language and standard library", """
+    static final String LANGUAGE_SOURCE = """
             fun add(a, b)
               return a + b
             end
@@ -58,10 +62,13 @@ final class RuntimeCompatibility {
               total = add(total, n)
             end
 
-            items = list_sort([3, 1, 2])
-            print(json_stringify(items))
+            items = sort([3, 1, 2])
+            print(json_write(items))
             print(total)
-            """, "[1,2,3]\n10\n");
+            """;
+
+    private static final Check LANGUAGE =
+            new Check("language and standard library", LANGUAGE_SOURCE, "[1,2,3]\n10\n");
 
     /**
      * Opens a database, writes and reads it back. The only check that needs a native library.

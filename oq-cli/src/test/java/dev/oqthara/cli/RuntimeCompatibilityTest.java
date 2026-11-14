@@ -187,6 +187,24 @@ class RuntimeCompatibilityTest {
         assertTrue(verdict.compatible(), verdict.summary());
     }
 
+    /**
+     * The check's program must actually run.
+     *
+     * <p>Every other test here drives a fake JVM that prints the expected output, so all of them
+     * pass whether or not the program is a valid Oqthara program. The program named
+     * {@code list_sort} and {@code json_stringify}, which are not builtins, and runtime
+     * installation refused every candidate JVM with {@code 'list_sort' is not defined} while
+     * this suite stayed green. Running the source through the interpreter is what distinguishes
+     * "the program is correct" from "the stub printed the right characters".
+     */
+    @Test
+    void theLanguageCheckIsAProgramThatRuns() {
+        OqRunner.Result result = OqRunner.run(RuntimeCompatibility.LANGUAGE_SOURCE);
+
+        assertEquals(0, result.code(), result.stderr());
+        assertEquals("[1,2,3]\n10\n", result.stdout());
+    }
+
     @Test
     void theCheckedProgramsAreTheThreeThatAreDocumented() {
         // The claim in the ADR and the matrix is specific: version, language/stdlib, database.

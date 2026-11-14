@@ -171,10 +171,18 @@ because a JVM that exits zero after printing the wrong thing has not run the pro
 database check is reported and not enforced: a missing native SQLite library is a property of
 the machine, and refusing an otherwise working JVM for it would reject a runtime on which every
 other program runs. `DOCUMENTED_CHECK_COUNT` exists so the documented count is itself asserted
-rather than drifting from the code. Eight tests in `RuntimeCompatibilityTest` cover a JVM that
+rather than drifting from the code. `RuntimeCompatibilityTest` (10 tests) covers a JVM that
 prints the wrong output, one that hangs, one that passes, one without a database library, a
-missing jar and an unstartable check; dropping the output comparison fails
+missing jar, an unstartable check and — added after the defect below — the check's own program
+executed through the interpreter; dropping the output comparison fails
 `refusesAJvmThatPrintsTheWrongOutput`.
+
+The latter test exists because of a real defect. The check's program called `list_sort` and
+`json_stringify`, which are not builtins, so every candidate JVM was refused with
+`'list_sort' is not defined` and runtime installation could not succeed on any platform. Every
+other test in the class drives a fake JVM that prints the expected output, so all of them passed
+against a program that could not run. A test that only checks what a stub printed cannot tell a
+working program from a broken one, which is why the program is now named and run for real.
 
 The installer runs this check only when it has the jar built from the release being installed,
 which is the one case where the answer is about *this* Oqthara rather than a guess. That seal is
