@@ -7,6 +7,11 @@ on:
 
 permissions:
   contents: write
+  # Keyless signing binds the signature to this workflow's OIDC identity. Without
+  # id-token: write there is no token to exchange, so cosign cannot sign keylessly
+  # and the step fails. ADR-0052 describes the identity binding; this is the
+  # permission that makes it possible.
+  id-token: write
 
 jobs:
   release:
@@ -82,7 +87,7 @@ jobs:
       # certificate identity is the workflow itself, which is what verify-signature.sh
       # checks by default (ADR-0052).
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4
+        uses: sigstore/cosign-installer@v4.1.3
         with:
           cosign-release: "v2.6.5"
       - name: Sign the jar
