@@ -139,7 +139,7 @@ public final class Server {
                 "retriggerCharacters", List.of(",")));
         Map<String, Object> serverInfo = new LinkedHashMap<>();
         serverInfo.put("name", "oq-lsp");
-        serverInfo.put("version", "0.1.0-alpha.3");
+        serverInfo.put("version", "0.1.0-alpha.4");
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("capabilities", capabilities);
         result.put("serverInfo", serverInfo);
