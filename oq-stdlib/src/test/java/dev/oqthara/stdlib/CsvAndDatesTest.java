@@ -3,6 +3,7 @@ package dev.oqthara.stdlib;
 import dev.oqthara.core.Interpreter;
 import dev.oqthara.runtime.OqCallable;
 import dev.oqthara.runtime.OqError;
+import dev.oqthara.runtime.OqMap;
 import dev.oqthara.runtime.Span;
 import org.junit.jupiter.api.Test;
 
@@ -205,6 +206,35 @@ class CsvAndDatesTest {
         String written = (String) call("csv_write", List.of(List.of("a" + emoji + "b")), emoji);
         assertEquals("\"a" + emoji + "b\"\n", written);
         assertEquals(List.of(List.of("a" + emoji + "b")), parse(written, emoji));
+    }
+
+    // --- JSON round trip ---------------------------------------------------------------------
+
+    @Test
+    void whatJsonWriteProducesJsonParseReadsBack() {
+        // json_write shipped with no unit test at all -- only end-to-end CLI tests that never
+        // called it -- so a round-trip failure would have been invisible here.
+        String written = (String) call("json_write", call("json_parse", "{\"a\": [1, 2], \"b\": \"x\"}"));
+        assertEquals(call("json_parse", written), call("json_parse", "{\"a\": [1, 2], \"b\": \"x\"}"),
+                "write then read must reproduce the value");
+    }
+
+    @Test
+    void jsonWriteIsCompactAndKeepsKeyOrder() {
+        OqMap value = new OqMap();
+        // Insertion order is the observable contract: a map that reordered its keys would emit
+        // a different document for the same value on every run.
+        value.put("b", 1L);
+        value.put("a", 2L);
+        assertEquals("{\"b\":1,\"a\":2}", call("json_write", value),
+                "no spaces, and the order the keys were inserted");
+    }
+
+    @Test
+    void jsonWriteRendersNothingAsNullAndAStringAsAQuotedString() {
+        // Cast, not a bare null: a lone null is the varargs *array*, not a one-element list.
+        assertEquals("null", call("json_write", (Object) null));
+        assertEquals("\"plain\"", call("json_write", "plain"));
     }
 
     @Test

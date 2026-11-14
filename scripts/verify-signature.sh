@@ -27,7 +27,12 @@ Environment:
   OQ_COSIGN_KEY       path to a cosign public key. When set, verification is
                       offline and does not consult the transparency log.
   OQ_COSIGN_IDENTITY  expected certificate identity (email or URI) for the
-                      keyless path. Defaults to the release workflow identity.
+                      keyless path. Defaults to the release workflow identity,
+                      compared as a regular expression so that every release
+                      tag matches.
+  OQ_COSIGN_IDENTITY_EXACT
+                      compare OQ_COSIGN_IDENTITY literally instead of as a
+                      regular expression.
   OQ_COSIGN_ISSUER    expected OIDC issuer for the keyless path.
   OQ_COSIGN_BIN       cosign binary to use (default: cosign on PATH).
 USAGE
@@ -78,11 +83,22 @@ if [ -n "$PUB_KEY_DEFAULT" ]; then
   exit 1
 fi
 
-identity="${OQ_COSIGN_IDENTITY:-https://github.com/Oqthara/oqthara/.github/workflows/release.yml@refs/tags/*}"
+# The default identity must cover every release, and cosign compares
+# --certificate-identity literally. A glob was used here at first, so the default
+# rejected every real release -- including the workflow's own, which passed only
+# because it supplies an exact $GITHUB_REF. cosign's own flag for this is
+# --certificate-identity-regexp, so the pattern is passed there and the literal
+# form is kept for a caller who wants exactness.
+identity="${OQ_COSIGN_IDENTITY:-https://github.com/Oqthara/oqthara/.github/workflows/release.yml@refs/tags/.*}"
 issuer="${OQ_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
+if [ -n "${OQ_COSIGN_IDENTITY_EXACT:-}" ]; then
+  identity_flag=--certificate-identity
+else
+  identity_flag=--certificate-identity-regexp
+fi
 
 if "$cosign_bin" verify-blob \
-    --certificate-identity "$identity" \
+    "$identity_flag" "$identity" \
     --certificate-oidc-issuer "$issuer" \
     --bundle "$bundle" "$artifact" >/dev/null 2>&1; then
   printf 'verified: %s matches the signature in %s (keyless, identity %s)\n' \

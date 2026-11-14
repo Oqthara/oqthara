@@ -87,10 +87,48 @@ class SignatureTest(unittest.TestCase):
         env["OQ_COSIGN_IDENTITY"] = "a-specific-identity"
         self.run_script(str(self.artifact), str(self.bundle), env=env)
         argv = self.recorded()
-        self.assertIn("--certificate-identity", argv)
+        self.assertIn("--certificate-identity-regexp", argv)
         self.assertIn("a-specific-identity", argv)
         self.assertIn("--certificate-oidc-issuer", argv)
         self.assertNotIn("--key", argv)
+
+    def test_the_default_identity_is_a_regexp_that_matches_a_release_tag(self):
+        env = dict(self.env)
+        del env["OQ_COSIGN_KEY"]
+        self.run_script(str(self.artifact), str(self.bundle), env=env)
+        argv = self.recorded()
+        self.assertIn("--certificate-identity-regexp", argv)
+        self.assertNotIn("--certificate-identity ", argv)
+
+    def test_the_default_identity_regexp_actually_matches_a_real_tag(self):
+        # A pattern that is passed to cosign but matches nothing is the defect this
+        # covers: a glob was passed as --certificate-identity, which cosign compares
+        # literally, so every real release was rejected while the stub-based tests
+        # stayed green because the stub ignores its arguments.
+        env = dict(self.env)
+        del env["OQ_COSIGN_KEY"]
+        self.run_script(str(self.artifact), str(self.bundle), env=env)
+        argv = self.recorded()
+        pattern = argv.split("--certificate-identity-regexp", 1)[1].split()[0]
+        identity = ("https://github.com/Oqthara/oqthara/.github/workflows/"
+                    "release.yml@refs/tags/v0.1.0-alpha.4")
+        # fullmatch, not search: a pattern matching only a prefix of the identity
+        # would pass a search and still be wrong, because cosign requires the whole
+        # certificate subject to match.
+        self.assertIsNotNone(
+            __import__("re").fullmatch(pattern, identity),
+            f"the default identity must match a real release tag exactly; "
+            f"pattern {pattern!r} does not cover {identity!r}")
+
+    def test_an_exact_identity_is_passed_literally_when_asked(self):
+        env = dict(self.env)
+        del env["OQ_COSIGN_KEY"]
+        env["OQ_COSIGN_IDENTITY"] = "a-litera[l]identity"
+        env["OQ_COSIGN_IDENTITY_EXACT"] = "1"
+        self.run_script(str(self.artifact), str(self.bundle), env=env)
+        argv = self.recorded()
+        self.assertIn("--certificate-identity", argv)
+        self.assertNotIn("--certificate-identity-regexp", argv)
 
     def test_a_missing_cosign_is_an_error_not_a_pass(self):
         env = dict(self.env)

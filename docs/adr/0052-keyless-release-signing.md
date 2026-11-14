@@ -64,12 +64,25 @@ workflow refuses to publish a jar whose signature does not verify.**
 
 3. **The verifier names the signer.** `scripts/verify-signature.sh` accepts a
    signature only when the certificate identity is
-   `https://github.com/Oqthara/oqthara/.github/workflows/release.yml@refs/tags/*`
+   `https://github.com/Oqthara/oqthara/.github/workflows/release.yml@refs/tags/.*`
    and the issuer is `https://token.actions.githubusercontent.com`. A signature by
    *someone* is not enough; the check is that *this repository's release
    workflow* signed it. Both values are overridable for forks and for local
    testing, and the overrides are visible in the command line rather than hidden
    in configuration.
+
+   The identity default is a **regexp**, matched with
+   `--certificate-identity-regexp`. It must be: `--certificate-identity` compares
+   its argument literally, so the glob `refs/tags/*` that this ADR originally
+   specified matched no real certificate. The script shipped that glob as its
+   default in `0.1.0-alpha.4` and reported "signature verification FAILED" for the
+   published release, which is the worst possible direction for this control to
+   fail on a user's machine. The gate in the release workflow passed throughout
+   because it supplies the exact `${GITHUB_REF}` it just built, which is a valid
+   literal — a test that only ever exercises the exact path cannot detect a broken
+   default. `OQ_COSIGN_IDENTITY_EXACT=1` selects the literal flag for callers that
+   hold an exact subject; the workflow uses it, and the default path is covered by
+   a test that full-matches the pattern against a realistic subject.
 
 4. **Signing is verified inside the release, before publishing.** The workflow
    signs, immediately verifies its own signature, and then tampers with a copy of

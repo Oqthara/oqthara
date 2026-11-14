@@ -102,6 +102,28 @@ class LoggingAndArgumentsTest {
     }
 
     @Test
+    void everyLevelAboveTheThresholdIsWrittenWithItsOwnLabel() {
+        // log_info was covered; log_warn and log_error were shipped, documented and never
+        // called by any test, so nothing would have noticed if either stopped writing.
+        call("log_warn", "careful");
+        call("log_error", "broken");
+        String written = errText();
+        assertTrue(written.contains("WARN  careful"), written);
+        assertTrue(written.contains("ERROR broken"), written);
+        assertEquals("", outText(), "levels never write to the program's output stream");
+    }
+
+    @Test
+    void theLabelIsPaddedSoMessagesAlignInOneColumn() {
+        // WARN is the only four-letter name; the padding is what makes the column line up,
+        // and an unpadded label would still "contain the message" for a weaker assertion.
+        call("log_warn", "x");
+        call("log_error", "y");
+        assertTrue(errText().contains("WARN  x"), "four-letter labels take two spaces");
+        assertTrue(errText().contains("ERROR y"), "five-letter labels take one space");
+    }
+
+    @Test
     void debugIsSuppressedAtTheDefaultInfoThreshold() {
         call("log_debug", "hidden");
         assertEquals("", errText(), "the default threshold is info, so debug writes nothing");

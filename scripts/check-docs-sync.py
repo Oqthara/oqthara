@@ -907,6 +907,20 @@ def read_text_utf8(path: pathlib.Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+# 18. Every example program must be listed in the examples README, and every listed
+# program must exist. `ExamplesRunTest` runs whatever is in the directory, so a new
+# example without a table row was invisible to CI; math.oq had drifted that way.
+def examples_readme_lists_every_program() -> None:
+    directory = ROOT / "examples"
+    present = {path.name for path in directory.glob("*.oq")}
+    listed = set(re.findall(r"^\| `([^`]+\.oq)` \|", read("examples/README.md"), re.M))
+    for name in sorted(present - listed):
+        problems.append(f"examples/{name} exists but is not listed in examples/README.md")
+    for name in sorted(listed - present):
+        problems.append(f"examples/README.md lists {name}, which does not exist")
+    note(f"examples/README.md lists all {len(present)} example programs")
+
+
 CHECKS = (
     stdlib_reference_is_current,
     keyword_budget_is_honest,
@@ -925,6 +939,7 @@ CHECKS = (
     cited_test_methods_exist,
     quoted_test_counts_agree,
     requirement_matrix_verification_pin_is_real,
+    examples_readme_lists_every_program,
 )
 
 
