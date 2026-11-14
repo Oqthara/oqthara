@@ -53,8 +53,10 @@ A record that says "reviewed, no findings" with no categories enumerated is reje
 that omits the independence statement is rejected.
 
 For a `critical` or `high` finding the resolution cell must name, in backticks, a commit that
-resolves in this repository, is an ancestor of the head, and is not the merge base, and it may
-not read as a deferral — `deferred`, `won't fix`, `TBD` and `still open` are all rejected,
+resolves in this repository, is an ancestor of the head, and is not the merge base or older than
+the merge base — being an ancestor of the branch point is not enough, because the branch point is
+the newest commit shared with main and anything older predates the change just as surely — and it
+may not read as a deferral — `deferred`, `won't fix`, `TBD` and `still open` are all rejected,
 because all of them mean the finding is still open. That last check is a vocabulary, not a
 parser: a resolution worded around it passes, which is the same limit the truthfulness paragraph
 below records. A resolution that claims a fix without pointing at a commit has no evidence behind

@@ -104,6 +104,18 @@ This is stated here because the alternative — letting a green check stand for 
 is exactly the failure mode the repo has already had once: a review requirement that was
 recorded as satisfied while nothing had been reviewed.
 
+Two specific shapes of that failure are worth naming, because the validator accepts both.
+
+**A record can be copied forward.** The heading must name the pull request the run belongs to,
+and `Reviewed at` must name a commit on that branch, ahead of its branch point. Both are
+satisfiable by copying a previous record, editing two lines, and writing no review. Nothing in
+the record distinguishes a considered review from a transcribed one, so review of the review —
+a human or agent reading the findings against the diff — remains the only check on this.
+
+**A record can be thorough and wrong.** Enumerating seven categories with a plausible count in
+each is a formatting exercise. The count is checked against the findings table; neither is
+checked against reality.
+
 ### The gate runs the pull request's own copy of itself
 
 CI checks out the pull request's head and runs `scripts/check-ai-review.py` from that checkout.
@@ -115,12 +127,21 @@ Three things reduce the exposure, and none of them eliminates it:
 
 - The change to `scripts/check-ai-review.py` is visible in the diff that reviewers are required
   to examine. A validator edit that weakens the gate is the first thing a review should catch.
-- `scripts/check-docs-sync.py` fails if the gate step disappears from `ci.yml`, or if it is
-  made non-blocking with `continue-on-error` or a constant-false `if:`. The enforcement therefore
-  cannot be removed without editing a file the diff shows, though the script it runs can still
-  be replaced.
-- The ruleset requires the status check and forbids bypass, so the substituted gate still has
-  to report success in the required context — it cannot skip the step.
+- `scripts/check-docs-sync.py` fails if the gate step disappears from `ci.yml`, if its command
+  line is altered, if it is moved out of the job whose name carries the required
+  `ubuntu-latest / JDK 21` context, or if the step or that job is made non-blocking with
+  `continue-on-error` or a constant-false `if:`. That check parses the workflow rather than
+  matching a string, so the gate cannot be removed by a comment. It is, however, itself a
+  script in the same pull request: a diff that weakens both files is only caught by a reviewer
+  reading it.
+- The ruleset requires the status check and forbids bypass, so an edit that makes the gate fail
+  cannot be merged. This is a real constraint but a narrow one: it stops the gate *failing*, and
+  says nothing about the gate *being right*.
+
+The honest summary of these three: nothing here prevents a pull request from neutering the gate,
+because every mechanism that would is itself checked into the branch under review. The ruleset
+stops the required context from going red or being skipped by the ruleset's own configuration;
+it cannot tell whether the code producing that context still does anything.
 
 Removing the limit entirely needs a check that runs outside the pull request's control: a
 separate workflow on `pull_request_target` reading the base branch's copy of the validator, or a

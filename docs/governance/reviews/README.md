@@ -47,8 +47,9 @@ Which commands were run, which files were read, and what the reviewer did **not*
 - the heading and the filename name the same pull request number;
 - `**Pull request:**`, `**Reviewer:**`, `**Implementer:**`, `**Reviewed at:**` and
   `**Independent:**` are all present;
-- `**Reviewed at:**` names a commit that is an ancestor of the head and is not the merge base,
-  so the review must sit on the change itself rather than on the branch point. A shallow clone cannot
+- `**Reviewed at:**` names a commit that is an ancestor of the head and is not the merge base
+  and not older than it, so the review must sit on the change itself rather than on the branch
+  point or before it. A shallow clone cannot
   confirm this, so it fails rather than silently passing; pass `--allow-shallow` to accept the
   degradation knowingly;
 - `**Independent:**` starts with `yes` or `no`. `no` must name a model, so a reader can see what
@@ -69,9 +70,10 @@ Which commands were run, which files were read, and what the reviewer did **not*
 - the gate reads the pull request number from `--pr`, then `GH_PR_NUMBER`, then the event
   payload, then `GITHUB_REF`.
 
-A pull request opened by an automated author — `dependabot[bot]`, `renovate[bot]`,
-`github-actions[bot]` — is exempt from carrying a record, because it cannot review its own
-change. Every other required context still applies, and the exemption is a login check rather
+A pull request opened by an automated author — `dependabot[bot]` or `renovate[bot]` — is
+exempt from carrying a record, because it cannot review its own change. The list is deliberately
+short: `github-actions[bot]` is not exempt, because a workflow can push a branch opened by that
+account and would otherwise gain an unreviewed route past the gate. Every other required context still applies, and the exemption is a login check rather
 than a label anyone can set.
 
 ## Adding a record

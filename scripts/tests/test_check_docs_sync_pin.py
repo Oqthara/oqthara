@@ -291,10 +291,6 @@ class ReviewCategoriesMatchTheValidator(unittest.TestCase):
         self.assertEqual([], checker.problems)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheGateStepCannotBeMadeInert(unittest.TestCase):
     """A step that is present but inert satisfies every substring test.
 
@@ -345,4 +341,70 @@ class TheGateStepCannotBeMadeInert(unittest.TestCase):
     def test_removing_the_step_is_rejected(self):
         broken = self.original.replace("scripts/check-ai-review.py", "scripts/missing.py")
         self.CI.write_text(broken, encoding="utf-8")
-        self.assertIn("no longer runs", self._run())
+        self.assertIn("check-ai-review.py", self._run())
+
+    def test_a_redirected_pull_request_number_is_rejected(self):
+        # `--pr 224` outranks the event payload, so one line makes every future pull request
+        # validate PR #224's record.
+        broken = self.original.replace(
+            "          python3 scripts/check-ai-review.py\n",
+            "          python3 scripts/check-ai-review.py --pr 224\n", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("--pr", self._run())
+
+    def test_a_literal_pull_request_number_is_rejected(self):
+        broken = self.original.replace(
+            "GH_PR_NUMBER: ${{ github.event.pull_request.number }}",
+            "GH_PR_NUMBER: 224", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("GH_PR_NUMBER", self._run())
+
+    def test_a_swallowed_exit_status_is_rejected(self):
+        broken = self.original.replace(
+            "          python3 scripts/check-ai-review.py\n",
+            "          python3 scripts/check-ai-review.py || echo ok\n", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("||", self._run())
+
+    def test_echoing_the_gate_is_rejected(self):
+        # The script name is still in the file, on a line of its own, and executed by nothing.
+        broken = self.original.replace(
+            "          python3 scripts/check-ai-review.py",
+            "          echo python3 scripts/check-ai-review.py", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("check-ai-review.py", self._run())
+
+    def test_the_gate_moved_out_of_the_required_job_is_rejected(self):
+        # A string search cannot see this: every required literal stays, and the gate runs in a
+        # job the ruleset does not require. The step is *moved* rather than copied -- copying it
+        # leaves one running in the required job, which is not a regression.
+        lines = self.original.splitlines(keepends=True)
+        start = next(i for i, line in enumerate(lines)
+                     if line.strip() == "- name: Check the pull request has an AI review record")
+        end = start + 1
+        while end < len(lines) and not lines[end].strip().startswith("- name:"):
+            end += 1
+        moved = lines[start:end]
+        remainder = lines[:start] + lines[end:]
+        broken = "".join(remainder).replace(
+            "jobs:\n", "jobs:\n  spare:\n    runs-on: ubuntu-latest\n    steps:\n", 1)
+        marker = broken.index("    steps:\n", broken.index("  spare:\n")) + len("    steps:\n")
+        broken = broken[:marker] + "".join(moved) + broken[marker:]
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("no job reporting", self._run())
+
+    def test_a_job_level_continue_on_error_is_rejected(self):
+        broken = self.original.replace(
+            "  test:\n", "  test:\n    continue-on-error: true\n", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("continue-on-error", self._run())
+
+
+if __name__ == "__main__":
+    unittest.main()

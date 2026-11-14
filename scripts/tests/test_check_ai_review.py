@@ -18,6 +18,9 @@ never runs, so each rejection path is exercised here against a throwaway reposit
 The passing case is tested too, because a validator that rejects everything is not a gate.
 """
 import importlib.util
+import contextlib
+import io
+import json
 import os
 import pathlib
 import subprocess
@@ -82,14 +85,29 @@ class Repository(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.bin = pathlib.Path(self._tmp.name) / "bin"
         self.bin.mkdir()
+        # Both are global process state. Leaving them set let one test's stand-in `gh` answer for
+        # every later test, so a run could pass while an individual test would not.
+        self._saved_path = os.environ.get("PATH")
+        self._saved_fake_gh = os.environ.get("FAKE_GH")
         self.stub_gh()
         self.root = pathlib.Path(self._tmp.name)
         git(self.root, "init", "-q")
         git(self.root, "config", "user.email", "t@example.invalid")
         git(self.root, "config", "user.name", "Test")
+        # A base commit, then the change on top of it. A fixture with a single commit has that
+        # commit as its own merge base, so every citation in it is legitimately "the branch
+        # point" and no record can pass -- the fixture would be testing the wrong thing.
+        # A root commit, then the branch point, then the change. The extra commit gives the
+        # branch point a parent, so a "commit older than the branch point" can be reachable
+        # from HEAD and reach the age rule instead of being refused as unreachable.
         (self.root / "README.md").write_text("x\n")
         git(self.root, "add", ".")
-        git(self.root, "commit", "-qm", "one")
+        git(self.root, "commit", "-qm", "root")
+        (self.root / "README.md").write_text("x\nx\n")
+        git(self.root, "commit", "-qam", "base")
+        git(self.root, "update-ref", "refs/remotes/origin/main", "HEAD")
+        (self.root / "README.md").write_text("x\ny\n")
+        git(self.root, "commit", "-qam", "the change under review")
         self.sha = subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=self.root,
             capture_output=True, text=True,
@@ -99,7 +117,16 @@ class Repository(unittest.TestCase):
         checker.checked.clear()
 
     def tearDown(self):
+        self._restore("PATH", self._saved_path)
+        self._restore("FAKE_GH", self._saved_fake_gh)
         self._tmp.cleanup()
+
+    @staticmethod
+    def _restore(name, value):
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
 
     def write(self, number, body=None, findings="", filename=None):
         text = (body if body is not None else GOOD_RECORD.format(number=number, sha=self.sha))
@@ -349,6 +376,35 @@ class ItHandlesAShallowClone(Repository):
         problems = self.gate(True)
         self.assertTrue(any("not a commit in this repository" in p for p in problems), problems)
 
+    def test_a_shallow_clone_cannot_confirm_a_citation_it_can_resolve(self):
+        """A SHA the clone happens to contain is still not proof of ancestry in a shallow clone.
+
+        `commit_exists` answers two questions at once. For a SHA that is present it says "yes",
+        and for a clone that is shallow it says "but I cannot walk the history". Reading the
+        first without the second let an off-branch citation through whenever the SHA happened to
+        be the clone tip -- the one commit a depth-1 clone always has.
+        """
+        shallow = pathlib.Path(self._tmp.name) / "shallowtip"
+        subprocess.run(["git", "clone", "-q", "--depth", "1", self.root.as_uri(), str(shallow)],
+                       check=True, capture_output=True, text=True)
+        self.assertEqual(
+            0, subprocess.run(["git", "cat-file", "-e", self.sha], cwd=shallow,
+                              capture_output=True).returncode,
+            "the clone does not contain the cited commit, so this test proves nothing")
+        record = shallow / "docs" / "governance" / "reviews" / "PR-1.md"
+        record.parent.mkdir(parents=True)
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| functional correctness | pass | 0 |", "| functional correctness | pass | 1 |")
+        record.write_text(body + f"| 1 | high | `a.kt:1` | an unhandled case | fixed in "
+                                 f"`{self.sha}` |\n" + FINDINGS_HEADER_END, encoding="utf-8")
+
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.validate(shallow, "1")
+        self.assertTrue(
+            any("cannot be checked for ancestry in a shallow clone" in p
+                for p in checker.problems), checker.problems)
+
     def test_a_shallow_clone_needs_the_flag(self):
         old_sha = self.sha
         (self.root / "later.txt").write_text("later\n", encoding="utf-8")
@@ -494,6 +550,21 @@ class ItAcceptsAnHonestIndependenceClaim(Repository):
         problems = self.record("yes — ran anthropic/claude-sonnet-4.5")
         self.assertTrue(any("mechanism" in p for p in problems), problems)
 
+    def test_a_no_claim_may_not_name_a_file_path_as_the_model(self):
+        """`no -- see scripts/check-ai-review.py` named a path, and the path passed.
+
+        The `no` answer still has to say what the reviewer ran. Without this rule the same
+        invented-name problem exists on the honest path, which is the path most records use.
+        """
+        problems = self.record("no \u2014 see scripts/check-ai-review.py for the parties involved")
+        self.assertTrue(any("not a configured model" in p for p in problems), problems)
+
+    def test_a_no_claim_naming_a_configured_model_is_accepted(self):
+        problems = self.record(
+            "no \u2014 both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the reviewer "
+            "shares the implementer's blind spots")
+        self.assertEqual([], problems, problems)
+
     def test_the_pinned_model_is_not_independence(self):
         problems = self.record(f"yes — ran deepseek-ai/deepseek-v4.1-flash-1017 and {self.MECHANISM}")
         self.assertTrue(any("not " in p and "independent" in p for p in problems), problems)
@@ -563,10 +634,6 @@ class TheCommandLine(Repository):
     def test_exit_two_for_a_non_numeric_number(self):
         result = self.invoke("--pr", "main", "--root", str(self.root))
         self.assertEqual(2, result.returncode)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ItParsesTheRecordAsWritten(unittest.TestCase):
@@ -830,6 +897,16 @@ class ItReadsTheRecordTheWayAMarkdownRendererDoes(Repository):
         self.write("1", body=body)
         self.assertEqual([], self.run_gate())
 
+    def test_a_total_row_beside_the_categories_is_not_an_unknown_category(self):
+        """`| Total | | 55 |` sums the table; it does not add a category to it.
+
+        Rejecting it failed a correct record for stating its own total, which is the number a
+        reader checks the table against.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.sha) + "| Total | | 0 |\n"
+        self.write("1", body=body)
+        self.assertEqual([], self.run_gate())
+
 
 class ItRequiresBothPartiesAndACitedPlaceToStand(Repository):
     """The record has to name two parties and a commit that is actually on the change."""
@@ -861,10 +938,12 @@ class ItRequiresBothPartiesAndACitedPlaceToStand(Repository):
         body = GOOD_RECORD.format(number=1, sha=self.head).replace(
             "| functional correctness | pass | 0 |",
             "| functional correctness | pass | 1 |")
+        # `self.sha` is where the branch left main; the commit that made the change is `head`.
         self.write("1", body=body,
                    findings=f"| 1 | high | `a.kt:1` | an unhandled case | fixed in `{self.sha}` |\n")
         problems = self.run_gate()
-        self.assertTrue(any("merge base" in p for p in problems), problems)
+        self.assertTrue(any("branch point" in p or "merge base" in p for p in problems),
+                        problems)
 
     def test_a_commit_on_no_branch_is_not_evidence(self):
         """A SHA that exists but is unreachable on this branch cannot show this branch fixed it."""
@@ -880,7 +959,7 @@ class ItRequiresBothPartiesAndACitedPlaceToStand(Repository):
         self.write("1", body=body,
                    findings=f"| 1 | high | `a.kt:1` | an unhandled case | fixed in `{away}` |\n")
         problems = self.run_gate()
-        self.assertTrue(any("on this branch" in p for p in problems), problems)
+        self.assertTrue(any("commit on this branch" in p for p in problems), problems)
 
     def test_a_review_at_the_merge_base_did_not_read_the_change(self):
         """`Reviewed at` must point inside the change, not at where it branched."""
@@ -889,7 +968,7 @@ class ItRequiresBothPartiesAndACitedPlaceToStand(Repository):
         self.assertTrue(any("merge base" in p for p in problems), problems)
 
 
-class ItRecognisesADeferralInAnyWording(Repository):
+class ItRejectsTheOpenPhrasingsTheVocabularyCovers(Repository):
     """Every phrasing below states the finding is still open.
 
     The list is a vocabulary and the policy says so, so these are the phrasings it must cover --
@@ -917,3 +996,238 @@ class ItRecognisesADeferralInAnyWording(Repository):
         ):
             with self.subTest(cell=cell):
                 self.assert_rejected(cell)
+
+
+class ItRejectsAVerdictThatOnlyLooksHarmless(Repository):
+    """`fail` anywhere in the verdict cell means the change failed review.
+
+    The exemption for `not applicable` was tested against the whole cell, so
+    `fail - not applicable` -- a record stating in its own category table that the change failed
+    -- exited 0. The word is what matters, not the exact string.
+    """
+
+    def assert_rejected(self, verdict):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |",
+            f"| security and privacy | {verdict} | 0 |")
+        self.write(1, body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("failing verdict" in p for p in problems), problems)
+
+    def test_a_failing_verdict_annotated_as_not_applicable_is_rejected(self):
+        self.assert_rejected("fail - not applicable")
+
+    def test_a_not_applicable_verdict_annotated_with_fail_is_rejected(self):
+        self.assert_rejected("not applicable (fail)")
+
+    def test_a_bare_fail_is_rejected(self):
+        self.assert_rejected("fail")
+
+    def test_the_plain_not_applicable_verdict_is_still_accepted(self):
+        # The finding count is zero, so "not applicable" is the honest answer for a category
+        # this change did not touch, and it must not be caught by the fail scan.
+        self.write(1)
+        self.assertEqual([], self.run_gate())
+
+
+class ItCountsFindingsWithDigitsAndNothingElse(Repository):
+    """A count is a run of digits, not any Python integer literal.
+
+    `int()` accepts `1_3`, `+13` and Arabic-Indic digits, so a cell that does not read as the
+    number it counts was still summed as one.
+    """
+
+    def assert_rejected(self, count, expected):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |",
+            f"| security and privacy | pass | {count} |")
+        self.write(1, body=body)
+        problems = self.run_gate()
+        # The cell must be refused *as a count*. Asserting only "something was rejected" passed
+        # with the guard removed: `int()` read the bad cell as a number, and the record then
+        # failed on the unrelated mismatch between that number and the empty findings table.
+        self.assertTrue(any(expected in p for p in problems), problems)
+
+    def test_an_underscore_is_not_a_digit(self):
+        self.assert_rejected("1_3", "which is not a number")
+
+    def test_a_plus_sign_is_not_a_digit(self):
+        self.assert_rejected("+13", "cannot be negative")
+
+    def test_arabic_indic_digits_are_not_ascii_digits(self):
+        self.assert_rejected("\u0661\u0663", "which is not a number")
+
+
+class TheHeadingIsReadFromTheRenderedDocument(Repository):
+    """A heading that exists only inside a fence is not the document's heading.
+
+    The check read `raw`, so a record with a fenced example containing `# AI review -- PR #1`
+    and no real heading passed -- and a reader saw a document with no title.
+    """
+
+    def test_a_heading_inside_a_fence_does_not_count(self):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "# AI review \u2014 PR #1\n",
+            "```\n# AI review \u2014 PR #1\n```\n", 1)
+        self.write(1, body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("no '# AI review" in p for p in problems), problems)
+
+    def test_a_heading_written_with_a_hyphen_is_accepted(self):
+        # `# AI review - PR #1` is the same heading; only an em dash was accepted before.
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "# AI review \u2014 PR #1", "# AI review - PR #1", 1)
+        self.write(1, body=body)
+        self.assertEqual([], self.run_gate())
+
+
+class ItChecksTheCitedCommitIsAheadOfTheBranchPoint(Repository):
+    """A commit that predates the merge base cannot be a fix made on this branch.
+
+    The check used to ask only whether the cited SHA differed from the base, so an ancestor of
+    the base -- an older commit on main -- was accepted as evidence.
+    """
+
+    def test_a_commit_older_than_the_merge_base_is_rejected(self):
+        # The parent of the branch point: it exists, it is an ancestor of HEAD, and it cannot
+        # be a fix made on this branch.
+        older = subprocess.run(
+            ["git", "rev-parse", "origin/main^"], cwd=self.root,
+            capture_output=True, text=True).stdout.strip()
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |", "| security and privacy | pass | 1 |")
+        self.write(1, body=body, findings=(
+            f"| 1 | high | `a.kt:3` | an unhandled empty list | fixed in `{older}` |\n"))
+        problems = self.run_gate()
+        self.assertTrue(any("merge base" in p for p in problems), problems)
+
+
+class ItRefusesToCheckAncestryWithoutABase(Repository):
+    """A checkout with no `origin/main` must not silently stop checking ancestry.
+
+    `merge_base()` returning `None` meant every `if base:` guard vanished with it, so the whole
+    ancestry rule switched itself off in exactly the checkouts -- a bare clone, a fixture, a
+    branch built from a local `main` -- where it was most likely to be wrong.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # `merge_base` falls back from `origin/main` to a local `main`, so both have to go.
+        # Detaching first is what makes the local branch deletable at all.
+        subprocess.run(["git", "checkout", "-q", "--detach"], cwd=self.root,
+                       check=True, capture_output=True, text=True)
+        for ref in ("refs/remotes/origin/main", "refs/heads/main", "refs/heads/master"):
+            subprocess.run(["git", "update-ref", "-d", ref], cwd=self.root,
+                           capture_output=True, text=True)
+        # Detached HEAD has no branch to fall back to, so `merge_base` now finds nothing.
+        self.assertEqual("", subprocess.run(
+            ["git", "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+            cwd=self.root, capture_output=True, text=True).stdout.strip())
+
+    def test_a_missing_base_is_a_rejection_and_not_a_pass(self):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |", "| security and privacy | pass | 1 |")
+        self.write(1, body=body, findings=(
+            f"| 1 | high | `a.kt:3` | an unhandled empty list | fixed in `{self.sha}` |\n"))
+        problems = self.run_gate()
+        self.assertTrue(any("no `origin/main`" in p for p in problems), problems)
+
+
+class ThePartiesAreComparedAsParties(Repository):
+    """`review-agent the impartial one` is the same party as `review-agent`.
+
+    Keeping the first three words meant one extra word defeated the comparison, so two passes
+    of the same run could be presented as the reviewer and the implementer.
+    """
+
+    def test_the_second_pass_of_the_same_run_is_the_same_party(self):
+        # The order forbids presenting one party as two. Keeping the first three words made
+        # `review-agent review pass 17` and `review-agent implementation pass 18` compare as
+        # different parties, which is exactly the pair this check exists to catch.
+        self.assertEqual(
+            checker.party_identity("review-agent review pass 17"),
+            checker.party_identity("review-agent implementation pass 18"),
+        )
+
+    def test_two_genuinely_different_parties_stay_different(self):
+        self.assertNotEqual(
+            checker.party_identity("oq-hive-review-escalation (model)"),
+            checker.party_identity("oq-hive-development (model)"),
+        )
+
+    def test_a_pass_description_does_not_create_a_second_party(self):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "**Reviewer:** oq-hive-review-escalation (deepseek-ai/deepseek-v4.1-flash-1017)",
+            "**Reviewer:** oq-hive-development review pass 17 "
+            "(deepseek-ai/deepseek-v4.1-flash-1017)", 1)
+        self.assertIn("review pass 17", body)
+        self.write(1, body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("same party" in p for p in problems), problems)
+
+
+class TheOverrideCannotValidateSomeoneElsesPullRequest(Repository):
+    """Round five's critical finding: `--pr` and `GH_PR_NUMBER` redirected the whole gate.
+
+    Every test above calls `validate` directly, so none of them exercised `main` -- the guard
+    that stops the override existed and was unreachable from the suite. Adding `--pr 224` to
+    the workflow step would have made every pull request validate #224's record, find it
+    well-formed, and keep the required context green. Removing the guard changed nothing the
+    tests could see, which is exactly why it went unnoticed.
+    """
+
+    def run_main(self, *args):
+        """Runs `main` and returns (exit code, stderr) -- the refusal is printed, not collected."""
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = checker.main(["--root", str(self.root), *args])
+        return code, err.getvalue()
+
+    def event(self, number):
+        path = self.root / "event.json"
+        path.write_text(json.dumps({"pull_request": {"number": number}}), encoding="utf-8")
+        os.environ["GITHUB_EVENT_PATH"] = str(path)
+
+    def setUp(self):
+        super().setUp()
+        self._saved_event = os.environ.get("GITHUB_EVENT_PATH")
+        self._saved_pr = os.environ.get("GH_PR_NUMBER")
+        self.write("224")
+
+    def tearDown(self):
+        self._restore("GITHUB_EVENT_PATH", self._saved_event)
+        self._restore("GH_PR_NUMBER", self._saved_pr)
+        super().tearDown()
+
+    def test_a_local_run_may_name_its_pull_request(self):
+        # No event payload: this is the case the override exists for.
+        os.environ.pop("GITHUB_EVENT_PATH", None)
+        os.environ.pop("GH_PR_NUMBER", None)
+        code, err = self.run_main("--pr", "224")
+        self.assertEqual(0, code, err)
+
+    def test_a_ci_run_may_not_validate_a_different_pull_request(self):
+        self.event(999)
+        code, err = self.run_main("--pr", "224")
+        self.assertEqual(1, code, err)
+        self.assertIn("this run is for pull request #999", err)
+        self.assertIn("remove the override", err)
+
+    def test_the_environment_override_is_refused_too(self):
+        # The finding named both spellings; guarding one leaves the other wide open.
+        self.event(999)
+        os.environ["GH_PR_NUMBER"] = "224"
+        code, err = self.run_main()
+        self.assertEqual(1, code, err)
+        self.assertIn("this run is for pull request #999", err)
+
+    def test_agreeing_with_the_event_payload_is_allowed(self):
+        # The guard must reject disagreement, not the override in general, or CI -- which
+        # passes neither -- would be the only configuration that could ever work.
+        self.event(224)
+        code, err = self.run_main("--pr", "224")
+        self.assertEqual(0, code, err)
+
+
+if __name__ == "__main__":
+    unittest.main()

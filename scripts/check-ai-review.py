@@ -73,7 +73,6 @@ DEFERRED_PHRASES = (
 # A resolution may legitimately say it is *not* a deferral. Those words are removed before the
 # scan, so "this is not a deferral; fixed in `abc1234`" is not rejected for naming the thing it
 # is denying.
-DEFERRAL_NEGATIONS = ("not ", "no ", "never ", "non-", "n't ")
 VERDICTS = {"pass", "fail"}
 
 problems: list[str] = []
@@ -108,6 +107,32 @@ def resolve_pr_number(explicit: str | None) -> str | None:
     if match:
         return match.group(1)
     return None
+
+
+def the_pull_request_this_run_belongs_to() -> str | None:
+    """The pull request CI says this run is for, ignoring any override.
+
+    `--pr` and `GH_PR_NUMBER` exist so a maintainer can validate a record locally. In CI they are
+    also the shortest path from "the gate is enforced" to "no pull request is reviewed": adding
+    `--pr 224` to the workflow makes every future pull request validate PR #224's record, find it
+    well-formed, and pass. Neither check would object, and the required context stays green.
+
+    So when the event payload names a pull request, the emitted number must be that one. The
+    override is allowed to disagree only outside a pull-request run, which is what a local run is.
+    """
+    event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+    if not event_path:
+        return None
+    try:
+        payload = json.loads(pathlib.Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    number = (payload.get("pull_request") or {}).get("number")
+    if number:
+        return str(number)
+    ref = os.environ.get("GITHUB_REF", "")
+    match = re.match(r"refs/pull/(\d+)/", ref)
+    return match.group(1) if match else None
 
 
 def record_path(root: pathlib.Path, number: str) -> pathlib.Path:
@@ -164,7 +189,7 @@ def tables(text: str) -> list[list[list[str]]]:
         if stripped.startswith("|") and stripped.endswith("|"):
             cells = split_row(stripped)
             # The separator row (| --- | --- |) carries no data.
-            if all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells if cell):
+            if all(re.fullmatch(r":?-+:?", cell) for cell in cells if cell):
                 continue
             current.append(cells)
         else:
@@ -179,7 +204,10 @@ def tables(text: str) -> list[list[list[str]]]:
 def header_and_rows(table: list[list[str]]) -> tuple[list[str], list[list[str]]]:
     if not table:
         return [], []
-    return [cell.lower() for cell in table[0]], table[1:]
+    # Stripped like value cells are: `| **#** | **Severity** |` is a heading emphasised the way
+    # the rest of the document is emphasised, and treating the markup as part of the column name
+    # rejected an honest record for its formatting.
+    return [cell.strip("*` ").lower() for cell in table[0]], table[1:]
 
 
 # Values that name no party. Without this, a record whose Reviewer and Implementer are both
@@ -221,6 +249,17 @@ def check_field(text: str, label: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+# Rows that summarise a table they belong to rather than add a row to it.
+ROLL_UP_NAMES = {"total", "totals", "sum", "overall", "all"}
+
+# Words in a Reviewer/Implementer value that describe *which pass* ran, not who ran it.
+# `review-agent review pass 17` and `review-agent implementation pass 18` are one party; without
+# this list they compared as two, which is the pair the separation check exists to catch. Matched
+# as whole words only -- `review` occurs inside `review-agent`, and stripping that would compare
+# the agent's own name.
+PASS_WORDS = {"review", "implementation", "pass", "round", "run", "the", "a", "an"}
+
+
 def party_identity(value: str) -> str:
     """The identifying part of a Reviewer/Implementer value, without the annotation.
 
@@ -228,10 +267,19 @@ def party_identity(value: str) -> str:
     one party with two descriptions. Comparing whole strings let a single run be presented as an
     independent reviewer.
     """
-    without_model = re.sub(r"\([^)]*\)", " ", value)
+    # Parentheses are stripped even when unterminated: `review-agent (pass 17` is an annotation
+    # a typo left open, and keeping it turned one party into two.
+    without_model = re.sub(r"\([^)]*\)?", " ", value)
     without_model = re.sub(r"[`*_]", "", without_model)
     words = re.findall(r"[a-z0-9][a-z0-9./-]*", without_model.lower())
-    return " ".join(words[:3])
+    # The words that describe *which pass* are not part of who ran it. Stripped as whole words,
+    # not substrings: `review-agent` contains `review`, and splitting it into `agent` made the
+    # agent's own name the thing being compared.
+    words = [word for word in words if word not in PASS_WORDS]
+    # All-digit tokens are round and pass numbers. `review pass 17` and `review pass 18` are the
+    # same party describing two passes, which is exactly the pair this check exists to merge.
+    words = [word for word in words if not re.fullmatch(r"[0-9]+", word)]
+    return " ".join(words)
 
 
 def names_a_party(value: str | None) -> bool:
@@ -342,7 +390,7 @@ def first_commit_sha(value: str) -> str | None:
     return None
 
 
-def cites_a_commit(root: pathlib.Path, resolution: str) -> str | None:
+def cites_a_commit(root: pathlib.Path, resolution: str, allow_shallow: bool = False) -> str | None:
     """Why this resolution cell is not evidence, or None when it is.
 
     The resolution cell must carry evidence, not just a claim that the fix happened. A SHA in
@@ -357,32 +405,56 @@ def cites_a_commit(root: pathlib.Path, resolution: str) -> str | None:
         exists, shallow = commit_exists(root, sha.lower())
         if not exists:
             continue
+        if shallow and not allow_shallow:
+            # `commit_exists` cannot tell a shallow clone that the SHA is *not* an ancestor, so
+            # returning None here accepted an off-branch citation. The caller decides whether to
+            # accept that degradation knowingly; the default is to refuse rather than to guess.
+            return (f"`{sha}` cannot be checked for ancestry in a shallow clone; re-run with "
+                    f"`--allow-shallow` to accept that, or fetch the full history")
         # The cited commit has to be in the history the gate is checking out. Otherwise a
         # resolution can name any commit in the repository -- another branch, an unrelated fix
         # merged long ago -- and be read as evidence that this finding was resolved.
-        if shallow:
-            return None
         if not is_ancestor(root, sha.lower()):
             continue
         # The merge base predates every commit on the branch, so it cannot be evidence that
         # this branch fixed anything. Requiring a commit *newer than the review* was tried and
         # withdrawn: an earlier review round is legitimately fixed by earlier commits.
         base = merge_base(root)
-        # Compared prefix-wise in both directions: the record may write an abbreviated SHA and
-        # the base is always full-length, so `sha.startswith(base[:12])` was false for every
-        # abbreviated citation and the branch point passed as evidence.
-        if base and (base.startswith(sha.lower()) or sha.lower().startswith(base)):
+        if base is None:
+            # `merge_base` returning None means `origin/main` is not present, and every `if base`
+            # guard then disappeared with it -- so a checkout missing one ref silently stopped
+            # checking ancestry at all. A rule that switches itself off is not a rule.
+            return (f"`{sha}` cannot be placed ahead of the branch point, because this checkout "
+                    f"has no `origin/main` to compare against")
+        if (base.startswith(sha.lower()) or sha.lower().startswith(base)):
             return f"`{sha}` is the merge base, so it predates the change under review"
+        # Being *an ancestor of the base* is not enough either: the base is the newest commit
+        # shared with main, so anything older predates the change under review just as surely.
+        # The rule the docs state is "ahead of the merge base", and this is it.
+        behind = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", sha.lower(), base],
+            cwd=root, capture_output=True, text=True,
+        )
+        if behind.returncode == 0:
+            return f"`{sha}` predates the merge base, so it cannot be a fix made on this branch"
         return None
     return f"names no commit on this branch ({', '.join(shas)})"
 
 
+# The base branch, in the order a checkout is likely to have it. `origin/main` is the PR
+# checkout; `main` is a local clone or a fixture that made its own history. Falling back keeps
+# the ancestry rule from switching itself off in a checkout that is otherwise perfectly usable.
+BASE_REFS = ("origin/main", "main")
+
+
 def merge_base(root: pathlib.Path) -> str | None:
-    result = subprocess.run(
-        ["git", "merge-base", "origin/main", "HEAD"],
-        cwd=root, capture_output=True, text=True,
-    )
-    return result.stdout.strip() or None
+    for ref in BASE_REFS:
+        result = subprocess.run(
+            ["git", "merge-base", ref, "HEAD"], cwd=root, capture_output=True, text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return None
 
 
 def is_ancestor(root: pathlib.Path, sha: str) -> bool:
@@ -494,7 +566,11 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
     # or override a real field. The heading is a top-level line and is read from `raw`.
     text = outside_fences(raw)
 
-    heading = re.search(r"^#\s+AI review\s+.\s+PR\s+#(\d+)\s*$", raw, re.M)
+    # Read from the unfenced text: taking it from `raw` let a heading that exists only inside
+    # a fenced example satisfy the check, so the rendered document had no heading at all.
+    heading = re.search(
+        r"^#\s+AI review\s+\W+\s*PR\s*#(\d+)\s*$", outside_fences(raw), re.M | re.I
+    )
     if not heading:
         problems.append(f"{display} has no '# AI review — PR #<n>' heading")
     elif heading.group(1) != number:
@@ -505,10 +581,15 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
     declared = check_field(text, "Pull request")
     if declared is None:
         problems.append(f"{display} has no '**Pull request:**' line")
-    elif declared.strip().lstrip("#") != number:
-        problems.append(
-            f"{display} declares pull request '{declared}' but is the record for #{number}"
-        )
+    else:
+        # Every number in the declaration has to be this pull request. Records legitimately write
+        # `PR #224`, `#224`, `[#224](...)` and `pull request 224`, and the old strip-then-compare
+        # accepted only the last two while rejecting the first two outright.
+        numbers = set(re.findall(r"\d+", declared))
+        if numbers != {number}:
+            problems.append(
+                f"{display} declares pull request '{declared}' but is the record for #{number}"
+            )
 
     parties = {}
     for label in ("Reviewer", "Implementer"):
@@ -623,6 +704,17 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
                 f"{display} says it is not independent but does not name any model, so a reader "
                 f"cannot tell what the reviewer ran or why the two are related"
             )
+        elif named - KNOWN_MODELS - pinned and not all(
+            name.startswith("human:") for name in named - KNOWN_MODELS - pinned
+        ):
+            # `no -- see scripts/check-ai-review.py` satisfied the model check with a file path.
+            # The `no` answer has to name the party that actually reviewed, so the same rule as
+            # the `yes` path applies: a configured model, or a `human:` marker.
+            problems.append(
+                f"{display} says it is not independent but names "
+                f"{sorted(n for n in named - KNOWN_MODELS - pinned if not n.startswith('human:'))}, "
+                f"which is not a configured model; name the model that actually reviewed"
+            )
 
     # The categories table.
     # Every table with a Category header contributes, not just the first. Taking the first
@@ -663,9 +755,12 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
         name = row[0].strip("*` ").lower()
         verdict = row[verdict_at].strip("*` ").lower()
         if name not in CATEGORIES:
-            problems.append(
-                f"{display} lists '{name}', which is not one of the seven required categories"
-            )
+            # A trailing `| Total | | 55 |` roll-up sums the table it follows. Rejecting it as an
+            # unknown category failed a correct record for stating its own total.
+            if name not in ROLL_UP_NAMES:
+                problems.append(
+                    f"{display} lists '{name}', which is not one of the seven required categories"
+                )
             continue
         if name in seen:
             problems.append(f"{display} lists the category '{name}' twice")
@@ -679,7 +774,21 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
                 f"{sorted(NOT_APPLICABLE_ALLOWED)} may be omitted"
             )
         try:
-            count = int(row[count_at].strip("*` "))
+            # A plain run of digits. `int()` also accepts `1_3`, `+13` and Arabic-Indic
+            # digits, so a record could write something that does not read as the number it
+            # counts and still be summed as one.
+            digits = row[count_at].strip("*` ")
+            if not re.fullmatch(r"[0-9]+", digits):
+                # A negative count is worth naming as such: it is the shape that lets one
+                # category's findings cancel another's, and "not a number" would hide that.
+                if re.fullmatch(r"[-+]?[0-9]+", digits):
+                    problems.append(
+                        f"{display} gives '{name}' the finding count {int(digits)}; a count "
+                        f"cannot be negative, and negative counts let the totals cancel out"
+                    )
+                    continue
+                raise ValueError(digits)
+            count = int(digits)
             if count < 0:
                 problems.append(
                     f"{display} gives '{name}' the finding count {count}; a count cannot be "
@@ -701,8 +810,13 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
         )
 
     # A `fail` verdict anywhere means the change was not approved by this review.
+    # Matched as a word rather than as the whole cell: `fail - not applicable` and
+    # `not applicable (fail)` both say the change failed, and comparing the stripped string
+    # only to `fail` let either be recorded while the gate still exited 0.
     for row in rows:
-        if len(row) > verdict_at and row[verdict_at].strip("*` ").lower() == "fail":
+        if len(row) <= verdict_at:
+            continue
+        if "fail" in re.findall(r"[a-z]+", row[verdict_at].strip("*` ").lower()):
             problems.append(
                 f"{display} records a failing verdict for '{row[0].strip('*` ')}'; a change "
                 f"that failed review cannot be integrated"
@@ -722,10 +836,12 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
         # silently, and every finding in it with it, including an open critical one.
         if "severity" not in header_f:
             continue
-        # A severity legend has no resolution column and is not findings. Merging its rows in
-        # turned a correct record into a malformed one. Only real findings tables are merged.
+        # A table with a severity column but no resolution column is not findings -- it is a
+        # legend, or an honest "no findings" table written header-only -- and merging its rows in
+        # turned a correct record into a malformed one. A header-only table with no rows at all
+        # is the latter and is accepted; one with rows is a legend and is skipped.
         if "resolution" not in header_f:
-            if findings_table is None:
+            if findings_table is None and not any(row for row in rows_f if row):
                 findings_table = (header_f, [])
             continue
         if findings_table is None or "resolution" not in findings_table[0]:
@@ -764,24 +880,39 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
             (header_f.index(name) for name in ("#", "id", "no", "num", "number")
              if name in header_f), None)
         if number_at is not None:
+            # A roll-up row sits in the number column with a word in it. It is not a finding, so
+            # it is not numbered; counting it here rejected `| Total | | 55 |`, which is the
+            # ordinary way a table states its own sum.
             listed = [row[number_at].strip("*` ") for row in rows_f
-                      if len(row) > number_at]
+                      if len(row) > number_at
+                      and row[number_at].strip("*` ").lower() not in ROLL_UP_NAMES]
             if len(set(listed)) != len(listed):
                 problems.append(
                     f"{display} numbers its findings, but two rows share a number; a reader "
                     f"cannot tell which finding a resolution answers"
                 )
-            if any(not re.fullmatch(r"\d+", value) for value in listed):
+            # `[0-9]`, not `\d`: `\d` matches Arabic-Indic digits, so `\u0661\u0663` read as
+            # the number thirteen and a row numbered in a script no reader expects was accepted.
+            if any(not re.fullmatch(r"[0-9]+", value) for value in listed):
                 problems.append(
                     f"{display} has a findings row whose number is not a number: "
-                    + ", ".join(v or "''" for v in listed if not re.fullmatch(r"\d+", v))
+                    + ", ".join(v or "''" for v in listed if not re.fullmatch(r"[0-9]+", v))
                 )
-        if len(rows_f) != declared_findings:
+        # Roll-up rows are excluded before the count is compared, not only before the per-row
+        # checks: `| Total | | 55 |` inside the findings table made a correct record claim 56.
+        counted_rows = [row for row in rows_f
+                        if not (row and row[0].strip("*` ").lower() in ROLL_UP_NAMES)]
+        if len(counted_rows) != declared_findings:
             problems.append(
                 f"{display} counts {declared_findings} finding(s) in its category table but "
-                f"lists {len(rows_f)}; one of the two is wrong"
+                f"lists {len(counted_rows)}; one of the two is wrong"
             )
         for row in rows_f:
+            # A roll-up row summarises the table; it carries no severity and needs no
+            # resolution, so it is not a malformed finding. `| Total | | 55 |` is the ordinary
+            # way a table states its own sum.
+            if row and row[0].strip("*` ").lower() in ROLL_UP_NAMES:
+                continue
             if len(row) <= max(severity_at, resolution_at):
                 problems.append(f"{display} has a malformed finding row: {' | '.join(row)}")
                 continue
@@ -801,7 +932,7 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
                 # only would let "Deferred; tracked in <commit>" through, which is a deferral
                 # with a citation attached.
                 deferred = mentions_deferral(resolution)
-                reason = cites_a_commit(root, resolution)
+                reason = cites_a_commit(root, resolution, allow_shallow)
                 if absent or deferred or reason:
                     detail = (
                         "the resolution cell is empty" if absent
@@ -842,6 +973,19 @@ def main(argv: list[str]) -> int:
     if not re.fullmatch(r"\d+", number):
         print(f"check-ai-review: error: '{number}' is not a pull request number", file=sys.stderr)
         return 2
+
+    actual = the_pull_request_this_run_belongs_to()
+    if actual is not None and actual != number:
+        # Refused rather than preferring `actual`: a run that names one pull request and validates
+        # another is misconfigured, and silently correcting it would hide the misconfiguration --
+        # while silently accepting it is the bypass this guard exists to stop.
+        print(
+            f"check-ai-review: error: this run is for pull request #{actual}, but it was asked to "
+            f"validate #{number}. The gate validates the pull request it runs in; remove the "
+            f"override.",
+            file=sys.stderr,
+        )
+        return 1
 
     try:
         validate(root, number, args.allow_shallow)

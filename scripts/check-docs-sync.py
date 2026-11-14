@@ -1166,37 +1166,74 @@ def review_records_are_not_in_the_docs_catalog() -> None:
             "scripts/gen-docs-catalog.py")
 
 
+# The gate has to be *executed*, not merely named. `echo python3 scripts/check-ai-review.py`
+# mentions the script on a line of its own and prints it; the step exits 0 and the required
+# context stays green. So the line must begin with an interpreter and the script, and nothing
+# that would make the shell evaluate it into a string.
+GATE_INVOCATION = re.compile(
+    r"^(?:exec\s+)?(?:python3?|py\s+-3)\s+(?:\./)?scripts/check-ai-review\.py(?:\s|$)"
+)
+
+
+def _runs_the_gate(run: str) -> bool:
+    """True when a `run:` block executes the gate, rather than mentioning it."""
+    return any(GATE_INVOCATION.match(line) for line in _command_lines(run))
+
+
+def _command_lines(run: str) -> list[str]:
+    """The lines of a `run:` block that the shell actually executes.
+
+    Comment lines are dropped. The previous version of this check passed edit `A` because the
+    only place the required context name appeared was a comment *inside the gate step*, so the
+    check was reading prose, not the workflow.
+    """
+    lines = []
+    for line in run.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            lines.append(stripped)
+    return lines
+
+
+def _matrix_values(job: dict, key: str) -> list[str]:
+    """The values a matrix key expands to, whether written as a list or bare."""
+    matrix = (job.get("strategy") or {}).get("matrix") or {}
+    value = matrix.get(key)
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [str(item) for item in value]
+
+
+# The status context `main-protection` requires. `scripts/apply-branch-protection.sh` PUTs the
+# whole ruleset, so this name and the workflow's job name have to agree: renaming either one
+# silently blocks every merge in the repository.
+REQUIRED_CONTEXT_OS = "ubuntu-latest"
+REQUIRED_CONTEXT_JAVA = "21"
+
+
 def ai_review_gate_is_wired_into_ci() -> None:
-    """The gate is enforced only while the CI step that runs it exists.
+    """The gate is enforced only while a CI step that cannot be defused runs it.
 
     Nothing else notices the step being deleted: the required status context still reports
     success, because the other steps in that job still run. Enforcing through an existing
     context is what keeps the ruleset unchanged, and it is also what makes the wiring itself
     the only thing that needs checking.
+
+    The check parses the workflow rather than searching its text. Seventeen edits that left a
+    string search satisfied -- a falsy `if:`, a `run:` replaced with `echo`, `|| echo`,
+    `--pr 224`, a literal `GH_PR_NUMBER`, a different matrix cell, a job-level
+    `continue-on-error`, the step moved to an unrequired job -- all defeated the previous
+    version, because the string it looked for existed only in a comment. Only deleting the step
+    or rewording that comment failed it.
     """
     workflow = ROOT / ".github" / "workflows" / "ci.yml"
     if not workflow.is_file():
         problems.append("ci.yml is missing; the AI review gate cannot be enforced")
         return
     text = read(workflow)
-    if "check-ai-review.py" not in text:
-        problems.append(
-            "ci.yml no longer runs scripts/check-ai-review.py, so AI review is not enforced; "
-            "the required status context would stay green without it"
-        )
-        return
-    # The step has to be in a job that the ruleset requires, not merely somewhere in the file.
-    required = "ubuntu-latest / JDK 21"
-    if required not in text:
-        problems.append(
-            f"ci.yml does not name the required context '{required}', which is the context "
-            f"the AI review gate rides on"
-        )
-        return
 
-    # A substring test is not enough: `continue-on-error: true` or `if: false` on the gate step
-    # leaves every string above in place while the gate cannot fail the build. Parse the step and
-    # check it is unconditional and not allowed to fail.
     try:
         import yaml
     except ImportError:  # pragma: no cover - PyYAML is present in CI and in the dev environment
@@ -1205,38 +1242,160 @@ def ai_review_gate_is_wired_into_ci() -> None:
             "silently degrades is the weakness it is meant to prevent"
         )
         return
-    parsed = yaml.safe_load(text)
-    steps = [
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        problems.append(f"ci.yml cannot be parsed, so the AI review gate cannot be verified: {error}")
+        return
+    if not isinstance(parsed, dict):
+        problems.append("ci.yml is not a workflow document, so the AI review gate cannot be verified")
+        return
+
+    # Which job reports the required context. A job whose name is built from `matrix.os` and
+    # `matrix.java` reports one context per cell; only the cell the ruleset names counts.
+    producing = []
+    for job_id, job in (parsed.get("jobs") or {}).items():
+        if not isinstance(job, dict):
+            continue
+        name = str(job.get("name") or "")
+        if "matrix.os" not in name or "matrix.java" not in name:
+            continue
+        if (
+            REQUIRED_CONTEXT_OS in _matrix_values(job, "os")
+            and REQUIRED_CONTEXT_JAVA in _matrix_values(job, "java")
+        ):
+            producing.append((job_id, job))
+    required = f"{REQUIRED_CONTEXT_OS} / JDK {REQUIRED_CONTEXT_JAVA}"
+    if not producing:
+        problems.append(
+            f"ci.yml has no job reporting the required context '{required}', which is the "
+            f"context the ruleset requires and the AI review gate rides on"
+        )
+        return
+    if len(producing) > 1:
+        problems.append(
+            f"ci.yml has {len(producing)} jobs that report the required context '{required}'; "
+            f"exactly one is expected, because renaming or duplicating it changes what is "
+            f"enforced: " + ", ".join(job_id for job_id, _ in producing)
+        )
+    headless = [
         step
-        for job in (parsed.get("jobs") or {}).values()
-        for step in (job.get("steps") or [])
+        for _, producing_job in producing
+        for step in (producing_job.get("steps") or [])
+        if isinstance(step, dict) and _runs_the_gate(str(step.get("run") or ""))
     ]
-    gate_steps = [s for s in steps if "check-ai-review.py" in str(s.get("run", ""))]
+    if not headless:
+        problems.append(
+            f"no job reporting '{required}' runs scripts/check-ai-review.py, so AI review is not "
+            f"enforced; the required status context would stay green without it"
+        )
+        return
+    job_id, job = producing[0]
+
+    # A job that is skipped reports the context as missing, never as failed -- which blocks
+    # every merge rather than silently admitting one, but is still not the gate running.
+    job_condition = ("" if "if" not in job else str(job["if"])).strip().lower()
+    if job_condition in {"false", "0", "no", "${{ false }}", "'false'", '"false"'}:
+        problems.append(
+            f"the job reporting '{required}' is skipped by 'if: {job_condition}', so the AI "
+            f"review gate never runs in the required context"
+        )
+
+    # `continue-on-error` at job level lets a failing gate pass the required context.
+    allowed_error = (None, False, "false", "False")
+    if job.get("continue-on-error") not in allowed_error:
+        problems.append(
+            f"the job reporting '{required}' sets continue-on-error: "
+            f"{job['continue-on-error']}, so a failing AI review gate reports success"
+        )
+
+    steps = [step for step in (job.get("steps") or []) if isinstance(step, dict)]
+    gate_steps = [step for step in steps if _runs_the_gate(str(step.get("run") or ""))]
     if len(gate_steps) != 1:
         problems.append(
-            f"ci.yml has {len(gate_steps)} steps running check-ai-review.py; exactly one is "
-            f"expected"
+            f"job '{job_id}' has {len(gate_steps)} steps running check-ai-review.py; exactly "
+            f"one is expected, and it has to be in the job the ruleset requires"
         )
         return
     gate = gate_steps[0]
-    # `if:` is legitimate when it selects a matrix cell -- that is how the step is bound to the
-    # required context. What is not legitimate is a condition that evaluates to false, which
-    # skips the gate while the job stays green.
-    constant_false = {"false", "0", "no", "${{ false }}", "'false'", "\"false\""}
-    condition = gate.get("if")
-    if condition is not None and str(condition).strip().lower() in constant_false:
-        problems.append(
-            f"the AI review gate step is skipped by 'if: {condition}', so the required context "
-            f"stays green without the gate running"
-        )
-    # `continue-on-error: true` lets a failing gate pass the job, which defeats the whole check.
-    allowed = (None, False, "false", "False")
-    if gate.get("continue-on-error") not in allowed:
+
+    # The step has to be unconditional for the required cell. `if:` is legitimate when it
+    # selects that cell -- that is how the step is bound to the context. What is not legitimate
+    # is a condition that evaluates to false, which skips the gate while the job stays green.
+    # Read the key rather than `value or ""`: YAML `if: false` parses to the boolean False,
+    # which `or` discards, so the condition that skips the gate read as absent.
+    condition = "" if "if" not in gate else str(gate["if"]).strip()
+    if condition:
+        lowered = condition.lower()
+        if lowered in {"false", "0", "no", "${{ false }}", "'false'", '"false"'}:
+            problems.append(
+                f"the AI review gate step is skipped by 'if: {condition}', so the required "
+                f"context stays green without the gate running"
+            )
+        elif not (
+            "matrix.os" in lowered
+            and "matrix.java" in lowered
+            and REQUIRED_CONTEXT_OS in lowered
+            and REQUIRED_CONTEXT_JAVA in lowered
+        ):
+            problems.append(
+                f"the AI review gate step's condition '{condition}' does not select the "
+                f"'{required}' cell, so the gate can be skipped in the required context"
+            )
+
+    if gate.get("continue-on-error") not in allowed_error:
         problems.append(
             f"the AI review gate step sets continue-on-error: {gate['continue-on-error']}, so a "
             f"failing gate reports success in the required context"
         )
-    note("ci.yml runs the AI review gate in the required context, unconditionally")
+
+    # How the gate is invoked. A gate that is handed a different pull request number, or told
+    # to tolerate a shallow clone, reports on something other than this change.
+    invocations = [
+        line
+        for line in _command_lines(str(gate.get("run") or ""))
+        if "check-ai-review.py" in line
+    ]
+    if len(invocations) != 1:
+        problems.append(
+            f"the AI review gate step invokes check-ai-review.py {len(invocations)} times; "
+            f"exactly once is expected"
+        )
+        return
+    command = invocations[0]
+    # `||` and `;` let the gate fail while the step still exits 0. A pipe hands the exit status
+    # to the downstream command. `&&` is fine: a failed gate still fails the step.
+    if "||" in command or ";" in command or ("|" in command.replace("||", "")):
+        problems.append(
+            f"the AI review gate step runs '{command}', which swallows the gate's exit status "
+            f"with `||`, `;` or a pipe"
+        )
+    tail = command.split("check-ai-review.py", 1)[1].split("#", 1)[0].strip()
+    if tail:
+        problems.append(
+            f"the AI review gate step runs 'check-ai-review.py {tail}'; it must run with no "
+            f"arguments so it validates the pull request this run belongs to. `--pr` also "
+            f"silently outranks the event payload, and `--allow-shallow` skips the ancestry check"
+        )
+
+    # The event the gate reads its pull request number from. A literal here -- or a number
+    # taken from anything but the pull request this run is for -- redirects the whole gate.
+    for location, env in (("step", gate.get("env") or {}), ("job", job.get("env") or {})):
+        if not isinstance(env, dict):
+            continue
+        number = str(env.get("GH_PR_NUMBER", "")).strip()
+        if number and not re.search(r"pull_request\.(?:number|head\.number)", number):
+            problems.append(
+                f"the AI review gate's {location} env sets GH_PR_NUMBER to '{number}', which is "
+                f"not this run's pull request; the gate would validate another pull request's "
+                f"review record"
+            )
+    if not str((gate.get("env") or {}).get("GH_PR_NUMBER", "")).strip():
+        problems.append(
+            "the AI review gate step has no GH_PR_NUMBER, so it has no pull request to check"
+        )
+
+    note(f"ci.yml runs the AI review gate in '{required}', in job '{job_id}', unconditionally")
 
 
 CHECKS = (
