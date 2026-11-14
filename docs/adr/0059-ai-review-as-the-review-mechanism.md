@@ -53,9 +53,11 @@ A record that says "reviewed, no findings" with no categories enumerated is reje
 that omits the independence statement is rejected.
 
 For a `critical` or `high` finding the resolution cell must name, in backticks, a commit that
-resolves in this repository, and it may not be a deferral in any wording — `deferred`,
-`won't fix`, `TBD` and `still open` are all rejected, because all of them mean the finding is
-still open. A resolution that claims a fix without pointing at a commit has no evidence behind
+resolves in this repository, is an ancestor of the head, and is not the merge base, and it may
+not read as a deferral — `deferred`, `won't fix`, `TBD` and `still open` are all rejected,
+because all of them mean the finding is still open. That last check is a vocabulary, not a
+parser: a resolution worded around it passes, which is the same limit the truthfulness paragraph
+below records. A resolution that claims a fix without pointing at a commit has no evidence behind
 it and is rejected. This is a bar on evidence, not on truthfulness: a record can still cite a
 commit that does not contain the fix, and no check in this repository can tell the difference.
 
@@ -79,7 +81,10 @@ that changing it requires changing the check.
 
 What is gained is not independence. It is:
 
-- **A real diff read.** The reviewer reads `git diff`, not the author's summary.
+- **A pointer at the diff.** The record must cite the commit it reviewed, and that commit must
+  be on the branch and ahead of the merge base, so a reviewer cannot describe a change it did
+  not have in front of it. Whether the reviewer actually read the diff is not checkable, and
+  nothing here claims otherwise.
 - **A recorded verdict.** "No findings" is a claim on the record, attributable to a run.
 - **Mechanical enforcement.** The absence of a review stops a merge instead of being noticed
   months later.

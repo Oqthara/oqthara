@@ -84,7 +84,7 @@ Findings are recorded with a severity, and the rule differs by severity.
 A `critical` or `high` finding must be resolved **in the pull request that found it**, with the
 resolution recorded in the finding row. Its resolution cell must name a commit, in backticks,
 that resolves in this repository. A cell that is empty, or that merely says `deferred`,
-`won't fix`, `TBD` or `still open` in any wording, does not satisfy that, and the validator
+`won't fix`, `TBD` or `still open`, does not satisfy that, and the validator
 fails the record. Evidence is required, not a sentence saying the fix happened.
 
 Medium and low findings may instead be fixed or accepted with a stated rationale. Accepting one
@@ -115,8 +115,10 @@ Three things reduce the exposure, and none of them eliminates it:
 
 - The change to `scripts/check-ai-review.py` is visible in the diff that reviewers are required
   to examine. A validator edit that weakens the gate is the first thing a review should catch.
-- `scripts/check-docs-sync.py` fails if the gate step disappears from `ci.yml`, so the
-  enforcement cannot be silently unwired even though the script it runs can be replaced.
+- `scripts/check-docs-sync.py` fails if the gate step disappears from `ci.yml`, or if it is
+  made non-blocking with `continue-on-error` or a constant-false `if:`. The enforcement therefore
+  cannot be removed without editing a file the diff shows, though the script it runs can still
+  be replaced.
 - The ruleset requires the status check and forbids bypass, so the substituted gate still has
   to report success in the required context — it cannot skip the step.
 
@@ -129,9 +131,14 @@ validator was not modified".**
 ## Reviewer and implementer
 
 Separation is preferred wherever practical: the implementer writes the change and the record's
-raw material, and a separate agent run examines the diff and writes the findings. When one agent
-performs both, the record names that fact in the `**Reviewer:**` line rather than implying a
-second party.
+raw material, and a separate agent run examines the diff and writes the findings. The validator
+requires `**Reviewer:**` and `**Implementer:**` to name different parties, so one agent may not
+sign both.
+
+When one agent genuinely performs both roles, the record must say so in the `**Independent:**`
+line — `no`, naming the model and stating that a single agent did the work and called it review.
+That is an accurate, mergeable record that describes a weak review. Writing the same name in
+both party fields is rejected, because it records a separation that did not happen.
 
 ## When this policy is superseded
 

@@ -310,7 +310,7 @@ class ItRejects(Repository):
         body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
             "no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the reviewer\n"
             "shares the implementer's blind spots (ADR-0059).",
-            "yes — other-vendor/different-model")
+            "yes — anthropic/claude-sonnet-4.5")
         self.write("1", body=body)
         problems = self.run_gate()
         self.assertTrue(any("mechanism" in p for p in problems), problems)
@@ -467,10 +467,31 @@ class ItAcceptsAnHonestIndependenceClaim(Repository):
         return self.run_gate()
 
     def test_a_different_model_with_a_mechanism_passes(self):
-        self.assertEqual([], self.record(f"yes — the reviewer ran openai/gpt-5.1 and {self.MECHANISM}"))
+        self.assertEqual([], self.record(f"yes — the reviewer ran anthropic/claude-sonnet-4.5 and {self.MECHANISM}"))
+
+    def test_a_model_the_repository_has_never_configured_is_rejected(self):
+        """A named model is only evidence if the repository can say it exists.
+
+        Independence is claimed by naming what the reviewer ran. A name invented for the record
+        satisfies every other rule in this file, so without this check the strongest possible
+        claim of independence is also the easiest to fabricate.
+        """
+        problems = self.record(f"yes — ran fictional-vendor/nonexistent-9 and {self.MECHANISM}")
+        self.assertTrue(any("has no record of" in p for p in problems), problems)
+
+    def test_a_reviewer_marked_human_is_accepted(self):
+        """`human:` is the one identity the gate cannot check, and must stay usable.
+
+        A human reviewer is genuinely independent in a way no agent in this repository is, so
+        the allowlist must not close the only honest way to record one.
+        """
+        problems = self.record(
+            "yes — human:maintainer reviewed it, and the review ran against a separate "
+            "checkout rather than the implementer's notes")
+        self.assertEqual([], problems, problems)
 
     def test_a_different_model_without_a_mechanism_is_rejected(self):
-        problems = self.record("yes — ran openai/gpt-5.1")
+        problems = self.record("yes — ran anthropic/claude-sonnet-4.5")
         self.assertTrue(any("mechanism" in p for p in problems), problems)
 
     def test_the_pinned_model_is_not_independence(self):
@@ -698,3 +719,201 @@ class ItRejectsAFindingCitedWithNoEvidence(Repository):
         self.assertTrue(
             any("no findings table with a severity column" in p for p in checker.problems)
         )
+
+
+class ItReadsTheRecordTheWayAMarkdownRendererDoes(Repository):
+    """Fields and tables come from prose, not from code fences or legends.
+
+    A record is read by humans in a rendered view and by the gate in a plain one. Every rule here
+    exists because those two readings disagreed: a value inside a fence looked like a field, and
+    a legend table looked like findings.
+    """
+
+    def test_a_field_inside_a_fence_does_not_supply_the_value(self):
+        """A fenced example must not answer a question the record never answered.
+
+        The policy tells reviewers to paste before/after snippets. If a copy of a correct field
+        inside such a snippet satisfied the check, a record could pass without ever stating the
+        field -- and the rendered document would show no such line at all.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "**Independent:** no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the "
+            "reviewer\nshares the implementer's blind spots (ADR-0059).",
+            "**Independent:**\n\n```markdown\n**Independent:** no — "
+            "deepseek-ai/deepseek-v4.1-flash-1017\n```\n")
+        self.write("1", body=body)
+        self.assertTrue(any("Independent" in p for p in self.run_gate()))
+
+    def test_a_table_inside_a_fence_does_not_supply_the_categories(self):
+        """A fenced template is not a completed table."""
+        body = GOOD_RECORD.format(number=1, sha=self.sha)
+        categories = body[body.index("| Category |"):body.index("## Findings")]
+        rows = "".join(
+            line + "\n" for line in categories.splitlines() if line.startswith("|")
+        )
+        self.write("1", body=body.replace(categories, "```markdown\n" + rows + "```\n\n"))
+        self.assertTrue(any("no '| Category |" in p for p in self.run_gate()))
+
+    def test_a_findings_table_headed_rank_is_still_findings(self):
+        """The header is not the contract; the severity column is.
+
+        Keying on a column *named* `#` let a record rename one header cell and hide an open
+        critical finding from the gate while the same table still read as findings to a human.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| # | Severity |", "| Rank | Severity |").replace(
+            "| functional correctness | pass | 0 |",
+            "| functional correctness | pass | 1 |")
+        self.write("1", body=body,
+                   findings="| 1 | critical | `a.kt:1` | unchecked redirect | \u2014 |\n")
+        self.assertTrue(any("critical" in p for p in self.run_gate()))
+
+    def test_a_legend_table_is_not_merged_into_the_findings(self):
+        """A severity legend has no resolutions, and merging it invents findings.
+
+        Two tables here share a `Severity` column. Treating every one of them as findings made a
+        correct record fail on the legend's empty resolution cells.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.sha) + textwrap.dedent("""\
+
+            | Severity | Meaning |
+            | --- | --- |
+            | critical | must be fixed before merge |
+            """)
+        self.write("1", body=body)
+        # A legend is not findings. Merging its rows reported a malformed row and a count
+        # mismatch against a record that is entirely correct, so a legitimate record failed.
+        self.assertEqual([], self.run_gate())
+
+    def test_a_legend_before_the_findings_does_not_displace_them(self):
+        """Order must not decide which table is the findings.
+
+        Taking the first table with a severity column let a legend placed above the real table
+        become the findings table, hiding every finding the record actually contained.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |",
+            "| security and privacy | pass | 1 |")
+        body = body.replace("## Findings", textwrap.dedent("""\
+            | Severity | Meaning |
+            | --- | --- |
+            | critical | must be fixed before merge |
+
+            ## Findings"""))
+        self.write("1", body=body,
+                   findings="| 1 | critical | `a.kt:3` | an unchecked redirect | \u2014 |\n")
+        problems = self.run_gate()
+        self.assertTrue(any("critical" in p for p in problems), problems)
+
+    def test_row_numbers_must_be_present_and_distinct(self):
+        """A findings table is numbered so a review can be discussed by finding."""
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| functional correctness | pass | 0 |",
+            "| functional correctness | pass | 2 |")
+        self.write("1", body=body,
+                   findings="| 1 | low | `a.kt:1` | first | accepted |\n"
+                            "| 1 | low | `a.kt:2` | second | accepted |\n")
+        self.assertTrue(any("number" in p for p in self.run_gate()), self.run_gate())
+
+    def test_a_roll_up_category_table_does_not_shadow_the_real_one(self):
+        """A summary table that names categories differently is not a second vote.
+
+        Merging every table whose first cell is `Category` made a correct record with a summary
+        fail, and taking only the first match let a summary hide a `fail` verdict.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.sha) + textwrap.dedent("""\
+
+            | Category group | Verdict |
+            | --- | --- |
+            | everything | pass |
+            """).replace("Category group", "Category")
+        self.write("1", body=body)
+        self.assertEqual([], self.run_gate())
+
+
+class ItRequiresBothPartiesAndACitedPlaceToStand(Repository):
+    """The record has to name two parties and a commit that is actually on the change."""
+
+    def setUp(self):
+        super().setUp()
+        git(self.root, "update-ref", "refs/remotes/origin/main", self.sha)
+        (self.root / "a.kt").write_text("one\n")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-qm", "two")
+        self.head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root,
+            capture_output=True, text=True).stdout.strip()
+
+    def test_the_same_party_cannot_be_both_reviewer_and_implementer(self):
+        """Separation is the point; one name in both fields records the opposite.
+
+        An earlier version compared the raw strings, so a parenthetical was enough to make one
+        agent look like two.
+        """
+        body = GOOD_RECORD.format(number=1, sha=self.head).replace(
+            "**Implementer:** oq-hive-development (deepseek-ai/deepseek-v4.1-flash-1017)",
+            "**Implementer:** oq-hive-review-escalation (implementation pass of 17)")
+        self.write("1", body=body)
+        self.assertTrue(any("party" in p or "differ" in p for p in self.run_gate()))
+
+    def test_the_merge_base_does_not_resolve_a_finding(self):
+        """The branch point is not part of the change under review."""
+        body = GOOD_RECORD.format(number=1, sha=self.head).replace(
+            "| functional correctness | pass | 0 |",
+            "| functional correctness | pass | 1 |")
+        self.write("1", body=body,
+                   findings=f"| 1 | high | `a.kt:1` | an unhandled case | fixed in `{self.sha}` |\n")
+        problems = self.run_gate()
+        self.assertTrue(any("merge base" in p for p in problems), problems)
+
+    def test_a_commit_on_no_branch_is_not_evidence(self):
+        """A SHA that exists but is unreachable on this branch cannot show this branch fixed it."""
+        (self.root / "b.kt").write_text("x\n")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-qm", "elsewhere")
+        away = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.root,
+                              capture_output=True, text=True).stdout.strip()
+        git(self.root, "reset", "-q", "--hard", self.head)
+        body = GOOD_RECORD.format(number=1, sha=self.head).replace(
+            "| functional correctness | pass | 0 |",
+            "| functional correctness | pass | 1 |")
+        self.write("1", body=body,
+                   findings=f"| 1 | high | `a.kt:1` | an unhandled case | fixed in `{away}` |\n")
+        problems = self.run_gate()
+        self.assertTrue(any("on this branch" in p for p in problems), problems)
+
+    def test_a_review_at_the_merge_base_did_not_read_the_change(self):
+        """`Reviewed at` must point inside the change, not at where it branched."""
+        self.write("1", body=GOOD_RECORD.format(number=1, sha=self.sha))
+        problems = self.run_gate()
+        self.assertTrue(any("merge base" in p for p in problems), problems)
+
+
+class ItRecognisesADeferralInAnyWording(Repository):
+    """Every phrasing below states the finding is still open.
+
+    The list is a vocabulary and the policy says so, so these are the phrasings it must cover --
+    not a proof that no wording escapes it.
+    """
+
+    def assert_rejected(self, cell):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |",
+            "| security and privacy | pass | 1 |")
+        self.write("1", body=body,
+                   findings="| 1 | high | `a.kt:3` | an unchecked redirect | " + cell + " |\n")
+        problems = self.run_gate()
+        self.assertTrue(any("high" in p for p in problems), (cell, problems))
+
+    def test_it_rejects_the_phrasings_that_remain_open(self):
+        for cell in (
+            "remains open",
+            "will land in a later pr",
+            "known limitation, documented",
+            "left as is",
+            "accepted risk",
+            "handled separately",
+            "this is not a deferral",
+        ):
+            with self.subTest(cell=cell):
+                self.assert_rejected(cell)

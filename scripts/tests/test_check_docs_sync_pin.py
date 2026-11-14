@@ -293,3 +293,56 @@ class ReviewCategoriesMatchTheValidator(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheGateStepCannotBeMadeInert(unittest.TestCase):
+    """A step that is present but inert satisfies every substring test.
+
+    `continue-on-error: true` and `if: false` leave both the script name and the required context
+    in the file while the gate cannot fail the build, so the required status stays green with no
+    review recorded. These mutate the real workflow and restore it.
+    """
+
+    CI = SCRIPTS.parent / ".github" / "workflows" / "ci.yml"
+
+    def setUp(self):
+        self.original = self.CI.read_text(encoding="utf-8")
+        checker.problems.clear()
+        checker.checked.clear()
+        self.assertEqual("", self._run(), "the unmodified workflow must be accepted")
+
+    def tearDown(self):
+        self.CI.write_text(self.original, encoding="utf-8")
+
+    def _run(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.ai_review_gate_is_wired_into_ci()
+        return "\n".join(checker.problems)
+
+    def test_continue_on_error_is_rejected(self):
+        # Parsed as YAML this is the boolean True, not the string "true", and an allowlist of
+        # strings let it through.
+        broken = self.original.replace(
+            "      - name: Check the pull request has an AI review record",
+            "      - name: Check the pull request has an AI review record\n        continue-on-error: true", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("continue-on-error", self._run())
+
+    def test_a_constant_false_condition_is_rejected(self):
+        # The step already carries a matrix condition, which is legitimate and is how it binds to
+        # the required context. Appending a second `if:` would let YAML's last-key-wins rule keep
+        # the real one, so the existing condition is replaced instead.
+        broken = self.original.replace(
+            "        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'\n"
+            "        # ADR-0059 makes AI review",
+            "        if: false\n        # ADR-0059 makes AI review", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("if:", self._run())
+
+    def test_removing_the_step_is_rejected(self):
+        broken = self.original.replace("scripts/check-ai-review.py", "scripts/missing.py")
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("no longer runs", self._run())

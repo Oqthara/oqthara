@@ -62,7 +62,10 @@ DEFERRED_PHRASES = (
     "unfix", "tbd", "todo", "to do", "still open", "left open", "remains open", "remain open",
     "open issue", "no action", "not address", "unaddress", "out of scope", "follow-up",
     "follow up", "later pr", "later release", "future work", "next pr", "another pr",
-    "subsequent pr", "pending", "not yet",
+    "subsequent pr", "pending", "not yet", "remains", "still present", "still there",
+    "will land", "to be fixed", "to be addressed", "needs fixing", "known limitation",
+    "accepted risk", "wontfix", "not going to", "no plan to", "left as is", "left unchanged",
+    "another repository", "separate pr", "separately",
 )
 # Words deliberately absent: "skipped", "ignored", "unchanged", "untouched", "later". Each
 # appears in ordinary descriptions of a completed fix -- "fenced blocks are skipped", "the
@@ -188,6 +191,23 @@ PLACEHOLDER_FIELDS = {
 }
 
 
+def outside_fences(text: str) -> str:
+    """`text` with every fenced block replaced by blank lines.
+
+    A record may quote the template or a rejected shape inside a fence. Fields and findings are
+    read from the unfenced remainder, so a fenced example can neither supply a field the record
+    does not have nor override one it does.
+    """
+    kept, in_fence = [], False
+    for line in text.splitlines():
+        if FENCE.match(line):
+            in_fence = not in_fence
+            kept.append("")
+        else:
+            kept.append("" if in_fence else line)
+    return "\n".join(kept)
+
+
 def check_field(text: str, label: str) -> str | None:
     r"""Read a `**Label:** value` line, returning the value or None.
 
@@ -199,6 +219,19 @@ def check_field(text: str, label: str) -> str | None:
         rf"^\*\*{re.escape(label)}(?::\*\*|\*\*:)[ \t]*(.+)$", text, re.M | re.I
     )
     return match.group(1).strip() if match else None
+
+
+def party_identity(value: str) -> str:
+    """The identifying part of a Reviewer/Implementer value, without the annotation.
+
+    `review-agent (review pass of run 17)` and `review-agent (implementation pass of run 17)` are
+    one party with two descriptions. Comparing whole strings let a single run be presented as an
+    independent reviewer.
+    """
+    without_model = re.sub(r"\([^)]*\)", " ", value)
+    without_model = re.sub(r"[`*_]", "", without_model)
+    words = re.findall(r"[a-z0-9][a-z0-9./-]*", without_model.lower())
+    return " ".join(words[:3])
 
 
 def names_a_party(value: str | None) -> bool:
@@ -214,7 +247,9 @@ def check_paragraph(text: str, label: str) -> str | None:
     A statement of independence does not fit on one line, and checking only the first line
     rejects a record that answered the question correctly.
     """
-    match = re.search(rf"^\*\*{re.escape(label)}:\*\*[ \t]*(.*)$", text, re.M)
+    match = re.search(
+        rf"^\*\*{re.escape(label)}(?::\*\*|\*\*:)[ \t]*(.*)$", text, re.M | re.I
+    )
     if not match:
         return None
     lines = text[match.start():].splitlines()
@@ -224,13 +259,20 @@ def check_paragraph(text: str, label: str) -> str | None:
             break
         kept.append(line)
     joined = " ".join(part.strip() for part in kept).strip()
-    return re.sub(rf"^\*\*{re.escape(label)}:\*\*[ \t]*", "", joined).strip()
+    return re.sub(
+        rf"^\*\*{re.escape(label)}(?::\*\*|\*\*:)[ \t]*", "", joined, flags=re.I
+    ).strip()
 
 
 # A model identifier is written vendor/name, as the agent files pin them
 # (`deepseek-ai/deepseek-v4.1-flash-1017`). Requiring the literal word "model" would reject a
 # record that named the model precisely, so either form is accepted.
 MODEL_SLUG = re.compile(r"[\w.-]+/[\w.-]+")
+
+# `human:<name>` is not a model slug, but it is the one identity the gate cannot verify and the
+# only honest way to record a genuinely independent human reviewer. Returning [] for it made that
+# form unreachable, so the allowlist would have closed the door on the one claim worth trusting.
+HUMAN_SLUG = re.compile(r"human:[\w.-]+", re.I)
 
 # A claim of independence has to describe *how* it was preserved, not just assert it. Thirteen
 # words is not a quality bar -- it only rules out "yes" and "yes, trust me".
@@ -243,7 +285,7 @@ def models_named(text: str) -> list[str]:
     `[\w.-]+/[\w.-]+` also matches `example.com/run`, so a record could claim independence by
     pointing at a link. A slug that follows a scheme or a domain-ish host is not a model name.
     """
-    named = []
+    named = [m.group(0).lower() for m in HUMAN_SLUG.finditer(text)]
     for match in MODEL_SLUG.finditer(text):
         before = text[: match.start()].rstrip()
         if before.endswith(("://", "//")) or "@" in before[-1:]:
@@ -300,15 +342,17 @@ def first_commit_sha(value: str) -> str | None:
     return None
 
 
-def cites_a_commit(root: pathlib.Path, resolution: str) -> bool:
-    """True when a resolution names a commit that resolves in this repository.
+def cites_a_commit(root: pathlib.Path, resolution: str) -> str | None:
+    """Why this resolution cell is not evidence, or None when it is.
 
     The resolution cell must carry evidence, not just a claim that the fix happened. A SHA in
-    backticks is the convention; a cell with no SHA at all has no evidence to check.
+    backticks is the convention; a cell with no SHA at all has no evidence to check. Returns a
+    reason rather than a bool so the record can be told *which* of the checks failed -- "names no
+    commit" and "names the branch point" are different mistakes with different fixes.
     """
     shas = re.findall(r"`([0-9a-fA-F]{7,40})`", resolution)
     if not shas:
-        return False
+        return "names no commit in backticks"
     for sha in shas:
         exists, shallow = commit_exists(root, sha.lower())
         if not exists:
@@ -317,10 +361,28 @@ def cites_a_commit(root: pathlib.Path, resolution: str) -> bool:
         # resolution can name any commit in the repository -- another branch, an unrelated fix
         # merged long ago -- and be read as evidence that this finding was resolved.
         if shallow:
-            return True
-        if is_ancestor(root, sha.lower()):
-            return True
-    return False
+            return None
+        if not is_ancestor(root, sha.lower()):
+            continue
+        # The merge base predates every commit on the branch, so it cannot be evidence that
+        # this branch fixed anything. Requiring a commit *newer than the review* was tried and
+        # withdrawn: an earlier review round is legitimately fixed by earlier commits.
+        base = merge_base(root)
+        # Compared prefix-wise in both directions: the record may write an abbreviated SHA and
+        # the base is always full-length, so `sha.startswith(base[:12])` was false for every
+        # abbreviated citation and the branch point passed as evidence.
+        if base and (base.startswith(sha.lower()) or sha.lower().startswith(base)):
+            return f"`{sha}` is the merge base, so it predates the change under review"
+        return None
+    return f"names no commit on this branch ({', '.join(shas)})"
+
+
+def merge_base(root: pathlib.Path) -> str | None:
+    result = subprocess.run(
+        ["git", "merge-base", "origin/main", "HEAD"],
+        cwd=root, capture_output=True, text=True,
+    )
+    return result.stdout.strip() or None
 
 
 def is_ancestor(root: pathlib.Path, sha: str) -> bool:
@@ -350,7 +412,20 @@ def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
 # Automated pull requests cannot author a review record about themselves, and requiring one
 # would stop every dependency update. The exemption is narrow, is a login check rather than a
 # label a contributor can set, and the change still passes every other required context.
-AUTOMATED_AUTHORS = {"dependabot[bot]", "renovate[bot]", "github-actions[bot]"}
+# Only the dependency updaters. `github-actions[bot]` is deliberately absent: it opens pull
+# requests from workflows, which is ordinary development and not a dependency bump, and
+# exempting it let any workflow-authored change merge with no review record.
+AUTOMATED_AUTHORS = {"dependabot[bot]", "renovate[bot]"}
+
+# Models this repository has a record of. `pinned_models(root)` supplies the agents' actual pins;
+# this is the fallback list for a partial checkout, and `scripts/check-docs-sync.py` keeps the two
+# from drifting. An independence claim naming anything else is a claim with no evidence.
+KNOWN_MODELS = {
+    "deepseek-ai/deepseek-v4.1-flash-1017",
+    "anthropic/claude-sonnet-4.5",
+    "openai/gpt-5.1-codex",
+    "google/gemini-3-pro",
+}
 
 
 class AuthorLookup(Exception):
@@ -385,6 +460,11 @@ def automated_author(root: pathlib.Path, number: str) -> str | None:
     return author if author in AUTOMATED_AUTHORS else None
 
 
+# Only dependency updaters are exempt. A workflow token can open a pull request too, and
+# exempting every `[bot]` let a change opened by any workflow merge with no review at all.
+AUTOMATED_AUTHORS_HINT = sorted(AUTOMATED_AUTHORS)
+
+
 def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> None:
     path = record_path(root, number)
     display = path.relative_to(root)
@@ -409,9 +489,12 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
         )
         return
 
-    text = read(path)
+    raw = read(path)
+    # Fields and tables are read from the unfenced remainder, so a fenced example cannot supply
+    # or override a real field. The heading is a top-level line and is read from `raw`.
+    text = outside_fences(raw)
 
-    heading = re.search(r"^#\s+AI review\s+.\s+PR\s+#(\d+)\s*$", text, re.M)
+    heading = re.search(r"^#\s+AI review\s+.\s+PR\s+#(\d+)\s*$", raw, re.M)
     if not heading:
         problems.append(f"{display} has no '# AI review — PR #<n>' heading")
     elif heading.group(1) != number:
@@ -435,12 +518,15 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
         else:
             parties[label] = value.strip().lower()
 
-    # The order forbids presenting one party as the other. A record that lists the same agent as
-    # both did not separate the two roles, whatever it says elsewhere.
-    if len(parties) == 2 and parties["Reviewer"] == parties["Implementer"]:
+    # The order forbids presenting one party as the other. Two strings that differ only by a
+    # parenthetical are the same party, so the comparison is on the identity each string names.
+    if len(parties) == 2 and party_identity(parties["Reviewer"]) == party_identity(
+        parties["Implementer"]
+    ):
         problems.append(
             f"{display} names the same party as Reviewer and Implementer; the order requires "
-            f"implementation and review to be separate wherever practical"
+            f"implementation and review to be separate wherever practical. If one run did both, "
+            f"say so in the '**Independent:**' line instead of inventing a second party"
         )
 
     reviewed_at = check_field(text, "Reviewed at")
@@ -449,6 +535,22 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
     else:
         sha = first_commit_sha(reviewed_at)
         exists, shallow = commit_exists(root, sha) if sha else (False, False)
+        if exists and not shallow:
+            # The reviewed commit has to be in this branch's history. Otherwise a record can
+            # claim to have reviewed a commit that is not part of the change at all.
+            if not is_ancestor(root, sha):
+                problems.append(
+                    f"{display} says it reviewed '{sha}', which is not an ancestor of this "
+                    f"branch; the review has to cover the change being integrated"
+                )
+            else:
+                base = merge_base(root)
+                if base and sha.startswith(base[:7]):
+                    problems.append(
+                        f"{display} says it reviewed '{sha}', which is the merge base of this "
+                        f"branch; a record that reviewed the point the branch started from has "
+                        f"not seen the change"
+                    )
         if not exists:
             if shallow and allow_shallow:
                 note(f"{display} reviewed {sha}; a shallow clone cannot confirm it exists")
@@ -496,6 +598,20 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
                     f"agent in this repository pins; a reviewer running the same model is not "
                     f"independent of the implementer"
                 )
+            elif not all(
+                name in KNOWN_MODELS or name in pinned or name.startswith("human:")
+                for name in named
+            ):
+                # Naming an invented model is not evidence of independence. The gate cannot
+                # verify a model exists, so it requires the claim to name one of the models this
+                # repository has configured, or to be marked `human:` -- which the maintainer
+                # knows whether to accept, and which no AI review can claim for itself.
+                problems.append(
+                    f"{display} claims independence by naming "
+                    f"{sorted(n for n in named if n not in KNOWN_MODELS and n not in pinned and not n.startswith('human:'))}, "
+                    f"which this repository has no record of; independence must name a configured "
+                    f"model or be marked 'human:'"
+                )
             elif len(independence.split()) < MIN_INDEPENDENCE_WORDS:
                 problems.append(
                     f"{display} claims independence without describing the mechanism that keeps "
@@ -517,6 +633,11 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
     for table in tables(text):
         header, rows = header_and_rows(table)
         if header[:1] == ["category"]:
+            # A table that is prepared to list all seven categories addresses them; a roll-up
+            # row that names a category differently is a different table, and merging it in
+            # failed a correct record for stating a summary.
+            if not any(row[0].strip("*` ").lower() in CATEGORIES for row in rows if row):
+                continue
             if category_table is None:
                 category_table = (header, [])
             all_category_rows.extend(rows)
@@ -596,10 +717,22 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
     all_finding_rows: list[list[str]] = []
     for table in tables(text):
         header_f, rows_f = header_and_rows(table)
-        if header_f[:1] and header_f[0] in finding_headers and "severity" in header_f:
+        # Recognition keys on the severity column, not on the row-number column's name. Keying on
+        # the name let a table headed `Rank` -- or anything else unrecognised -- be discarded
+        # silently, and every finding in it with it, including an open critical one.
+        if "severity" not in header_f:
+            continue
+        # A severity legend has no resolution column and is not findings. Merging its rows in
+        # turned a correct record into a malformed one. Only real findings tables are merged.
+        if "resolution" not in header_f:
             if findings_table is None:
                 findings_table = (header_f, [])
-            all_finding_rows.extend(rows_f)
+            continue
+        if findings_table is None or "resolution" not in findings_table[0]:
+            findings_table = (header_f, [])
+            all_finding_rows = list(rows_f)
+            continue
+        all_finding_rows.extend(rows_f)
     if findings_table is not None:
         findings_table = (findings_table[0], all_finding_rows)
 
@@ -614,11 +747,35 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
 
     if findings_table is not None:
         header_f, rows_f = findings_table
+        if "resolution" not in header_f:
+            # A table with a severity column but no resolution column is a legend or a summary,
+            # not the findings table. Merging it in made a correct record fail for having both.
+            problems.append(
+                f"{display} has a table with a 'severity' column but no 'resolution' column; "
+                f"only the findings table may carry a severity column"
+            )
+            return
         severity_at = header_f.index("severity")
         resolution_at = header_f.index("resolution") if "resolution" in header_f else None
         if resolution_at is None:
             problems.append(f"{display} findings table has no 'resolution' column")
             return
+        number_at = next(
+            (header_f.index(name) for name in ("#", "id", "no", "num", "number")
+             if name in header_f), None)
+        if number_at is not None:
+            listed = [row[number_at].strip("*` ") for row in rows_f
+                      if len(row) > number_at]
+            if len(set(listed)) != len(listed):
+                problems.append(
+                    f"{display} numbers its findings, but two rows share a number; a reader "
+                    f"cannot tell which finding a resolution answers"
+                )
+            if any(not re.fullmatch(r"\d+", value) for value in listed):
+                problems.append(
+                    f"{display} has a findings row whose number is not a number: "
+                    + ", ".join(v or "''" for v in listed if not re.fullmatch(r"\d+", v))
+                )
         if len(rows_f) != declared_findings:
             problems.append(
                 f"{display} counts {declared_findings} finding(s) in its category table but "
@@ -644,12 +801,18 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
                 # only would let "Deferred; tracked in <commit>" through, which is a deferral
                 # with a citation attached.
                 deferred = mentions_deferral(resolution)
-                if absent or deferred or not cites_a_commit(root, resolution):
+                reason = cites_a_commit(root, resolution)
+                if absent or deferred or reason:
+                    detail = (
+                        "the resolution cell is empty" if absent
+                        else "the resolution reads as a deferral" if deferred
+                        else reason
+                    )
                     problems.append(
                         f"{display} leaves a {severity} finding unresolved: "
-                        f"'{' | '.join(row)[:90]}'. ADR-0059 requires critical and high "
-                        f"findings to be resolved and validated in the pull request that "
-                        f"found them, with a commit that exists here as the evidence"
+                        f"'{' | '.join(row)[:90]}' -- {detail}. ADR-0059 requires critical and "
+                        f"high findings to be resolved and validated in the pull request that "
+                        f"found them, with a commit on this branch as the evidence"
                     )
 
     note(f"{display} is a well-formed review record for PR #{number} "

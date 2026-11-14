@@ -1193,7 +1193,50 @@ def ai_review_gate_is_wired_into_ci() -> None:
             f"the AI review gate rides on"
         )
         return
-    note("ci.yml runs the AI review gate in the required context")
+
+    # A substring test is not enough: `continue-on-error: true` or `if: false` on the gate step
+    # leaves every string above in place while the gate cannot fail the build. Parse the step and
+    # check it is unconditional and not allowed to fail.
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover - PyYAML is present in CI and in the dev environment
+        problems.append(
+            "PyYAML is unavailable, so the AI review gate step cannot be verified; a check that "
+            "silently degrades is the weakness it is meant to prevent"
+        )
+        return
+    parsed = yaml.safe_load(text)
+    steps = [
+        step
+        for job in (parsed.get("jobs") or {}).values()
+        for step in (job.get("steps") or [])
+    ]
+    gate_steps = [s for s in steps if "check-ai-review.py" in str(s.get("run", ""))]
+    if len(gate_steps) != 1:
+        problems.append(
+            f"ci.yml has {len(gate_steps)} steps running check-ai-review.py; exactly one is "
+            f"expected"
+        )
+        return
+    gate = gate_steps[0]
+    # `if:` is legitimate when it selects a matrix cell -- that is how the step is bound to the
+    # required context. What is not legitimate is a condition that evaluates to false, which
+    # skips the gate while the job stays green.
+    constant_false = {"false", "0", "no", "${{ false }}", "'false'", "\"false\""}
+    condition = gate.get("if")
+    if condition is not None and str(condition).strip().lower() in constant_false:
+        problems.append(
+            f"the AI review gate step is skipped by 'if: {condition}', so the required context "
+            f"stays green without the gate running"
+        )
+    # `continue-on-error: true` lets a failing gate pass the job, which defeats the whole check.
+    allowed = (None, False, "false", "False")
+    if gate.get("continue-on-error") not in allowed:
+        problems.append(
+            f"the AI review gate step sets continue-on-error: {gate['continue-on-error']}, so a "
+            f"failing gate reports success in the required context"
+        )
+    note("ci.yml runs the AI review gate in the required context, unconditionally")
 
 
 CHECKS = (
