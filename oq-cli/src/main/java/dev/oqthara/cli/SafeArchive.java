@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -29,10 +30,24 @@ import java.util.zip.ZipInputStream;
  * installing a file the archive's author did not ask for, which is a different defect that is
  * harder to notice. This class refuses.
  *
- * <p>Symbolic links are refused outright. The JDK distribution archives contain none, so the
- * only reason to support them would be a requirement that does not exist, and a link whose target
- * is inside the root can still be written through after creation. Refusing is the policy the ADR
- * prefers; supporting links is a change to the ADR, not to this class.
+ * <p>Symbolic links are a different case for each format, because the formats differ. A ZIP
+ * entry that is a link is refused outright: the JDK ZIP is the Windows archive and contains none,
+ * so supporting one would be a requirement that does not exist. A tar entry that is a link is
+ * created, but only when its target is inside the root — ADR-0048 D4 permits exactly that, and
+ * the Linux and macOS JDK tarballs require it, because they carry 205 relative {@code legal/}
+ * cross-references between modules. Refusing every link there would make every non-Windows install
+ * impossible.
+ *
+ * <p>The containment test for a tar link is not a string comparison, and getting this wrong is
+ * easy enough that it is worth recording. {@link Path#normalize} is textual, so it cancels a
+ * component against a following {@code ..} without asking whether that component is a link. Two
+ * entries are then enough to escape: {@code bin/q -> .} is accepted because {@code bin/q/.} is
+ * {@code bin}, and {@code bin/java -> q/../../victim} is accepted because {@code normalize} cancels
+ * {@code q}, while the kernel resolves {@code q} to {@code bin} and the {@code ../..} leaves. The
+ * same escape works with the two entries in the opposite order. Entry order belongs to the
+ * attacker, so containment is decided once, after the whole archive has been written, by
+ * resolving every link with {@link Path#toRealPath} and requiring the result to lie inside the
+ * resolved root. A per-entry check is also applied, but only as an early refusal.
  *
  * <p>Extraction is all-or-nothing in the sense that matters: a refused archive leaves no
  * installable runtime, because the caller extracts into a temporary directory and this class
@@ -82,6 +97,32 @@ final class SafeArchive {
             throw new ArchiveRejected("extraction root is not a directory: " + destination);
         }
         Path root = destination.toRealPath();
+        // The format is read from the bytes, not from the file name. A name is a claim made by
+        // whoever wrote the file, and this method exists because that claim is not trustworthy:
+        // dispatching on the suffix would let a gzip stream named `.zip` reach the ZIP reader,
+        // which would find no entries and report a corrupt archive rather than the real problem.
+        if (isGzip(archive)) {
+            extractTarGz(archive, root);
+        } else {
+            extractZip(archive, root);
+        }
+    }
+
+    /** True when {@code archive} begins with the two-byte gzip magic number. */
+    private static boolean isGzip(Path archive) throws IOException {
+        byte[] magic = new byte[2];
+        try (InputStream in = Files.newInputStream(archive)) {
+            int read = in.readNBytes(magic, 0, 2);
+            return read == 2 && (magic[0] & 0xFF) == 0x1F && (magic[1] & 0xFF) == 0x8B;
+        }
+    }
+
+    /**
+     * Extracts a ZIP archive.
+     *
+     * <p>ZIP is what the Windows artefact is, and the JDK ships no others.
+     */
+    private static void extractZip(Path archive, Path root) throws IOException {
 
         // Every path already claimed, so a later entry cannot overwrite an earlier one. Two
         // spellings of one path are the same collision, which is why the key is lowercased on
@@ -160,12 +201,409 @@ final class SafeArchive {
     }
 
     /**
+     * Extracts a gzipped tar archive.
+     *
+     * <p>Four of the five pinned artefacts are tarballs, so this is the common path rather than an
+     * afterthought: the ZIP reader alone could install on Windows and nowhere else.
+     *
+     * <p>The same rule applies as for ZIP — every entry's resolved destination must be inside the
+     * root — with one difference. The Temurin tarballs contain 205 symbolic links, all of them
+     * relative references between the {@code legal/} directories, so refusing links outright
+     * would make every non-Windows install impossible. ADR-0048 D4 allows exactly this: links may
+     * be created "only when their target is inside the destination". The containment test cannot
+     * be done per entry — see {@link #refuseLinksThatEscape} for why entry order defeats any such
+     * check — so it is done once, after the archive is fully written, by resolving each link the
+     * way the kernel will and comparing against the resolved root. The write-through check still
+     * runs for every later entry, so an escaping link cannot be used as a foothold before that
+     * final pass runs either.
+     *
+     * <p>Hard links are refused. They are the same escape (a name for a file outside the root) and
+     * no pinned archive contains one, so there is no case to support.
+     *
+     * <p>Every header checksum is verified. A tar header carries its own checksum and a corrupt
+     * one would make the field offsets — including the size — meaningless, so a mismatch is
+     * refused rather than trusted.
+     */
+    private static void extractTarGz(Path archive, Path root) throws IOException {
+        Set<String> claimed = new HashSet<>();
+        Set<Path> executableTargets = new java.util.LinkedHashSet<>();
+        List<Path> written = new ArrayList<>();
+        List<Path> links = new ArrayList<>();
+        long total = 0;
+        int count = 0;
+
+        try (InputStream raw = Files.newInputStream(archive);
+             GZIPInputStream gz = new GZIPInputStream(raw, 64 * 1024)) {
+            byte[] header = new byte[512];
+            String pendingName = null;
+            while (true) {
+                int read = gz.readNBytes(header, 0, header.length);
+                if (read == 0) {
+                    break;
+                }
+                if (read < header.length) {
+                    throw new ArchiveRejected("tar header is truncated: " + read
+                            + " of 512 bytes were present");
+                }
+                if (isZeroBlock(header)) {
+                    // The end-of-archive marker. Reading on would parse padding, or a second
+                    // concatenated member's contents, as if it were an entry.
+                    break;
+                }
+                verifyHeaderChecksum(header);
+
+                char type = (char) (header[156] & 0xFF);
+                long size = octal(header, 124, 12, "size");
+                String name = pendingName != null ? pendingName : entryName(header);
+                pendingName = null;
+
+                if (type == 'L') {
+                    // GNU long name: the payload is the name of the *next* entry.
+                    if (size <= 0 || size > 8192) {
+                        throw new ArchiveRejected("tar long-name entry has an implausible size: "
+                                + size);
+                    }
+                    pendingName = new String(readExactly(gz, (int) size),
+                            java.nio.charset.StandardCharsets.UTF_8)
+                            .replace("\0", "").strip();
+                    skipPadding(gz, size);
+                    continue;
+                }
+                if (++count > MAX_ENTRIES) {
+                    throw new ArchiveRejected("archive has more than " + MAX_ENTRIES + " entries");
+                }
+                if (type == '1') {
+                    throw new ArchiveRejected("archive contains a hard link: " + name);
+                }
+                if (type != '0' && type != '\0' && type != '5' && type != '2') {
+                    throw new ArchiveRejected("archive contains an unsupported entry type '"
+                            + type + "': " + name);
+                }
+
+                Path target = destinationOf(root, name);
+                String key = collisionKey(root, target);
+                if (!claimed.add(key)) {
+                    throw new ArchiveRejected("archive contains a duplicate path: " + name);
+                }
+                refuseSymlinkOnPath(root, target, name);
+                Files.createDirectories(target.getParent());
+                refuseSymlinkOnPath(root, target, name);
+
+                if (type == '5') {
+                    Files.createDirectories(target);
+                    skipPadding(gz, size);
+                    continue;
+                }
+                if (type == '2') {
+                    Path linkTarget = linkTargetOf(root, target,
+                            text(header, 157, 100), name);
+                    Files.deleteIfExists(target);
+                    Files.createSymbolicLink(target, linkTarget);
+                    written.add(target);
+                    links.add(target);
+                    skipPadding(gz, size);
+                    continue;
+                }
+
+                long n = copyExactly(gz, target, size);
+                total += n;
+                if (total > MAX_TOTAL_BYTES) {
+                    throw new ArchiveRejected("archive expands beyond " + MAX_TOTAL_BYTES + " bytes");
+                }
+                written.add(target);
+                if ((octal(header, 100, 8, "mode") & 0100) != 0) {
+                    executableTargets.add(target);
+                }
+                skipPadding(gz, size);
+            }
+
+            refuseLinksThatEscape(root, links);
+            for (Path target : executableTargets) {
+                makeExecutable(target);
+            }
+        } catch (IOException | RuntimeException failure) {
+            for (int i = written.size() - 1; i >= 0; i--) {
+                try {
+                    Files.deleteIfExists(written.get(i));
+                } catch (IOException ignored) {
+                    // Best effort; the caller deletes the temporary root regardless.
+                }
+            }
+            throw failure;
+        }
+
+        if (count == 0) {
+            throw new ArchiveRejected("archive contains no entries");
+        }
+    }
+
+    /** The entry name, joining the ustar {@code prefix} field when one is present. */
+    private static String entryName(byte[] header) {
+        String name = text(header, 0, 100);
+        String prefix = text(header, 345, 155);
+        return prefix.isEmpty() ? name : prefix + "/" + name;
+    }
+
+    /**
+     * Refuses any created link whose physical target is outside the root, and any that does not
+     * resolve at all.
+     *
+     * <p>{@link #linkTargetOf} refuses a target that traverses a link that already exists, which
+     * stops the obvious two-entry chain. It cannot stop the reverse order: a link {@code q -> ../..}
+     * is created while {@code q} is the only link, and a later entry {@code a -> q/jdk} is then free
+     * to point through it, because at the moment {@code q/jdk} was checked the segment walk found
+     * no link on it. Entry order is the attacker's to choose, so no per-entry check can be
+     * order-independent.
+     *
+     * <p>This pass therefore runs once, after every entry has been written, when the tree is
+     * complete and the answer no longer depends on order. Each link is resolved with
+     * {@link Path#toRealPath}, which follows links the way the kernel does, and the result must lie
+     * inside the root. The root is resolved first, because on macOS a temporary directory is behind
+     * {@code /private} and comparing a resolved path against an unresolved root would fail for
+     * every link. A link that does not resolve is refused too: no vendor archive produces a
+     * dangling link, and accepting one would leave a name whose meaning is decided later.
+     *
+     * <p>This is why the class can create links at all. ADR-0048 D4 permits a link whose target is
+     * inside the destination, and that cannot be established correctly one entry at a time — so it
+     * is established at the first moment it can be, when the archive is fully unpacked and nothing
+     * has been activated.
+     */
+    private static void refuseLinksThatEscape(Path root, List<Path> links) throws IOException {
+        if (links.isEmpty()) {
+            return;
+        }
+        Path realRoot = root.toRealPath();
+        for (Path link : links) {
+            String name = root.relativize(link).toString().replace('\\', '/');
+            Path real;
+            try {
+                real = link.toRealPath();
+            } catch (IOException unresolved) {
+                throw new ArchiveRejected("archive contains a symbolic link that does not resolve"
+                        + " inside the extraction root: " + name);
+            }
+            if (!real.startsWith(realRoot)) {
+                throw new ArchiveRejected("archive contains a symbolic link that resolves outside"
+                        + " the extraction root: " + name);
+            }
+        }
+    }
+
+    /**
+     * The target a symbolic link may be created with, or a refusal.
+     *
+     * <p>ADR-0048 D4 allows a link only when its target is inside the destination. Testing that
+     * containment by normalising the joined path is <em>not</em> sufficient, and the reason is
+     * worth stating because the obvious implementation is wrong: {@link Path#normalize} is purely
+     * textual, so it cancels a component against a following {@code ..} without ever asking the
+     * filesystem whether that component is a directory. Two entries are enough to abuse it. A link
+     * {@code bin/q -> .} is accepted, because {@code bin/q/.} normalises to {@code bin}. A second
+     * link {@code bin/java -> q/../../../victim} also normalises to a path inside the root, since
+     * {@code q} is cancelled by the first {@code ..} — while the kernel resolves {@code q} to
+     * {@code bin} and the remaining {@code ../..} climb out. The stored text then means something
+     * different again once the staging directory is renamed into place.
+     *
+     * <p>So the target is walked segment by segment from the link's own directory, and any segment
+     * that exists as a symbolic link is refused rather than followed. A target is therefore a
+     * path through ordinary directories only, which makes lexical and physical resolution agree
+     * and makes the meaning independent of when the link is created. This does not refuse the
+     * links a real JDK carries: those are relative {@code legal/java.base/...} references into
+     * ordinary directories, 205 of them in the Linux tarball and none escaping the root.
+     *
+     * <p>Following a link that points inside would be sound in principle, but proving it needs a
+     * resolution loop that re-checks each hop against the root within a bounded number of hops.
+     * Refusing is the stronger rule and costs nothing here, because no vendor archive needs it.
+     */
+    private static Path linkTargetOf(Path root, Path link, String linkName, String entryName)
+            throws ArchiveRejected {
+        if (linkName.isEmpty()) {
+            throw new ArchiveRejected("archive contains a symbolic link with no target: "
+                    + entryName);
+        }
+        String absoluteForm = absoluteFormOf(linkName);
+        if (absoluteForm != null) {
+            throw new ArchiveRejected("archive contains a symbolic link to an absolute path: "
+                    + entryName + " -> " + linkName + " (" + absoluteForm + ")");
+        }
+        Path declared = Path.of(linkName);
+        Path parent = link.getParent();
+        if (parent == null) {
+            throw new ArchiveRejected("archive symbolic link has no parent: " + entryName);
+        }
+
+        Path current = parent;
+        for (Path segment : declared) {
+            String name = segment.toString();
+            if (name.isEmpty() || name.equals(".")) {
+                continue;
+            }
+            if (name.equals("..")) {
+                current = current.getParent();
+                if (current == null || !current.startsWith(root)) {
+                    throw new ArchiveRejected("archive contains a symbolic link that leaves the"
+                            + " extraction root: " + entryName + " -> " + linkName);
+                }
+                continue;
+            }
+            current = current.resolve(name);
+            if (!current.startsWith(root)) {
+                throw new ArchiveRejected("archive contains a symbolic link that leaves the"
+                        + " extraction root: " + entryName + " -> " + linkName);
+            }
+            if (Files.isSymbolicLink(current)) {
+                throw new ArchiveRejected("archive contains a symbolic link whose target"
+                        + " traverses another symbolic link, which cannot be shown to stay inside"
+                        + " the extraction root: " + entryName + " -> " + linkName);
+            }
+        }
+        return declared;
+    }
+
+    /** True when every byte of {@code block} is zero, which marks the end of a tar archive. */
+    private static boolean isZeroBlock(byte[] block) {
+        for (byte b : block) {
+            if (b != 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Refuses a header whose recorded checksum does not match its contents.
+     *
+     * <p>Everything after this point trusts the header's offsets, including the size used to
+     * advance the stream, so an unverified header is a stream-position error as much as an
+     * integrity one.
+     */
+    private static void verifyHeaderChecksum(byte[] header) throws ArchiveRejected {
+        long recorded = octal(header, 148, 8, "checksum");
+        long actual = 0;
+        for (int i = 0; i < header.length; i++) {
+            actual += (i >= 148 && i < 156) ? 0x20 : (header[i] & 0xFF);
+        }
+        if (recorded != actual) {
+            throw new ArchiveRejected("tar header checksum mismatch: recorded " + recorded
+                    + ", computed " + actual);
+        }
+    }
+
+    /**
+     * Reads a fixed-width octal field.
+     *
+     * <p>A GNU base-256 field is refused rather than decoded: it exists for sizes above 8 GiB,
+     * no JDK archive uses one, and accepting it would mean this parser had a second numeric
+     * format to be wrong about.
+     */
+    private static long octal(byte[] header, int offset, int length, String field)
+            throws ArchiveRejected {
+        if ((header[offset] & 0x80) != 0) {
+            throw new ArchiveRejected("tar " + field + " field uses base-256, which is not supported");
+        }
+        String raw = text(header, offset, length).strip();
+        if (raw.isEmpty()) {
+            return 0;
+        }
+        long value = 0;
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if (c < '0' || c > '7') {
+                throw new ArchiveRejected("tar " + field + " field is not octal: '" + raw + "'");
+            }
+            value = value * 8 + (c - '0');
+            if (value < 0) {
+                throw new ArchiveRejected("tar " + field + " field overflows a long");
+            }
+        }
+        return value;
+    }
+
+    /** Reads a NUL-terminated field as text. */
+    private static String text(byte[] header, int offset, int length) {
+        int end = offset;
+        while (end < offset + length && header[end] != 0) {
+            end++;
+        }
+        return new String(header, offset, end - offset,
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Reads exactly {@code n} bytes, refusing a stream that ends early. */
+    private static byte[] readExactly(InputStream in, int n) throws IOException {
+        byte[] data = in.readNBytes(n);
+        if (data.length != n) {
+            throw new ArchiveRejected("tar entry is truncated: expected " + n
+                    + " bytes, read " + data.length);
+        }
+        return data;
+    }
+
+    /** Writes exactly {@code size} bytes from the stream, bounded by the per-entry limit. */
+    private static long copyExactly(InputStream in, Path target, long size) throws IOException {
+        if (size > MAX_ENTRY_BYTES) {
+            throw new ArchiveRejected("archive entry declares " + size
+                    + " bytes, beyond the " + MAX_ENTRY_BYTES + " limit");
+        }
+        byte[] buffer = new byte[64 * 1024];
+        long remaining = size;
+        try (java.io.OutputStream out = Files.newOutputStream(target)) {
+            while (remaining > 0) {
+                int want = (int) Math.min(buffer.length, remaining);
+                int n = in.readNBytes(buffer, 0, want);
+                if (n <= 0) {
+                    throw new ArchiveRejected("tar entry is truncated: " + remaining
+                            + " bytes missing from " + target.getFileName());
+                }
+                out.write(buffer, 0, n);
+                remaining -= n;
+            }
+        }
+        return size;
+    }
+
+    /** Discards the padding that brings an entry's payload up to a whole block. */
+    private static void skipPadding(InputStream in, long size) throws IOException {
+        long padding = (512 - (size % 512)) % 512;
+        if (padding > 0) {
+            readExactly(in, (int) padding);
+        }
+    }
+
+    /**
      * The destination for an entry name, or a refusal.
      *
      * <p>The name is checked before it is resolved, because resolving it first would discard the
      * very information that identifies the attack: {@code ../x} and {@code x} resolve to the same
      * path only after the traversal has already been applied.
      */
+    /**
+     * The absolute form an archive path or link target uses, or {@code null} if it is relative.
+     *
+     * <p>Decided from the string, never from {@link Path#isAbsolute()}, because the archive was
+     * written for some unknown host and is read on this one. On Windows {@code Path.of("/etc/passwd")
+     * .isAbsolute()} is {@code false} -- there is no drive letter -- so a check written that way
+     * accepts the target on Windows and only the post-write resolution pass catches it, with a
+     * different message and after the link has already been created. The same archive then behaves
+     * differently on two platforms, which is the one thing an archive format must not do.
+     *
+     * <p>A bare {@code C:} prefix without a separator is included: Windows treats it as
+     * drive-relative, which is still an escape from the extraction root.
+     */
+    private static String absoluteFormOf(String name) {
+        String normalized = name.replace('\\', '/');
+        if (normalized.startsWith("/")) {
+            return "absolute";
+        }
+        if (normalized.length() >= 2 && normalized.charAt(1) == ':'
+                && Character.isLetter(normalized.charAt(0))) {
+            return "drive-qualified";
+        }
+        if (normalized.startsWith("//")) {
+            return "UNC";
+        }
+        return null;
+    }
+
     private static Path destinationOf(Path root, String name) throws ArchiveRejected {
         if (name == null || name.isEmpty()) {
             throw new ArchiveRejected("archive contains an entry with no name");
@@ -178,17 +616,11 @@ final class SafeArchive {
         // which operating system will read it, and a `C:\...` entry extracted on Linux would land
         // as a file literally named `C:\...` -- harmless there, but the same archive is published
         // for Windows, where it would not be.
+        String absoluteForm = absoluteFormOf(name);
+        if (absoluteForm != null) {
+            throw new ArchiveRejected("archive contains an " + absoluteForm + " path: " + name);
+        }
         String normalized = name.replace('\\', '/');
-        if (normalized.startsWith("/")) {
-            throw new ArchiveRejected("archive contains an absolute path: " + name);
-        }
-        if (normalized.length() >= 2 && normalized.charAt(1) == ':'
-                && Character.isLetter(normalized.charAt(0))) {
-            throw new ArchiveRejected("archive contains a drive-qualified path: " + name);
-        }
-        if (normalized.startsWith("//")) {
-            throw new ArchiveRejected("archive contains a UNC path: " + name);
-        }
 
         for (String segment : normalized.split("/")) {
             if (segment.equals("..")) {

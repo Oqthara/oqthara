@@ -1,8 +1,7 @@
 # ADR-0048: Runtime Manager and distribution
 
-- **Status:** Proposed (D1, D2, D4, D5, D6, D7, D8 and D9 implemented; jar signing is
-  implemented by [ADR-0052](0052-keyless-release-signing.md); managed-runtime provenance D3
-  is not)
+- **Status:** Proposed (D1 through D9 implemented, including managed-runtime provenance D3;
+  jar signing is implemented by [ADR-0052](0052-keyless-release-signing.md))
 - **Date:** 2026-11-11
 - **Related:** [ADR-0040](0040-database-support.md) (the JNI platform limit), [ADR-0010](0010-release-gate.md) (release gating), [ADR-0002](0002-ci-split.md) (platform CI)
 

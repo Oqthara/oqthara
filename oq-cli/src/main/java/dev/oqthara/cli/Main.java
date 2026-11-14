@@ -70,6 +70,7 @@ public final class Main {
                 case "test" -> TestRunner.run(out, err, rest(args));
                 case "build" -> build(rest(args));
                 case "java" -> javaRuntime(rest(args));
+                case "runtime" -> runtime(rest(args));
                 default -> {
                     if (command.startsWith("-")) {
                         err.println("Unknown option: " + command);
@@ -100,6 +101,8 @@ public final class Main {
                       oq test [dir]              run test_*.oq files
                       oq build <file.oq>         compile a program to a runnable jar
                       oq java [--json]           show which Java runtime Oqthara will use
+                      oq runtime install         download and install a managed Java runtime
+                      oq runtime status          show the managed runtime, if any
                       oq new <name>              create a new project
                       oq doc [root]              generate the stdlib reference
                       oq doc --source <path>     document your own declarations
@@ -261,6 +264,139 @@ public final class Main {
                 out.println("  skipped " + skipped.describe());
             }
             return 0;
+        }
+
+        /**
+         * Downloads, verifies and installs the managed runtime (ADR-0048 D3, D5, D6, D7).
+         *
+         * <p>The command exists because D3 had no user-reachable entry point: {@code RuntimeInstaller}
+         * could install an archive and nothing could obtain one, so provenance had nothing to
+         * protect. Every refusal below is reported rather than thrown, because a command that ends
+         * in a stack trace tells the user nothing about what to do next.
+         */
+        int runtime(String[] args) {
+            String action = args.length == 0 ? "status" : args[0];
+            switch (action) {
+                case "--help", "-h", "help" -> {
+                    out.println("""
+                            Usage: oq runtime <command>
+
+                            Manages the Java runtime Oqthara installs for itself.
+
+                              status    show whether a managed runtime is installed
+                              install   download the pinned runtime, verify it, and install it
+
+                            The download is checked against a SHA-256 digest compiled into oq before
+                            any of it is extracted. An existing runtime is kept at
+                            $OQ_HOME/runtime/java.prev so an upgrade can be undone.
+
+                            This never replaces a runtime found through OQ_JAVA, a project pin or
+                            PATH: those are preferred by resolution and are not managed here.""");
+                    return 0;
+                }
+                case "status" -> {
+                    return runtimeStatus();
+                }
+                case "install" -> {
+                    return runtimeInstall(rest(args));
+                }
+                default -> {
+                    err.println("Unknown runtime command: " + action);
+                    err.println("Try: oq runtime [status|install]");
+                    return 2;
+                }
+            }
+        }
+
+        private int runtimeStatus() {
+            PlatformSupport.Platform platform = currentPlatform();
+            RuntimeResolver.Resolution resolution =
+                    RuntimeResolver.resolve(RuntimeResolver.inputsFrom(
+                                    Path.of("").toAbsolutePath(), System.getenv()),
+                            RuntimeResolver.processProbe());
+            if (!platform.supported()) {
+                err.println(PlatformSupport.explainUnsupported(
+                        System.getProperty("os.name"), System.getProperty("os.arch")));
+                return 1;
+            }
+            RuntimeRetention retention = RuntimeResolver.managedHome(System.getenv())
+                    .map(RuntimeRetention::new)
+                    .orElse(null);
+            if (retention == null) {
+                err.println("No managed home is known: set OQ_HOME or HOME.");
+                return 1;
+            }
+            out.println("platform   " + platform.label());
+            out.println("pinned     " + RuntimeProvenance.describePin());
+            out.println(retention.describe());
+            if (resolution.found()) {
+                out.println("in use     " + resolution.chosen().describe());
+            }
+            return 0;
+        }
+
+        private int runtimeInstall(String[] args) {
+            for (String arg : args) {
+                if (!arg.equals("--force")) {
+                    err.println("Unknown option: " + arg);
+                    err.println("Try: oq runtime install [--force]");
+                    return 2;
+                }
+            }
+            PlatformSupport.Platform platform = currentPlatform();
+            if (!platform.supported()) {
+                err.println(PlatformSupport.explainUnsupported(
+                        System.getProperty("os.name"), System.getProperty("os.arch")));
+                return 1;
+            }
+            java.util.Optional<Path> home = RuntimeResolver.managedHome(System.getenv());
+            if (home.isEmpty()) {
+                err.println("No managed home is known: set OQ_HOME or HOME.");
+                return 1;
+            }
+            RuntimeInstaller installer = RuntimeInstaller.forCommand(home.get(), runningJar());
+            out.println("Downloading " + RuntimeProvenance.describePin() + " for "
+                    + platform.label() + "...");
+            try {
+                Path java = installer.installDownloaded(platform, 21);
+                out.println("Installed " + java);
+                out.println("Run 'oq java' to confirm which runtime is now used.");
+                return 0;
+            } catch (RuntimeInstaller.InstallRefusedException e) {
+                err.println("Refused: " + e.getMessage());
+                err.println("Nothing was installed and any existing runtime is unchanged.");
+                return 1;
+            } catch (IOException e) {
+                err.println("Install failed: " + e.getMessage());
+                err.println("Nothing was installed and any existing runtime is unchanged.");
+                return 1;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                err.println("Install was interrupted; nothing was activated.");
+                return 1;
+            }
+        }
+
+        /**
+         * The jar this process is running from, or {@code null} when it is running from classes.
+         *
+         * <p>ADR-0048 D9 runs that jar on the candidate JVM, so the check needs a jar. A source
+         * checkout on a class path has none, and the installer treats {@code null} as "validate
+         * the reported version only" rather than failing — refusing to install for a developer
+         * running from {@code build/classes} would be a worse trade than a weaker check.
+         */
+        private static Path runningJar() {
+            try {
+                java.security.CodeSource source =
+                        Main.class.getProtectionDomain().getCodeSource();
+                if (source == null || source.getLocation() == null) {
+                    return null;
+                }
+                Path location = Path.of(source.getLocation().toURI());
+                return Files.isRegularFile(location) ? location : null;
+            } catch (java.net.URISyntaxException | SecurityException e) {
+                return null;
+            }
         }
 
         /**

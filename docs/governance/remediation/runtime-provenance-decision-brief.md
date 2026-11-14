@@ -56,20 +56,48 @@ names; this brief said six until it was checked against the code.
 ## Decision 3 — the vendor
 
 D3's wording is vendor-neutral, and no choice here is technically forced. The relevant axis is
-whether the vendor publishes a stable, machine-readable digest per archive. This brief does not
-recommend a vendor; naming one would be a packaging commitment the maintainer has to make.
+whether the vendor publishes a stable, machine-readable digest per archive. This brief did not
+recommend a vendor; naming one is a packaging commitment the maintainer has to make.
 
-## What can be built before the decision
+## Outcome — resolved as Option A with Eclipse Temurin
 
-`RuntimeProvenance` can be written against a digest map that is empty, with a test proving an
-unknown archive is refused. That would make the *absence* of a digest a refusal rather than an
-accident, which is the safe default, and leaves only the data to be filled in. It is not
-implemented here because an empty map refuses every archive and would make the install path
-untestable end to end until Decision 1 is made.
+The brief was written before the decision was taken, and is retained as the record of the options
+rather than as an open question. The chosen answer is **Option A**: digests compiled into the jar,
+for **Eclipse Temurin `jdk-21.0.13+9`**. The reasoning, in the order it mattered:
 
-## Recommended next step
+1. **Option A needs no new infrastructure and no key ceremony.** D3 asks that a downloaded archive
+   be proven to be the one `oq` intends; a digest literal in the artifact does that for a network
+   attacker and for a substituted mirror. Option B (signing a manifest) protects the same thing
+   but depends on the signing key's custody, and a key that has to be handled on every release is
+   a larger operational commitment than the threat it closes here.
+2. **A compiled digest is strictly harder to attack than a digest file beside the archive.** The
+   literal has to be changed in a source release and re-signed by the release process, so an
+   attacker who controls the mirror has nothing to overwrite.
+3. **Temurin publishes a stable per-archive `.sha256.txt`.** Every one of the five archives below
+   has a vendor-published digest at a deterministic URL, which is what makes the compiled table
+   auditable rather than merely plausible.
 
-Answer Decision 1. If the answer is A, the sequence is: generate the digest file, add the
-consistency test that the file matches the pinned release, then implement `RuntimeProvenance`
-against it. If the answer is B, the sequence starts with the key, and the digest file is the
-signed manifest instead.
+The pinned artefacts, all cross-checked against the vendor's own digest files:
+
+| Platform | Archive | Bytes |
+| --- | --- | --- |
+| linux/x86_64 | `OpenJDK21U-jdk_x64_linux_hotspot_21.0.13_9.tar.gz` | 207,858,352 |
+| linux/aarch64 | `OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.13_9.tar.gz` | 205,995,218 |
+| macos/x86_64 | `OpenJDK21U-jdk_x64_mac_hotspot_21.0.13_9.tar.gz` | 193,957,782 |
+| macos/aarch64 | `OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.13_9.tar.gz` | 199,754,598 |
+| windows/x86_64 | `OpenJDK21U-jdk_x64_windows_hotspot_21.0.13_9.zip` | 205,421,281 |
+
+One consequence of that table is worth recording because it was not obvious from the ADR: only
+Windows is a ZIP. The other four are tarballs, and Temurin publishes no ZIP for Linux or macOS, so
+D4's extractor had to learn tar for D3 to be usable at all. That was discovered by running the
+install against the real release, not by reading the ADR.
+
+## What this replaced
+
+The brief's proposal was to ship `RuntimeProvenance` against an empty digest map, so that the
+*absence* of a digest was a refusal rather than an accident, and leave the data to be filled in.
+That was not done, because an empty map refuses every archive and makes the install path
+untestable end to end. The table above is populated instead, and the negative property the empty
+map would have given is preserved: an archive for a platform not in the table is refused, and
+`RuntimeProvenanceTest` asserts that the pinned table and `PlatformSupport`'s supported list name
+exactly the same set, so adding a platform to one without a digest for it fails the build.
