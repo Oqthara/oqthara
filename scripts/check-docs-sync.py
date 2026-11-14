@@ -702,6 +702,13 @@ def cited_paths(line: str) -> list[str]:
     return targets
 
 
+# Evidence a round has merged but not yet re-pinned. Deliberately empty: the pin is moved in
+# the same pull request that adds the evidence, so there is no window where a DONE row cites
+# something the pin does not have. Adding an entry is a decision to ship a matrix that is
+# knowingly wrong at its own pin, and it should be visible in the diff that does it.
+PENDING_EVIDENCE: frozenset[str] = frozenset()
+
+
 def requirement_matrix_evidence_exists() -> None:
     """A `DONE` row must cite evidence that is present, not just a commit that resolves.
 
@@ -752,15 +759,26 @@ def requirement_matrix_evidence_exists() -> None:
                 f"cite evidence a reader can open")
         return
 
-    # A citation that exists now but not at the pin is a row whose evidence postdates the pin.
-    # The pin moves to the merge commit of the round that added it, so this window is expected;
-    # it is reported rather than hidden, because a reader who opens the pin finds the claim
-    # without its support.
+    # A citation that exists now but not at the pin is a row whose evidence postdates the pin:
+    # a reader who opens the pin finds the claim without its support. This was reported as a
+    # note, which meant a pin could name a commit where a DONE row's evidence is absent and the
+    # check still exited 0 -- while the matrix prose claimed the pin was "the first commit at
+    # which every row's evidence is present". A document's claim and its enforcement must be the
+    # same claim, so this fails. The one escape is PENDING_EVIDENCE, an explicit opt-out for a
+    # round in flight, and it must name the files rather than asserting a general exemption.
     postdating = sorted(set(missing))
+    unexplained = [item for item in postdating
+                   if item.split(" (cited by")[0] not in PENDING_EVIDENCE]
+    if unexplained:
+        for item in unexplained:
+            problems.append(
+                f"{matrix} marks a row DONE against {item}, which does not exist at the pin "
+                f"{checked_against}. The pin must name a commit at which every row's evidence is "
+                f"present, or the row is not DONE at that pin")
+        return
     if postdating:
         note(f"every file cited by a DONE row in {matrix} exists; {len(postdating)} postdate the "
-             f"pin at {checked_against} and are listed in the pin note: "
-             + ", ".join(postdating))
+             f"pin at {checked_against} and are declared in flight: " + ", ".join(postdating))
     else:
         note(f"every file cited by a DONE row in {matrix} exists at {checked_against}")
 
@@ -772,10 +790,11 @@ def requirement_matrix_verification_pin_is_real() -> None:
         problems.append(f"{matrix} has no 'Last verified' pin to check")
         return
     sha = match.group(1)
-    # A shallow clone (CI checks out depth 1) does not contain the pinned commit as an object,
-    # so "not found" there means "not fetched", not "does not exist". Reporting the second as
-    # the first made a correct pin fail the build. `--is-shallow-repository` is the honest
-    # discriminator: in a shallow clone this check can only confirm the pin is well-formed.
+    # A shallow clone does not contain the pinned commit as an object, so "not found" there
+    # means "not fetched", not "does not exist", and reporting the second as the first made a
+    # correct pin fail. `--is-shallow-repository` is the honest discriminator. CI checks out
+    # `fetch-depth: 0`, so this path is for local shallow clones; in one, this check can only
+    # confirm the pin is well-formed, and says so rather than implying it verified the pin.
     shallow = subprocess.run(
         ["git", "rev-parse", "--is-shallow-repository"],
         cwd=ROOT, capture_output=True, text=True,
@@ -792,7 +811,17 @@ def requirement_matrix_verification_pin_is_real() -> None:
         problems.append(
             f"{matrix} pins verification at {sha}, which is not a commit in this repository")
         return
-    if subprocess.run(["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+    # The pin must be reachable from the branch it will land on, not from the branch proposing
+    # it. On a pull request `HEAD` is the branch, so a pin to one of its own commits is an
+    # ancestor of `HEAD` and passed here -- the guard then only fired after the squash-merge,
+    # on `main`, when the pin could no longer be corrected in the pull request that wrote it.
+    target = "HEAD"
+    for candidate in ("refs/remotes/origin/main", "refs/heads/main"):
+        if subprocess.run(["git", "rev-parse", "--verify", "--quiet", candidate],
+                          cwd=ROOT, capture_output=True).returncode == 0:
+            target = candidate
+            break
+    if subprocess.run(["git", "merge-base", "--is-ancestor", sha, target],
                       cwd=ROOT, capture_output=True).returncode != 0:
         # The pin must survive the merge strategy, not just the branch. A pin written to the
         # commit that did the verifying is unreachable from `main` as soon as the branch is
@@ -800,11 +829,12 @@ def requirement_matrix_verification_pin_is_real() -> None:
         # SHAs are discarded. That failure only shows up after the merge, on `main`, where it
         # blocks everyone -- so the message names the cause rather than the symptom.
         problems.append(
-            f"{matrix} pins verification at {sha}, which is not an ancestor of HEAD. If this "
-            f"branch was squash-merged, the pinned commit no longer exists on the default "
-            f"branch; pin the merge commit instead.")
+            f"{matrix} pins verification at {sha}, which is not an ancestor of {target}. A "
+            f"pin must name a commit on the default branch: squash-merge discards branch SHAs, "
+            f"so a pin to one stops resolving as soon as this branch lands. Pin the merge "
+            f"commit instead.")
         return
-    note(f"{matrix} is verified against {sha}, a commit reachable from HEAD")
+    note(f"{matrix} is verified against {sha}, a commit reachable from {target}")
 
 
 # Words that make a test name a statement about absence rather than a claim of evidence:
