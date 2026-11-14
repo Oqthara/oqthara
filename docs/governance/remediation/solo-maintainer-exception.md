@@ -105,3 +105,22 @@ The exception ends when **either** of the following becomes true:
 
 Until one of those happens, this file should be read alongside the Alpha 3 closure report's
 review status, so that "review required: 0" is never read as "review performed: yes".
+
+## What the AI-led policy changed here, and what it did not
+
+[ADR-0059](../../adr/0059-ai-review-as-the-review-mechanism.md) revised the review requirement
+from *independent human review* to *mandatory, recorded AI review*. That does not relax
+anything in this document. `required_approving_review_count` stays at 0, because no second
+human exists to supply an approval and a self-approval from a second account held by the same
+person would be a false record rather than a control.
+
+What changed is that "review performed: yes" no longer rests on prose alone. Every pull
+request must now carry `docs/governance/reviews/PR-<number>.md`, and
+`scripts/check-ai-review.py` fails the required `ubuntu-latest / JDK 21` context if that
+record is absent or leaves a critical or high finding unresolved. The gate proves a review was
+recorded; it does not prove the review was good, and it does not make the reviewer independent
+of the author. See the ADR's independence section for why that limit is stated rather than
+engineered around.
+
+The two exit conditions above remain the only way to restore a genuine human approval
+requirement. An AI review does not substitute for one when one becomes available.

@@ -59,6 +59,24 @@ jobs:
           python3 scripts/check-links.py
           python3 scripts/check-docs-sync.py
           python3 scripts/check-risk-register.py
+      - name: Check the pull request has an AI review record
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        # ADR-0059 makes AI review the review mechanism for this repository, and this step is
+        # what enforces it. It runs inside the `ubuntu-latest / JDK 21` context, which
+        # `main-protection` already requires, so a pull request with no valid review record
+        # cannot merge. A separate job would have needed its own required context, and a
+        # required context that is later renamed blocks every merge silently.
+        env:
+          GH_PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # A push to main has no pull request number. The gate is about pull requests, and
+          # every change reaches main through one, so it is skipped there rather than being
+          # given something else to check.
+          if [ -z "$GH_PR_NUMBER" ]; then
+            echo "not a pull request event; the AI review gate applies to pull requests"
+            exit 0
+          fi
+          python3 scripts/check-ai-review.py
       - name: Unit-test the verification scripts themselves
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         run: |
