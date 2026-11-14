@@ -47,7 +47,8 @@ class TheRealMatrixPinsARealCommit(unittest.TestCase):
         checker.checked.clear()
         checker.requirement_matrix_verification_pin_is_real()
         self.assertTrue(
-            any("commit reachable from HEAD" in item for item in checker.checked),
+            any("commit reachable from refs/remotes/origin/main" in item
+                or "commit reachable from HEAD" in item for item in checker.checked),
             "a passing check must name the commit it verified",
         )
 
@@ -92,7 +93,8 @@ class BadPinsAreRejected(unittest.TestCase):
         if orphan.returncode != 0:
             self.skipTest("cannot create a probe commit tree here")
         message = self._pin_to(orphan.stdout.strip())
-        self.assertIn("not an ancestor of HEAD", message)
+        self.assertIn("not an ancestor of", message)
+        self.assertIn("default branch", message)
 
     def test_the_message_names_squash_merge_as_the_likely_cause(self):
         """The pin can break *after* the branch is merged, on `main`, where it blocks everyone.
@@ -117,8 +119,8 @@ class BadPinsAreRejected(unittest.TestCase):
         if orphan.returncode != 0:
             self.skipTest("cannot create a probe commit tree here")
         message = self._pin_to(orphan.stdout.strip())
-        self.assertIn("squash-merged", message)
-        self.assertIn("pin the merge commit instead", message)
+        self.assertIn("squash-merge", message)
+        self.assertIn("Pin the merge commit instead", message)
 
     def test_a_missing_pin_is_rejected(self):
         MATRIX.write_text(PIN.sub("**Last verified:** none", self.original, count=1),
@@ -227,6 +229,70 @@ class TheMatrixCitationsAreChecked(unittest.TestCase):
     def test_a_conformance_case_is_resolved_by_number(self):
         # `conformance/228` is a test number, stored as `conformance/228-<slug>.oq`.
         self.assertNotIn("conformance/228", self.run_check())
+
+    def test_evidence_missing_at_the_pin_is_rejected(self):
+        # This was a `note` until PR #225: a pin could name a commit where a DONE row's
+        # evidence is absent and the check still exited 0, while the matrix prose claimed the
+        # pin was "the first commit at which every row's evidence is present". If the prose
+        # says it, the check must enforce it.
+        #
+        # An earlier version of this test pinned to the pin's parent and skipped when that
+        # happened to carry the same citations, so deleting the guard left it green. The
+        # repository's root commit is used instead: it predates ADR-0059, the gate and every
+        # other citation a DONE row makes, and it is guaranteed to exist in any full clone.
+        root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"],
+                              cwd=SCRIPTS.parent, capture_output=True, text=True
+                              ).stdout.split()
+        if not root:
+            self.skipTest("not a git checkout")
+        before = MATRIX.read_text(encoding="utf-8")
+        MATRIX.write_text(PIN.sub(f"**Last verified:** `{root[-1]}`", before, count=1),
+                          encoding="utf-8")
+        problems = self.run_check()
+        self.assertIn("does not exist at the pin", problems)
+        self.assertIn("0059-ai-review-as-the-review-mechanism.md", problems)
+
+    def test_evidence_declared_in_flight_is_reported_but_allowed(self):
+        # The escape hatch must be a named list of files, not a general exemption, or it
+        # becomes the silent pass this check was just fixed to stop being.
+        self.assertEqual(frozenset(), checker.PENDING_EVIDENCE,
+                         "an entry here ships a matrix that is knowingly wrong at its own pin")
+
+
+class APinMustBeOnTheDefaultBranch(unittest.TestCase):
+    """A pin to a commit that exists only on the branch proposing it is not a resolvable pin.
+
+    Ancestry was tested against `HEAD`, which on a pull request is the branch under review.
+    A pin to one of that branch's own commits therefore passed, and the guard only fired after
+    the squash-merge, on `main` -- by which point the pin could no longer be corrected in the
+    pull request that wrote it. PR #225 found this by pinning to its own commit and watching
+    the check exit 0.
+    """
+
+    def setUp(self):
+        self.original = MATRIX.read_text(encoding="utf-8")
+        checker.problems.clear()
+        checker.checked.clear()
+
+    def tearDown(self):
+        MATRIX.write_text(self.original, encoding="utf-8")
+
+    def test_a_branch_only_commit_is_not_an_acceptable_pin(self):
+        own = subprocess.run(["git", "rev-parse", "HEAD"], cwd=SCRIPTS.parent,
+                             capture_output=True, text=True).stdout.strip()
+        if not own:
+            self.skipTest("not a git checkout")
+        branch = subprocess.run(["git", "merge-base", "--is-ancestor", own, "origin/main"],
+                                cwd=SCRIPTS.parent, capture_output=True).returncode == 0
+        if branch:
+            self.skipTest("HEAD is already on origin/main; nothing branch-only to pin to")
+        MATRIX.write_text(PIN.sub(f"**Last verified:** `{own}`", self.original, count=1),
+                          encoding="utf-8")
+        checker.problems.clear()
+        checker.requirement_matrix_verification_pin_is_real()
+        self.assertTrue(
+            any("not an ancestor of" in p for p in checker.problems), checker.problems)
+        self.assertIn("default branch", " ".join(checker.problems))
 
 
 class ReviewRecordsAreNotInTheDocsCatalog(unittest.TestCase):
