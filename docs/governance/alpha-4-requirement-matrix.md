@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `c2b2b16` (ADR-0058 for the filesystem-metadata and configuration builtins), 2026-11-14. The pin names a commit already on `main`, because squash-merge discards branch SHAs. Every gate was re-run against this commit. This round closes row 27 (the §17 standard library) and with it the last `PARTIAL` row.
+**Last verified:** `c2b2b16` (ADR-0058 for the filesystem-metadata and configuration builtins), 2026-11-14. The pin must name a commit reachable from the branch under review, because squash-merge discards branch SHAs and a pin to one of them stops resolving. Every gate was re-run against this commit, and the pin is moved to the merge commit when this work lands. This round closes row 27 (the §17 standard library) and with it the last `PARTIAL` row.
 
 ## Language features (§14)
 
