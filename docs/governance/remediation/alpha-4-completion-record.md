@@ -1,25 +1,37 @@
 # Alpha 4 completion record
 
-## Status: every requirement row is `DONE` or documented as externally blocked
+## Status: every requirement row is `DONE`
 
 This record is written against `5015580` and describes only what the repository contains. It
 does not claim independent human review, and it does not claim CPython parity.
 
-## The two states that remain, and why neither is open work
+## What the last two states were, and how the second one closed
 
-The requirement traceability matrix carries 16 rows. Fifteen are `DONE`. One is `BLOCKED`, and
-the status that used to dominate the matrix — `PARTIAL` — is now empty.
+The requirement traceability matrix carries 16 rows. When this record was first written,
+fifteen were `DONE` and one was `BLOCKED`; the status that used to dominate the matrix —
+`PARTIAL` — was already empty.
 
-The single `BLOCKED` row is **§4.2 independent review roles**. Oqthara has one human
-maintainer. Independent human review is unavailable, is not simulated, and is not claimed. The
-bounded exception is recorded in [`solo-maintainer-exception.md`](solo-maintainer-exception.md)
-and the compensating controls are mechanical: pull requests are mandatory, direct pushes are
+The `BLOCKED` row was **§4.2 independent review roles**. Oqthara has one human maintainer.
+Independent human review is unavailable, is not simulated, and is not claimed. The bounded
+exception is recorded in [`solo-maintainer-exception.md`](solo-maintainer-exception.md) and
+the compensating controls are mechanical: pull requests are mandatory, direct pushes are
 rejected, required CI contexts are mandatory, review-thread resolution is required, merges are
 squash-only, `bypass_actors` is empty and `current_user_can_bypass` is `never`. The one
 lowered control is `required_approving_review_count`, and its reasoning is in that document.
 
-No amount of work in this repository converts that row to `DONE`. It stays blocked until a
-second human reviewer exists.
+That row is now `DONE`, and the wording above is kept because it is still true. Nothing
+supplied the missing human reviewer. Under the maintainer's AI-led development order, the
+requirement itself was revised: [ADR-0059](../../adr/0059-ai-review-as-the-review-mechanism.md)
+replaces *independent human review* with a *mandatory, recorded AI review* that is enforced by
+CI. [`ai-review-policy.md`](../ai-review-policy.md) defines the seven categories, the severity
+rules and the independence limit; `scripts/check-ai-review.py` rejects a pull request whose
+record is missing, malformed, incomplete, or leaves a critical or high finding open; and
+`scripts/tests/test_check_ai_review.py` pins each of those rejection paths.
+
+The substitution is narrower than the requirement it replaces, and the ADR says so. The gate
+proves a review was **recorded and well-formed**. It cannot prove the review was thorough, and
+it cannot make the reviewer independent of the author: every agent in this repository pins the
+same model, so agreement between them is evidence of consistency, not of correctness.
 
 ## What "done" means here, and what it does not
 

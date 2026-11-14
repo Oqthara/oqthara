@@ -186,5 +186,225 @@ class AShallowCloneDoesNotCondemnAGoodPin(unittest.TestCase):
         )
 
 
+class TheMatrixCitationsAreChecked(unittest.TestCase):
+    """A `DONE` row must cite evidence a reader can open, in either citation style."""
+
+    def setUp(self):
+        self.original = MATRIX.read_text(encoding="utf-8")
+        checker.problems.clear()
+        checker.checked.clear()
+
+    def tearDown(self):
+        MATRIX.write_text(self.original, encoding="utf-8")
+
+    def run_check(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.requirement_matrix_evidence_exists()
+        return " ".join(checker.problems)
+
+    def test_a_dead_backticked_citation_is_rejected(self):
+        # Every §4.2 citation is backticked, and a check that read only markdown links would
+        # have passed all of them without looking.
+        broken = self.original.replace("`scripts/check-ai-review.py`",
+                                       "`scripts/check-ai-review-renamed.py`", 1)
+        self.assertNotEqual(self.original, broken)
+        MATRIX.write_text(broken, encoding="utf-8")
+        self.assertIn("check-ai-review-renamed.py", self.run_check())
+
+    def test_a_dead_linked_citation_is_rejected(self):
+        broken = self.original.replace("(../adr/0059-ai-review-as-the-review-mechanism.md)",
+                                       "(../adr/0059-missing.md)", 1)
+        self.assertNotEqual(self.original, broken)
+        MATRIX.write_text(broken, encoding="utf-8")
+        self.assertIn("0059-missing.md", self.run_check())
+
+    def test_a_fragment_does_not_hide_the_file(self):
+        # `file.md#section` names a file that exists; the fragment must be stripped rather
+        # than treated as part of the path.
+        self.assertNotIn("does not exist", self.run_check())
+
+    def test_a_conformance_case_is_resolved_by_number(self):
+        # `conformance/228` is a test number, stored as `conformance/228-<slug>.oq`.
+        self.assertNotIn("conformance/228", self.run_check())
+
+
+class ReviewRecordsAreNotInTheDocsCatalog(unittest.TestCase):
+    """Review records change with every pull request and would make the catalog stale."""
+
+    def test_the_catalog_guard_reads_the_documents(self):
+        catalog = checker.json.loads((SCRIPTS.parent / "docs" / "catalog.json").read_text())
+        self.assertIn("docs", catalog, "the guard reads catalog['docs']; the key must exist")
+        self.assertTrue(catalog["docs"], "an empty list would make the guard a no-op")
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.review_records_are_not_in_the_docs_catalog()
+        self.assertEqual([], checker.problems)
+
+    def test_the_guard_fails_when_a_review_record_is_catalogued(self):
+        """The previous version of this test passed with the guard neutered.
+
+        It asserted only that the key existed, so returning early from the guard still passed.
+        This one edits the catalog to contain a review record and requires a problem.
+        """
+        path = SCRIPTS.parent / "docs" / "catalog.json"
+        original = path.read_text(encoding="utf-8")
+        try:
+            catalog = checker.json.loads(original)
+            catalog["docs"].append(
+                {"path": "docs/governance/reviews/PR-224.md", "title": "PR 224 review"}
+            )
+            path.write_text(checker.json.dumps(catalog), encoding="utf-8")
+            checker.problems.clear()
+            checker.checked.clear()
+            checker.review_records_are_not_in_the_docs_catalog()
+            self.assertTrue(
+                checker.problems,
+                "a catalogued review record must be reported; a guard that returns early "
+                "would let a record churn the catalog on every review",
+            )
+        finally:
+            path.write_text(original, encoding="utf-8")
+
+
+class ReviewCategoriesMatchTheValidator(unittest.TestCase):
+    def test_a_renamed_category_is_rejected(self):
+        policy = SCRIPTS.parent / "docs" / "governance" / "ai-review-policy.md"
+        original = policy.read_text(encoding="utf-8")
+        try:
+            renamed = original.replace("| functional correctness |",
+                                       "| functional correctness (behaviour) |", 1)
+            self.assertNotEqual(original, renamed)
+            policy.write_text(renamed, encoding="utf-8")
+            checker.problems.clear()
+            checker.checked.clear()
+            checker.ai_review_categories_match_the_validator()
+            self.assertTrue(any("functional correctness" in p for p in checker.problems),
+                            checker.problems)
+        finally:
+            policy.write_text(original, encoding="utf-8")
+
+    def test_the_policy_and_template_agree_with_the_validator(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.ai_review_categories_match_the_validator()
+        self.assertEqual([], checker.problems)
+
+
+class TheGateStepCannotBeMadeInert(unittest.TestCase):
+    """A step that is present but inert satisfies every substring test.
+
+    `continue-on-error: true` and `if: false` leave both the script name and the required context
+    in the file while the gate cannot fail the build, so the required status stays green with no
+    review recorded. These mutate the real workflow and restore it.
+    """
+
+    CI = SCRIPTS.parent / ".github" / "workflows" / "ci.yml"
+
+    def setUp(self):
+        self.original = self.CI.read_text(encoding="utf-8")
+        checker.problems.clear()
+        checker.checked.clear()
+        self.assertEqual("", self._run(), "the unmodified workflow must be accepted")
+
+    def tearDown(self):
+        self.CI.write_text(self.original, encoding="utf-8")
+
+    def _run(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.ai_review_gate_is_wired_into_ci()
+        return "\n".join(checker.problems)
+
+    def test_continue_on_error_is_rejected(self):
+        # Parsed as YAML this is the boolean True, not the string "true", and an allowlist of
+        # strings let it through.
+        broken = self.original.replace(
+            "      - name: Check the pull request has an AI review record",
+            "      - name: Check the pull request has an AI review record\n        continue-on-error: true", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("continue-on-error", self._run())
+
+    def test_a_constant_false_condition_is_rejected(self):
+        # The step already carries a matrix condition, which is legitimate and is how it binds to
+        # the required context. Appending a second `if:` would let YAML's last-key-wins rule keep
+        # the real one, so the existing condition is replaced instead.
+        broken = self.original.replace(
+            "        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'\n"
+            "        # ADR-0059 makes AI review",
+            "        if: false\n        # ADR-0059 makes AI review", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("if:", self._run())
+
+    def test_removing_the_step_is_rejected(self):
+        broken = self.original.replace("scripts/check-ai-review.py", "scripts/missing.py")
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("check-ai-review.py", self._run())
+
+    def test_a_redirected_pull_request_number_is_rejected(self):
+        # `--pr 224` outranks the event payload, so one line makes every future pull request
+        # validate PR #224's record.
+        broken = self.original.replace(
+            "          python3 scripts/check-ai-review.py\n",
+            "          python3 scripts/check-ai-review.py --pr 224\n", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("--pr", self._run())
+
+    def test_a_literal_pull_request_number_is_rejected(self):
+        broken = self.original.replace(
+            "GH_PR_NUMBER: ${{ github.event.pull_request.number }}",
+            "GH_PR_NUMBER: 224", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("GH_PR_NUMBER", self._run())
+
+    def test_a_swallowed_exit_status_is_rejected(self):
+        broken = self.original.replace(
+            "          python3 scripts/check-ai-review.py\n",
+            "          python3 scripts/check-ai-review.py || echo ok\n", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("||", self._run())
+
+    def test_echoing_the_gate_is_rejected(self):
+        # The script name is still in the file, on a line of its own, and executed by nothing.
+        broken = self.original.replace(
+            "          python3 scripts/check-ai-review.py",
+            "          echo python3 scripts/check-ai-review.py", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("check-ai-review.py", self._run())
+
+    def test_the_gate_moved_out_of_the_required_job_is_rejected(self):
+        # A string search cannot see this: every required literal stays, and the gate runs in a
+        # job the ruleset does not require. The step is *moved* rather than copied -- copying it
+        # leaves one running in the required job, which is not a regression.
+        lines = self.original.splitlines(keepends=True)
+        start = next(i for i, line in enumerate(lines)
+                     if line.strip() == "- name: Check the pull request has an AI review record")
+        end = start + 1
+        while end < len(lines) and not lines[end].strip().startswith("- name:"):
+            end += 1
+        moved = lines[start:end]
+        remainder = lines[:start] + lines[end:]
+        broken = "".join(remainder).replace(
+            "jobs:\n", "jobs:\n  spare:\n    runs-on: ubuntu-latest\n    steps:\n", 1)
+        marker = broken.index("    steps:\n", broken.index("  spare:\n")) + len("    steps:\n")
+        broken = broken[:marker] + "".join(moved) + broken[marker:]
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("no job reporting", self._run())
+
+    def test_a_job_level_continue_on_error_is_rejected(self):
+        broken = self.original.replace(
+            "  test:\n", "  test:\n    continue-on-error: true\n", 1)
+        self.assertNotEqual(self.original, broken)
+        self.CI.write_text(broken, encoding="utf-8")
+        self.assertIn("continue-on-error", self._run())
+
+
 if __name__ == "__main__":
     unittest.main()

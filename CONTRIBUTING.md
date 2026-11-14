@@ -59,6 +59,20 @@ Most of that is one test class: `oq-cli`'s conformance test builds and runs a ja
 program, and `HostBuiltinLimitsTest` deliberately waits out two 30-second command timeouts. A
 long build is not a hang. `--profile` writes a per-task report under `build/reports/profile/`.
 
+## Review
+
+Every pull request needs a review record at `docs/governance/reviews/PR-<number>.md` before it
+can merge. The required `ubuntu-latest / JDK 21` context runs `scripts/check-ai-review.py`,
+which fails the pull request if the record is missing, does not cover all seven categories, or
+leaves a critical or high finding unresolved. The record format and the category list are in
+[`docs/governance/reviews/README.md`](docs/governance/reviews/README.md); the policy behind it
+is [`docs/governance/ai-review-policy.md`](docs/governance/ai-review-policy.md).
+
+The review is not an approval gate with a human behind it. Oqthara has one maintainer, so
+`required_approving_review_count` is 0 — the reasoning is in
+[`docs/governance/remediation/solo-maintainer-exception.md`](docs/governance/remediation/solo-maintainer-exception.md).
+Do not describe an AI review as independent human review; it is neither.
+
 ## Commit messages
 
 Conventional Commits: `feat(parser): ...`, `fix(cli): ...`, `docs: ...`,

@@ -32,6 +32,17 @@ def note(what: str) -> None:
     checked.append(what)
 
 
+def load_module(name: str):
+    """Import a sibling script by file name, so checks can read its constants."""
+    import importlib.util
+
+    path = ROOT / "scripts" / name
+    spec = importlib.util.spec_from_file_location(name.replace("-", "_").replace(".py", ""), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 # 1. The stdlib reference must match a fresh generation from the implementation.
 def stdlib_reference_is_current() -> None:
     reference = ROOT / "docs" / "stdlib" / "reference.md"
@@ -637,6 +648,123 @@ def requirement_matrix_figures_match_the_inventory() -> None:
 #     is a promise that someone re-read the matrix against the tree; left unchecked it silently
 #     ages, which is worse than an absent pin because a reader treats a stale SHA as current
 #     evidence. The previous pin had drifted two merges behind and nothing failed.
+def cited_paths(line: str) -> list[str]:
+    """Repository paths a matrix row cites, as markdown links or as backticked paths.
+
+    Both forms are used in the matrix, and a check that saw only links would silently pass every
+    row that cites a file in backticks. Fragments are dropped, absolute paths are resolved
+    against the repository root, and relative ones against `docs/governance`, which is the
+    directory the matrix lives in.
+    """
+    targets: list[str] = []
+    # A markdown link is written relative to the file it appears in; a backticked path is
+    # quoted the way a reader would type it, from the repository root. Conflating the two
+    # produced citations like `docs/governance/scripts/check-ai-review.py` for a file that is
+    # at `scripts/check-ai-review.py`.
+    #
+    # Backticks also hold commands, globs, environment variables and Windows paths. Treating
+    # every one as a citation invents failures, so a backticked token counts only when it is
+    # shaped like a repository path and starts at a real top-level entry.
+    top_level = {entry.name for entry in ROOT.iterdir()}
+    # A row may name a path belonging to another repository, which this check cannot resolve
+    # and must not call missing. `Oqthara/Oqthara.github.io` looks exactly like a path in this
+    # repository, so the two are told apart by the `owner/name` shape and a known-owner list
+    # rather than by guessing.
+    foreign = r"Oqthara/[A-Za-z0-9_.-]+"
+    elsewhere = set(re.findall(foreign, line))
+    quoted = [
+        token for token in re.findall(r"`([^`\s]+)`", line)
+        if "/" in token and token.split("/", 1)[0] in top_level
+        and not re.fullmatch(foreign, token)
+        and not any(token.startswith(entry + "/") for entry in elsewhere)
+    ]
+    for base, raw in [("docs/governance", link) for link in re.findall(r"\]\(([^)]+)\)", line)] \
+            + [("", token) for token in quoted]:
+        path = raw.split("#", 1)[0].strip()
+        if not path or path.startswith(("http://", "https://", "mailto:")):
+            continue
+        if "/" not in path or any(char in path for char in "*?["):
+            continue
+        if path.startswith("/"):
+            candidate = pathlib.PurePosixPath(path.lstrip("/"))
+        else:
+            candidate = pathlib.PurePosixPath(base) / path if base else pathlib.PurePosixPath(path)
+        parts: list[str] = []
+        for part in candidate.parts:
+            if part == "..":
+                if parts:
+                    parts.pop()
+            elif part != ".":
+                parts.append(part)
+        target = "/".join(parts)
+        if target not in targets:
+            targets.append(target)
+    return targets
+
+
+def requirement_matrix_evidence_exists() -> None:
+    """A `DONE` row must cite evidence that is present, not just a commit that resolves.
+
+    Checks that the pin is reachable say nothing about whether the files a row cites exist at
+    that pin. A row marked `DONE` against evidence added in a later pull request is reachable
+    from `main` and still wrong: a reader who opens the pin finds the claim without its support.
+    This check resolves each cited path at the pin when the pin is available, and at HEAD
+    otherwise, and says which it used.
+    """
+    matrix = "docs/governance/alpha-4-requirement-matrix.md"
+    text = read(matrix)
+    pin = re.search(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", text, re.M)
+
+    def at(sha: str, path: str) -> bool:
+        if subprocess.run(["git", "cat-file", "-e", f"{sha}:{path}"],
+                          cwd=ROOT, capture_output=True).returncode == 0:
+            return True
+        # A conformance case is cited by number (`conformance/228`) and stored under a
+        # descriptive name (`conformance/228-classes-and-contracts.oq`). Resolving the number
+        # to its files is the check doing its job rather than a missing citation.
+        parent, _, leaf = path.rpartition("/")
+        if leaf.isdigit() and parent:
+            listed = subprocess.run(["git", "ls-tree", "--name-only", sha, f"{parent}/"],
+                                    cwd=ROOT, capture_output=True, text=True).stdout
+            return any(pathlib.PurePosixPath(name).name.startswith(f"{leaf}-")
+                       for name in listed.split())
+        return False
+
+    missing = []
+    checked_against = "HEAD"
+    if pin and subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{pin.group(1)}^{{commit}}"],
+                              cwd=ROOT, capture_output=True).returncode == 0:
+        checked_against = pin.group(1)
+
+    for line in text.splitlines():
+        if not line.startswith("|") or "`DONE`" not in line:
+            continue
+        for target in cited_paths(line):
+            if not at(checked_against, target):
+                missing.append(f"{target} (cited by a DONE row)")
+
+    # A citation that resolves nowhere is a dead reference and always fails.
+    dead = [item for item in missing if not at("HEAD", item.split(" (cited by")[0])]
+    if dead:
+        for item in sorted(set(dead)):
+            problems.append(
+                f"{matrix} cites {item}, which does not exist in the repository; a DONE row must "
+                f"cite evidence a reader can open")
+        return
+
+    # A citation that exists now but not at the pin is a row whose evidence postdates the pin.
+    # The pin moves to the merge commit of the round that added it, so this window is expected;
+    # it is reported rather than hidden, because a reader who opens the pin finds the claim
+    # without its support.
+    postdating = sorted(set(missing))
+    if postdating:
+        note(f"every file cited by a DONE row in {matrix} exists; {len(postdating)} postdate the "
+             f"pin at {checked_against} and are listed in the pin note: "
+             + ", ".join(postdating))
+    else:
+        note(f"every file cited by a DONE row in {matrix} exists at {checked_against}")
+
+
 def requirement_matrix_verification_pin_is_real() -> None:
     matrix = "docs/governance/alpha-4-requirement-matrix.md"
     match = re.search(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", read(matrix), re.M)
@@ -921,7 +1049,361 @@ def examples_readme_lists_every_program() -> None:
     note(f"examples/README.md lists all {len(present)} example programs")
 
 
+def category_table_rows(text: str) -> list[str]:
+    """First-column values of the table whose header names a Category column."""
+    rows: list[str] = []
+    in_table = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            in_table = False
+            continue
+        cells = [cell.strip().lower() for cell in stripped.strip("|").split("|")]
+        if not in_table:
+            in_table = "category" in cells[:1]
+            continue
+        if all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells if cell):
+            continue
+        if cells and cells[0]:
+            rows.append(cells[0])
+    return rows
+
+
+def ai_review_categories_match_the_validator() -> None:
+    """The seven review categories live in three places and must agree.
+
+    scripts/check-ai-review.py is the enforcement, so it is the source of truth. The policy
+    states them for a reader and the template repeats them for a contributor. If a name drifts,
+    every future record becomes invalid, and the contributor sees a gate rejection instead of a
+    documentation error -- which is the wrong place to discover it.
+
+    The comparison is on parsed table rows rather than on substrings, because a rename that
+    leaves the old phrase somewhere in the prose would satisfy a substring test while breaking
+    every record.
+    """
+    validator = load_module("check-ai-review.py")
+    expected = list(validator.CATEGORIES)
+
+    for document in ("docs/governance/ai-review-policy.md",
+                     "docs/governance/reviews/README.md"):
+        text = read(document)
+
+        # Every category row in the template begins with the category name in its first cell.
+        rows = [cell.strip().lower()
+                for cell in re.findall(r"^\|[ \t]*([^|]+?)[ \t]*\|", text, re.M)]
+        found = [row for row in rows if row in expected]
+
+        missing = [category for category in expected if category not in found]
+        if missing:
+            problems.append(
+                f"{document} has no table row for {len(missing)} of the seven review "
+                f"categories: " + ", ".join(missing))
+
+        # The category table is the one whose header cell is "Category". Rows outside it belong
+        # to other tables (the independence table, the findings table) and are not categories.
+        block = category_table_rows(text)
+        for row in block:
+            if row in expected or len(row.split()) < 2:
+                continue
+            problems.append(
+                f"{document} has the row '{row}' in its category table, which is not one of the "
+                f"categories scripts/check-ai-review.py requires; a renamed category breaks "
+                f"every record")
+
+    note(f"all {len(expected)} review categories appear as table rows, spelled identically, in "
+         f"the policy and the template")
+
+
+def ai_review_pinned_models_match_the_agents() -> None:
+    """The independence rule compares against the models the agent files pin.
+
+    scripts/check-ai-review.py falls back to a hardcoded set when .github/agents is absent. That
+    fallback is what decides whether a claim of independence is rejected, so it must not drift
+    away from the agent files it stands in for.
+    """
+    validator = load_module("check-ai-review.py")
+    fallback = set(validator.FALLBACK_PINNED)
+
+    pinned = set()
+    for agent in sorted((ROOT / ".github" / "agents").glob("*.agent.md")):
+        match = re.search(r"^model:[ \t]*(\S+)[ \t]*$", read(str(agent.relative_to(ROOT))), re.M)
+        if match:
+            pinned.add(match.group(1).strip("\"'").lower())
+
+    if not pinned:
+        problems.append(".github/agents pins no model, so the independence rule has nothing to "
+                        "compare against")
+        return
+    if pinned != fallback:
+        problems.append(
+            f"scripts/check-ai-review.py falls back to {sorted(fallback)} but the agents pin "
+            f"{sorted(pinned)}; update FALLBACK_PINNED so the independence rule compares against "
+            f"the models actually in use")
+
+    note(f"the independence rule compares against {sorted(pinned)}, matching the agent files")
+
+
+def review_records_are_not_in_the_docs_catalog() -> None:
+    """A review record is per-pull-request paperwork, not published documentation.
+
+    docs/catalog.json is generated from every Markdown file under docs/, so a record in that
+    tree makes the catalog stale on every pull request and turns a documentation gate into a
+    recurring merge obstacle for something no reader navigates to.
+    """
+    catalog = json.loads(read("docs/catalog.json"))
+    # The schema is {"schema": ..., "docs": [...]}. An earlier version of this check read
+    # "documents", which does not exist, so it compared an empty list and could never fail.
+    entries = catalog.get("docs", [])
+    if not entries:
+        problems.append("docs/catalog.json has no 'docs' entries, so this check examined nothing")
+        return
+    offenders = [entry.get("path", "") for entry in entries
+                 if isinstance(entry, dict) and "/reviews/PR-" in entry.get("path", "")]
+    if offenders:
+        problems.append(
+            "docs/catalog.json lists review records, which are per-pull-request paperwork rather "
+            f"than documentation: {offenders[:3]}. Exclude docs/governance/reviews/PR-*.md from "
+            "scripts/gen-docs-catalog.py")
+
+
+# The gate has to be *executed*, not merely named. `echo python3 scripts/check-ai-review.py`
+# mentions the script on a line of its own and prints it; the step exits 0 and the required
+# context stays green. So the line must begin with an interpreter and the script, and nothing
+# that would make the shell evaluate it into a string.
+GATE_INVOCATION = re.compile(
+    r"^(?:exec\s+)?(?:python3?|py\s+-3)\s+(?:\./)?scripts/check-ai-review\.py(?:\s|$)"
+)
+
+
+def _runs_the_gate(run: str) -> bool:
+    """True when a `run:` block executes the gate, rather than mentioning it."""
+    return any(GATE_INVOCATION.match(line) for line in _command_lines(run))
+
+
+def _command_lines(run: str) -> list[str]:
+    """The lines of a `run:` block that the shell actually executes.
+
+    Comment lines are dropped. The previous version of this check passed edit `A` because the
+    only place the required context name appeared was a comment *inside the gate step*, so the
+    check was reading prose, not the workflow.
+    """
+    lines = []
+    for line in run.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            lines.append(stripped)
+    return lines
+
+
+def _matrix_values(job: dict, key: str) -> list[str]:
+    """The values a matrix key expands to, whether written as a list or bare."""
+    matrix = (job.get("strategy") or {}).get("matrix") or {}
+    value = matrix.get(key)
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [str(item) for item in value]
+
+
+# The status context `main-protection` requires. `scripts/apply-branch-protection.sh` PUTs the
+# whole ruleset, so this name and the workflow's job name have to agree: renaming either one
+# silently blocks every merge in the repository.
+REQUIRED_CONTEXT_OS = "ubuntu-latest"
+REQUIRED_CONTEXT_JAVA = "21"
+
+
+def ai_review_gate_is_wired_into_ci() -> None:
+    """The gate is enforced only while a CI step that cannot be defused runs it.
+
+    Nothing else notices the step being deleted: the required status context still reports
+    success, because the other steps in that job still run. Enforcing through an existing
+    context is what keeps the ruleset unchanged, and it is also what makes the wiring itself
+    the only thing that needs checking.
+
+    The check parses the workflow rather than searching its text. Seventeen edits that left a
+    string search satisfied -- a falsy `if:`, a `run:` replaced with `echo`, `|| echo`,
+    `--pr 224`, a literal `GH_PR_NUMBER`, a different matrix cell, a job-level
+    `continue-on-error`, the step moved to an unrequired job -- all defeated the previous
+    version, because the string it looked for existed only in a comment. Only deleting the step
+    or rewording that comment failed it.
+    """
+    workflow = ROOT / ".github" / "workflows" / "ci.yml"
+    if not workflow.is_file():
+        problems.append("ci.yml is missing; the AI review gate cannot be enforced")
+        return
+    text = read(workflow)
+
+    try:
+        import yaml
+    except ImportError:  # pragma: no cover - PyYAML is present in CI and in the dev environment
+        problems.append(
+            "PyYAML is unavailable, so the AI review gate step cannot be verified; a check that "
+            "silently degrades is the weakness it is meant to prevent"
+        )
+        return
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError as error:
+        problems.append(f"ci.yml cannot be parsed, so the AI review gate cannot be verified: {error}")
+        return
+    if not isinstance(parsed, dict):
+        problems.append("ci.yml is not a workflow document, so the AI review gate cannot be verified")
+        return
+
+    # Which job reports the required context. A job whose name is built from `matrix.os` and
+    # `matrix.java` reports one context per cell; only the cell the ruleset names counts.
+    producing = []
+    for job_id, job in (parsed.get("jobs") or {}).items():
+        if not isinstance(job, dict):
+            continue
+        name = str(job.get("name") or "")
+        if "matrix.os" not in name or "matrix.java" not in name:
+            continue
+        if (
+            REQUIRED_CONTEXT_OS in _matrix_values(job, "os")
+            and REQUIRED_CONTEXT_JAVA in _matrix_values(job, "java")
+        ):
+            producing.append((job_id, job))
+    required = f"{REQUIRED_CONTEXT_OS} / JDK {REQUIRED_CONTEXT_JAVA}"
+    if not producing:
+        problems.append(
+            f"ci.yml has no job reporting the required context '{required}', which is the "
+            f"context the ruleset requires and the AI review gate rides on"
+        )
+        return
+    if len(producing) > 1:
+        problems.append(
+            f"ci.yml has {len(producing)} jobs that report the required context '{required}'; "
+            f"exactly one is expected, because renaming or duplicating it changes what is "
+            f"enforced: " + ", ".join(job_id for job_id, _ in producing)
+        )
+    headless = [
+        step
+        for _, producing_job in producing
+        for step in (producing_job.get("steps") or [])
+        if isinstance(step, dict) and _runs_the_gate(str(step.get("run") or ""))
+    ]
+    if not headless:
+        problems.append(
+            f"no job reporting '{required}' runs scripts/check-ai-review.py, so AI review is not "
+            f"enforced; the required status context would stay green without it"
+        )
+        return
+    job_id, job = producing[0]
+
+    # A job that is skipped reports the context as missing, never as failed -- which blocks
+    # every merge rather than silently admitting one, but is still not the gate running.
+    job_condition = ("" if "if" not in job else str(job["if"])).strip().lower()
+    if job_condition in {"false", "0", "no", "${{ false }}", "'false'", '"false"'}:
+        problems.append(
+            f"the job reporting '{required}' is skipped by 'if: {job_condition}', so the AI "
+            f"review gate never runs in the required context"
+        )
+
+    # `continue-on-error` at job level lets a failing gate pass the required context.
+    allowed_error = (None, False, "false", "False")
+    if job.get("continue-on-error") not in allowed_error:
+        problems.append(
+            f"the job reporting '{required}' sets continue-on-error: "
+            f"{job['continue-on-error']}, so a failing AI review gate reports success"
+        )
+
+    steps = [step for step in (job.get("steps") or []) if isinstance(step, dict)]
+    gate_steps = [step for step in steps if _runs_the_gate(str(step.get("run") or ""))]
+    if len(gate_steps) != 1:
+        problems.append(
+            f"job '{job_id}' has {len(gate_steps)} steps running check-ai-review.py; exactly "
+            f"one is expected, and it has to be in the job the ruleset requires"
+        )
+        return
+    gate = gate_steps[0]
+
+    # The step has to be unconditional for the required cell. `if:` is legitimate when it
+    # selects that cell -- that is how the step is bound to the context. What is not legitimate
+    # is a condition that evaluates to false, which skips the gate while the job stays green.
+    # Read the key rather than `value or ""`: YAML `if: false` parses to the boolean False,
+    # which `or` discards, so the condition that skips the gate read as absent.
+    condition = "" if "if" not in gate else str(gate["if"]).strip()
+    if condition:
+        lowered = condition.lower()
+        if lowered in {"false", "0", "no", "${{ false }}", "'false'", '"false"'}:
+            problems.append(
+                f"the AI review gate step is skipped by 'if: {condition}', so the required "
+                f"context stays green without the gate running"
+            )
+        elif not (
+            "matrix.os" in lowered
+            and "matrix.java" in lowered
+            and REQUIRED_CONTEXT_OS in lowered
+            and REQUIRED_CONTEXT_JAVA in lowered
+        ):
+            problems.append(
+                f"the AI review gate step's condition '{condition}' does not select the "
+                f"'{required}' cell, so the gate can be skipped in the required context"
+            )
+
+    if gate.get("continue-on-error") not in allowed_error:
+        problems.append(
+            f"the AI review gate step sets continue-on-error: {gate['continue-on-error']}, so a "
+            f"failing gate reports success in the required context"
+        )
+
+    # How the gate is invoked. A gate that is handed a different pull request number, or told
+    # to tolerate a shallow clone, reports on something other than this change.
+    invocations = [
+        line
+        for line in _command_lines(str(gate.get("run") or ""))
+        if "check-ai-review.py" in line
+    ]
+    if len(invocations) != 1:
+        problems.append(
+            f"the AI review gate step invokes check-ai-review.py {len(invocations)} times; "
+            f"exactly once is expected"
+        )
+        return
+    command = invocations[0]
+    # `||` and `;` let the gate fail while the step still exits 0. A pipe hands the exit status
+    # to the downstream command. `&&` is fine: a failed gate still fails the step.
+    if "||" in command or ";" in command or ("|" in command.replace("||", "")):
+        problems.append(
+            f"the AI review gate step runs '{command}', which swallows the gate's exit status "
+            f"with `||`, `;` or a pipe"
+        )
+    tail = command.split("check-ai-review.py", 1)[1].split("#", 1)[0].strip()
+    if tail:
+        problems.append(
+            f"the AI review gate step runs 'check-ai-review.py {tail}'; it must run with no "
+            f"arguments so it validates the pull request this run belongs to. `--pr` also "
+            f"silently outranks the event payload, and `--allow-shallow` skips the ancestry check"
+        )
+
+    # The event the gate reads its pull request number from. A literal here -- or a number
+    # taken from anything but the pull request this run is for -- redirects the whole gate.
+    for location, env in (("step", gate.get("env") or {}), ("job", job.get("env") or {})):
+        if not isinstance(env, dict):
+            continue
+        number = str(env.get("GH_PR_NUMBER", "")).strip()
+        if number and not re.search(r"pull_request\.(?:number|head\.number)", number):
+            problems.append(
+                f"the AI review gate's {location} env sets GH_PR_NUMBER to '{number}', which is "
+                f"not this run's pull request; the gate would validate another pull request's "
+                f"review record"
+            )
+    if not str((gate.get("env") or {}).get("GH_PR_NUMBER", "")).strip():
+        problems.append(
+            "the AI review gate step has no GH_PR_NUMBER, so it has no pull request to check"
+        )
+
+    note(f"ci.yml runs the AI review gate in '{required}', in job '{job_id}', unconditionally")
+
+
 CHECKS = (
+    ai_review_gate_is_wired_into_ci,
+    requirement_matrix_evidence_exists,
+    ai_review_categories_match_the_validator,
+    ai_review_pinned_models_match_the_agents,
+    review_records_are_not_in_the_docs_catalog,
     stdlib_reference_is_current,
     keyword_budget_is_honest,
     command_form_matches_the_spec,

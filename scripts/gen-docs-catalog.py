@@ -59,8 +59,20 @@ def entry_for(path: Path) -> dict:
     }
 
 
+# Per-pull-request review records are paperwork, not documentation. Cataloging them made
+# docs/catalog.json stale on every pull request and turned a docs gate into a recurring merge
+# obstacle for a file no reader navigates to.
+EXCLUDED = ("docs/governance/reviews/PR-",)
+
+
+def is_cataloged(relative: pathlib.Path) -> bool:
+    return not any(relative.as_posix().startswith(prefix) for prefix in EXCLUDED)
+
+
 def build() -> dict:
-    paths = sorted(DOCS.rglob("*.md"), key=lambda p: p.relative_to(ROOT).as_posix())
+    paths = sorted((p for p in DOCS.rglob("*.md")
+                    if is_cataloged(p.relative_to(ROOT))),
+                   key=lambda p: p.relative_to(ROOT).as_posix())
     return {"schema": SCHEMA, "docs": [entry_for(p) for p in paths]}
 
 

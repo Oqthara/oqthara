@@ -356,6 +356,12 @@
       "slug": "docs/adr/0058-filesystem-metadata-and-configuration-formats"
     },
     {
+      "path": "docs/adr/0059-ai-review-as-the-review-mechanism.md",
+      "title": "ADR-0059 — AI review is the review mechanism",
+      "section": "adr",
+      "slug": "docs/adr/0059-ai-review-as-the-review-mechanism"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
@@ -366,6 +372,12 @@
       "title": "Architecture decisions",
       "section": "governance",
       "slug": "docs/governance/README"
+    },
+    {
+      "path": "docs/governance/ai-review-policy.md",
+      "title": "AI review policy",
+      "section": "governance",
+      "slug": "docs/governance/ai-review-policy"
     },
     {
       "path": "docs/governance/alpha-4-9-7-collection-evidence.md",
@@ -474,6 +486,12 @@
       "title": "Type model and typed `data` fields — decision brief",
       "section": "governance",
       "slug": "docs/governance/remediation/type-system-decision-brief"
+    },
+    {
+      "path": "docs/governance/reviews/README.md",
+      "title": "AI review records",
+      "section": "governance",
+      "slug": "docs/governance/reviews/README"
     },
     {
       "path": "docs/governance/roadmap-alpha-3.md",
