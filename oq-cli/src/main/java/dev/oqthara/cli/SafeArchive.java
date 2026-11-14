@@ -30,10 +30,24 @@ import java.util.zip.ZipInputStream;
  * installing a file the archive's author did not ask for, which is a different defect that is
  * harder to notice. This class refuses.
  *
- * <p>Symbolic links are refused outright. The JDK distribution archives contain none, so the
- * only reason to support them would be a requirement that does not exist, and a link whose target
- * is inside the root can still be written through after creation. Refusing is the policy the ADR
- * prefers; supporting links is a change to the ADR, not to this class.
+ * <p>Symbolic links are a different case for each format, because the formats differ. A ZIP
+ * entry that is a link is refused outright: the JDK ZIP is the Windows archive and contains none,
+ * so supporting one would be a requirement that does not exist. A tar entry that is a link is
+ * created, but only when its target is inside the root — ADR-0048 D4 permits exactly that, and
+ * the Linux and macOS JDK tarballs require it, because they carry 205 relative {@code legal/}
+ * cross-references between modules. Refusing every link there would make every non-Windows install
+ * impossible.
+ *
+ * <p>The containment test for a tar link is not a string comparison, and getting this wrong is
+ * easy enough that it is worth recording. {@link Path#normalize} is textual, so it cancels a
+ * component against a following {@code ..} without asking whether that component is a link. Two
+ * entries are then enough to escape: {@code bin/q -> .} is accepted because {@code bin/q/.} is
+ * {@code bin}, and {@code bin/java -> q/../../victim} is accepted because {@code normalize} cancels
+ * {@code q}, while the kernel resolves {@code q} to {@code bin} and the {@code ../..} leaves. The
+ * same escape works with the two entries in the opposite order. Entry order belongs to the
+ * attacker, so containment is decided once, after the whole archive has been written, by
+ * resolving every link with {@link Path#toRealPath} and requiring the result to lie inside the
+ * resolved root. A per-entry check is also applied, but only as an early refusal.
  *
  * <p>Extraction is all-or-nothing in the sense that matters: a refused archive leaves no
  * installable runtime, because the caller extracts into a temporary directory and this class
@@ -196,9 +210,12 @@ final class SafeArchive {
      * root — with one difference. The Temurin tarballs contain 205 symbolic links, all of them
      * relative references between the {@code legal/} directories, so refusing links outright
      * would make every non-Windows install impossible. ADR-0048 D4 allows exactly this: links may
-     * be created "only when their target is inside the destination". The containment test is
-     * applied to the resolved target before the link is created, and the write-through check runs
-     * for every later entry, so a link that somehow did escape cannot be used as a foothold.
+     * be created "only when their target is inside the destination". The containment test cannot
+     * be done per entry — see {@link #refuseLinksThatEscape} for why entry order defeats any such
+     * check — so it is done once, after the archive is fully written, by resolving each link the
+     * way the kernel will and comparing against the resolved root. The write-through check still
+     * runs for every later entry, so an escaping link cannot be used as a foothold before that
+     * final pass runs either.
      *
      * <p>Hard links are refused. They are the same escape (a name for a file outside the root) and
      * no pinned archive contains one, so there is no case to support.
@@ -211,6 +228,7 @@ final class SafeArchive {
         Set<String> claimed = new HashSet<>();
         Set<Path> executableTargets = new java.util.LinkedHashSet<>();
         List<Path> written = new ArrayList<>();
+        List<Path> links = new ArrayList<>();
         long total = 0;
         int count = 0;
 
@@ -282,6 +300,7 @@ final class SafeArchive {
                     Files.deleteIfExists(target);
                     Files.createSymbolicLink(target, linkTarget);
                     written.add(target);
+                    links.add(target);
                     skipPadding(gz, size);
                     continue;
                 }
@@ -298,6 +317,7 @@ final class SafeArchive {
                 skipPadding(gz, size);
             }
 
+            refuseLinksThatEscape(root, links);
             for (Path target : executableTargets) {
                 makeExecutable(target);
             }
@@ -325,14 +345,74 @@ final class SafeArchive {
     }
 
     /**
+     * Refuses any created link whose physical target is outside the root, and any that does not
+     * resolve at all.
+     *
+     * <p>{@link #linkTargetOf} refuses a target that traverses a link that already exists, which
+     * stops the obvious two-entry chain. It cannot stop the reverse order: a link {@code q -> ../..}
+     * is created while {@code q} is the only link, and a later entry {@code a -> q/jdk} is then free
+     * to point through it, because at the moment {@code q/jdk} was checked the segment walk found
+     * no link on it. Entry order is the attacker's to choose, so no per-entry check can be
+     * order-independent.
+     *
+     * <p>This pass therefore runs once, after every entry has been written, when the tree is
+     * complete and the answer no longer depends on order. Each link is resolved with
+     * {@link Path#toRealPath}, which follows links the way the kernel does, and the result must lie
+     * inside the root. The root is resolved first, because on macOS a temporary directory is behind
+     * {@code /private} and comparing a resolved path against an unresolved root would fail for
+     * every link. A link that does not resolve is refused too: no vendor archive produces a
+     * dangling link, and accepting one would leave a name whose meaning is decided later.
+     *
+     * <p>This is why the class can create links at all. ADR-0048 D4 permits a link whose target is
+     * inside the destination, and that cannot be established correctly one entry at a time — so it
+     * is established at the first moment it can be, when the archive is fully unpacked and nothing
+     * has been activated.
+     */
+    private static void refuseLinksThatEscape(Path root, List<Path> links) throws IOException {
+        if (links.isEmpty()) {
+            return;
+        }
+        Path realRoot = root.toRealPath();
+        for (Path link : links) {
+            String name = root.relativize(link).toString().replace('\\', '/');
+            Path real;
+            try {
+                real = link.toRealPath();
+            } catch (IOException unresolved) {
+                throw new ArchiveRejected("archive contains a symbolic link that does not resolve"
+                        + " inside the extraction root: " + name);
+            }
+            if (!real.startsWith(realRoot)) {
+                throw new ArchiveRejected("archive contains a symbolic link that resolves outside"
+                        + " the extraction root: " + name);
+            }
+        }
+    }
+
+    /**
      * The target a symbolic link may be created with, or a refusal.
      *
-     * <p>The target is resolved lexically against the link's own directory and checked against the
-     * root, which is the containment test ADR-0048 D4 names. Resolution is deliberately lexical
-     * rather than {@code toRealPath}: the target may not have been written yet, so asking the
-     * filesystem would refuse the legal/{@code java.base} references that are the whole reason
-     * links are supported. Nothing is written through the link by this class, and
-     * {@link #refuseSymlinkOnPath} refuses any later entry that would be.
+     * <p>ADR-0048 D4 allows a link only when its target is inside the destination. Testing that
+     * containment by normalising the joined path is <em>not</em> sufficient, and the reason is
+     * worth stating because the obvious implementation is wrong: {@link Path#normalize} is purely
+     * textual, so it cancels a component against a following {@code ..} without ever asking the
+     * filesystem whether that component is a directory. Two entries are enough to abuse it. A link
+     * {@code bin/q -> .} is accepted, because {@code bin/q/.} normalises to {@code bin}. A second
+     * link {@code bin/java -> q/../../../victim} also normalises to a path inside the root, since
+     * {@code q} is cancelled by the first {@code ..} — while the kernel resolves {@code q} to
+     * {@code bin} and the remaining {@code ../..} climb out. The stored text then means something
+     * different again once the staging directory is renamed into place.
+     *
+     * <p>So the target is walked segment by segment from the link's own directory, and any segment
+     * that exists as a symbolic link is refused rather than followed. A target is therefore a
+     * path through ordinary directories only, which makes lexical and physical resolution agree
+     * and makes the meaning independent of when the link is created. This does not refuse the
+     * links a real JDK carries: those are relative {@code legal/java.base/...} references into
+     * ordinary directories, 205 of them in the Linux tarball and none escaping the root.
+     *
+     * <p>Following a link that points inside would be sound in principle, but proving it needs a
+     * resolution loop that re-checks each hop against the root within a bounded number of hops.
+     * Refusing is the stronger rule and costs nothing here, because no vendor archive needs it.
      */
     private static Path linkTargetOf(Path root, Path link, String linkName, String entryName)
             throws ArchiveRejected {
@@ -349,10 +429,31 @@ final class SafeArchive {
         if (parent == null) {
             throw new ArchiveRejected("archive symbolic link has no parent: " + entryName);
         }
-        Path resolved = parent.resolve(declared).normalize();
-        if (!resolved.startsWith(root)) {
-            throw new ArchiveRejected("archive contains a symbolic link that leaves the"
-                    + " extraction root: " + entryName + " -> " + linkName);
+
+        Path current = parent;
+        for (Path segment : declared) {
+            String name = segment.toString();
+            if (name.isEmpty() || name.equals(".")) {
+                continue;
+            }
+            if (name.equals("..")) {
+                current = current.getParent();
+                if (current == null || !current.startsWith(root)) {
+                    throw new ArchiveRejected("archive contains a symbolic link that leaves the"
+                            + " extraction root: " + entryName + " -> " + linkName);
+                }
+                continue;
+            }
+            current = current.resolve(name);
+            if (!current.startsWith(root)) {
+                throw new ArchiveRejected("archive contains a symbolic link that leaves the"
+                        + " extraction root: " + entryName + " -> " + linkName);
+            }
+            if (Files.isSymbolicLink(current)) {
+                throw new ArchiveRejected("archive contains a symbolic link whose target"
+                        + " traverses another symbolic link, which cannot be shown to stay inside"
+                        + " the extraction root: " + entryName + " -> " + linkName);
+            }
         }
         return declared;
     }

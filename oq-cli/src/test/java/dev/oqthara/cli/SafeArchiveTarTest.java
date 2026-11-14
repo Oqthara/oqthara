@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -170,6 +171,69 @@ class SafeArchiveTarTest {
      * resolves to {@code <root>/outside}, which is inside and therefore allowed. The containment
      * test is lexical, so the number of levels is the thing that matters.
      */
+    /**
+     * The two-link chain that a lexical containment check accepts.
+     *
+     * <p>{@code bin/q -> .} normalises to {@code bin}, which is inside; {@code bin/java -> q/../../..}
+     * also normalises to a path inside, because {@code normalize} cancels {@code q} against the
+     * first {@code ..} without knowing that {@code q} is a link. The kernel resolves it out of the
+     * root. This is the exact archive an independent review constructed against the previous
+     * lexical check, and it is the reason the check is no longer lexical.
+     */
+    @Test
+    void refusesATwoLinkChainThatIsInsideLexically(@TempDir Path temp) throws IOException {
+        Path archive = targz(temp, "runtime.tar.gz",
+                directory("jdk-21/bin/"),
+                symlink("jdk-21/bin/q", "."),
+                symlink("jdk-21/bin/java", "q/../../victim"));
+
+        Path out = root(temp);
+        SafeArchive.ArchiveRejected refused = assertThrows(SafeArchive.ArchiveRejected.class,
+                () -> SafeArchive.extract(archive, out));
+        assertTrue(refused.getMessage().contains("symbolic link"), refused.getMessage());
+        assertFalse(Files.exists(out.resolve("jdk-21/bin/java")), "the link must not survive");
+    }
+
+    /**
+     * The same escape with the entries in the other order, which no per-entry check can catch.
+     *
+     * <p>Here {@code q -> ../..} is created while it is the only link, so the segment walk sees no
+     * link on it; {@code a -> q/jdk} is created afterwards and points through it. Reversing the
+     * order of the two entries must not change the verdict, which is why containment is decided
+     * once, after the whole archive has been written.
+     */
+    @Test
+    void refusesAChainWhoseLinksAreCreatedInTheOtherOrder(@TempDir Path temp) throws IOException {
+        Path archive = targz(temp, "runtime.tar.gz",
+                directory("jdk-21/"),
+                symlink("jdk-21/a", "q/../../victim"),
+                symlink("jdk-21/q", "."));
+
+        Path out = root(temp);
+        SafeArchive.ArchiveRejected refused = assertThrows(SafeArchive.ArchiveRejected.class,
+                () -> SafeArchive.extract(archive, out));
+        assertTrue(refused.getMessage().contains("symbolic link"), refused.getMessage());
+        assertFalse(Files.exists(out.resolve("jdk-21/a")), "the link must not survive");
+    }
+
+    /**
+     * A dangling link is refused, because its meaning would be decided later.
+     *
+     * <p>No vendor archive contains one, and accepting it would leave a name in the tree that
+     * resolves only if something outside the archive happens to appear at that path afterwards.
+     */
+    @Test
+    void refusesALinkThatDoesNotResolve(@TempDir Path temp) throws IOException {
+        Path archive = targz(temp, "runtime.tar.gz",
+                directory("jdk-21/"),
+                symlink("jdk-21/missing", "not-there"));
+
+        Path out = root(temp);
+        SafeArchive.ArchiveRejected refused = assertThrows(SafeArchive.ArchiveRejected.class,
+                () -> SafeArchive.extract(archive, out));
+        assertTrue(refused.getMessage().contains("does not resolve"), refused.getMessage());
+    }
+
     @Test
     void refusesALinkThatLeavesTheRoot(@TempDir Path temp) throws IOException {
         Path archive = targz(temp, "runtime.tar.gz",
