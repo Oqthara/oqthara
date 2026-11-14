@@ -488,6 +488,12 @@
       "slug": "docs/reference/cli"
     },
     {
+      "path": "docs/reference/language-guide.md",
+      "title": "Oqthara language reference",
+      "section": "reference",
+      "slug": "docs/reference/language-guide"
+    },
+    {
       "path": "docs/spec/backend.md",
       "title": "Backend status and limitations",
       "section": "spec",
