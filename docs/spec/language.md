@@ -617,6 +617,12 @@ message says so. Lists, tuples, sets, maps (keys), ranges and text all have `.it
 step. Ranges also gained a method surface: `.to_list()`, `.to_set()`, `.first()`, `.last()`,
 `.contains(x)`, `.sum()`, `.min()`, `.max()`, `.sorted()` and `.reverse()`.
 
+`range_list(start, stop)` is the function form of `range(start, stop, 1).to_list()`, for
+callers who want the values in one call. It takes no step and counts upwards, so it is a
+convenience rather than a second range syntax: there is exactly one range type and this is
+not it. A `start` at or above `stop` yields an empty list rather than raising, matching
+`range` called with a positive step.
+
 Membership in a range means **reachable by the walk**, not merely inside the bounds. A range
 that steps by three holds only every third number: `3 in range(0, 10, 3)` is true and
 `2 in range(0, 10, 3)` is false, even though `2` lies between the ends. A range that counts
@@ -1509,6 +1515,47 @@ stated here because it is otherwise indistinguishable from writing the link itse
 print walk("src")   # ["main", "main/Main.java", "test", "test/MainTest.java"]
 ```
 
+Metadata: `stat(path)` returns a map whose keys are size in bytes as a number, modified and
+created as ISO-8601 text, mode as octal text, and readable, writable, executable, `is_file`,
+`is_dir` and a symbolic-link flag as booleans. Mode is present only where the platform has
+POSIX permissions; it is omitted elsewhere rather than filled with a number that means nothing. With a symbolic link it describes the link rather
+than its target, so the symbolic-link flag is true while `is_file` is false — which is why the
+two are separate flags and not one type field. `touch(path)` creates an empty file or updates
+the modified time of an existing one.
+
+```oq
+# for a 215-byte regular file
+print stat("a.oq")
+# {"size": 215, "is_file": true, "is_dir": false, "is_symlink": false,
+#  "modified": "2026-11-14T02:32:10.990Z", "created": "2026-11-14T02:32:10.000Z",
+#  "readable": true, "writable": true, "executable": false, "mode": "644"}
+```
+
+`temp_dir(prefix)` creates a new directory under the platform temporary directory and returns
+its path. The prefix is required and is checked against the separator and `..`, so a prefix
+cannot escape the temporary directory. The directory is the caller's: nothing removes it, and
+there is no scope or `close` that would, so a program that calls `temp_dir` leaves a directory
+behind unless it deletes it. See [ADR-0058](../adr/0058-filesystem-metadata-and-configuration-formats.md).
+
+`read_lines_or_empty(path)` is `read_lines` that returns an empty list for a missing file
+instead of raising. It is the one place a missing file is not an error, and it is a separate
+name from `read_lines` for exactly that reason — a caller that has not decided what a missing
+file means should get the error.
+
+`path_absolute(path)` places a relative path under `cwd()` and `path_normalize(path)` removes
+`.` and empty segments and collapses `a/..` pairs. Neither touches the filesystem: they are text
+transformations, so `path_absolute` resolves a path that does not exist, and
+`path_normalize("a/../b")` is `"b"` whether or not `a` does. Normalising does not make a path
+safe to concatenate — it removes `..` textually, so `path_normalize("a/../../b")` still escapes,
+and only a resolved path plus a prefix check does that.
+
+```oq
+print stat("oq.jar")["size"]          # 14177280
+print stat("oq.jar")["mode"]          # "644"
+print path_normalize("a//b/./c")      # "a/b/c"
+print read_lines_or_empty("absent")   # []
+```
+
 Patterns: `glob(directory, pattern)` returns every matching path under a directory as relative
 text, sorted, and `fnmatch(name, pattern)` tests one file name against one pattern. The dialect
 is Python's glob: `*` and `?` stay inside one path segment, `**` crosses segments, and `[abc]`
@@ -1636,6 +1683,40 @@ refused with `zip_decompress() found a duplicate entry name: <name>` — not res
 the first or the last, either of which would lose archive content silently. Identical content
 does not make the archive unambiguous. Nothing is returned when any entry is refused.
 
+Configuration: `ini_parse(text)` returns a map of section name to a map of key to value, all
+values being text. A key that appears before any `[section]` header goes under the empty string
+`""` rather than being dropped, because a prefix before the first header is legal INI and
+discarding it loses data; `;` and `#` both start a comment, keys and values are trimmed, and the
+last duplicate key wins. `ini_write(sections)` is the inverse and sorts both sections and keys,
+so the same map always produces the same text — a writer whose output depended on insertion
+order would make every diff of the file it produced noisy. A line with no `=` is refused with
+the line number, and so is an unterminated section header.
+
+`properties_parse(text)` implements `java.util.Properties` rules: `=`, `:` or whitespace
+separates a key, `\uXXXX` is decoded, a trailing backslash continues the line, and `#` or `!`
+comments. It diverges from the JDK in four places, each chosen so a malformed file is an error
+instead of a silent misread: a trailing backslash at end of input raises instead of being
+dropped, a malformed `\u` escape names its line instead of being replaced, values are not
+trimmed, and an even run of trailing backslashes ends the line. A program that needs exact JDK
+behaviour should not get it by accident.
+
+`toml_get(text, path)` reads exactly one value at a dotted path under `[table]` headers. A path
+the document does not have is an error, not `nothing` — the document and the question disagree,
+and a `nothing` would be indistinguishable from a TOML value that is deliberately empty. It
+reads bare or quoted strings, integers in decimal,
+hex, octal and binary with `_` separators, floats, booleans, arrays of those, and nested
+tables. It refuses by name rather than guessing: `[[array-of-tables]]` is
+`toml_get() does not support tables of tables ([[...]])`, an inline table is
+`toml_get() does not support inline tables ({...})`, and a date or time is
+`toml_get() does not support dates and times ('1979-05-27')`. Each names the line. This is a
+value reader, not a TOML parser — a whole-document parse is not provided, and the four refusals
+are why. See [ADR-0058](../adr/0058-filesystem-metadata-and-configuration-formats.md).
+
+```oq
+print ini_parse("[a]\nk = v\n")     # {"a": {"k": "v"}}
+print ini_write({"a": {"k": "v"}})   # "[a]\nk = v\n"
+print toml_get("name = \"oq\"\n", "name")   # oq
+```
 
 Text layout: `wrap_text(text, width)` returns the text as a list of lines no longer than
 `width`, `fill_text(text, width)` returns the same thing joined by `\n`, and `shorten_text(text,

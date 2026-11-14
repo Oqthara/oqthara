@@ -350,6 +350,12 @@
       "slug": "docs/adr/0057-repr-text-pastes-back"
     },
     {
+      "path": "docs/adr/0058-filesystem-metadata-and-configuration-formats.md",
+      "title": "ADR-0058 — Filesystem metadata and configuration-format grammars",
+      "section": "adr",
+      "slug": "docs/adr/0058-filesystem-metadata-and-configuration-formats"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
