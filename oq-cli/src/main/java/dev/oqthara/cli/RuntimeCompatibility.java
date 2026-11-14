@@ -22,12 +22,12 @@ import java.util.concurrent.TimeUnit;
  *
  * <ol>
  *   <li>{@code --version}, which proves the jar loads and the launcher works;</li>
- *   <li>a program that exercises the bytecode backend and the standard library together;</li>
+ *   <li>a program that exercises the interpreter and the standard library together;</li>
  *   <li>a program that opens a database through the JNI path, which is the one part of the
  *       runtime that depends on a native library and therefore on the platform.</li>
  * </ol>
  *
- * <p>This is deliberately <em>not</em> the conformance corpus. 229 files is too much to run
+ * <p>This is deliberately <em>not</em> the conformance corpus. 214 programs is too much to run
  * before every install, and running them would turn an install into a slower duplicate of CI.
  * The claim this makes is bounded and stated: these three run, so this JVM is not obviously
  * incompatible. It is not a statement that every language feature works.
@@ -45,8 +45,12 @@ final class RuntimeCompatibility {
     }
 
     /**
-     * Exercises the bytecode backend with a function, a loop, a collection and arithmetic, and
-     * the standard library with a sort and a JSON encode.
+     * Exercises the interpreter with a function, a loop, a collection and arithmetic, and the
+     * standard library with a sort and a JSON encode.
+     *
+     * <p>A bare script path is dispatched to {@code oq run}, so this reaches the interpreter and
+     * not the bytecode compiler. The javadoc said "bytecode backend" for as long as the check
+     * existed, which was never true: the compiler is reached only by {@code oq build}.
      *
      * <p>Named rather than inlined because a test runs it through the interpreter. Every other
      * test of this class drives a fake JVM that prints the expected output, so none of them can
@@ -72,8 +76,14 @@ final class RuntimeCompatibility {
 
     /**
      * Opens a database, writes and reads it back. The only check that needs a native library.
+     *
+     * <p>Named for the same reason as {@link #LANGUAGE_SOURCE}: a test runs this through the
+     * interpreter, so a builtin that does not exist is caught here rather than at install time.
+     * It needs the same guard as the language program, because this check is <em>reported and
+     * not enforced</em> — a broken program would be indistinguishable from a machine without
+     * SQLite, which is a state the installer deliberately accepts.
      */
-    private static final Check DATABASE = new Check("database", """
+    static final String DATABASE_SOURCE = """
             path = path_join(cwd(), "compat-check.db")
             if exists(path)
               delete(path)
@@ -81,7 +91,10 @@ final class RuntimeCompatibility {
             db_execute(path, "CREATE TABLE t (n INTEGER NOT NULL)", [])
             db_execute(path, "INSERT INTO t (n) VALUES (?)", [7])
             print(db_query(path, "SELECT n FROM t", []))
-            """, null);
+            """;
+
+    private static final Check DATABASE =
+            new Check("database", DATABASE_SOURCE, null);
 
     /**
      * How many programs {@link #validate} runs, excluding {@code --version}.

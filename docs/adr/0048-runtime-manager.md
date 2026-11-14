@@ -171,7 +171,7 @@ because a JVM that exits zero after printing the wrong thing has not run the pro
 database check is reported and not enforced: a missing native SQLite library is a property of
 the machine, and refusing an otherwise working JVM for it would reject a runtime on which every
 other program runs. `DOCUMENTED_CHECK_COUNT` exists so the documented count is itself asserted
-rather than drifting from the code. `RuntimeCompatibilityTest` (10 tests) covers a JVM that
+rather than drifting from the code. `RuntimeCompatibilityTest` (11 tests) covers a JVM that
 prints the wrong output, one that hangs, one that passes, one without a database library, a
 missing jar, an unstartable check and — added after the defect below — the check's own program
 executed through the interpreter; dropping the output comparison fails
@@ -206,8 +206,8 @@ it, and refuses if that cannot be done.
 floor because `build.gradle.kts:51-52` targets it. A vendor's release date is not a compatibility
 statement, so the manager validates a candidate by running the jar built from the release being
 installed: `--version`, then a small fixed set of conformance programs chosen because they
-exercise the bytecode backend, the standard library and the JNI database path. It is not the full
-corpus — 212 executable files is too much to run before every install — and the ADR says so
+exercise the interpreter, the standard library and the JNI database path. It is not the full
+corpus — 214 executable files is too much to run before every install — and the ADR says so
 rather than implying a stronger check than exists.
 
 The compatibility check compares the program's text, not only its exit status, because a JVM
@@ -215,6 +215,17 @@ that exits zero having printed the wrong thing has not run the program. It norma
 terminator before comparing: a JVM on Windows writes `\r\n` even when the program prints `\n`,
 and a byte-exact comparison would refuse every working JVM there on first install. The full text
 and the number of lines are still compared.
+
+Both programs are themselves checked by `RuntimeCompatibilityTest` (11 tests), which runs each
+one through the interpreter rather than through a stub. That guard exists because of a defect
+this ADR is the record of: the language program named `list_sort` and `json_stringify`, builtins
+that have never existed, and `oq runtime install` refused every candidate JVM on every platform
+with `'list_sort' is not defined`. Nothing caught it, because every other test of the check
+drives a fake JVM that prints the expected output — a stub that echoes the right characters
+cannot tell a working program from a broken one. The database program had the same exposure and
+is harder to notice, since the database check is reported rather than enforced: a broken program
+there would have been reported as "no native SQLite library on this machine" on every host, and
+the installer accepts that state by design. Both programs now have a test that runs them.
 
 This is not hypothetical. [ADR-0002](0002-ci-split.md) records that the build failed on JDK 25
 with `Unsupported class file major version 69`, because the Gradle release in use at the time

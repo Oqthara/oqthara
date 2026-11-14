@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -203,6 +204,28 @@ class RuntimeCompatibilityTest {
 
         assertEquals(0, result.code(), result.stderr());
         assertEquals("[1,2,3]\n10\n", result.stdout());
+    }
+
+    /**
+     * The database program must also actually run.
+     *
+     * <p>The same defect class as {@link #theLanguageCheckIsAProgramThatRuns}, and harder to
+     * notice: the database check is reported and never enforced, so a program naming a builtin
+     * that does not exist would fail on every machine and be reported as "no native SQLite
+     * library here". Changing {@code db_query} to a name that does not exist leaves every other
+     * test in this class green.
+     *
+     * <p>SQLite is bundled with the driver, so this runs wherever the build runs; there is no
+     * environment condition to skip on.
+     */
+    @Test
+    void theDatabaseCheckIsAProgramThatRuns(@TempDir Path dir) {
+        OqRunner.Result result = OqRunner.run(
+                "<database-check>", RuntimeCompatibility.DATABASE_SOURCE,
+                List.of(), "", dir);
+
+        assertEquals(0, result.code(), result.stderr());
+        assertEquals("[{\"n\": 7}]\n", result.stdout());
     }
 
     @Test

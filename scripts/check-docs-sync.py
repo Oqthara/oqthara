@@ -1044,11 +1044,17 @@ def quoted_test_counts_agree() -> None:
     for path in sorted(ROOT.glob("docs/**/*.md")):
         relative = path.relative_to(ROOT)
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            # Two ways of quoting a class's present size: "`X` (N tests)" and
-            # "`X`, which now holds N". The second is used in the requirement matrix,
-            # where it was wrong by four without anything noticing.
+            # Three ways of quoting a class's present size: "`X` (N tests)", "`X`, which now
+            # holds N", and "N tests in `X`". The first two exist where a document states a
+            # class's size; the third is how the requirement matrix lists the CLI test classes,
+            # and both `RuntimeCompatibilityTest` and `RuntimeInstallerTest` drifted by one
+            # there because nothing checked them.
             pairs = re.findall(r"`([A-Za-z]+Tests?)` \((\d+) tests?\)", line)
             pairs += re.findall(r"`([A-Za-z]+Tests?)`, which now holds (\d+)", line)
+            pairs += [
+                (klass, count)
+                for count, klass in re.findall(r"\b(\d+) tests? in `([A-Za-z]+Tests?)`", line)
+            ]
             for klass, quoted in pairs:
                 if klass not in counts:
                     continue
