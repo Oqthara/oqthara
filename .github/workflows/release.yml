@@ -106,6 +106,7 @@ jobs:
           cd oq-cli/build/libs
           chmod +x "$GITHUB_WORKSPACE/scripts/verify-signature.sh"
           OQ_COSIGN_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+          OQ_COSIGN_IDENTITY_EXACT=1 \
             "$GITHUB_WORKSPACE/scripts/verify-signature.sh" oq.jar oq.jar.sigstore.json
       - name: Gate - a tampered jar fails signature verification
         run: |
@@ -114,6 +115,7 @@ jobs:
           cp oq.jar /tmp/tampered.jar
           printf 'tampered' >> /tmp/tampered.jar
           if OQ_COSIGN_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}" \
+               OQ_COSIGN_IDENTITY_EXACT=1 \
                "$GITHUB_WORKSPACE/scripts/verify-signature.sh" /tmp/tampered.jar oq.jar.sigstore.json; then
             echo "error: a tampered jar verified. The signature check is not working." >&2
             exit 1
