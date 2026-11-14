@@ -648,6 +648,60 @@ def requirement_matrix_figures_match_the_inventory() -> None:
 #     is a promise that someone re-read the matrix against the tree; left unchecked it silently
 #     ages, which is worse than an absent pin because a reader treats a stale SHA as current
 #     evidence. The previous pin had drifted two merges behind and nothing failed.
+def cited_paths(line: str) -> list[str]:
+    """Repository paths a matrix row cites, as markdown links or as backticked paths.
+
+    Both forms are used in the matrix, and a check that saw only links would silently pass every
+    row that cites a file in backticks. Fragments are dropped, absolute paths are resolved
+    against the repository root, and relative ones against `docs/governance`, which is the
+    directory the matrix lives in.
+    """
+    targets: list[str] = []
+    # A markdown link is written relative to the file it appears in; a backticked path is
+    # quoted the way a reader would type it, from the repository root. Conflating the two
+    # produced citations like `docs/governance/scripts/check-ai-review.py` for a file that is
+    # at `scripts/check-ai-review.py`.
+    #
+    # Backticks also hold commands, globs, environment variables and Windows paths. Treating
+    # every one as a citation invents failures, so a backticked token counts only when it is
+    # shaped like a repository path and starts at a real top-level entry.
+    top_level = {entry.name for entry in ROOT.iterdir()}
+    # A row may name a path belonging to another repository, which this check cannot resolve
+    # and must not call missing. `Oqthara/Oqthara.github.io` looks exactly like a path in this
+    # repository, so the two are told apart by the `owner/name` shape and a known-owner list
+    # rather than by guessing.
+    foreign = r"Oqthara/[A-Za-z0-9_.-]+"
+    elsewhere = set(re.findall(foreign, line))
+    quoted = [
+        token for token in re.findall(r"`([^`\s]+)`", line)
+        if "/" in token and token.split("/", 1)[0] in top_level
+        and not re.fullmatch(foreign, token)
+        and not any(token.startswith(entry + "/") for entry in elsewhere)
+    ]
+    for base, raw in [("docs/governance", link) for link in re.findall(r"\]\(([^)]+)\)", line)] \
+            + [("", token) for token in quoted]:
+        path = raw.split("#", 1)[0].strip()
+        if not path or path.startswith(("http://", "https://", "mailto:")):
+            continue
+        if "/" not in path or any(char in path for char in "*?["):
+            continue
+        if path.startswith("/"):
+            candidate = pathlib.PurePosixPath(path.lstrip("/"))
+        else:
+            candidate = pathlib.PurePosixPath(base) / path if base else pathlib.PurePosixPath(path)
+        parts: list[str] = []
+        for part in candidate.parts:
+            if part == "..":
+                if parts:
+                    parts.pop()
+            elif part != ".":
+                parts.append(part)
+        target = "/".join(parts)
+        if target not in targets:
+            targets.append(target)
+    return targets
+
+
 def requirement_matrix_evidence_exists() -> None:
     """A `DONE` row must cite evidence that is present, not just a commit that resolves.
 
@@ -662,8 +716,19 @@ def requirement_matrix_evidence_exists() -> None:
     pin = re.search(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", text, re.M)
 
     def at(sha: str, path: str) -> bool:
-        return subprocess.run(["git", "cat-file", "-e", f"{sha}:{path}"],
-                              cwd=ROOT, capture_output=True).returncode == 0
+        if subprocess.run(["git", "cat-file", "-e", f"{sha}:{path}"],
+                          cwd=ROOT, capture_output=True).returncode == 0:
+            return True
+        # A conformance case is cited by number (`conformance/228`) and stored under a
+        # descriptive name (`conformance/228-classes-and-contracts.oq`). Resolving the number
+        # to its files is the check doing its job rather than a missing citation.
+        parent, _, leaf = path.rpartition("/")
+        if leaf.isdigit() and parent:
+            listed = subprocess.run(["git", "ls-tree", "--name-only", sha, f"{parent}/"],
+                                    cwd=ROOT, capture_output=True, text=True).stdout
+            return any(pathlib.PurePosixPath(name).name.startswith(f"{leaf}-")
+                       for name in listed.split())
+        return False
 
     missing = []
     checked_against = "HEAD"
@@ -674,20 +739,7 @@ def requirement_matrix_evidence_exists() -> None:
     for line in text.splitlines():
         if not line.startswith("|") or "`DONE`" not in line:
             continue
-        for path in re.findall(r"\]\(([^)#]+)\)", line):
-            if path.startswith(("http://", "https://", "#")):
-                continue
-            resolved = path if not path.startswith(".") else path
-            candidate = (pathlib.PurePosixPath("docs/governance") / resolved).as_posix()
-            normalized = pathlib.PurePosixPath(candidate).as_posix().replace("/./", "/")
-            parts: list[str] = []
-            for part in pathlib.PurePosixPath(normalized).parts:
-                if part == "..":
-                    if parts:
-                        parts.pop()
-                elif part != ".":
-                    parts.append(part)
-            target = "/".join(parts)
+        for target in cited_paths(line):
             if not at(checked_against, target):
                 missing.append(f"{target} (cited by a DONE row)")
 
@@ -997,6 +1049,26 @@ def examples_readme_lists_every_program() -> None:
     note(f"examples/README.md lists all {len(present)} example programs")
 
 
+def category_table_rows(text: str) -> list[str]:
+    """First-column values of the table whose header names a Category column."""
+    rows: list[str] = []
+    in_table = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            in_table = False
+            continue
+        cells = [cell.strip().lower() for cell in stripped.strip("|").split("|")]
+        if not in_table:
+            in_table = "category" in cells[:1]
+            continue
+        if all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells if cell):
+            continue
+        if cells and cells[0]:
+            rows.append(cells[0])
+    return rows
+
+
 def ai_review_categories_match_the_validator() -> None:
     """The seven review categories live in three places and must agree.
 
@@ -1004,6 +1076,10 @@ def ai_review_categories_match_the_validator() -> None:
     states them for a reader and the template repeats them for a contributor. If a name drifts,
     every future record becomes invalid, and the contributor sees a gate rejection instead of a
     documentation error -- which is the wrong place to discover it.
+
+    The comparison is on parsed table rows rather than on substrings, because a rename that
+    leaves the old phrase somewhere in the prose would satisfy a substring test while breaking
+    every record.
     """
     validator = load_module("check-ai-review.py")
     expected = list(validator.CATEGORIES)
@@ -1011,25 +1087,31 @@ def ai_review_categories_match_the_validator() -> None:
     for document in ("docs/governance/ai-review-policy.md",
                      "docs/governance/reviews/README.md"):
         text = read(document)
-        for category in expected:
-            if category not in text.lower():
-                problems.append(
-                    f"{document} does not mention the review category '{category}', which "
-                    f"scripts/check-ai-review.py requires")
 
-    stray = []
-    for document in ("docs/governance/ai-review-policy.md",
-                     "docs/governance/reviews/README.md"):
-        for row in re.finditer(r"^\|\s*([a-z][a-z ]+?)\s*\|", read(document), re.M):
-            name = row.group(1).strip()
-            if name.endswith("category") or name in {"severity", "resolved", "page"}:
+        # Every category row in the template begins with the category name in its first cell.
+        rows = [cell.strip().lower()
+                for cell in re.findall(r"^\|[ \t]*([^|]+?)[ \t]*\|", text, re.M)]
+        found = [row for row in rows if row in expected]
+
+        missing = [category for category in expected if category not in found]
+        if missing:
+            problems.append(
+                f"{document} has no table row for {len(missing)} of the seven review "
+                f"categories: " + ", ".join(missing))
+
+        # The category table is the one whose header cell is "Category". Rows outside it belong
+        # to other tables (the independence table, the findings table) and are not categories.
+        block = category_table_rows(text)
+        for row in block:
+            if row in expected or len(row.split()) < 2:
                 continue
-            if name not in expected:
-                stray.append(f"{document} lists '{name}', which the validator does not require")
-    problems.extend(stray)
+            problems.append(
+                f"{document} has the row '{row}' in its category table, which is not one of the "
+                f"categories scripts/check-ai-review.py requires; a renamed category breaks "
+                f"every record")
 
-    note(f"all {len(expected)} review categories are named identically in the validator, the "
-         f"policy and the template")
+    note(f"all {len(expected)} review categories appear as table rows, spelled identically, in "
+         f"the policy and the template")
 
 
 def ai_review_pinned_models_match_the_agents() -> None:
@@ -1069,7 +1151,12 @@ def review_records_are_not_in_the_docs_catalog() -> None:
     recurring merge obstacle for something no reader navigates to.
     """
     catalog = json.loads(read("docs/catalog.json"))
-    entries = catalog if isinstance(catalog, list) else catalog.get("documents", [])
+    # The schema is {"schema": ..., "docs": [...]}. An earlier version of this check read
+    # "documents", which does not exist, so it compared an empty list and could never fail.
+    entries = catalog.get("docs", [])
+    if not entries:
+        problems.append("docs/catalog.json has no 'docs' entries, so this check examined nothing")
+        return
     offenders = [entry.get("path", "") for entry in entries
                  if isinstance(entry, dict) and "/reviews/PR-" in entry.get("path", "")]
     if offenders:

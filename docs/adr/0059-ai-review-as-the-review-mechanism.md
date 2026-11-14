@@ -71,6 +71,12 @@ different model *and* a mechanism that kept the reviewer from reading the implem
 conclusions first. The validator requires one of those two statements, and the policy explains
 which is being claimed.
 
+"Names a mechanism" is enforced as a minimum length of thirteen words on the `yes` statement,
+because the alternative was a check that accepted the bare word `yes` and therefore accepted
+nothing. Thirteen is a floor on effort, not a measure of quality: a thirteen-word sentence can
+still be wrong, and the policy says so. The number is in the validator rather than in prose so
+that changing it requires changing the check.
+
 What is gained is not independence. It is:
 
 - **A real diff read.** The reviewer reads `git diff`, not the author's summary.

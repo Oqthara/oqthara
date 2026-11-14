@@ -53,11 +53,13 @@ SEVERITIES = ("critical", "high", "medium", "low")
 # findings to be resolved and validated before integration.
 MUST_RESOLVE = {"critical", "high"}
 
-# Cell values that mean "still open" however they are spelled.
-DEFERRED = {
-    "deferred", "won't fix", "wont fix", "will not fix", "tbd", "todo", "still open",
-    "open", "pending", "later", "backlog", "accepted risk", "no action",
-}
+# Phrases that mean "still open" however they are spelled. Matched as substrings inside the
+# resolution cell, because "Deferred; tracking issue 12" is a deferral too.
+DEFERRED_PHRASES = (
+    "deferred", "defer ", "won't fix", "wont fix", "will not fix", "not fixed", "unfixed",
+    "tbd", "todo", "still open", "left open", "remains open", "no action", "not addressed",
+    "out of scope", "follow-up pr", "follow up pr", "later pr", "future work",
+)
 VERDICTS = {"pass", "fail"}
 
 problems: list[str] = []
@@ -161,7 +163,26 @@ MIN_INDEPENDENCE_WORDS = 13
 
 
 def models_named(text: str) -> list[str]:
-    return [slug.lower() for slug in MODEL_SLUG.findall(text)]
+    r"""Model identifiers named in `text`, excluding anything that is really a URL.
+
+    `[\w.-]+/[\w.-]+` also matches `example.com/run`, so a record could claim independence by
+    pointing at a link. A slug that follows a scheme or a domain-ish host is not a model name.
+    """
+    named = []
+    for match in MODEL_SLUG.finditer(text):
+        before = text[: match.start()].rstrip()
+        if before.endswith(("://", "//")) or "@" in before[-1:]:
+            continue
+        if re.fullmatch(r"[a-z]+\.[a-z]{2,}", match.group(0).split("/")[0]):
+            continue
+        named.append(match.group(0).lower())
+    return named
+
+
+def mentions_deferral(resolution: str) -> bool:
+    """True when a resolution cell says the finding is still open in any wording."""
+    normalized = re.sub(r"[`*_]", "", resolution).lower()
+    return any(phrase in normalized for phrase in DEFERRED_PHRASES)
 
 
 # What the agents in this repository pin. This is the fallback for a checkout that does not
@@ -215,17 +236,35 @@ def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
 AUTOMATED_AUTHORS = {"dependabot[bot]", "renovate[bot]", "github-actions[bot]"}
 
 
+class AuthorLookup(Exception):
+    """The author of a pull request could not be determined."""
+
+
 def automated_author(root: pathlib.Path, number: str) -> str | None:
-    """Return the automated login that opened this pull request, if any."""
-    if not os.environ.get("CI"):
-        return None
+    """Return the automated login that opened this pull request, or None.
+
+    Raises `AuthorLookup` when the question cannot be answered at all -- a missing `gh`, an
+    unauthenticated token, or a failed call. That distinction matters: "not a bot" and "could
+    not ask" lead to the same rejection but mean different things, and reporting the first when
+    the second is true sends a maintainer looking for a missing file instead of a broken token.
+    """
     try:
-        author = subprocess.run(
+        result = subprocess.run(
             ["gh", "pr", "view", number, "--json", "author", "--jq", ".author.login"],
             cwd=root, capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return None
+        )
+    except FileNotFoundError as error:
+        raise AuthorLookup("the `gh` command is not installed") from error
+    except (OSError, subprocess.SubprocessError) as error:
+        raise AuthorLookup(f"the `gh` call failed: {error}") from error
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip().splitlines()
+        raise AuthorLookup(
+            "`gh pr view` failed" + (f": {detail[0]}" if detail else "")
+            + ". The step needs a GH_TOKEN with pull-requests: read")
+    author = result.stdout.strip()
+    if not author:
+        raise AuthorLookup("`gh pr view` returned an empty author")
     return author if author in AUTOMATED_AUTHORS else None
 
 
@@ -234,7 +273,13 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
     display = path.relative_to(root)
 
     if not path.exists():
-        bot = automated_author(root, number)
+        try:
+            bot = automated_author(root, number)
+        except AuthorLookup as error:
+            problems.append(
+                f"could not determine the author of PR #{number}: {error}. A review record is "
+                f"required unless the author is an automated account")
+            return
         if bot:
             note(f"{display} is absent, and PR #{number} was opened by {bot}, an automated "
                  f"author that cannot review its own change; every other required context "
@@ -450,8 +495,10 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
                 absent = not resolution or resolution in {"—", "-", "n/a"}
                 # A non-empty cell is not a resolution. "deferred", "won't fix" and "TBD" are
                 # all non-empty and all mean the finding is still open, which is exactly what
-                # the policy says cannot happen for these severities.
-                deferred = resolution.lower().strip(" .*`") in DEFERRED
+                # the policy says cannot happen for these severities. Matching the whole cell
+                # only would let "Deferred; tracked in <commit>" through, which is a deferral
+                # with a citation attached.
+                deferred = mentions_deferral(resolution)
                 if absent or deferred or not cites_a_commit(root, resolution):
                     problems.append(
                         f"{display} leaves a {severity} finding unresolved: "

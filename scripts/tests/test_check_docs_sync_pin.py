@@ -188,3 +188,83 @@ class AShallowCloneDoesNotCondemnAGoodPin(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheMatrixCitationsAreChecked(unittest.TestCase):
+    """A `DONE` row must cite evidence a reader can open, in either citation style."""
+
+    def setUp(self):
+        self.original = MATRIX.read_text(encoding="utf-8")
+        checker.problems.clear()
+        checker.checked.clear()
+
+    def tearDown(self):
+        MATRIX.write_text(self.original, encoding="utf-8")
+
+    def run_check(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.requirement_matrix_evidence_exists()
+        return " ".join(checker.problems)
+
+    def test_a_dead_backticked_citation_is_rejected(self):
+        # Every §4.2 citation is backticked, and a check that read only markdown links would
+        # have passed all of them without looking.
+        broken = self.original.replace("`scripts/check-ai-review.py`",
+                                       "`scripts/check-ai-review-renamed.py`", 1)
+        self.assertNotEqual(self.original, broken)
+        MATRIX.write_text(broken, encoding="utf-8")
+        self.assertIn("check-ai-review-renamed.py", self.run_check())
+
+    def test_a_dead_linked_citation_is_rejected(self):
+        broken = self.original.replace("(../adr/0059-ai-review-as-the-review-mechanism.md)",
+                                       "(../adr/0059-missing.md)", 1)
+        self.assertNotEqual(self.original, broken)
+        MATRIX.write_text(broken, encoding="utf-8")
+        self.assertIn("0059-missing.md", self.run_check())
+
+    def test_a_fragment_does_not_hide_the_file(self):
+        # `file.md#section` names a file that exists; the fragment must be stripped rather
+        # than treated as part of the path.
+        self.assertNotIn("does not exist", self.run_check())
+
+    def test_a_conformance_case_is_resolved_by_number(self):
+        # `conformance/228` is a test number, stored as `conformance/228-<slug>.oq`.
+        self.assertNotIn("conformance/228", self.run_check())
+
+
+class ReviewRecordsAreNotInTheDocsCatalog(unittest.TestCase):
+    """Review records change with every pull request and would make the catalog stale."""
+
+    def test_the_catalog_guard_reads_the_documents(self):
+        catalog = checker.json.loads((SCRIPTS.parent / "docs" / "catalog.json").read_text())
+        self.assertIn("docs", catalog, "the guard reads catalog['docs']; the key must exist")
+        self.assertTrue(catalog["docs"], "an empty list would make the guard a no-op")
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.review_records_are_not_in_the_docs_catalog()
+        self.assertEqual([], checker.problems)
+
+
+class ReviewCategoriesMatchTheValidator(unittest.TestCase):
+    def test_a_renamed_category_is_rejected(self):
+        policy = SCRIPTS.parent / "docs" / "governance" / "ai-review-policy.md"
+        original = policy.read_text(encoding="utf-8")
+        try:
+            renamed = original.replace("| functional correctness |",
+                                       "| functional correctness (behaviour) |", 1)
+            self.assertNotEqual(original, renamed)
+            policy.write_text(renamed, encoding="utf-8")
+            checker.problems.clear()
+            checker.checked.clear()
+            checker.ai_review_categories_match_the_validator()
+            self.assertTrue(any("functional correctness" in p for p in checker.problems),
+                            checker.problems)
+        finally:
+            policy.write_text(original, encoding="utf-8")
+
+    def test_the_policy_and_template_agree_with_the_validator(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.ai_review_categories_match_the_validator()
+        self.assertEqual([], checker.problems)

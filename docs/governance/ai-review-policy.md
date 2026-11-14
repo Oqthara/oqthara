@@ -79,16 +79,19 @@ upgraded by this document.
 
 ## Severity handling
 
-Findings are recorded with a severity. A finding whose resolution cell says `deferred`,
-`won't fix`, `TBD` or `still open` is unresolved whatever severity it carries, and for a
-`critical` or `high` finding the resolution must name a commit, in backticks, that resolves in
-this repository. Critical and high findings must be resolved **in the pull
-request that found them**, with the resolution recorded in the finding row. The validator fails a
-record that leaves either severity unresolved.
+Findings are recorded with a severity, and the rule differs by severity.
 
-Medium and low findings may be fixed or accepted with a stated rationale. Accepting one is a
-recorded decision rather than a silent omission, which is the difference this policy is trying
-to make.
+A `critical` or `high` finding must be resolved **in the pull request that found it**, with the
+resolution recorded in the finding row. Its resolution cell must name a commit, in backticks,
+that resolves in this repository. A cell that is empty, or that merely says `deferred`,
+`won't fix`, `TBD` or `still open` in any wording, does not satisfy that, and the validator
+fails the record. Evidence is required, not a sentence saying the fix happened.
+
+Medium and low findings may instead be fixed or accepted with a stated rationale. Accepting one
+is a recorded decision rather than a silent omission, which is the difference this policy is
+trying to make. They may also be deferred, and the validator allows it: a medium or low finding
+does not block a merge. Deferring instead of accepting is a weaker record, because it states no
+reason, so a reviewer who means to accept a finding should say so.
 
 ## What the gate cannot do
 

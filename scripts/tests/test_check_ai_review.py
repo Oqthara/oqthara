@@ -33,6 +33,8 @@ _spec = importlib.util.spec_from_file_location("check_ai_review", SCRIPTS / "che
 checker = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(checker)
 
+PINNED = "deepseek-ai/deepseek-v4.1-flash-1017"
+
 GOOD_RECORD = """\
 # AI review — PR #{number}
 
@@ -78,6 +80,9 @@ class Repository(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
+        self.bin = pathlib.Path(self._tmp.name) / "bin"
+        self.bin.mkdir()
+        self.stub_gh()
         self.root = pathlib.Path(self._tmp.name)
         git(self.root, "init", "-q")
         git(self.root, "config", "user.email", "t@example.invalid")
@@ -108,6 +113,23 @@ class Repository(unittest.TestCase):
         checker.checked.clear()
         checker.validate(self.root, number)
         return checker.problems
+
+    # The gate asks `gh` who opened the pull request so an automated author can be exempted.
+    # Tests must not depend on a network call or on the runner being authenticated, so a
+    # stand-in `gh` is put first on PATH. FAKE_GH selects its answer: a login, or "error".
+    def stub_gh(self, answer="some-human"):
+        script = self.bin / "gh"
+        script.write_text(
+            "#!/bin/sh\n"
+            f'if [ "$FAKE_GH" = "error" ]; then\n'
+            '  echo "gh: authentication required" >&2; exit 1\n'
+            "fi\n"
+            'echo "$FAKE_GH"\n',
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        os.environ["FAKE_GH"] = answer
+        os.environ["PATH"] = f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}"
 
 
 class ItPassesOnAWellFormedRecord(Repository):
@@ -300,6 +322,185 @@ class ItRejects(Repository):
         self.write("1", body=body)
         problems = self.run_gate()
         self.assertTrue(any("only" in p and "release integrity" in p for p in problems))
+
+
+class ItHandlesAShallowClone(Repository):
+    """`--allow-shallow` exists for CI, and must not weaken a clone that has the history."""
+
+    def write_unknown(self):
+        self.write("1", body=GOOD_RECORD.format(number=1, sha="0" * 40))
+
+    def gate(self, allow_shallow):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.validate(self.root, "1", allow_shallow=allow_shallow)
+        return list(checker.problems)
+
+    def test_an_unresolvable_commit_is_rejected(self):
+        self.write_unknown()
+        problems = self.gate(False)
+        self.assertTrue(any("not a commit in this repository" in p for p in problems), problems)
+
+    def test_the_flag_does_not_weaken_a_complete_clone(self):
+        # The flag is scoped to a shallow clone. If it were honoured everywhere, passing it
+        # would turn off the check that the reviewed commit exists -- so this asserts it does
+        # not, by using a repository that has its full history.
+        self.write_unknown()
+        problems = self.gate(True)
+        self.assertTrue(any("not a commit in this repository" in p for p in problems), problems)
+
+    def test_a_shallow_clone_needs_the_flag(self):
+        old_sha = self.sha
+        (self.root / "later.txt").write_text("later\n", encoding="utf-8")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "later")
+
+        shallow = pathlib.Path(self._tmp.name) / "shallow"
+        subprocess.run(["git", "clone", "-q", "--depth", "1", self.root.as_uri(), str(shallow)],
+                       check=True, capture_output=True, text=True)
+        self.assertNotEqual(
+            0, subprocess.run(["git", "cat-file", "-e", old_sha],
+                              cwd=shallow, capture_output=True).returncode,
+            "the clone is not shallow, so this test proves nothing")
+
+        record = shallow / "docs" / "governance" / "reviews" / "PR-1.md"
+        record.parent.mkdir(parents=True)
+        record.write_text(GOOD_RECORD.format(number=1, sha=old_sha) + FINDINGS_HEADER_END,
+                          encoding="utf-8")
+
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.validate(shallow, "1")
+        self.assertTrue(any("cannot resolve" in p for p in checker.problems), checker.problems)
+
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.validate(shallow, "1", allow_shallow=True)
+        self.assertEqual([], list(checker.problems))
+
+
+class ItRejectsADeferralDressedAsAResolution(Repository):
+    """A critical finding is resolved by a commit, not by a sentence claiming one."""
+
+    def record(self, cell):
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            "| security and privacy | pass | 0 |",
+            "| security and privacy | pass | 1 |",
+        )
+        findings = (
+            "| 1 | critical | `a.kt:3` | an unchecked redirect | " + cell + " |\n"
+        )
+        self.write("1", body=body, findings=findings)
+
+    def assert_rejected(self, cell):
+        self.record(cell)
+        problems = self.run_gate()
+        self.assertTrue(any("critical" in p for p in problems), (cell, problems))
+
+    def test_plain_deferral(self):
+        self.assert_rejected("deferred")
+
+    def test_deferral_with_a_commit_that_merely_looks_like_evidence(self):
+        # The first round's rule compared the whole cell against a set of deferral words, so a
+        # cell that also contained a valid SHA passed. The word is what decides.
+        self.assert_rejected(f"Deferred; tracking issue 12, investigation in `{self.sha}`")
+
+    def test_deferral_in_other_words(self):
+        self.assert_rejected("still open, see the follow-up")
+
+    def test_an_empty_cell(self):
+        self.assert_rejected("")
+
+    def test_a_real_resolution_passes(self):
+        self.record(f"fixed in `{self.sha}`")
+        self.assertEqual([], self.run_gate())
+
+
+class ItRejectsAUrlAsAModelName(Repository):
+    """`MODEL_SLUG` matches `owner/name`, which a URL also looks like."""
+
+    def test_a_url_is_not_a_model(self):
+        # A `yes` claim names a model and a mechanism. If a URL counted as a model name, a
+        # record could claim independence by pointing at a link, so the case that detects the
+        # filter is a `yes` claim whose only `owner/name`-shaped token is a URL.
+        original = (
+            "**Independent:** no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the "
+            "reviewer\nshares the implementer's blind spots (ADR-0059)."
+        )
+        replacement = (
+            "**Independent:** yes — the reviewer ran https://example.com/run/123 which is a "
+            "different model from the one the implementer pinned, and the review was conducted "
+            "against a fixed diff with no access to the implementer transcript, so the blind "
+            "spots were not inherited."
+        )
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(original, replacement)
+        self.assertNotEqual(GOOD_RECORD.format(number=1, sha=self.sha), body)
+        self.write("1", body=body)
+        problems = self.run_gate()
+        self.assertTrue(any("names no model" in p for p in problems), problems)
+
+    def test_a_bare_domain_is_not_a_model_identifier(self):
+        # A scheme-prefixed URL is caught by the `://` check, so only a bare `host/path` token
+        # exercises the domain guard. Without this case that guard could be deleted silently.
+        self.assertEqual([], checker.models_named("the reviewer ran https://example.com/run"))
+        self.assertEqual([], checker.models_named("the reviewer ran example.com/run"))
+        self.assertEqual(["openai/gpt-5.1"], checker.models_named("the reviewer ran openai/gpt-5.1"))
+
+
+class ItAcceptsAnHonestIndependenceClaim(Repository):
+    """A `yes` needs a different model and a stated mechanism; both, not one."""
+
+    MECHANISM = (
+        "the reviewer was run on a frozen diff with no access to the implementer's summary "
+        "or transcript, and was asked to enumerate defects before reading the test names"
+    )
+
+    def record(self, statement):
+        original = (
+            "**Independent:** no — both runs pin deepseek-ai/deepseek-v4.1-flash-1017, so the "
+            "reviewer\nshares the implementer's blind spots (ADR-0059)."
+        )
+        body = GOOD_RECORD.format(number=1, sha=self.sha).replace(
+            original, f"**Independent:** {statement}")
+        self.assertNotEqual(GOOD_RECORD.format(number=1, sha=self.sha), body)
+        self.write("1", body=body)
+        return self.run_gate()
+
+    def test_a_different_model_with_a_mechanism_passes(self):
+        self.assertEqual([], self.record(f"yes — the reviewer ran openai/gpt-5.1 and {self.MECHANISM}"))
+
+    def test_a_different_model_without_a_mechanism_is_rejected(self):
+        problems = self.record("yes — ran openai/gpt-5.1")
+        self.assertTrue(any("mechanism" in p for p in problems), problems)
+
+    def test_the_pinned_model_is_not_independence(self):
+        problems = self.record(f"yes — ran deepseek-ai/deepseek-v4.1-flash-1017 and {self.MECHANISM}")
+        self.assertTrue(any("not " in p and "independent" in p for p in problems), problems)
+
+
+class ItExemptsAutomatedAuthors(Repository):
+    """A bot cannot review its own pull request, so it is exempt -- but only when it is one."""
+
+    def test_dependabot_needs_no_record(self):
+        self.stub_gh("dependabot[bot]")
+        problems = self.run_gate("5")
+        self.assertEqual([], problems)
+        self.assertTrue(any("automated" in note for note in checker.checked))
+
+    def test_a_human_still_needs_a_record(self):
+        self.stub_gh("a-human")
+        problems = self.run_gate("5")
+        self.assertTrue(any("PR-5.md is missing" in p for p in problems))
+
+    def test_a_failed_lookup_is_reported_as_a_lookup_failure(self):
+        # This is the case that made the exemption dead in CI: with contents: read and no
+        # token, `gh` fails. The gate must still reject, but it must say why, or a maintainer
+        # goes looking for a missing file instead of a missing permission.
+        self.stub_gh("error")
+        problems = self.run_gate("5")
+        self.assertTrue(any("could not determine the author of PR #5" in p for p in problems),
+                        problems)
+        self.assertFalse(any("PR-5.md is missing" in p for p in problems), problems)
 
 
 class TheCommandLine(Repository):
