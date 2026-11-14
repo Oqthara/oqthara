@@ -12,7 +12,7 @@ part is missing rather than rounding up.
 Legend: `DONE` evidence merged and validated · `PARTIAL` some acceptance criteria unmet ·
 `NOT STARTED` no implementation · `BLOCKED` waiting on something outside the work itself.
 
-**Last verified:** `7331c00` (merge of PR #215: `split("")` refused and `unified_diff`'s table bounded), 2026-11-14. The pin names a commit already on `main`, because squash-merge discards branch SHAs. Every gate was re-run against this commit, and the three merges since the previous pin (#213, #214, #215) change no row: they tighten existing behaviour rather than add requirements.
+**Last verified:** `d37fa26` (merge of PR #217: managed-runtime provenance and acquisition, plus physically-decided tar link containment), 2026-11-14. The pin names a commit already on `main`, because squash-merge discards branch SHAs. Every gate was re-run against this commit. #216 and #217 change one row: #217 closes row 47, and its two follow-up fixes tighten `SafeArchive` without adding a requirement.
 
 ## Language features (§14)
 
