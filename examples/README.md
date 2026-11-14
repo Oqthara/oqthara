@@ -26,6 +26,7 @@ java -jar oq.jar examples/hello.oq
 | `frequency.oq` | character frequency with multi-key sorting |
 | `maze.oq` | breadth-first search on a grid |
 | `matrix.oq` | nested lists and numeric loops |
+| `math.oq` | trigonometry, logarithms and exponentials |
 | `sudoku.oq` | validation with sets and nested loops |
 | `state_machine.oq` | a map-driven state machine |
 | `text_stats.oq` | text statistics over a file |
