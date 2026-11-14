@@ -4,10 +4,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.zip.GZIPOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -154,14 +157,37 @@ class SafeArchiveTarTest {
                 "the link must resolve to the file it names");
     }
 
-    @Test
-    void refusesAnAbsoluteLink(@TempDir Path temp) throws IOException {
-        Path archive = targz(temp, "runtime.tar.gz",
-                symlink("jdk-21/link", "/etc/passwd"));
+    @ParameterizedTest
+    @ValueSource(strings = {"/etc/passwd", "C:\\Windows\\System32\\drivers\\etc\\hosts",
+            "C:relative", "\\\\server\\share\\file", "\\\\?\\C:\\Windows"})
+    void refusesALinkToAnAbsoluteTargetOnEveryHost(String target, @TempDir Path temp)
+            throws IOException {
+        Path archive = targz(temp, "runtime.tar.gz", symlink("jdk-21/link", target));
         Path out = root(temp);
+
         SafeArchive.ArchiveRejected refused = assertThrows(SafeArchive.ArchiveRejected.class,
                 () -> SafeArchive.extract(archive, out));
         assertTrue(refused.getMessage().contains("absolute"), refused.getMessage());
+        assertFalse(Files.exists(out.resolve("jdk-21/link"), LinkOption.NOFOLLOW_LINKS),
+                "the link must be refused before it is created");
+    }
+
+    /**
+     * Every absolute form is refused on every host, including the forms this host considers
+     * relative.
+     *
+     * <p>On Windows {@code /etc/passwd} is not absolute -- there is no drive letter -- so a check
+     * written with {@code Path.isAbsolute()} accepts it there and rejects it on Linux. The same
+     * archive would then behave differently on two platforms. This test runs on all three CI
+     * operating systems precisely because the defect only appeared on one of them.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/etc/passwd", "C:\\Windows\\win.ini", "\\\\server\\share\\x"})
+    void refusesAnAbsoluteEntryNameOnEveryHost(String name, @TempDir Path temp) throws IOException {
+        Path archive = targz(temp, "runtime.tar.gz", file(name, "payload"));
+        Path out = root(temp);
+
+        assertThrows(SafeArchive.ArchiveRejected.class, () -> SafeArchive.extract(archive, out));
     }
 
     /**

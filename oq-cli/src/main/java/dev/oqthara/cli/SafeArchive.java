@@ -420,11 +420,12 @@ final class SafeArchive {
             throw new ArchiveRejected("archive contains a symbolic link with no target: "
                     + entryName);
         }
-        Path declared = Path.of(linkName);
-        if (declared.isAbsolute()) {
+        String absoluteForm = absoluteFormOf(linkName);
+        if (absoluteForm != null) {
             throw new ArchiveRejected("archive contains a symbolic link to an absolute path: "
-                    + entryName + " -> " + linkName);
+                    + entryName + " -> " + linkName + " (" + absoluteForm + ")");
         }
+        Path declared = Path.of(linkName);
         Path parent = link.getParent();
         if (parent == null) {
             throw new ArchiveRejected("archive symbolic link has no parent: " + entryName);
@@ -575,6 +576,34 @@ final class SafeArchive {
      * very information that identifies the attack: {@code ../x} and {@code x} resolve to the same
      * path only after the traversal has already been applied.
      */
+    /**
+     * The absolute form an archive path or link target uses, or {@code null} if it is relative.
+     *
+     * <p>Decided from the string, never from {@link Path#isAbsolute()}, because the archive was
+     * written for some unknown host and is read on this one. On Windows {@code Path.of("/etc/passwd")
+     * .isAbsolute()} is {@code false} -- there is no drive letter -- so a check written that way
+     * accepts the target on Windows and only the post-write resolution pass catches it, with a
+     * different message and after the link has already been created. The same archive then behaves
+     * differently on two platforms, which is the one thing an archive format must not do.
+     *
+     * <p>A bare {@code C:} prefix without a separator is included: Windows treats it as
+     * drive-relative, which is still an escape from the extraction root.
+     */
+    private static String absoluteFormOf(String name) {
+        String normalized = name.replace('\\', '/');
+        if (normalized.startsWith("/")) {
+            return "absolute";
+        }
+        if (normalized.length() >= 2 && normalized.charAt(1) == ':'
+                && Character.isLetter(normalized.charAt(0))) {
+            return "drive-qualified";
+        }
+        if (normalized.startsWith("//")) {
+            return "UNC";
+        }
+        return null;
+    }
+
     private static Path destinationOf(Path root, String name) throws ArchiveRejected {
         if (name == null || name.isEmpty()) {
             throw new ArchiveRejected("archive contains an entry with no name");
@@ -587,17 +616,11 @@ final class SafeArchive {
         // which operating system will read it, and a `C:\...` entry extracted on Linux would land
         // as a file literally named `C:\...` -- harmless there, but the same archive is published
         // for Windows, where it would not be.
+        String absoluteForm = absoluteFormOf(name);
+        if (absoluteForm != null) {
+            throw new ArchiveRejected("archive contains an " + absoluteForm + " path: " + name);
+        }
         String normalized = name.replace('\\', '/');
-        if (normalized.startsWith("/")) {
-            throw new ArchiveRejected("archive contains an absolute path: " + name);
-        }
-        if (normalized.length() >= 2 && normalized.charAt(1) == ':'
-                && Character.isLetter(normalized.charAt(0))) {
-            throw new ArchiveRejected("archive contains a drive-qualified path: " + name);
-        }
-        if (normalized.startsWith("//")) {
-            throw new ArchiveRejected("archive contains a UNC path: " + name);
-        }
 
         for (String segment : normalized.split("/")) {
             if (segment.equals("..")) {
