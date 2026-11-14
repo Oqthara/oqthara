@@ -186,10 +186,6 @@ class AShallowCloneDoesNotCondemnAGoodPin(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class TheMatrixCitationsAreChecked(unittest.TestCase):
     """A `DONE` row must cite evidence a reader can open, in either citation style."""
 
@@ -245,6 +241,31 @@ class ReviewRecordsAreNotInTheDocsCatalog(unittest.TestCase):
         checker.review_records_are_not_in_the_docs_catalog()
         self.assertEqual([], checker.problems)
 
+    def test_the_guard_fails_when_a_review_record_is_catalogued(self):
+        """The previous version of this test passed with the guard neutered.
+
+        It asserted only that the key existed, so returning early from the guard still passed.
+        This one edits the catalog to contain a review record and requires a problem.
+        """
+        path = SCRIPTS.parent / "docs" / "catalog.json"
+        original = path.read_text(encoding="utf-8")
+        try:
+            catalog = checker.json.loads(original)
+            catalog["docs"].append(
+                {"path": "docs/governance/reviews/PR-224.md", "title": "PR 224 review"}
+            )
+            path.write_text(checker.json.dumps(catalog), encoding="utf-8")
+            checker.problems.clear()
+            checker.checked.clear()
+            checker.review_records_are_not_in_the_docs_catalog()
+            self.assertTrue(
+                checker.problems,
+                "a catalogued review record must be reported; a guard that returns early "
+                "would let a record churn the catalog on every review",
+            )
+        finally:
+            path.write_text(original, encoding="utf-8")
+
 
 class ReviewCategoriesMatchTheValidator(unittest.TestCase):
     def test_a_renamed_category_is_rejected(self):
@@ -268,3 +289,7 @@ class ReviewCategoriesMatchTheValidator(unittest.TestCase):
         checker.checked.clear()
         checker.ai_review_categories_match_the_validator()
         self.assertEqual([], checker.problems)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -53,13 +53,21 @@ SEVERITIES = ("critical", "high", "medium", "low")
 # findings to be resolved and validated before integration.
 MUST_RESOLVE = {"critical", "high"}
 
-# Phrases that mean "still open" however they are spelled. Matched as substrings inside the
-# resolution cell, because "Deferred; tracking issue 12" is a deferral too.
+# Language that means "still open" however it is spelled. Matched as substrings inside the
+# resolution cell, because "Deferred; tracking issue 12" is a deferral too. This is a
+# heuristics list, not a proof: no finite list covers every way of saying a fix is not done,
+# and the policy says so rather than promising exhaustiveness.
 DEFERRED_PHRASES = (
-    "deferred", "defer ", "won't fix", "wont fix", "will not fix", "not fixed", "unfixed",
-    "tbd", "todo", "still open", "left open", "remains open", "no action", "not addressed",
-    "out of scope", "follow-up pr", "follow up pr", "later pr", "future work",
+    "defer", "postpon", "shelv", "won't fix", "wont fix", "will not fix", "not fix",
+    "unfix", "tbd", "todo", "to do", "still open", "left open", "remains open", "remain open",
+    "open issue", "no action", "not address", "unaddress", "out of scope", "follow-up",
+    "follow up", "later", "future work", "next pr", "another pr", "subsequent", "pending",
+    "untouched", "unchanged", "ignored", "skipped",
 )
+# A resolution may legitimately say it is *not* a deferral. Those words are removed before the
+# scan, so "this is not a deferral; fixed in `abc1234`" is not rejected for naming the thing it
+# is denying.
+DEFERRAL_NEGATIONS = ("not ", "no ", "never ", "non-", "n't ")
 VERDICTS = {"pass", "fail"}
 
 problems: list[str] = []
@@ -100,14 +108,55 @@ def record_path(root: pathlib.Path, number: str) -> pathlib.Path:
     return root / REVIEWS / f"PR-{number}.md"
 
 
+FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+def split_row(line: str) -> list[str]:
+    r"""Cells of a table row, honouring `\|` as a literal pipe inside a cell.
+
+    Splitting on every `|` puts a cell's remaining text into columns nobody reads, and the
+    column positions are what decide a verdict, so a legitimate `` `a \| b` `` in a location
+    silently moved a resolution out of the cell the gate examines.
+    """
+    stripped = line.strip().strip("|")
+    cells, current, escaped = [], [], False
+    for char in stripped:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == "|":
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    cells.append("".join(current).strip())
+    return cells
+
+
 def tables(text: str) -> list[list[list[str]]]:
-    """Return every Markdown table in `text` as a list of rows of cells."""
+    """Return every Markdown table in `text` as a list of rows of cells.
+
+    Fenced blocks are skipped: a record that quotes the template, or the rejected shape it is
+    arguing against, would otherwise have that quotation parsed as data. A record documenting
+    why a pattern fails must not fail because it documented it.
+    """
     found: list[list[list[str]]] = []
     current: list[list[str]] = []
+    in_fence = False
     for line in text.splitlines():
         stripped = line.strip()
+        if FENCE.match(line):
+            in_fence = not in_fence
+            if current:
+                found.append(current)
+                current = []
+            continue
+        if in_fence:
+            continue
         if stripped.startswith("|") and stripped.endswith("|"):
-            cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+            cells = split_row(stripped)
             # The separator row (| --- | --- |) carries no data.
             if all(re.fullmatch(r":?-{2,}:?", cell) for cell in cells if cell):
                 continue
@@ -127,10 +176,33 @@ def header_and_rows(table: list[list[str]]) -> tuple[list[str], list[list[str]]]
     return [cell.lower() for cell in table[0]], table[1:]
 
 
+# Values that name no party. Without this, a record whose Reviewer and Implementer are both
+# `—` satisfied "does not name the reviewer" while naming nothing.
+PLACEHOLDER_FIELDS = {
+    "", "-", "--", "—", "–", "n/a", "na", "none", "tbd", "todo", "null", "x",
+    "reviewer", "implementer", "author", "agent", "unknown", "same as above", "see above",
+    "<reviewer>", "<implementer>", "<name>", "<agent>",
+}
+
+
 def check_field(text: str, label: str) -> str | None:
-    """Read a `**Label:** value` line, returning the value or None."""
-    match = re.search(rf"^\*\*{re.escape(label)}:\*\*[ \t]*(.+)$", text, re.M)
+    r"""Read a `**Label:** value` line, returning the value or None.
+
+    Accepts `**Label**: value` as well as `**Label:** value`, and any capitalisation of the
+    label, because both forms are ordinary Markdown and rejecting one is a defect of the gate
+    rather than of the record.
+    """
+    match = re.search(
+        rf"^\*\*{re.escape(label)}(?::\*\*|\*\*:)[ \t]*(.+)$", text, re.M | re.I
+    )
     return match.group(1).strip() if match else None
+
+
+def names_a_party(value: str | None) -> bool:
+    """True when a Reviewer/Implementer value actually identifies somebody."""
+    if value is None:
+        return False
+    return re.sub(r"[`*_.]", "", value).strip().lower() not in PLACEHOLDER_FIELDS
 
 
 def check_paragraph(text: str, label: str) -> str | None:
@@ -179,9 +251,18 @@ def models_named(text: str) -> list[str]:
     return named
 
 
+# "This is not a deferral" names the thing it denies. Only these meta-words are stripped when
+# negated; "not fixed" is a deferral and must stay readable as one.
+DENIED_DEFERRAL = re.compile(
+    r"\b(?:not|never|no|isn't|aren't|wasn't|weren't|n't)\s+(?:a\s+|an\s+)?"
+    r"(?:deferral|deferment|deferred|postponement|postponed|todo|tbd|follow-?up)\b"
+)
+
+
 def mentions_deferral(resolution: str) -> bool:
     """True when a resolution cell says the finding is still open in any wording."""
     normalized = re.sub(r"[`*_]", "", resolution).lower()
+    normalized = DENIED_DEFERRAL.sub(" ", normalized)
     return any(phrase in normalized for phrase in DEFERRED_PHRASES)
 
 
@@ -203,16 +284,49 @@ def pinned_models(root: pathlib.Path) -> set[str]:
     return pinned or set(FALLBACK_PINNED)
 
 
+def first_commit_sha(value: str) -> str | None:
+    r"""The first commit SHA in `value`, ignoring backticks, case and trailing annotation.
+
+    `Reviewed at` is prose around a SHA: it may carry a date, a parenthetical, a round number, or
+    a full 40-character SHA in capitals. Reading the first whitespace-separated token made every
+    one of those a rejection.
+    """
+    for token in re.findall(r"[0-9a-fA-F]{7,40}", value):
+        if re.fullmatch(r"[0-9a-fA-F]{7,40}", token):
+            return token.lower()
+    return None
+
+
 def cites_a_commit(root: pathlib.Path, resolution: str) -> bool:
     """True when a resolution names a commit that resolves in this repository.
 
     The resolution cell must carry evidence, not just a claim that the fix happened. A SHA in
     backticks is the convention; a cell with no SHA at all has no evidence to check.
     """
-    shas = re.findall(r"`([0-9a-f]{7,40})`", resolution)
+    shas = re.findall(r"`([0-9a-fA-F]{7,40})`", resolution)
     if not shas:
         return False
-    return any(commit_exists(root, sha)[0] for sha in shas)
+    for sha in shas:
+        exists, shallow = commit_exists(root, sha.lower())
+        if not exists:
+            continue
+        # The cited commit has to be in the history the gate is checking out. Otherwise a
+        # resolution can name any commit in the repository -- another branch, an unrelated fix
+        # merged long ago -- and be read as evidence that this finding was resolved.
+        if shallow:
+            return True
+        if is_ancestor(root, sha.lower()):
+            return True
+    return False
+
+
+def is_ancestor(root: pathlib.Path, sha: str) -> bool:
+    """True when `sha` is reachable from HEAD."""
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, "HEAD"],
+        cwd=root, capture_output=True, text=True,
+    )
+    return result.returncode == 0
 
 
 def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
@@ -310,16 +424,28 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
             f"{display} declares pull request '{declared}' but is the record for #{number}"
         )
 
+    parties = {}
     for label in ("Reviewer", "Implementer"):
-        if not check_field(text, label):
+        value = check_field(text, label)
+        if not names_a_party(value):
             problems.append(f"{display} does not name the {label.lower()}")
+        else:
+            parties[label] = value.strip().lower()
+
+    # The order forbids presenting one party as the other. A record that lists the same agent as
+    # both did not separate the two roles, whatever it says elsewhere.
+    if len(parties) == 2 and parties["Reviewer"] == parties["Implementer"]:
+        problems.append(
+            f"{display} names the same party as Reviewer and Implementer; the order requires "
+            f"implementation and review to be separate wherever practical"
+        )
 
     reviewed_at = check_field(text, "Reviewed at")
     if not reviewed_at:
         problems.append(f"{display} does not say which commit it reviewed")
     else:
-        sha = reviewed_at.strip("`").split()[0] if reviewed_at.strip("`").split() else ""
-        exists, shallow = commit_exists(root, sha)
+        sha = first_commit_sha(reviewed_at)
+        exists, shallow = commit_exists(root, sha) if sha else (False, False)
         if not exists:
             if shallow and allow_shallow:
                 note(f"{display} reviewed {sha}; a shallow clone cannot confirm it exists")
@@ -380,12 +506,19 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
             )
 
     # The categories table.
+    # Every table with a Category header contributes, not just the first. Taking the first
+    # match let a summary table shadow the real one, which made a `fail` verdict further down
+    # invisible and let a record declare fewer findings than it contained.
     category_table = None
+    all_category_rows: list[list[str]] = []
     for table in tables(text):
         header, rows = header_and_rows(table)
         if header[:1] == ["category"]:
-            category_table = (header, rows)
-            break
+            if category_table is None:
+                category_table = (header, [])
+            all_category_rows.extend(rows)
+    if category_table is not None:
+        category_table = (category_table[0], all_category_rows)
     if category_table is None:
         problems.append(f"{display} has no '| Category | ... |' table")
         return
@@ -453,17 +586,26 @@ def validate(root: pathlib.Path, number: str, allow_shallow: bool = False) -> No
 
     # The findings table, if any findings are declared.
     declared_findings = sum(seen.values())
+    # The header may name the column `#`, `No`, `Num` or `Number`; all of them are in use, and
+    # a record that used one the gate did not recognise had its findings ignored entirely.
+    finding_headers = {"#", "id", "no", "num", "number"}
     findings_table = None
+    all_finding_rows: list[list[str]] = []
     for table in tables(text):
         header_f, rows_f = header_and_rows(table)
-        if header_f[:1] in (["#"], ["id"]) and "severity" in header_f:
-            findings_table = (header_f, rows_f)
-            break
+        if header_f[:1] and header_f[0] in finding_headers and "severity" in header_f:
+            if findings_table is None:
+                findings_table = (header_f, [])
+            all_finding_rows.extend(rows_f)
+    if findings_table is not None:
+        findings_table = (findings_table[0], all_finding_rows)
 
-    if declared_findings and findings_table is None:
+    if findings_table is None:
+        # Required even when the record claims no findings. Without it, a record could state in
+        # prose that it found a critical issue and be counted as having found none.
         problems.append(
-            f"{display} counts {declared_findings} finding(s) but has no findings table with a "
-            f"severity column"
+            f"{display} has no findings table with a severity column; it is required even when "
+            f"the record reports no findings, so that 'no findings' is a recorded claim"
         )
         return
 

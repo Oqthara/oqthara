@@ -1166,7 +1166,38 @@ def review_records_are_not_in_the_docs_catalog() -> None:
             "scripts/gen-docs-catalog.py")
 
 
+def ai_review_gate_is_wired_into_ci() -> None:
+    """The gate is enforced only while the CI step that runs it exists.
+
+    Nothing else notices the step being deleted: the required status context still reports
+    success, because the other steps in that job still run. Enforcing through an existing
+    context is what keeps the ruleset unchanged, and it is also what makes the wiring itself
+    the only thing that needs checking.
+    """
+    workflow = ROOT / ".github" / "workflows" / "ci.yml"
+    if not workflow.is_file():
+        problems.append("ci.yml is missing; the AI review gate cannot be enforced")
+        return
+    text = read(workflow)
+    if "check-ai-review.py" not in text:
+        problems.append(
+            "ci.yml no longer runs scripts/check-ai-review.py, so AI review is not enforced; "
+            "the required status context would stay green without it"
+        )
+        return
+    # The step has to be in a job that the ruleset requires, not merely somewhere in the file.
+    required = "ubuntu-latest / JDK 21"
+    if required not in text:
+        problems.append(
+            f"ci.yml does not name the required context '{required}', which is the context "
+            f"the AI review gate rides on"
+        )
+        return
+    note("ci.yml runs the AI review gate in the required context")
+
+
 CHECKS = (
+    ai_review_gate_is_wired_into_ci,
     requirement_matrix_evidence_exists,
     ai_review_categories_match_the_validator,
     ai_review_pinned_models_match_the_agents,

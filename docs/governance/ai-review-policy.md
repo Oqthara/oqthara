@@ -104,6 +104,28 @@ This is stated here because the alternative — letting a green check stand for 
 is exactly the failure mode the repo has already had once: a review requirement that was
 recorded as satisfied while nothing had been reviewed.
 
+### The gate runs the pull request's own copy of itself
+
+CI checks out the pull request's head and runs `scripts/check-ai-review.py` from that checkout.
+A pull request that edits the validator therefore runs its own edited gate, and an edit that
+makes the validator exit 0 passes. This is not a defect that can be fixed from inside the
+script: any check a pull request can execute, that pull request can alter.
+
+Three things reduce the exposure, and none of them eliminates it:
+
+- The change to `scripts/check-ai-review.py` is visible in the diff that reviewers are required
+  to examine. A validator edit that weakens the gate is the first thing a review should catch.
+- `scripts/check-docs-sync.py` fails if the gate step disappears from `ci.yml`, so the
+  enforcement cannot be silently unwired even though the script it runs can be replaced.
+- The ruleset requires the status check and forbids bypass, so the substituted gate still has
+  to report success in the required context — it cannot skip the step.
+
+Removing the limit entirely needs a check that runs outside the pull request's control: a
+separate workflow on `pull_request_target` reading the base branch's copy of the validator, or a
+GitHub App. Both are larger changes than this policy, and neither is implemented here. **A
+reader should treat "the gate passed" as "the validator in this diff passed", not as "the
+validator was not modified".**
+
 ## Reviewer and implementer
 
 Separation is preferred wherever practical: the implementer writes the change and the record's

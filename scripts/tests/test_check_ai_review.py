@@ -546,3 +546,155 @@ class TheCommandLine(Repository):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ItParsesTheRecordAsWritten(unittest.TestCase):
+    """How a cell is split decides which cell the gate reads, so the parser is tested alone."""
+
+    def test_an_escaped_pipe_stays_in_one_cell(self):
+        row = "| 1 | high | `a.py` \\| `b.py` | a finding | fixed in `abc1234` |"
+        self.assertEqual(
+            ["1", "high", "`a.py` | `b.py`", "a finding", "fixed in `abc1234`"],
+            checker.split_row(row),
+        )
+
+    def test_an_escaped_pipe_does_not_move_the_resolution_cell(self):
+        """Without escape handling the resolution lands past the last column the gate reads."""
+        markdown = (
+            "| # | Severity | Location | Finding | Resolution |\n"
+            "| --- | --- | --- | --- | --- |\n"
+            "| 1 | high | `a.py` \\| `b.py` | a finding | fixed in `abc1234` |\n"
+        )
+        header, rows = checker.header_and_rows(checker.tables(markdown)[0])
+        self.assertEqual(5, len(rows[0]))
+        self.assertEqual("fixed in `abc1234`", rows[0][header.index("resolution")])
+
+    def test_a_fenced_table_is_not_read_as_data(self):
+        markdown = (
+            "```markdown\n"
+            "| Category | Verdict | Findings |\n"
+            "| --- | --- | --- |\n"
+            "| invented | fail | 99 |\n"
+            "```\n"
+        )
+        self.assertEqual([], checker.tables(markdown))
+
+    def test_a_real_table_after_a_fence_is_still_read(self):
+        markdown = (
+            "```markdown\n| Category | Verdict | Findings |\n```\n\n"
+            "| Category | Verdict | Findings |\n"
+            "| --- | --- | --- |\n"
+            "| functional correctness | pass | 0 |\n"
+        )
+        self.assertEqual(1, len(checker.tables(markdown)))
+
+
+class ItReadsFieldsAsMarkdown(unittest.TestCase):
+    """A field is prose, not a fixed byte sequence."""
+
+    def test_the_colon_may_follow_the_bold(self):
+        self.assertEqual("#946", checker.check_field("**Pull request**: #946", "Pull request"))
+
+    def test_the_label_is_matched_whatever_its_case(self):
+        self.assertEqual("#946", checker.check_field("**PULL REQUEST:** #946", "Pull request"))
+
+    def test_a_placeholder_names_nobody(self):
+        for value in ("—", "-", "N/A", "tbd", "Reviewer", "<agent>", "same as above"):
+            self.assertFalse(checker.names_a_party(value), value)
+
+    def test_a_named_party_is_accepted(self):
+        self.assertTrue(checker.names_a_party("oq-hive-review-escalation"))
+
+    def test_the_first_sha_is_taken_from_surrounding_prose(self):
+        for value, expected in (
+            ("`ab5fe4f`", "ab5fe4f"),
+            ("`ab5fe4f` (round two fixes)", "ab5fe4f"),
+            ("`AB5FE4F`", "ab5fe4f"),
+            ("reviewed after `0635cc2` and `518cac7`", "0635cc2"),
+            ("`ab5fe4f`, `518cac7`", "ab5fe4f"),
+        ):
+            self.assertEqual(expected, checker.first_commit_sha(value), value)
+
+
+class ItRecognisesADeferralInAnyWording(unittest.TestCase):
+    """The policy no longer promises the list is exhaustive, but the obvious phrasings fail."""
+
+    def test_ordinary_ways_of_saying_not_done_are_caught(self):
+        for resolution in (
+            "Postponed until the next release",
+            "Shelved",
+            "Out of scope for this PR",
+            "Deferred; tracking issue 12",
+            "Won't fix",
+            "WILL NOT FIX",
+            "Not addressed here",
+            "Left for a follow-up",
+            "Still open",
+            "Will be handled in a later PR",
+            "TODO",
+            "tbd",
+            "No action taken",
+        ):
+            self.assertTrue(checker.mentions_deferral(resolution), resolution)
+
+    def test_denying_a_deferral_is_not_a_deferral(self):
+        for resolution in (
+            "This is not a deferral; fixed in `ab5fe4f`",
+            "No follow-up needed; fixed in `ab5fe4f`",
+            "Never deferred; closed in `ab5fe4f`",
+        ):
+            self.assertFalse(checker.mentions_deferral(resolution), resolution)
+
+    def test_a_plain_resolution_is_not_treated_as_a_deferral(self):
+        for resolution in (
+            "fixed in `ab5fe4f`",
+            "Removed the check and added a test in `518cac7`",
+            "Documented as a known limit in `ab5fe4f`",
+        ):
+            self.assertFalse(checker.mentions_deferral(resolution), resolution)
+
+
+class ItRejectsAFindingCitedWithNoEvidence(Repository):
+    def test_a_commit_from_another_branch_does_not_resolve_a_finding(self):
+        git(self.root, "checkout", "-q", "-b", "elsewhere")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "elsewhere")
+        other = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True,
+        ).stdout.strip()
+        git(self.root, "checkout", "-q", "-")
+        self.write(
+            10,
+            findings=(
+                "| 1 | high | `a.py` | a finding | fixed in `%s` |\n" % other[:12]
+            ),
+        )
+        checker.validate(self.root, "10")
+        self.assertTrue(any("leaves a high finding unresolved" in p for p in checker.problems))
+
+    def test_a_placeholder_reviewer_is_rejected(self):
+        body = GOOD_RECORD.format(number=11, sha=self.sha).replace(
+            "**Reviewer:** oq-hive-review-escalation (deepseek-ai/deepseek-v4.1-flash-1017)",
+            "**Reviewer:** —",
+        )
+        self.write(11, body=body)
+        checker.validate(self.root, "11")
+        self.assertTrue(any("does not name the reviewer" in p for p in checker.problems))
+
+    def test_the_same_party_cannot_be_reviewer_and_implementer(self):
+        body = GOOD_RECORD.format(number=12, sha=self.sha).replace(
+            "**Reviewer:** oq-hive-review-escalation",
+            "**Reviewer:** oq-hive-development",
+        )
+        self.write(12, body=body)
+        checker.validate(self.root, "12")
+        self.assertTrue(any("same party as Reviewer" in p for p in checker.problems))
+
+    def test_a_record_with_no_findings_table_is_rejected(self):
+        """A prose claim of "no findings" is not a record; the table has to exist."""
+        body = GOOD_RECORD.format(number=13, sha=self.sha)
+        body = body.split("## Findings")[0] + "## Findings\n\nNo findings.\n"
+        self.write(13, body=body)
+        checker.validate(self.root, "13")
+        self.assertTrue(
+            any("no findings table with a severity column" in p for p in checker.problems)
+        )

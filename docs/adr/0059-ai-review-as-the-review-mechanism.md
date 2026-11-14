@@ -86,6 +86,13 @@ What is gained is not independence. It is:
 
 ## Consequences
 
+**The gate is not tamper-proof against the change it is checking.** CI runs the pull request's
+own copy of the validator, so a pull request that weakens it passes its own gate. This is
+documented rather than solved: `ai-review-policy.md` names the limit, `scripts/check-docs-sync.py`
+fails if the gate step leaves `ci.yml`, and eliminating it needs a check that runs outside the
+pull request's control.
+
+
 - A pull request now costs a review record. That is the point: the obligation existed before
   and cost nothing because it was enforced by nothing.
 - The record lives in the repository, so it survives in the same history as the change it
