@@ -61,9 +61,12 @@ DEFERRED_PHRASES = (
     "defer", "postpon", "shelv", "won't fix", "wont fix", "will not fix", "not fix",
     "unfix", "tbd", "todo", "to do", "still open", "left open", "remains open", "remain open",
     "open issue", "no action", "not address", "unaddress", "out of scope", "follow-up",
-    "follow up", "later", "future work", "next pr", "another pr", "subsequent", "pending",
-    "untouched", "unchanged", "ignored", "skipped",
+    "follow up", "later pr", "later release", "future work", "next pr", "another pr",
+    "subsequent pr", "pending", "not yet",
 )
+# Words deliberately absent: "skipped", "ignored", "unchanged", "untouched", "later". Each
+# appears in ordinary descriptions of a completed fix -- "fenced blocks are skipped", "the
+# existing check is unchanged" -- and treating them as deferrals rejected correct records.
 # A resolution may legitimately say it is *not* a deferral. Those words are removed before the
 # scan, so "this is not a deferral; fixed in `abc1234`" is not rejected for naming the thing it
 # is denying.
