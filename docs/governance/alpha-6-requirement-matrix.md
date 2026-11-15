@@ -1,0 +1,86 @@
+# Alpha 6 requirement traceability matrix
+
+This matrix describes **only what the repository actually contains**. A capability moves to
+`DONE` when the implementation is merged, a test pins the behaviour, the specification describes
+it as implemented, and the conformance baseline was re-measured rather than adjusted by hand.
+Nothing here is marked done because it was planned, attempted, or believed to work.
+
+Legend: `DONE` merged, tested and specified · `PARTIAL` implemented but some acceptance
+criterion is unmet · `NOT STARTED` no implementation · `BLOCKED` waiting on something outside
+the work itself · `REFUSED` deliberately not implemented, and the refusal is pinned by a test.
+
+**How the capability rows were produced.** Every row below was probed by executing a program
+against `oq-cli/build/libs/oq.jar` and recording the exit status and the first line of stderr.
+The probe set is reproducibility, not testimony: for each `DONE` row the program exits 0 and
+prints the value in the Evidence column; for each `REFUSED` row the program exits 1 and prints
+the diagnostic quoted there. A row is not `DONE` because a document claims it.
+
+**Last verified:** the branch that adds this file, at the commit named in the pull request that
+merged it. The pin must name a commit reachable from the branch under review, because
+squash-merge discards branch SHAs and a pin to one of them stops resolving.
+
+## Language surface
+
+| Requirement | State | Evidence | Gaps |
+| --- | --- | --- | --- |
+| `finally` cannot be silently absorbed | `DONE` | ADR-0061 · `Lexer.RESERVED` · `ParserTest` (3 added; 18 in the file) · conformance `238`, `239`, `240` · 45 probed positions, 0 accepted | None. `finally` is a hard reserved word, so it is unavailable as an identifier; nothing in the corpus used it |
+| Classes and contracts | `DONE` | `contract S` / `class C(v) implements S` executes and prints `9` · ADR-0027 · `ClassTest` · conformance `228` | Runs on the interpreter; the bytecode backend refuses classes and reports a fallback |
+| `data` declarations and field access | `DONE` | `data P(x, y)` then `P(1, 2).x` prints `1` · ADR-0028 · `DataTest` · conformance `229` | Typed fields (`data P(x: Int)`) are not implemented — see below |
+| `immutable` data is hashable | `DONE` | `data P(x) immutable` then `length(set([P(1), P(1)]))` prints `1`; a mutable `data` in a set is refused · conformance `229` | `immutable` is a postfix modifier on the declaration; it is not accepted before `data` |
+| Closures capture their defining scope | `DONE` | `fun counter() ... return () -> 1` then `counter()()` prints `1` | Capture is by reference: `n = 5` after the closure is created is visible through it, which is why the mutation row below behaves as it does |
+| Bare-name assignment writes the captured variable | `DONE` | inside a closure, `n = 5` then `return f()` prints `5` · block-scope counterpart prints `2` | This is assignment, not declaration; Oqthara has no `let`-style distinction to get wrong |
+| Arrow lambdas | `DONE` | `((x) -> x * 2)(3)` prints `6` | Single expression only |
+| Multiline strings | `DONE` | a `"""` literal spanning two lines prints both lines | — |
+| String interpolation | `DONE` | `n = 3` then `"n is {n}"` prints `n is 3` | — |
+| `use` Java interop | `DONE` | `use java.lang.Math` then `Math.abs(-3)` prints `3` | — |
+| `try` / `catch` with a bound error | `DONE` | `try print 1/0 catch e print "caught"` prints `caught` | — |
+| Pattern matching (`match` / `case`) | `NOT STARTED` | `match x` exits 1 with `unexpected 'x' after a statement` | Not implemented in either form (statement or expression). The diagnostic names the scrutinee, not the construct |
+| List comprehension | `NOT STARTED` | `[n * 2 for n in 1 to 3]` exits 1 with `expected ']' to close the list` | Not implemented. The diagnostic describes a missing bracket |
+| Map comprehension | `NOT STARTED` | `{n: n for n in 1 to 3}` exits 1 with `expected '}' to close the map` | Not implemented |
+| Set comprehension | `NOT STARTED` | `{n for n in 1 to 3}` exits 1 with `expected '}' to close the set` | Not implemented |
+| Generator expression | `NOT STARTED` | `(n for n in 1 to 3)` exits 1 with `expected ')' to close the expression` | Not implemented |
+| `yield` | `NOT STARTED` | `yield 1` exits 1 with `unexpected number 1 after a statement` | Not implemented. `yield` is consumed as an identifier expression, so the complaint is about the next token |
+| Lazy iteration over a range | `NOT STARTED` | `(1 to 1000000).take(3)` exits 1 with `type range has no method 'take'` | Ranges are eager and materialised; there is no lazy view or iterator protocol |
+| `switch` | `NOT STARTED` | `switch 1` exits 1 with `unexpected number 1 after a statement` | Not implemented |
+| Typed `data` fields | `NOT STARTED` | `data P(x: Int)` exits 1 with `expected ')' to close the field list` | Not implemented, and decided against on 2026-11-13 — see [type-system-decision-brief.md](remediation/type-system-decision-brief.md) |
+| `import` as a statement | `NOT STARTED` | `import math` exits 1 with `unexpected 'math' after a statement` | `use` is the only import mechanism. `import` remains a legal identifier |
+| `throw` statement | `NOT STARTED` | `throw "boom"` exits 1 with `unexpected text after a statement` | Errors are raised by the runtime and by `1/0`; there is no source-level raise |
+| `def` as a function keyword | `NOT STARTED` | `def f(x)` exits 1 with `unexpected 'f' after a statement` | `fun` is the only keyword. `def` is deliberately not accepted |
+| `async` / `await` | `NOT STARTED` | `async fun f()` exits 1 with `unexpected keyword 'fun' after a statement` | Not implemented. Note the diagnostic names `fun`, one token late |
+
+## Numerics (IEEE-754 policy)
+
+| Requirement | State | Evidence | Gaps |
+| --- | --- | --- | --- |
+| Overflow of a finite double is `infinity` | `DONE` | `1.0e308 * 10` prints `infinity` · ADR-0051 · conformance `241` | — |
+| Underflow of a finite double is `0.0` | `DONE` | `1.0e-308 / 1.0e20` prints `0.0` · conformance `241` | The spec previously claimed this with `1.0e-308 / 10.0`, which is a subnormal, not zero; corrected, and `241` is the corpus's first non-finite coverage |
+| `NaN` is not equal to itself | `DONE` | `b = 1.0e308 * 10`, `n = b - b`, `n == n` prints `false` · conformance `241` | — |
+| An integer literal past the `long` range is refused | `DONE` | `print 9223372036854775808` exits 1 with `number 9223372036854775808 is too large` | Integer arithmetic itself wraps rather than raising; the literal check is at parse time |
+| Integer and float division by zero raise | `PARTIAL` | `1 / 0`, `1 / 0.0`, `0.0 / 0.0` all exit 1 with `division by zero` · ADR-0051 measurement table | Deliberate: IEEE-754 would make `1.0 / 0.0` an infinity, but Oqthara raises. The inconsistency with `sqrt(-1)` returning `NaN` without a word is recorded in ADR-0051 and remains unresolved |
+
+## Diagnostics quality
+
+| Requirement | State | Evidence | Gaps |
+| --- | --- | --- | --- |
+| An unimplemented construct is refused rather than accepted | `DONE` | all 14 `NOT STARTED` rows above exit 1; none exits 0 | — |
+| An unimplemented construct is named in its diagnostic | `NOT STARTED` | `match x` reports the scrutinee `x`; `yield 1` reports the number `1`; `def f(x)` reports `f`; `async fun` reports `fun` | The leader word is consumed as an identifier expression statement, and the statement terminator check then blames the token after it. Every word involved (`match`, `yield`, `case`, `throw`, `from`, `def`, `switch`, `import`) is a legal identifier, and `match`/`from`/`await` are used as such in `examples/`, so the fix must be contextual and cannot be hard reservation |
+
+## How a row is closed
+
+A row may move to `DONE` only when all of the following hold on `main`:
+
+1. The implementation is merged through a protected pull request with all required checks green.
+2. The behaviour is pinned by a test that has been shown to fail without the change.
+3. The specification and any ADR describe the behaviour as implemented, not as intended.
+4. The conformance baseline has been re-measured rather than adjusted by hand.
+
+Anything less is `PARTIAL`, and the row says what is missing.
+
+## What this matrix does not cover
+
+The rows above are language surface, numerics and diagnostics — the capabilities that can be
+established by executing a program. The directive's remaining scope also includes work that is
+not a language capability: bytecode backend parity, IR verification before emission, the Java
+Bridge, dead-code audit, test-suite speed, and editor/LSP synchronisation. Those are tracked in
+their own documents and by their own gates; listing them here as `NOT STARTED` would imply they
+were probed by the method this file describes, and they were not.
