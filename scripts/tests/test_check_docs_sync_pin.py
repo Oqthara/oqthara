@@ -259,6 +259,67 @@ class TheMatrixCitationsAreChecked(unittest.TestCase):
                          "an entry here ships a matrix that is knowingly wrong at its own pin")
 
 
+class QuotedTestCountsAreChecked(unittest.TestCase):
+    """Every way a document states a test class's size must agree with the class.
+
+    Three phrasings were in use and only two were validated, so the requirement matrix's
+    "N tests in `X`" style drifted three times at once -- `RuntimeCompatibilityTest` said
+    nine against eleven, `RuntimeInstallerTest` fourteen against sixteen, and
+    `SafeArchiveTarTest` thirteen against fifteen. The unvalidated phrasing was the one
+    the matrix actually used.
+    """
+
+    def setUp(self):
+        self.original = MATRIX.read_text(encoding="utf-8")
+        checker.problems.clear()
+        checker.checked.clear()
+
+    def tearDown(self):
+        MATRIX.write_text(self.original, encoding="utf-8")
+
+    def run_check(self):
+        checker.problems.clear()
+        checker.checked.clear()
+        checker.quoted_test_counts_agree()
+        return " ".join(checker.problems)
+
+    def test_the_real_tree_agrees(self):
+        self.assertEqual("", self.run_check())
+
+    def test_a_wrong_count_in_the_matrix_phrasing_is_rejected(self):
+        # The phrasing the matrix uses, and the one that was unguarded.
+        MATRIX.write_text(self.original + "\n99 tests in `RuntimeCompatibilityTest`.\n",
+                          encoding="utf-8")
+        self.assertIn("RuntimeCompatibilityTest has 99 tests", self.run_check())
+
+    def test_a_wrong_count_in_the_parenthesised_phrasing_is_rejected(self):
+        MATRIX.write_text(self.original + "\n`RuntimeCompatibilityTest` (99 tests).\n",
+                          encoding="utf-8")
+        self.assertIn("RuntimeCompatibilityTest has 99 tests", self.run_check())
+
+    def test_a_wrong_count_in_the_now_holds_phrasing_is_rejected(self):
+        MATRIX.write_text(self.original
+                          + "\n`RuntimeCompatibilityTest`, which now holds 99.\n",
+                          encoding="utf-8")
+        self.assertIn("RuntimeCompatibilityTest has 99 tests", self.run_check())
+
+    def test_a_count_for_a_class_that_does_not_exist_is_rejected(self):
+        # Otherwise the count is vacuous and the check reports success over a typo.
+        MATRIX.write_text(self.original + "\n11 tests in `RuntimeCompatabilityTest`.\n",
+                          encoding="utf-8")
+        self.assertIn("RuntimeCompatabilityTest", self.run_check())
+
+    def test_a_subset_citation_is_not_read_as_a_total(self):
+        # "the 4 tests in `X` that drive the interpreter" selects a subset. The definite
+        # article is what distinguishes it from a claim about the class's size, and treating
+        # it as a wrong total would make the check impossible to satisfy honestly.
+        MATRIX.write_text(
+            self.original
+            + "\nThe 4 tests in `RuntimeCompatibilityTest` that run it are the guard.\n",
+            encoding="utf-8")
+        self.assertEqual("", self.run_check())
+
+
 class APinMustBeOnTheDefaultBranch(unittest.TestCase):
     """A pin to a commit that exists only on the branch proposing it is not a resolvable pin.
 

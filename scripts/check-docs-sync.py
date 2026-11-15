@@ -1044,13 +1044,31 @@ def quoted_test_counts_agree() -> None:
     for path in sorted(ROOT.glob("docs/**/*.md")):
         relative = path.relative_to(ROOT)
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            # Two ways of quoting a class's present size: "`X` (N tests)" and
-            # "`X`, which now holds N". The second is used in the requirement matrix,
-            # where it was wrong by four without anything noticing.
+            # Three ways of quoting a class's present size: "`X` (N tests)", "`X`, which now
+            # holds N", and "N tests in `X`". The first two exist where a document states a
+            # class's size; the third is how the requirement matrix lists the CLI test classes,
+            # and both `RuntimeCompatibilityTest` and `RuntimeInstallerTest` drifted by one
+            # there because nothing checked them.
+            # "the 4 tests in `X` that drive the interpreter" selects a subset; "4 tests in
+            # `X`" states the class's size. The definite article is the English signal that
+            # separates them, and using it keeps a subset claim from being read as a wrong
+            # total.
             pairs = re.findall(r"`([A-Za-z]+Tests?)` \((\d+) tests?\)", line)
             pairs += re.findall(r"`([A-Za-z]+Tests?)`, which now holds (\d+)", line)
+            pairs += [
+                (klass, count)
+                for count, klass in re.findall(
+                    r"(?<![Tt]he )\b(\d+) tests? in `([A-Za-z]+Tests?)`", line
+                )
+            ]
             for klass, quoted in pairs:
                 if klass not in counts:
+                    # A cited class that does not exist makes the count vacuous, so silence
+                    # here would hide a typo behind a check that reports success.
+                    problems.append(
+                        f"{relative}:{number} cites {klass} with a test count, "
+                        f"but no test or fuzz source set declares it"
+                    )
                     continue
                 checked += 1
                 if int(quoted) != counts[klass]:

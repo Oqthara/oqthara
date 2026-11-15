@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -185,6 +186,46 @@ class RuntimeCompatibilityTest {
                 new RuntimeCompatibility(emptyJar(dir)).validate(java);
 
         assertTrue(verdict.compatible(), verdict.summary());
+    }
+
+    /**
+     * The check's program must actually run.
+     *
+     * <p>Every other test here drives a fake JVM that prints the expected output, so all of them
+     * pass whether or not the program is a valid Oqthara program. The program named
+     * {@code list_sort} and {@code json_stringify}, which are not builtins, and runtime
+     * installation refused every candidate JVM with {@code 'list_sort' is not defined} while
+     * this suite stayed green. Running the source through the interpreter is what distinguishes
+     * "the program is correct" from "the stub printed the right characters".
+     */
+    @Test
+    void theLanguageCheckIsAProgramThatRuns() {
+        OqRunner.Result result = OqRunner.run(RuntimeCompatibility.LANGUAGE_SOURCE);
+
+        assertEquals(0, result.code(), result.stderr());
+        assertEquals("[1,2,3]\n10\n", result.stdout());
+    }
+
+    /**
+     * The database program must also actually run.
+     *
+     * <p>The same defect class as {@link #theLanguageCheckIsAProgramThatRuns}, and quieter:
+     * the database check is reported and never enforced, and its summary is printed only when
+     * a refusal happens, so a program naming a builtin that does not exist would install
+     * successfully and say nothing on every machine. Changing {@code db_query} to a name that
+     * does not exist leaves every other test in this class green.
+     *
+     * <p>SQLite is bundled with the driver, so this runs wherever the build runs; there is no
+     * environment condition to skip on.
+     */
+    @Test
+    void theDatabaseCheckIsAProgramThatRuns(@TempDir Path dir) {
+        OqRunner.Result result = OqRunner.run(
+                "<database-check>", RuntimeCompatibility.DATABASE_SOURCE,
+                List.of(), "", dir);
+
+        assertEquals(0, result.code(), result.stderr());
+        assertEquals("[{\"n\": 7}]\n", result.stdout());
     }
 
     @Test
