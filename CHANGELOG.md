@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.5] - 2026-11-15
+
+### Fixed
+- **`oq runtime install` refused every JDK, on every platform.** The compatibility check that
+  decides whether a candidate runtime can run Oqthara ran a program calling `list_sort` and
+  `json_stringify`. Neither was a builtin, so every JDK was rejected with
+  `error: 'list_sort' is not defined` and no runtime could ever be installed. The check now
+  runs a program built only from names that exist, and `list_sort` itself was added, because
+  the alternative — deleting the name from the check — would have hidden the gap rather than
+  closing it.
+- **`scripts/verify-signature.sh` reported failure for every genuine release.** Its default
+  `OQ_COSIGN_IDENTITY` was a wildcard pattern ending `release.yml@refs/tags/*`, and `cosign`
+  compares `--certificate-identity` literally, so the pattern matched no certificate and every
+  published release verified as failed on a user's machine. The default is now a regexp passed
+  via `--certificate-identity-regexp`, and a test full-matches it against a real tag. The
+  release workflow passed throughout only because it supplies the exact `${GITHUB_REF}`.
+
+### Added
+- `list_sort(items)` and `list_sort(items, key)`: a new sorted list, leaving the input
+  unchanged, with an optional key function. `sort_by(items, key)` already sorted by a key, so
+  this is not the first keyed sort; it adds a form whose key is called exactly once per item
+  and whose sorted result is a fresh list rather than the argument.
+
+### Documentation
+- A reader-facing language guide under the published reference.
+- The Alpha 4 requirement matrix now pins a commit a reader can check out, and records that
+  merged AI review records cannot be re-audited because squash merge erases the branch
+  commits they cite. That gap is recorded rather than fixed; both candidate fixes change
+  ADR-0059.
+
 ## [0.1.0-alpha.4] - 2026-11-14
 
 ### Fixed

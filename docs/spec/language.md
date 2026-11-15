@@ -1,6 +1,6 @@
 # Oqthara language reference
 
-Version: 0.1.0-alpha.4
+Version: 0.1.0-alpha.5
 
 ## Running a program
 
