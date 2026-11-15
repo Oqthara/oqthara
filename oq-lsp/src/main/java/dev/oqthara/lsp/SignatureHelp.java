@@ -352,14 +352,26 @@ final class SignatureHelp {
         return preceding.equals("fun") || preceding.equals("data") || preceding.equals("class");
     }
 
-    private static boolean isKeyword(String name) {
-        return switch (name) {
-            case "if", "while", "for", "fun", "data", "class", "contract", "return", "use",
-                 "match", "case", "import", "and", "or", "not", "in", "is", "else", "break",
-                 "continue", "try", "catch", "throw", "implements", "extends", "immutable",
-                 "export", "where" -> true;
-            default -> false;
-        };
+    /**
+     * Words that lead a statement without being lexed as keywords, so they are still not calls.
+     *
+     * <p>{@code class} and {@code contract} are contextual: the parser recognises them by
+     * position, which keeps them available as ordinary names elsewhere.
+     */
+    private static final java.util.Set<String> CONTEXTUAL_LEADERS =
+            java.util.Set.of("class", "contract");
+
+    /**
+     * Whether {@code name} is a keyword, and therefore never the callee of a call.
+     *
+     * <p>Derived from {@link dev.oqthara.core.Lexer#KEYWORDS} rather than restated here. A
+     * hand-maintained copy silently drifted: it missed {@code finally}, and it named words
+     * such as {@code match}, {@code throw} and {@code is} that the lexer treats as ordinary
+     * identifiers, so signature help was suppressed for calls that really are calls.
+     */
+    static boolean isKeyword(String name) {
+        return dev.oqthara.core.Lexer.KEYWORDS.contains(name)
+                || CONTEXTUAL_LEADERS.contains(name);
     }
 
     /** Converts a line/character pair to an absolute offset, clamping to the document. */

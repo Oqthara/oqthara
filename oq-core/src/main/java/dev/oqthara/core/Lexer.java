@@ -20,7 +20,7 @@ public final class Lexer {
     /**
      * Words that are reserved so they cannot silently become variables, but that start no
      * statement. They lex as keywords and every position rejects them with a diagnostic that
-     * names the missing construct; see {@link Parser#reservedStatement(Token)} (ADR-0061).
+     * names the missing construct; see {@code Parser.reserved} (ADR-0061).
      * Predictability beats economy here: a name that looks like a construct must never be
      * quietly usable as a name.
      */

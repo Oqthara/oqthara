@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `finally` is now a reserved word (ADR-0061) and is rejected at parse time, identically on both
   paths and in both backends, with `error: finally does not exist` and a hint that names the
   supported cleanup idiom.
+- **Signature help was suppressed for calls to real functions, and offered for keywords.** The
+  editor server decided "is this a keyword, and therefore not a call?" from a hand-written list
+  that had drifted from the lexer in both directions: it never learned about `finally`, and it
+  named `match`, `case`, `import`, `throw`, `is`, `implements`, `extends`, `export` and `where`
+  as keywords when they are ordinary identifiers. A call to a function named `match` got no
+  signature help at all. The predicate is now derived from `Lexer.KEYWORDS`, and a test pins the
+  whole set in both directions so it cannot drift again.
 
 ### Changed
 - **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,

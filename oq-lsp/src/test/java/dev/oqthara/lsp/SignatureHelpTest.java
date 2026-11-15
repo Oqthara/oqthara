@@ -191,6 +191,50 @@ class SignatureHelpTest {
     }
 
     @Test
+    void everyLexerKeywordIsTreatedAsAKeyword() {
+        // The predicate used to be a hand-written list, and it drifted: it never learned about
+        // `finally`. Deriving it from the lexer is only safe if something checks that it stays
+        // derived, so this pins the whole set rather than sampling it.
+        for (String keyword : dev.oqthara.core.Lexer.KEYWORDS) {
+            assertTrue(SignatureHelp.isKeyword(keyword),
+                    "'" + keyword + "' lexes as a keyword, so it can never be a callee");
+        }
+    }
+
+    @Test
+    void wordsThatAreOnlyIdentifiersAreNotTreatedAsKeywords() {
+        // The same list also named words the lexer does not reserve -- `match`, `throw`, `is`,
+        // `implements`, `extends`, `export`, `where`, `import`, `case` -- and each one silently
+        // suppressed signature help for a call that really is a call. Only `class` and
+        // `contract` lead a statement without being lexed as keywords.
+        for (String word : List.of("match", "throw", "is", "implements", "extends",
+                "export", "where", "import", "case")) {
+            assertTrue(!SignatureHelp.isKeyword(word),
+                    "'" + word + "' is an ordinary identifier, so a call to it needs help");
+        }
+    }
+
+    @Test
+    void aCallToAFunctionNamedLikeAnUnusedConstructStillAnswers() {
+        // The user-visible consequence of the drift above, end to end: `match` is a legal
+        // function name, and asking for help inside its argument list used to return nothing.
+        // The fragment is concatenated rather than written as a text block, because a text block
+        // strips the trailing space the cursor position depends on.
+        String source = "fun match(first, second)\n  return first\nend\n" + "print match(1, ";
+        SignatureHelp.Reply reply = at(source, "match(1, ");
+        assertNotNull(reply, "match is an identifier, so this is a call");
+        assertEquals("match(first, second)", reply.signatures().get(0).label());
+    }
+
+    @Test
+    void controlFlowKeywordsAreStillNotCalls() {
+        // The reason the predicate exists. Deriving it from the lexer must not lose this.
+        assertNull(call("if ("));
+        assertNull(call("while ("));
+        assertNull(call("for ("));
+    }
+
+    @Test
     void interleavedArgumentListsInOneDocumentAreNotConfused() {
         // A later call on the same line must not be attributed to an earlier one.
         SignatureHelp.Reply reply = call("print add(1, 2) + pick(3, ");
