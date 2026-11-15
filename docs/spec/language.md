@@ -219,7 +219,7 @@ function cannot accept, and the two are treated differently. An input with no
 real-number result is an error: `sqrt(-1)`, `ln(0)`, `ln(-1)`, `asin(2)` and
 `pow(-8, 0.5)` all raise, as `1 / 0` already did. A finite input whose true answer is
 merely too large or too small is not an error: `exp(1000)` and `1.0e308 * 10` are
-`infinity`, and `1.0e-308 / 10.0` is `0.0`. `pow(0, -1)` is `infinity` for the same
+`infinity`, and `1.0e-308 / 1.0e20` is `0.0`. `pow(0, -1)` is `infinity` for the same
 reason — the input is in the domain and the function grows without bound.
 
 `NaN` therefore never comes from an in-domain input. It is reachable only by

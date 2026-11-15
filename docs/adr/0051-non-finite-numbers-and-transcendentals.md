@@ -27,7 +27,7 @@ behaviour:
 | `pow(-2, 3)`                | `-8`                 |
 | `0.0 ** 0`                  | `1.0`                |
 | `1.0e308 * 10`              | `infinity`           |
-| `1.0e-308 / 10.0`           | `0.0`                |
+| `1.0e-308 / 1.0e20`         | `0.0`                |
 | `infinity - infinity`       | `NaN`                |
 
 So two silently-`NaN` paths existed while every other arithmetic mistake raised.
@@ -52,10 +52,14 @@ matching `1 / 0` and `round(NaN)`.
 
 **Overflow** of a finite input still yields `infinity` (`exp(1000)`,
 `1.0e308 * 10`, `2.0 ** 2000`) and **underflow** still yields `0.0`
-(`1.0e-308 / 10.0`). Those are not domain errors — the input is in the domain and
+(`1.0e-308 / 1.0e20`). Those are not domain errors — the input is in the domain and
 the true answer is merely outside the representable range. Turning them into
 errors would break ordinary numeric code that has always worked, which is a much
 larger change than the inconsistency being fixed.
+
+The divisor here was corrected on 2026-11-15. It read `10.0`, whose quotient
+`1.0e-309` is a subnormal and not zero: the example contradicted its own claim.
+`1.0e-308 / 1.0e20` is `0.0`, as IEEE-754 and the JVM both say.
 
 ### 2. `NaN` remains reachable, and stays detectable
 
