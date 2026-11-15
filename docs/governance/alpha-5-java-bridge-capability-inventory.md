@@ -341,7 +341,7 @@ the completion report:
 | A5.4 | D4 is documented: the interop section states it inherits the "not a sandbox" trust statement | A subsection "What the boundary does not restrict" names `ProcessBuilder` and `System.getenv`, references the existing trust statement, and records the reflection narrowing from A5.2. No behaviour change. |
 | A5.5 | Every example in the interop section is executed and produces the documented output | A probe directory committed under `docs/governance/alpha-5/` with a runner script; `make`-free, plain `python3 `. |
 | A5.6 | No public behaviour regresses | `./gradlew build` green with `oq-core` coverage ≥ 80%; `python3 -m unittest discover -s scripts/tests` OK; `python3 scripts/check-docs-sync.py` exit 0. |
-| A5.7 | Interpreter and compiled backends agree on every probe | Each probe runs under `oq run`; the compile-eligible ones also run from a built jar with identical output. |
+| A5.7 | Interpreter and compiled backends agree on every probe | `run.py --both` compiles each probe with `oq build` in a scratch copy, runs the jar, and requires its output to equal the interpreter's line for line: `ok: 18 probes produce identical output on both backends`. Compared as text, so a backend that accepts what the interpreter refuses also fails. Verified in both directions by injecting a one-sided difference, which the check reported for all 18. |
 | A5.8 | AI review is recorded with findings and resolutions | A review record under `docs/governance/reviews/` that passes `scripts/check-ai-review.py`, with `Independent: no` and the model named. |
 
 ## Alpha 6 acceptance criteria (defined, not started)
