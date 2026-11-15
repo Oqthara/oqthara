@@ -2,17 +2,25 @@
 
 ## Status: every requirement row is `DONE`
 
-This record is written against `b7fb6c7`, the merge of the change that moved the requirement
-matrix pin onto a merge commit, and describes only what the repository contains. It does not
-claim independent human review, and it does not claim CPython parity.
+This record is written against `b7fb6c7`, the squash commit of the change that moved the
+requirement matrix pin onto a commit on the default branch, and describes only what the
+repository contains. It does not claim independent human review, and it does not claim CPython
+parity.
 
-That baseline is itself a correction. This record previously named `5015580`, the tip of the
-branch behind pull request #221. Squash-merge discarded that commit, so the reference resolved
-nowhere on `main`. The figures were not invented — fetched by SHA they do reproduce at
-`5015580` (77 tests OK, 20 reported checks, exit 0) — but a reader who did what the record says
-and checked them against the repository could not reach them, and the pin the matrix carried
-there, `c2b2b16`, was discarded the same way. At `b7fb6c7` the identical figures reproduce on
-`main` itself, which is why the baseline moved rather than the numbers.
+That baseline is itself a correction. This record previously named `5015580`, an intermediate
+commit on the branch behind pull request #221 — the sixth of its eight, not its tip, and not the
+commit that added this document. Squash-merge rewrote all eight into one, so the reference
+resolved nowhere on `main`. The figures were not invented: fetched by SHA they do reproduce at
+`5015580` (77 tests OK, 20 reported checks, exit 0). But a reader doing what the record says
+could not reach them, and the pin the matrix carried there, `c2b2b16`, was discarded the same
+way. At `b7fb6c7` the identical figures reproduce on `main` itself, which is why the baseline
+moved rather than the numbers.
+
+Nothing here is a merge commit, and the earlier wording of this note said otherwise.
+`b7fb6c7`, `f12719a`, `c2b2b16` and `deeb889` all have a single parent, because this repository
+squash-merges; only three commits on `main` have two. What matters for a pin is not that it is a
+merge but that squash-merge cannot erase it — a commit already on the default branch survives,
+and a commit on a branch does not.
 
 The gate table below keeps both readings, because the pair is the point: the script suite still
 reads 77 tests at `b7fb6c7`, and the documentation gate reads 20 reported checks — the same
@@ -146,14 +154,28 @@ Where the two differ the re-run is listed second.
 | Full build | `./gradlew build` | 52 tasks SUCCESSFUL, `oq-core` coverage 91.8% (gate 80%) at `28ef7b2` |
 | Full build and required CI | 12 contexts required by `main-protection` | recorded on the pull request |
 
-In a shallow clone three `test_check_docs_sync_pin.py` cases failed, including
+In a shallow clone four `test_check_docs_sync_pin.py` cases could not run, including
 `test_it_says_what_it_read` — the pin `deeb889` is not among a depth-1 clone's objects, and
 those cases ask about a commit other than the tip, which a one-commit history cannot answer.
 The check itself already discriminates "not fetched" from "does not exist" with
 `git rev-parse --is-shallow-repository`, so the production path was correct and only the tests
-were wrong to assume history. They now skip on that flag through a shared `shallow_history()`
-helper, naming why, instead of failing on an absent premise. A full clone is unaffected:
-`git fetch --unshallow` gives 198 tests OK, and CI checks out `fetch-depth: 0`.
+were wrong to assume history.
+
+The count is four rather than three because fixing the first three exposed a fourth:
+`test_a_branch_only_commit_is_not_an_acceptable_pin` was failing in a single-branch clone all
+along, behind the others. That clone has no `refs/remotes/origin/main`, so the check falls back
+to `HEAD`, the pin becomes an ancestor of itself, and a case that expects a rejection gets a
+green result. Its own skip only fired when `merge-base` returned 0; in that clone it returns
+128, so the premise was never tested.
+
+Each guard now asks the question its case actually depends on, rather than reading the
+repository-wide shallow flag. Two need the pin commit to be present, one needs
+`refs/remotes/origin/main`, and only `test_a_sha_that_matches_no_commit_is_rejected` depends on
+the flag, because there the check legitimately reports a `note` instead of a problem. A
+flag-based guard would have been cheaper and wrong: a depth-20 clone contains the pin, and it
+now skips two cases rather than six. A full clone is unaffected — `git fetch --unshallow` gives
+198 tests OK — and CI checks out `fetch-depth: 0`, so the extra coverage is always present where
+it counts.
 
 The documentation gate enforces the matrix figures against the inventory and the generated
 reference, so a row cannot drift from the measurement it cites.
