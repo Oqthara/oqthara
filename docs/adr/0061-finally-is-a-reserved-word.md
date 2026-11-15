@@ -53,15 +53,16 @@ an identifier, and it starts no statement. The rule the decision buys is that no
 contain a `finally` line and still run: every grammar position refuses it.
 
 The *message* is not identical everywhere, and an earlier draft of this ADR claimed it was.
-Measurement of 140 `finally`-bearing programs across 30-odd positions produced eight distinct
-diagnostics. Four slots that only a name can fill -- a variable, a parameter, the `catch`
-name and a function call target -- reach `Parser.reserved` and say `finally does not exist`.
-The rest are refused by whatever rule owns that position, which is the correct outcome but a
-different sentence each time: `class finally()` is `unexpected keyword 'finally' after a
-statement`, a class-body field is `expected '(' after the type name`, `a, finally = [1, 2]`
-is `unexpected ',' after a statement`, and `"a {finally} b"` is
-`invalid expression inside text: finally does not exist`. The guarantee is that the word is
-never accepted and never silently skipped, not that one string covers every site.
+Measurement of 45 `finally`-bearing programs, one per grammar position, produced five distinct
+diagnostics and zero accepted programs. Thirty-seven of the 45 slots that only a name can fill --
+a variable, a parameter, a field, the `catch` name, a call target, an index, a comprehension
+clause -- reach `Parser.reserved` and say `finally does not exist`. The other eight are refused
+by whatever rule owns that position, which is the right outcome but a different sentence:
+`class finally()` and `contract finally` are `unexpected keyword 'finally' after a statement`,
+`a, finally = [1, 2]` is `unexpected ',' after a statement`, `x = 1 if finally else 2` is
+`unexpected keyword 'if' after a statement`, and `x = "a {finally} b"` is
+`invalid expression inside text: finally does not exist`. The guarantee is that the word is never
+accepted and never silently skipped, not that one string covers every site.
 
 ```
 error: finally does not exist
