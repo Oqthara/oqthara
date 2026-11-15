@@ -162,9 +162,34 @@ public final class Parser {
             case "use" -> useStatement(token);
             case "try" -> tryStatement(token);
             case "const" -> constStatement(token);
+            case "finally" -> throw reserved(token);
             default -> throw error(token, "unexpected keyword '" + token.lexeme() + "'",
                     "This keyword cannot start a statement.");
         };
+    }
+
+    /**
+     * {@code finally} is reserved but unimplemented (ADR-0061). It must be refused by the
+     * grammar rather than left to lex as an identifier, because a statement list happily
+     * absorbs a bare name: the line would be a variable read that only fails when the branch
+     * around it happens to run.
+     */
+    private static OqError reserved(Token token) {
+        return switch (token.lexeme()) {
+            case "finally" -> error(token, "finally does not exist",
+                    "Oqthara has no 'finally' clause: it was rejected in ADR-0061. Put the "
+                            + "cleanup at the end of the 'try' block and at the end of the "
+                            + "'catch' block, or call one function from both.");
+            default -> error(token, "'" + token.lexeme() + "' is reserved",
+                    "It is kept for future syntax and cannot be used as a name.");
+        };
+    }
+
+    /** Refuses a reserved word that has reached a slot only an ordinary name may fill. */
+    private void rejectReserved() {
+        if (check(Token.Kind.KEYWORD) && Lexer.RESERVED.contains(peek().lexeme())) {
+            throw reserved(peek());
+        }
     }
 
     private Ast.Stmt commandStatement() {
@@ -570,6 +595,7 @@ public final class Parser {
         List<Ast.Stmt> body = block();
         expectKeyword("catch", "after the try block");
         String errorName = "error";
+        rejectReserved();
         if (check(Token.Kind.IDENT)) {
             errorName = advance().lexeme();
         }
@@ -953,7 +979,9 @@ public final class Parser {
             return new Ast.TryExpr(parts.body(), parts.errorName(), parts.handler(),
                     keyword.span());
         }
-        if (check(Token.Kind.IDENT)) {
+        if (check(Token.Kind.IDENT) || (check(Token.Kind.KEYWORD)
+                && Lexer.RESERVED.contains(peek().lexeme()))) {
+            if (check(Token.Kind.KEYWORD)) throw reserved(peek());
             Token name = advance();
             if (check(Token.Kind.MINUS) && checkNext(Token.Kind.GT)) {
                 advance();
@@ -1310,6 +1338,9 @@ public final class Parser {
      * "expected to close the parameter list" and never said what was expected.
      */
     private Token expect(Token.Kind kind, String what) {
+        if (check(Token.Kind.KEYWORD) && Lexer.RESERVED.contains(peek().lexeme())) {
+            throw reserved(peek());
+        }
         if (check(kind)) return advance();
         String expected = isPurposeClause(what) ? "expected " + symbol(kind) + " " + what : "expected " + what;
         throw error(peek(), expected, "Found " + describe(peek()) + " instead.");

@@ -368,6 +368,12 @@
       "slug": "docs/adr/0060-keyed-sorting"
     },
     {
+      "path": "docs/adr/0061-finally-is-a-reserved-word.md",
+      "title": "ADR-0061 — `finally` is a reserved word, not a clause",
+      "section": "adr",
+      "slug": "docs/adr/0061-finally-is-a-reserved-word"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
@@ -426,6 +432,12 @@
       "title": "Alpha 5 — Java Bridge Capability Inventory",
       "section": "governance",
       "slug": "docs/governance/alpha-5-java-bridge-capability-inventory"
+    },
+    {
+      "path": "docs/governance/alpha-6-requirement-matrix.md",
+      "title": "Alpha 6 requirement traceability matrix",
+      "section": "governance",
+      "slug": "docs/governance/alpha-6-requirement-matrix"
     },
     {
       "path": "docs/governance/audit/baseline-2026-11.md",

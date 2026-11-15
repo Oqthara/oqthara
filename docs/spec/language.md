@@ -219,7 +219,7 @@ function cannot accept, and the two are treated differently. An input with no
 real-number result is an error: `sqrt(-1)`, `ln(0)`, `ln(-1)`, `asin(2)` and
 `pow(-8, 0.5)` all raise, as `1 / 0` already did. A finite input whose true answer is
 merely too large or too small is not an error: `exp(1000)` and `1.0e308 * 10` are
-`infinity`, and `1.0e-308 / 10.0` is `0.0`. `pow(0, -1)` is `infinity` for the same
+`infinity`, and `1.0e-308 / 1.0e20` is `0.0`. `pow(0, -1)` is `infinity` for the same
 reason — the input is in the domain and the function grows without bound.
 
 `NaN` therefore never comes from an in-domain input. It is reachable only by
@@ -1144,6 +1144,33 @@ end
 `err` is a data value with `message`, `hint`, `file`, `line` and `column`. If the handler
 itself raises, the new error propagates; `try` does not swallow silently. There is no
 `finally` and no typed catch: one handler per `try` keeps the surface small.
+
+`finally` is a **reserved word**, not a clause (ADR-0061). Writing it is a parse error rather
+than a variable read, so a cleanup block cannot be absorbed into the `catch` body:
+
+```
+try
+    print "a"
+catch e
+    print "b"
+finally
+    print "cleanup"
+end
+```
+
+```
+error: finally does not exist
+  --> f1.oq:5:1
+   5 | finally
+       ^^^^^^^
+
+  help: Oqthara has no 'finally' clause: it was rejected in ADR-0061. Put the cleanup at the
+        end of the 'try' block and at the end of the 'catch' block, or call one function from
+        both.
+```
+
+Write the cleanup twice, or call one function from both branches. `lock()` takes a callback
+for the same reason: it is the construct that must run whether or not the body fails.
 
 `try` is also an expression, so it can produce a value where it is used:
 

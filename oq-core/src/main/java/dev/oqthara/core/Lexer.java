@@ -14,8 +14,17 @@ public final class Lexer {
             "if", "else", "while", "for", "in", "end",
             "fun", "return", "data", "true", "false", "nothing",
             "and", "or", "not", "break", "continue",
-            "use", "try", "catch", "const"
+            "use", "try", "catch", "const", "finally"
     );
+
+    /**
+     * Words that are reserved so they cannot silently become variables, but that start no
+     * statement. They lex as keywords and every position rejects them with a diagnostic that
+     * names the missing construct; see {@code Parser.reserved} (ADR-0061).
+     * Predictability beats economy here: a name that looks like a construct must never be
+     * quietly usable as a name.
+     */
+    public static final Set<String> RESERVED = Set.of("finally");
 
     private static final Map<String, Token.Kind> TWO_CHAR = new LinkedHashMap<>();
     private static final Map<String, Token.Kind> ONE_CHAR = new LinkedHashMap<>();

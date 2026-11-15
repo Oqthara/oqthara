@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`finally` was absorbed into the preceding block instead of being rejected.** The word was
+  not a keyword, so it lexed as an identifier and a `finally` line at the end of a `try` or
+  `catch` body parsed as a variable read. When the branch never ran, the program was accepted
+  and silently skipped the cleanup; when it did run, the program died with
+  `error: 'finally' is not defined`, which blames the user's spelling for a language gap.
+  `finally` is now a reserved word (ADR-0061) and is rejected at parse time, identically on both
+  paths and in both backends, with `error: finally does not exist` and a hint that names the
+  supported cleanup idiom.
+- **Signature help was suppressed for calls to real functions, and offered for keywords.** The
+  editor server decided "is this a keyword, and therefore not a call?" from a hand-written list
+  that had drifted from the lexer in both directions: it never learned about `finally`, and it
+  named `match`, `case`, `import`, `throw`, `is`, `implements`, `extends`, `export` and `where`
+  as keywords when they are ordinary identifiers. A call to a function named `match` got no
+  signature help at all. The predicate is now derived from `Lexer.KEYWORDS`, and a test pins the
+  whole set in both directions so it cannot drift again. `class` and `contract` are deliberately
+  not keywords here: the parser recognises them by position, so `fun class(x)` is legal and
+  `class(1)` is a real call. Their one non-call position, the declaration header, is excluded
+  separately.
+
+### Changed
+- **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,
+  function or field name, and now it is not. No pre-existing file in the repository, the examples
+  or the conformance suite used the word, so this cost no existing program; the only `.oq` files
+  that contain it are the three conformance cases added by this change.
+
 ## [0.1.0-alpha.5] - 2026-11-15
 
 ### Fixed

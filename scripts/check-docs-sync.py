@@ -1010,23 +1010,42 @@ def cited_test_methods_exist() -> None:
                 continue
             if in_fence or line.startswith("| Test |"):
                 continue
-            cited = [
-                (k, m)
-                for k, m in re.findall(
-                    r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\.(\w+)", line
-                )
-                if m not in {"java", "class", "md"}
-            ]
-            for klass, method in cited:
-                if klass not in methods:
-                    continue  # cited_tests_exist owns the unresolvable-class case
-                checked += 1
-                if method not in methods[klass]:
-                    problems.append(
-                        f"{relative}:{number} cites {klass}.{method}, which "
-                        f"{klass} does not declare"
-                    )
+            checked += resolve_citations(relative, number, line, methods)
+
+    # Conformance cases cite test methods in their leading comments, and those citations were
+    # invisible to this check: it scanned `docs/**/*.md` only. One such comment named a test that
+    # had been renamed, so the case looked justified by a test that did not exist. `#` starts a
+    # comment in `.oq`, and a heading marker in Markdown is never a bare `# ` here.
+    for path in sorted(ROOT.glob("conformance/**/*.oq")):
+        relative = path.relative_to(ROOT)
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.lstrip().startswith("#"):
+                continue
+            checked += resolve_citations(relative, number, line, methods)
+
     note(f"{checked} cited test methods resolve on their class")
+
+
+def resolve_citations(relative: pathlib.Path, number: int, line: str, methods: dict[str, set[str]]) -> int:
+    """Checks the `ClassName.method` citations on one line; returns how many were resolved."""
+    cited = [
+        (k, m)
+        for k, m in re.findall(
+            r"\b([A-Z][A-Za-z0-9]*(?:Test|Tests))\.(\w+)", line
+        )
+        if m not in {"java", "class", "md"}
+    ]
+    checked = 0
+    for klass, method in cited:
+        if klass not in methods:
+            continue  # cited_tests_exist owns the unresolvable-class case
+        checked += 1
+        if method not in methods[klass]:
+            problems.append(
+                f"{relative}:{number} cites {klass}.{method}, which "
+                f"{klass} does not declare"
+            )
+    return checked
 
 
 # 13c. A quoted test count (`ClassTest` (39 tests)) must match the class.

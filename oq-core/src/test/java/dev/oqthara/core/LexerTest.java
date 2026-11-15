@@ -44,6 +44,21 @@ class LexerTest {
     }
 
     @Test
+    void reservedWordsLexAsKeywordsNotIdentifiers() {
+        // A reserved word must not reach the parser as an ordinary name, because statement
+        // lists absorb names. `finally` is the first entry in Lexer.RESERVED (ADR-0061).
+        // The invariant is containment, not a fixed roster: reserving another word later must
+        // not require editing this test. Which words are reserved is pinned by the conformance
+        // cases and by the parser's per-position tests, where it belongs.
+        assertTrue(Lexer.KEYWORDS.containsAll(Lexer.RESERVED),
+                "every reserved word must also be a keyword, so it never lexes as an identifier");
+        assertTrue(Lexer.RESERVED.contains("finally"), "ADR-0061 reserved this word");
+        List<Token> tokens = Lexer.lex("test", "finally");
+        assertEquals(Token.Kind.KEYWORD, tokens.get(0).kind());
+        assertEquals("finally", tokens.get(0).lexeme());
+    }
+
+    @Test
     void tracksLineAndColumn() {
         List<Token> tokens = Lexer.lex("test", "a\n  b");
         assertEquals(1, tokens.get(0).span().line());

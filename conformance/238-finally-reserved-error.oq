@@ -1,0 +1,9 @@
+# `finally` is reserved and unimplemented (ADR-0061). The try succeeds here, so the old
+# behaviour silently skipped the cleanup; now the word is refused before anything runs.
+try
+    print "a"
+catch e
+    print "b"
+finally
+    print "cleanup"
+end

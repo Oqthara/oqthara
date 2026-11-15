@@ -1,0 +1,11 @@
+# IEEE-754 says overflow of a finite number is an infinity and underflow is zero, and
+# neither is an error because the input is in the domain. The spec stated underflow with
+# `1.0e-308 / 10.0` for a year, which is `1.0e-309` -- a subnormal, not zero -- so the
+# claim contradicted itself and no test noticed. These values were taken from the JVM.
+print 1.0e308 * 10
+print 1.0e-308 / 1.0e20
+print 5.0e-324 / 2.0
+big = 1.0e308 * 10
+n = big - big
+print n == n
+print n != n

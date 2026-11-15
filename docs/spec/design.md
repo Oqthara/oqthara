@@ -59,7 +59,7 @@ end
 
 | Metric | Target | Current |
 |---|---|---|
-| Keywords | ≤ 30 | 21 |
+| Keywords | ≤ 30 | 22 |
 | Hello world | 1 line | 1 line (`print "Hello, World!"`) |
 | Tutorial concepts before first useful program | ≤ 3 | 2 (`print`, text) |
 | Ways to declare a variable | 2 (`x = ...`, `const x = ...`) | 2 |

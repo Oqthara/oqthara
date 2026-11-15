@@ -1342,15 +1342,16 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(205, compiled,
+        assertEquals(206, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-12: `scripts/verify-conformance.py` reported 205 compiled / 9
-        // fallback / 0 divergences over 237 programs (214 executable). The one new executable
-        // program is 234-compression-round-trip, which the compiler handles because the
-        // compression builtins are ordinary one-arity builtins; the three new .err cases also
-        // build. Before it, 204 compiled over 213 executable programs, up from 196 after lambda
-        // capture landed. 019-closures still falls back by design: it assigns the captured
-        // `count`, so a copy would not reproduce the interpreter.
+        // Measured 2026-11-15: `scripts/verify-conformance.py` reported 206 compiled / 9
+        // fallback / 0 divergences over 241 programs (215 executable). The one new executable
+        // program is 241-non-finite-arithmetic, which the compiler handles because `**`, `/`
+        // and `-` over decimals are ordinary arithmetic. Before it, 205 compiled over 214
+        // executable programs, and 204 over 213 before that. The three `finally` error cases
+        // added no compiled programs because a case with an `.err` sibling is not executable.
+        // 019-closures still falls back by design: it assigns the captured `count`, so a copy
+        // would not reproduce the interpreter.
     }
 
     @Test

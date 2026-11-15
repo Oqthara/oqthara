@@ -191,6 +191,98 @@ class SignatureHelpTest {
     }
 
     @Test
+    void everyLexerKeywordIsTreatedAsAKeyword() {
+        // The predicate used to be a hand-written list, and it drifted: it never learned about
+        // `finally`. Deriving it from the lexer is only safe if something checks that it stays
+        // derived, so this pins the whole set rather than sampling it.
+        for (String keyword : dev.oqthara.core.Lexer.KEYWORDS) {
+            assertTrue(SignatureHelp.isKeyword(keyword),
+                    "'" + keyword + "' lexes as a keyword, so it can never be a callee");
+        }
+    }
+
+    @Test
+    void wordsThatAreOnlyIdentifiersAreNotTreatedAsKeywords() {
+        // The same list also named words the lexer does not reserve -- `match`, `throw`, `is`,
+        // `implements`, `extends`, `export`, `where`, `import`, `case` -- and each one silently
+        // suppressed signature help for a call that really is a call.
+        for (String word : List.of("match", "throw", "is", "implements", "extends",
+                "export", "where", "import", "case")) {
+            assertTrue(!SignatureHelp.isKeyword(word),
+                    "'" + word + "' is an ordinary identifier, so a call to it needs help");
+        }
+    }
+
+    @Test
+    void contextualStatementLeadersAreStillCalls() {
+        // `class` and `contract` lead a declaration, but the parser decides that by position, so
+        // `fun class(x)` and `fun contract(x)` are legal and `class(1)` / `contract(2)` are real
+        // calls. Listing them as keywords suppressed their help -- the same defect, narrower.
+        // The declaration position is excluded by isDeclarationHeader instead.
+        for (String word : List.of("class", "contract")) {
+            assertTrue(!SignatureHelp.isKeyword(word),
+                    "'" + word + "' is contextual, so it can still be called");
+        }
+    }
+
+    @Test
+    void aCallToAFunctionNamedLikeAnUnusedConstructStillAnswers() {
+        // The user-visible consequence of the drift above, end to end: `match` is a legal
+        // function name, and asking for help inside its argument list used to return nothing.
+        // The fragment is concatenated rather than written as a text block, because a text block
+        // strips the trailing space the cursor position depends on.
+        String source = "fun match(first, second)\n  return first\nend\n" + "print match(1, ";
+        SignatureHelp.Reply reply = at(source, "match(1, ");
+        assertNotNull(reply, "match is an identifier, so this is a call");
+        assertEquals("match(first, second)", reply.signatures().get(0).label());
+    }
+
+    @Test
+    void aCallToAFunctionNamedClassStillAnswers() {
+        // The end-to-end consequence for the contextual words: `class` is a legal function name,
+        // so help must appear for its call -- and must still not appear for `class add(`.
+        String source = "fun class(x)\n  return x\nend\n" + "print class(1, ";
+        SignatureHelp.Reply reply = at(source, "class(1, ");
+        assertNotNull(reply, "class is contextual, so a call to it is a call");
+        assertEquals("class(x)", reply.signatures().get(0).label());
+
+        // `class Foo` cannot discriminate: there is no unmatched '(' there, so the scanner never
+        // reaches the declaration check. `class add(` does -- without the exclusion it resolves
+        // to the declared `add` and answers help for a declaration header.
+        assertNull(call("class add("));
+    }
+
+    @Test
+    void aCallToAFunctionNamedContractStillAnswers() {
+        // `contract` was added to the declaration-header exclusion, so it needs its own pins:
+        // a call to a function of that name answers, and `contract add(` does not.
+        String source = "fun contract(x)\n  return x\nend\n" + "print contract(2, ";
+        SignatureHelp.Reply reply = at(source, "contract(2, ");
+        assertNotNull(reply, "contract is contextual, so a call to it is a call");
+        assertEquals("contract(x)", reply.signatures().get(0).label());
+
+        assertNull(call("contract add("));
+    }
+
+    @Test
+    void everyDeclarationHeaderExcludesItsOwnNameButNotAnother() {
+        // Each leader word must suppress help for the name it declares and only that name.
+        assertNull(call("fun add("));
+        assertNull(call("data add("));
+        assertNull(call("class add("));
+        assertNull(call("contract add("));
+        assertNotNull(call("print add("), "an ordinary call still answers");
+    }
+
+    @Test
+    void controlFlowKeywordsAreStillNotCalls() {
+        // The reason the predicate exists. Deriving it from the lexer must not lose this.
+        assertNull(call("if ("));
+        assertNull(call("while ("));
+        assertNull(call("for ("));
+    }
+
+    @Test
     void interleavedArgumentListsInOneDocumentAreNotConfused() {
         // A later call on the same line must not be attributed to an earlier one.
         SignatureHelp.Reply reply = call("print add(1, 2) + pick(3, ");
