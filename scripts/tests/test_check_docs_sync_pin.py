@@ -370,6 +370,13 @@ class APinMustBeOnTheDefaultBranch(unittest.TestCase):
         MATRIX.write_text(self.original, encoding="utf-8")
 
     def test_a_branch_only_commit_is_not_an_acceptable_pin(self):
+        reason = shallow_history()
+        if reason:
+            # In a shallow clone `origin/main` is absent, so the ancestry test below cannot
+            # run and the check under test falls back to `HEAD` -- which makes the pin an
+            # ancestor of itself and reports no problem. The case would then fail on a
+            # premise the clone removed rather than on the defect it describes.
+            self.skipTest(reason)
         own = subprocess.run(["git", "rev-parse", "HEAD"], cwd=SCRIPTS.parent,
                              capture_output=True, text=True).stdout.strip()
         if not own:
