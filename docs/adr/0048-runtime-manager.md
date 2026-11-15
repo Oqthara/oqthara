@@ -222,10 +222,15 @@ this ADR is the record of: the language program named `list_sort` and `json_stri
 that have never existed, and `oq runtime install` refused every candidate JVM on every platform
 with `'list_sort' is not defined`. Nothing caught it, because every other test of the check
 drives a fake JVM that prints the expected output — a stub that echoes the right characters
-cannot tell a working program from a broken one. The database program had the same exposure and
-is harder to notice, since the database check is reported rather than enforced: a broken program
-there would have been reported as "no native SQLite library on this machine" on every host, and
-the installer accepts that state by design. Both programs now have a test that runs them.
+cannot tell a working program from a broken one.
+
+The database program had the same exposure and would have been quieter still. Because the
+database check is reported rather than enforced, its failure is folded into a `Verdict` summary
+that only a refusal prints: on the success path the installer discards the summary and `oq
+runtime install` prints nothing but the path it installed. A broken database program would
+therefore have installed successfully and silently on every host, and the check would have
+appeared to pass. Silence is the reason this half of the defect needed a test more than the half
+that was reported, not less. Both programs now have one.
 
 This is not hypothetical. [ADR-0002](0002-ci-split.md) records that the build failed on JDK 25
 with `Unsupported class file major version 69`, because the Gradle release in use at the time

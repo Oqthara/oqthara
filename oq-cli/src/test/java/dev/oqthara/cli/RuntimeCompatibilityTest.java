@@ -209,11 +209,11 @@ class RuntimeCompatibilityTest {
     /**
      * The database program must also actually run.
      *
-     * <p>The same defect class as {@link #theLanguageCheckIsAProgramThatRuns}, and harder to
-     * notice: the database check is reported and never enforced, so a program naming a builtin
-     * that does not exist would fail on every machine and be reported as "no native SQLite
-     * library here". Changing {@code db_query} to a name that does not exist leaves every other
-     * test in this class green.
+     * <p>The same defect class as {@link #theLanguageCheckIsAProgramThatRuns}, and quieter:
+     * the database check is reported and never enforced, and its summary is printed only when
+     * a refusal happens, so a program naming a builtin that does not exist would install
+     * successfully and say nothing on every machine. Changing {@code db_query} to a name that
+     * does not exist leaves every other test in this class green.
      *
      * <p>SQLite is bundled with the driver, so this runs wherever the build runs; there is no
      * environment condition to skip on.

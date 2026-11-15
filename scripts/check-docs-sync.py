@@ -1049,14 +1049,26 @@ def quoted_test_counts_agree() -> None:
             # class's size; the third is how the requirement matrix lists the CLI test classes,
             # and both `RuntimeCompatibilityTest` and `RuntimeInstallerTest` drifted by one
             # there because nothing checked them.
+            # "the 4 tests in `X` that drive the interpreter" selects a subset; "4 tests in
+            # `X`" states the class's size. The definite article is the English signal that
+            # separates them, and using it keeps a subset claim from being read as a wrong
+            # total.
             pairs = re.findall(r"`([A-Za-z]+Tests?)` \((\d+) tests?\)", line)
             pairs += re.findall(r"`([A-Za-z]+Tests?)`, which now holds (\d+)", line)
             pairs += [
                 (klass, count)
-                for count, klass in re.findall(r"\b(\d+) tests? in `([A-Za-z]+Tests?)`", line)
+                for count, klass in re.findall(
+                    r"(?<![Tt]he )\b(\d+) tests? in `([A-Za-z]+Tests?)`", line
+                )
             ]
             for klass, quoted in pairs:
                 if klass not in counts:
+                    # A cited class that does not exist makes the count vacuous, so silence
+                    # here would hide a typo behind a check that reports success.
+                    problems.append(
+                        f"{relative}:{number} cites {klass} with a test count, "
+                        f"but no test or fuzz source set declares it"
+                    )
                     continue
                 checked += 1
                 if int(quoted) != counts[klass]:
