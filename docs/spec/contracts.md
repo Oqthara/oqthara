@@ -156,8 +156,10 @@ defect, so the pointer is removed rather than left to look like corroboration.
 `Lexer.RESERVED` names it, so the word lexes as a keyword and can never be read as a name in any
 position. `Parser` rejects it wherever it appears, with the same message from both code paths,
 so the outcome no longer depends on whether an error occurred. The wording is not byte-identical
-at every site -- a list missing a comma still reports the missing `]` -- but no site accepts the
-word:
+at every site, and where it differs the word is not what is named: for a non-reserved word in the
+same slot the surrounding syntax is reported instead, so `x = [1 catch]` is
+`expected ']' to close the list` while `x = [1 finally]` is `finally does not exist`. The
+reserved-word guard wins over the delimiter message, and no site accepts the word:
 
 ```
 $ java -jar oq.jar run f1.oq     # the try succeeded
@@ -178,9 +180,10 @@ error: finally does not exist
 The rejection happens at parse time for `oq run`, `oq check` and `oq build`, so the interpreter
 and the compiled backend cannot diverge. `finally = 3` is also an error now, which is the
 intended cost of a hard reservation: an ordinary identifier named `finally` stops working. A grep
-of the corpus found no `.oq` file using the word at all, so nothing in the repository paid that
-cost. Conformance cases `238`, `239` and `240` pin both paths and the name position, and
-`language.md` documents the supported cleanup idiom. Contract `#10` is consistent again.
+of the corpus found no pre-existing `.oq` file using the word, so nothing in the repository paid
+that cost; the only files that mention it are the conformance cases `238`, `239` and `240` added
+here, which pin both paths and the name position. `language.md` documents the supported cleanup
+idiom. Contract `#10` is consistent again.
 
 ## 8.4 What "versioned" means here
 

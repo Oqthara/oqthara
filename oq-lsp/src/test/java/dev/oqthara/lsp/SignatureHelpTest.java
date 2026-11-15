@@ -240,13 +240,38 @@ class SignatureHelpTest {
     @Test
     void aCallToAFunctionNamedClassStillAnswers() {
         // The end-to-end consequence for the contextual words: `class` is a legal function name,
-        // so help must appear for its call -- and must still not appear for `class Foo`.
+        // so help must appear for its call -- and must still not appear for `class add(`.
         String source = "fun class(x)\n  return x\nend\n" + "print class(1, ";
         SignatureHelp.Reply reply = at(source, "class(1, ");
         assertNotNull(reply, "class is contextual, so a call to it is a call");
         assertEquals("class(x)", reply.signatures().get(0).label());
 
-        assertNull(call("class Foo\n"));
+        // `class Foo` cannot discriminate: there is no unmatched '(' there, so the scanner never
+        // reaches the declaration check. `class add(` does -- without the exclusion it resolves
+        // to the declared `add` and answers help for a declaration header.
+        assertNull(call("class add("));
+    }
+
+    @Test
+    void aCallToAFunctionNamedContractStillAnswers() {
+        // `contract` was added to the declaration-header exclusion, so it needs its own pins:
+        // a call to a function of that name answers, and `contract add(` does not.
+        String source = "fun contract(x)\n  return x\nend\n" + "print contract(2, ";
+        SignatureHelp.Reply reply = at(source, "contract(2, ");
+        assertNotNull(reply, "contract is contextual, so a call to it is a call");
+        assertEquals("contract(x)", reply.signatures().get(0).label());
+
+        assertNull(call("contract add("));
+    }
+
+    @Test
+    void everyDeclarationHeaderExcludesItsOwnNameButNotAnother() {
+        // Each leader word must suppress help for the name it declares and only that name.
+        assertNull(call("fun add("));
+        assertNull(call("data add("));
+        assertNull(call("class add("));
+        assertNull(call("contract add("));
+        assertNotNull(call("print add("), "an ordinary call still answers");
     }
 
     @Test

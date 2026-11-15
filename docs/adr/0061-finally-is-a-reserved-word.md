@@ -53,16 +53,45 @@ an identifier, and it starts no statement. The rule the decision buys is that no
 contain a `finally` line and still run: every grammar position refuses it.
 
 The *message* is not identical everywhere, and an earlier draft of this ADR claimed it was.
-Measurement of 45 `finally`-bearing programs, one per grammar position, produced five distinct
-diagnostics and zero accepted programs. Thirty-seven of the 45 slots that only a name can fill --
-a variable, a parameter, a field, the `catch` name, a call target, an index, a comprehension
-clause -- reach `Parser.reserved` and say `finally does not exist`. The other eight are refused
-by whatever rule owns that position, which is the right outcome but a different sentence:
-`class finally()` and `contract finally` are `unexpected keyword 'finally' after a statement`,
-`a, finally = [1, 2]` is `unexpected ',' after a statement`, `x = 1 if finally else 2` is
-`unexpected keyword 'if' after a statement`, and `x = "a {finally} b"` is
-`invalid expression inside text: finally does not exist`. The guarantee is that the word is never
-accepted and never silently skipped, not that one string covers every site.
+`scripts/probe-reserved-positions.py` probes the word against every grammar position a name can
+occupy and reports what the compiler says at each. Run it to regenerate these figures rather than
+trusting them:
+
+```
+$ python3 scripts/probe-reserved-positions.py
+word: finally
+positions probed: 42
+accepted: 0
+rejected: 42
+refused by the reservation itself: 32
+distinct messages: 6
+   32x error: finally does not exist
+    4x error: expected ']' to close the list
+    3x error: unexpected keyword 'finally' after a statement
+    1x error: unexpected ',' after a statement
+    1x error: unexpected keyword 'finally' in a class body
+    1x error: invalid expression inside text: finally does not exist
+
+ok: no position accepts 'finally' as a name
+```
+
+Thirty-two of the 42 slots that only a name can fill -- a variable, a parameter, a field, the
+`catch` name, a call target, an index -- reach `Parser.reserved` and say
+`finally does not exist`. The other ten are refused by whatever rule owns that position, which is
+the right outcome but a different sentence: `class finally()` and `contract finally` are
+`unexpected keyword 'finally' after a statement`, a `finally` in a class body is
+`unexpected keyword 'finally' in a class body`, `a, finally = [1, 2]` is
+`unexpected ',' after a statement`, and a `finally` inside text interpolation is folded into the
+enclosing message, giving `invalid expression inside text: finally does not exist`. The guarantee
+is that the word is never accepted and never silently skipped, not that one string covers every
+site. The probe exits non-zero if any position ever accepts the word, so `--check` can be wired
+into a gate.
+
+The four `expected ']' to close the list` rows are comprehensions, and they are not evidence
+either way: comprehensions are unimplemented (`alpha-6-requirement-matrix.md` records every form
+as `NOT STARTED`), so the list rule refuses the program before the word is examined. An earlier
+draft of this paragraph listed a comprehension clause as a slot that reaches `Parser.reserved`,
+which the language cannot produce.
 
 ```
 error: finally does not exist
@@ -122,10 +151,34 @@ has a cleanup construct, and telling them a bracket is missing would send them t
 thing -- they would add the `]`, run again, and still not have `finally`. Naming the word is the
 only message that can stop that loop, which is the whole point of reserving it.
 
+### Why signature help travels with this decision
+
+This change also fixes `oq-lsp`'s signature help, and reviewers have twice asked whether that
+belongs here. It does, for two reasons.
+
+The defect is the same one. `SignatureHelp.isKeyword` held a hand-maintained copy of the keyword
+set that had drifted from `Lexer.KEYWORDS`: it was missing six real keywords including
+`finally`, and it carried nine words that are not keywords at all. The reservation above was
+unreachable from the editor because of it -- a call to a function named `match` got no help,
+and `finally` was classified as a plain identifier. Fixing the reservation in `oq-core` while
+leaving the editor's duplicate in place would have shipped a language change the editor did not
+see, which is the failure this ADR exists to prevent.
+
+The fix is the minimal form of this decision. `isKeyword` is now a one-line derivation from
+`Lexer.KEYWORDS`, so it cannot drift again, and the one position that is genuinely not a call
+stays in `isDeclarationHeader` where the declaration is known. The alternative -- a separate PR
+-- would have landed a lexer change with a known editor inconsistency in the same release.
+
+The branch name (`oqthara-runtime-distribution-hardening`) does not describe this work. It was
+assigned by the session tooling before the task was chosen and is not renameable through the
+supported path, so it is left alone rather than rewritten with raw git. Reviewers should read the
+PR title, this ADR and the commit subjects, not the branch name.
+
 ## Consequences
 
-- A program that used `finally` as a variable now fails to parse. No fixture, example, or
-  test did; the repository-wide search found zero uses.
+- A program that used `finally` as a variable now fails to parse. No pre-existing fixture,
+  example, or test did; a repository-wide search outside the conformance cases this change adds
+  found zero uses.
 - The keyword count rises to 22. `docs/stdlib/reference.md` is regenerated by `oq doc`, and
   `CONTRIBUTING.md` and `docs/spec/design.md` state the new count. The gate in
   `scripts/check-docs-sync.py` compares all three against `Lexer.KEYWORDS`, so the three

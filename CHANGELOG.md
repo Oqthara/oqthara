@@ -29,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,
-  function or field name, and now it is not. Nothing in the repository, the examples or the
-  conformance suite used the word, so this cost no existing program.
+  function or field name, and now it is not. No pre-existing file in the repository, the examples
+  or the conformance suite used the word, so this cost no existing program; the only `.oq` files
+  that contain it are the three conformance cases added by this change.
 
 ## [0.1.0-alpha.5] - 2026-11-15
 
