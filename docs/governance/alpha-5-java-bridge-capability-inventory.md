@@ -252,8 +252,10 @@ is a reasonable design (Oqthara semantics are identical on both backends), but:
 stating that an Oqthara method on a built-in family wins, that Java is reached for everything else,
 and why (ADR-0032 rejected Java-first dispatch because `list.map(...)` would then be answered by
 whatever `ArrayList` happens to declare). The shadowed set is exactly
-`add, clear, contains, get, remove, set, sort`. The diagnostic wording was left alone: changing it
-would break pinned messages in existing CLI tests for a documentation problem.
+`add, contains, get, remove, set, size, sort, subList`, recomputed from the `case` labels in
+`MethodResolverImpl.listMethod` rather than from memory. `clear` is *not* in it, so `xs.clear()`
+reaches `java.util.List.clear` and mutates in place. The diagnostic wording was left alone: changing
+it would break pinned messages in existing CLI tests for a documentation problem.
 
 ### D4 — Java interop is a second, undocumented route to unrestricted process execution
 
@@ -335,7 +337,7 @@ the completion report:
 |---|---|---|
 | A5.1 | D1 is fixed: a callable Java object is accepted wherever an Oqthara callable with a compatible arity is accepted | The four refusing builtins accept `Comparator.naturalOrder()` / `Function.identity()` and produce the result the equivalent lambda produces, and a wrong-arity value is refused by count. Probes `d1_sort`, `d1_sort_by`, `d1_reduce`, `d1_list_sort`, `d1_key_arity`; regression tests `ListSortTest.aJavaFunctionalValueIsAcceptedAsAKey` and `aTwoArgumentComparatorIsRefusedAsAKeyWithItsArityNamed`. |
 | A5.2 | D2 is fixed: `Class` values answer their self-description methods, and reflection is refused by name | `String("x").getClass().getName()` → `java.lang.String`; `getSimpleName()` → `String`; `getDeclaredMethod` refused with a help line saying it is not exposed. Statics are unaffected. Probes `d2_class_instance`, `d2_reflection_refused`; tests in `JavaBridgeClassObjectTest`. **Boundary:** reading declared members is not available, and the compiled backend inherits it through `Methods.callOnClass`, which is exercised where `use` compiles and otherwise through the documented interpreter fallback. |
-| A5.3 | D3 is documented: the precedence rule is stated in the specification | A subsection "Which method a name means" in the interop section states that an Oqthara method wins, cites ADR-0032 for why, and enumerates the shadowed set (`add, clear, contains, get, remove, set, sort`). Diagnostic wording is deliberately unchanged: repinning it would break existing CLI tests for a documentation problem. |
+| A5.3 | D3 is documented: the precedence rule is stated in the specification | A subsection "Which method a name means" in the interop section states that an Oqthara method wins, cites ADR-0032 for why, and enumerates the shadowed set (`add, contains, get, remove, set, size, sort, subList`, with `clear` reaching Java). Diagnostic wording is deliberately unchanged: repinning it would break existing CLI tests for a documentation problem. |
 | A5.4 | D4 is documented: the interop section states it inherits the "not a sandbox" trust statement | A subsection "What the boundary does not restrict" names `ProcessBuilder` and `System.getenv`, references the existing trust statement, and records the reflection narrowing from A5.2. No behaviour change. |
 | A5.5 | Every example in the interop section is executed and produces the documented output | A probe directory committed under `docs/governance/alpha-5/` with a runner script; `make`-free, plain `python3 `. |
 | A5.6 | No public behaviour regresses | `./gradlew build` green with `oq-core` coverage ≥ 80%; `python3 -m unittest discover -s scripts/tests` OK; `python3 scripts/check-docs-sync.py` exit 0. |
