@@ -4,6 +4,7 @@ import dev.oqthara.runtime.OqError;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -41,6 +42,18 @@ class LexerTest {
         assertTrue(Lexer.KEYWORDS.contains("if"));
         assertFalse(Lexer.KEYWORDS.contains("to"), "to must stay contextual");
         assertFalse(Lexer.KEYWORDS.contains("until"), "until must stay contextual");
+    }
+
+    @Test
+    void reservedWordsLexAsKeywordsNotIdentifiers() {
+        // A reserved word must not reach the parser as an ordinary name, because statement
+        // lists absorb names. `finally` is the first entry in Lexer.RESERVED (ADR-0061).
+        assertEquals(Set.of("finally"), Lexer.RESERVED);
+        assertTrue(Lexer.KEYWORDS.containsAll(Lexer.RESERVED),
+                "every reserved word must also be a keyword, so it never lexes as an identifier");
+        List<Token> tokens = Lexer.lex("test", "finally");
+        assertEquals(Token.Kind.KEYWORD, tokens.get(0).kind());
+        assertEquals("finally", tokens.get(0).lexeme());
     }
 
     @Test

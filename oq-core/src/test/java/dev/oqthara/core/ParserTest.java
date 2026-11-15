@@ -143,6 +143,69 @@ class ParserTest {
     }
 
     @Test
+    void finallyIsRejectedWhereItWouldHaveBeenAbsorbed() {
+        // The try succeeds, so the catch body never runs. Before ADR-0061 the statement list
+        // absorbed `finally` as a variable read and the program ran to completion, silently
+        // skipping the cleanup the author asked for.
+        OqError error = assertThrows(OqError.class, () -> Parser.parse("t", """
+                try
+                    print "a"
+                catch e
+                    print "b"
+                finally
+                    print "cleanup"
+                end
+                """));
+        assertEquals("finally does not exist", error.getMessage());
+        assertTrue(error.hint().contains("no 'finally' clause"), error.hint());
+
+        // The same word on the path where an error is actually raised. The diagnostic must
+        // not depend on whether the handler ran.
+        OqError afterError = assertThrows(OqError.class, () -> Parser.parse("t", """
+                try
+                    1/0
+                catch e
+                    print "caught"
+                finally
+                    print "cleanup"
+                end
+                """));
+        assertEquals("finally does not exist", afterError.getMessage());
+    }
+
+    @Test
+    void finallyIsNotANameInAnyPosition() {
+        // Every slot that only an ordinary name may fill must refuse the reserved word, so a
+        // construct that looks supported never becomes a variable by accident.
+        List<String> sources = List.of(
+                "finally = 3",
+                "finally += 1",
+                "const finally = 1",
+                "fun finally()\nend",
+                "fun f(finally)\nend",
+                "data D(finally)\nend",
+                "for finally in [1]\nend",
+                "print finally",
+                "x = finally",
+                "[finally]",
+                "use finally",
+                "try\n  1/0\ncatch finally\nend");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertEquals("finally does not exist", error.getMessage(), source);
+        }
+    }
+
+    @Test
+    void finallyDiagnosticPointsAtTheWord() {
+        OqError error = assertThrows(OqError.class, () -> Parser.parse("t", "x = 1\nfinally = 2"));
+        assertEquals(2, error.span().line());
+        assertEquals(1, error.span().column());
+        assertEquals(7, error.span().width(), "the caret must cover the whole word");
+    }
+
+    @Test
     void everyOtherBuiltinRequiresParentheses() {
         // `write_text` is an alias of `write` reachable only in function form. The spec once
         // showed `write_text "x"`; this pins the boundary the spec now states.

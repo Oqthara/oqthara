@@ -1145,6 +1145,33 @@ end
 itself raises, the new error propagates; `try` does not swallow silently. There is no
 `finally` and no typed catch: one handler per `try` keeps the surface small.
 
+`finally` is a **reserved word**, not a clause (ADR-0061). Writing it is a parse error rather
+than a variable read, so a cleanup block cannot be absorbed into the `catch` body:
+
+```
+try
+    print "a"
+catch e
+    print "b"
+finally
+    print "cleanup"
+end
+```
+
+```
+error: finally does not exist
+  --> f1.oq:6:1
+   6 | finally
+       ^^^^^^^
+
+  help: Oqthara has no 'finally' clause: it was rejected in ADR-0061. Put the cleanup at the
+        end of the 'try' block and at the end of the 'catch' block, or call one function from
+        both.
+```
+
+Write the cleanup twice, or call one function from both branches. `lock()` takes a callback
+for the same reason: it is the construct that must run whether or not the body fails.
+
 `try` is also an expression, so it can produce a value where it is used:
 
 ```

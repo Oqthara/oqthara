@@ -1,0 +1,9 @@
+# The same word after a catching handler. This path used to report "not defined" and point
+# at the wrong problem; the diagnostic must not depend on whether an error occurred.
+try
+    1/0
+catch e
+    print "caught"
+finally
+    print "cleanup"
+end

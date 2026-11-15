@@ -368,6 +368,12 @@
       "slug": "docs/adr/0060-keyed-sorting"
     },
     {
+      "path": "docs/adr/0061-finally-is-a-reserved-word.md",
+      "title": "ADR-0061 — `finally` is a reserved word, not a clause",
+      "section": "adr",
+      "slug": "docs/adr/0061-finally-is-a-reserved-word"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

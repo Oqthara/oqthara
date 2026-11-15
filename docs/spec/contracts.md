@@ -95,13 +95,14 @@ Neither is a defect; both are gaps that the Alpha 4 `data` work (directive §14.
 ## 8.3 Contradictions found while writing this register
 
 Recording the contracts exposed one place where the implementation, the specification and the
-parser disagree, and it is a language defect rather than a documentation one.
+parser disagreed. It is kept here as the worked example of a contradiction that was real and is
+now closed; the reproductions below are historical evidence, not current behaviour.
 
-**`finally` is accepted by the parser and does not exist in the language.** `language.md` says so
-plainly: *"There is no `finally` and no typed catch."* The parser has no `finally` clause, and
-that is the problem: `finally` is not a keyword, so it lexes as an identifier, and the statement
-list of a `catch` block absorbs it. The failure therefore depends on whether an error occurred,
-which is the worst possible shape for a bug:
+**`finally` was accepted by the parser although it does not exist in the language.** `language.md`
+says so plainly: *"There is no `finally` and no typed catch."* The parser had no `finally` clause,
+and that was the problem: `finally` was not a keyword, so it lexed as an identifier, and the
+statement list of a `catch` block absorbed it. The failure therefore depended on whether an error
+occurred, which is the worst possible shape for a bug:
 
 ```
 # no error: the catch body never runs, so nothing looks wrong
@@ -148,10 +149,35 @@ when nothing fails, and dies with a confusing *undefined name* when something do
 names the wrong problem: the fault is a language construct that looks supported and is not.
 
 This belongs in the exception taxonomy contract (`#10`) and is recorded in
-`03-runtime.md` §7.3.6. The repair is either to implement `finally` or to make it a reserved word
-with a diagnostic that says it does not exist; both are language changes and neither belongs in a
-documentation branch.
+`03-runtime.md` §7.3.6.
 
+**Resolved.** `finally` is now a hard reserved word (ADR-0061). `Lexer.KEYWORDS` contains it and
+`Lexer.RESERVED` names it, so the word lexes as a keyword and can never be read as a name in any
+position. `Parser` rejects it wherever it appears and reports the same message from both paths,
+so the outcome no longer depends on whether an error occurred:
+
+```
+$ java -jar oq.jar run f1.oq     # the try succeeded
+error: finally does not exist
+  --> f1.oq:6:1
+   6 | finally
+       ^^^^^^^
+```
+
+```
+$ java -jar oq.jar run f2.oq     # the try raised
+error: finally does not exist
+  --> f2.oq:5:1
+   5 | finally
+       ^^^^^^^
+```
+
+The rejection happens at parse time for `oq run`, `oq check` and `oq build`, so the interpreter
+and the compiled backend cannot diverge. `finally = 3` is also an error now, which is the
+intended cost of a hard reservation: an ordinary identifier named `finally` stops working. A grep
+of the corpus found no `.oq` file using the word at all, so nothing in the repository paid that
+cost. Conformance cases `238`, `239` and `240` pin both paths and the name position, and
+`language.md` documents the supported cleanup idiom. Contract `#10` is consistent again.
 ## 8.4 What "versioned" means here
 
 The version column tracks how settled a contract is, not how recently it changed:

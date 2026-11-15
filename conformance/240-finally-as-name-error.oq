@@ -1,0 +1,3 @@
+# A reserved word is not a name in any position, including a plain assignment.
+finally = 3
+print finally
