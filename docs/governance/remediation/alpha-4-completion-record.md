@@ -2,8 +2,33 @@
 
 ## Status: every requirement row is `DONE`
 
-This record is written against `5015580` and describes only what the repository contains. It
-does not claim independent human review, and it does not claim CPython parity.
+This record is written against `b7fb6c7`, the squash commit of the change that moved the
+requirement matrix pin onto a commit on the default branch, and describes only what the
+repository contains. It does not claim independent human review, and it does not claim CPython
+parity.
+
+That baseline is itself a correction. This record previously named `5015580`, an intermediate
+commit on the branch behind pull request #221 — the sixth of its eight, not its tip, and not the
+commit that added this document. Squash-merge rewrote all eight into one, so the reference
+resolved nowhere on `main`. The figures were not invented: fetched by SHA they do reproduce at
+`5015580` (77 tests OK, 20 reported checks, exit 0). But a reader doing what the record says
+could not reach them, and the pin the matrix carried there, `c2b2b16`, was discarded the same
+way. At `b7fb6c7` the identical figures reproduce on `main` itself, which is why the baseline
+moved rather than the numbers.
+
+Nothing here is a merge commit, and the earlier wording of this note said otherwise.
+`b7fb6c7`, `f12719a`, `c2b2b16` and `deeb889` all have a single parent, because this repository
+squash-merges; only three commits on `main` have two. What matters for a pin is not that it is a
+merge but that squash-merge cannot erase it — a commit already on the default branch survives,
+and a commit on a branch does not.
+
+The gate table below keeps both readings, because the pair is the point: the script suite still
+reads 77 tests at `b7fb6c7`, and the documentation gate reads 20 reported checks — the same
+numbers on a commit a reader can actually check out.
+
+The managed-runtime defect in §"Defects that only an audit could find" item 5 was found after
+`b7fb6c7` and fixed in `28ef7b2`; the figures in §17.9 and the gate table were re-measured
+against `28ef7b2`, where the documented global count is 205.
 
 ## What the last two states were, and how the second one closed
 
@@ -52,7 +77,7 @@ count. The count was the wrong test: §17 lists domains "including, but not limi
 §3.1 states that Alpha 4 is "not a promise of full CPython compatibility, a promise to
 reproduce every Python standard-library module". The row now carries a disposition per
 §17.1–§17.8 naming the decision record that settles each bullet, and §17.9 is measured rather
-than asserted: all 204 documented globals have a specification or ADR mention and a test
+than asserted: all 205 documented globals have a specification or ADR mention and a test
 reference, at zero gaps under word-boundary matching across every test tree.
 
 **§16 signed distribution** closed on the published release rather than on a local build:
@@ -80,19 +105,77 @@ right and the *claim* about it was wrong or unexercised.
    example and did not list `math.oq`; a new check now compares the directory and the table in
    both directions.
 
+A fifth was found after this record was first written, and it is the same failure mode in the
+governance itself.
+
+5. **A `DONE` row whose acceptance path could not run.** The managed-runtime row was marked
+   `DONE` on unit evidence: the resolver, the archive guard, the lock, the retention policy and
+   the installer were each tested, and `RuntimeCompatibilityTest` was green. But the check that
+   `RuntimeInstaller` runs against a candidate JVM executed an Oqthara program calling
+   `list_sort`, a builtin that **had never existed** — `git log -S'list_sort' -- oq-stdlib
+   oq-runtime` returns nothing. Every real `oq runtime install` therefore refused every JDK:
+   `error: 'list_sort' is not defined`. No test could see it, because the failing string was an
+   input to a seam whose genuine execution was only exercised by the install path, and the
+   install tests stubbed the JVM rather than running the shipped program against a real one.
+
+   The first attempt to close this renamed the call to `sort`, which made the check pass while
+   deleting the requirement instead of meeting it. Reversed: `list_sort` is now implemented as a
+   keyed sort that evaluates its key exactly once per item (decorate–sort–undecorate), because
+   the existing `sort_by` evaluated its key once per *comparison* — measured at 46 calls for ten
+   items on one ordering and 18 on others, and the ordering of a stateful key changes the answer
+   outright. The defect is the dependence, not any particular count. [ADR-0060](../../adr/0060-keyed-sorting.md)
+   records the decision; 20 tests in `ListSortTest` cover it and are mutation-tested.
+
+   An adversarial review of that change then found a **critical** defect in it: the keyed path
+   built its callback arguments with `List.of(...)`, which rejects null, and `nothing` is null, so
+   `list_sort([3, nothing, 1], x -> 0)` aborted the JVM with an uncatchable
+   `internal error: NullPointerException` (exit 70). `sort_by` shared it. No test had a `nothing`
+   in its input, which is why the change shipped green. Both now use a null-tolerant helper and
+   two tests pin the case.
+
+   The lesson is the record's own, applied to itself: the row was closed on evidence that never
+   ran the path a user takes. `oq runtime install` was run end to end on a real JDK 21 after the
+   fix, and that is the evidence this row should have carried from the start.
+
 The pattern is consistent: an assertion that nothing executes is the failure mode. That is why
 the §17.9 criteria were measured with a script rather than read off the reference.
 
 ## Gates
 
-Run against `5015580` on branch `fix-verify-signature-identity`:
+Run against `b7fb6c7`, then re-run against `28ef7b2` on `main` after the managed-runtime fix.
+Where the two differ the re-run is listed second.
 
 | Gate | Command | Result |
 |---|---|---|
-| Script unit tests | `python3 -m unittest discover -s scripts/tests` | 77 tests OK |
-| Documentation drift | `python3 scripts/check-docs-sync.py` | exit 0, 20 reported checks |
-| Builtin coverage audit | word-boundary match of 204 globals against specs, ADRs and five test trees | 0 undocumented, 0 untested |
+| Script unit tests | `python3 -m unittest discover -s scripts/tests` | 77 tests OK at `b7fb6c7`; **198 OK (1 skipped)** at `28ef7b2` |
+| Documentation drift | `python3 scripts/check-docs-sync.py` | exit 0, 20 reported checks at `b7fb6c7`; exit 0, 24 reported checks at `28ef7b2` |
+| Conformance | `python3 scripts/verify-conformance.py` | **205 compiled, 9 fallback (214 of 214 executable), 0 divergences across 237 programs** at `28ef7b2` |
+| Builtin coverage audit | word-boundary match of 205 globals against specs, ADRs and five test trees | 0 undocumented, 0 untested |
+| Full build | `./gradlew build` | 52 tasks SUCCESSFUL, `oq-core` coverage 91.8% (gate 80%) at `28ef7b2` |
 | Full build and required CI | 12 contexts required by `main-protection` | recorded on the pull request |
+
+In a shallow clone four `test_check_docs_sync_pin.py` cases could not run, including
+`test_it_says_what_it_read` — the pin `deeb889` is not among a depth-1 clone's objects, and
+those cases ask about a commit other than the tip, which a one-commit history cannot answer.
+The check itself already discriminates "not fetched" from "does not exist" with
+`git rev-parse --is-shallow-repository`, so the production path was correct and only the tests
+were wrong to assume history.
+
+The count is four rather than three because fixing the first three exposed a fourth:
+`test_a_branch_only_commit_is_not_an_acceptable_pin` was failing in a single-branch clone all
+along, behind the others. That clone has no `refs/remotes/origin/main`, so the check falls back
+to `HEAD`, the pin becomes an ancestor of itself, and a case that expects a rejection gets a
+green result. Its own skip only fired when `merge-base` returned 0; in that clone it returns
+128, so the premise was never tested.
+
+Each guard now asks the question its case actually depends on, rather than reading the
+repository-wide shallow flag. Two need the pin commit to be present, one needs
+`refs/remotes/origin/main`, and only `test_a_sha_that_matches_no_commit_is_rejected` depends on
+the flag, because there the check legitimately reports a `note` instead of a problem. A
+flag-based guard would have been cheaper and wrong: a depth-20 clone contains the pin, and it
+now skips two cases rather than six. A full clone is unaffected — `git fetch --unshallow` gives
+198 tests OK — and CI checks out `fetch-depth: 0`, so the extra coverage is always present where
+it counts.
 
 The documentation gate enforces the matrix figures against the inventory and the generated
 reference, so a row cannot drift from the measurement it cites.

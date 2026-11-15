@@ -35,6 +35,45 @@ MATRIX = SCRIPTS.parent / "docs" / "governance" / "alpha-4-requirement-matrix.md
 PIN = re.compile(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", re.M)
 
 
+def git(*args):
+    """Run a git command in the repository, returning (returncode, stdout)."""
+    done = subprocess.run(["git", *args], cwd=SCRIPTS.parent,
+                          capture_output=True, text=True)
+    return done.returncode, done.stdout.strip()
+
+
+def pin_unfetched():
+    """Why the matrix's own pin cannot be read here, or None when it is present.
+
+    A depth-1 clone holds one commit, so a pin to any earlier commit is absent. That is a
+    property of the clone, not of the pin, and the check under test already distinguishes the
+    two with `--is-shallow-repository`. Guards key on the specific commit each case needs
+    rather than on the repository-wide shallow flag, because a clone can be shallow and still
+    contain the pin -- at depth seven it does, and a flag-based guard would skip a case that
+    was answerable.
+    """
+    code, _ = git("rev-parse", "--verify", "--quiet",
+                  f"{PIN.search(MATRIX.read_text(encoding='utf-8')).group(1)}^{{commit}}")
+    if code != 0:
+        return "the pinned commit is not fetched in this clone"
+    return None
+
+
+def not_a_shallow_clone():
+    """Why an absent SHA cannot be told apart from an unfetched one here, or None.
+
+    `test_a_sha_that_matches_no_commit_is_rejected` needs the check to report "not a commit in
+    this repository" for a fabricated SHA. The check deliberately reports a `note` instead
+    when the clone is shallow, because there the same absence means "not fetched". This case
+    therefore depends on the shallow flag itself, not on whether some particular commit is
+    present.
+    """
+    code, out = git("rev-parse", "--is-shallow-repository")
+    if code == 0 and out == "true":
+        return "shallow clone: an absent SHA cannot be told from an unfetched one"
+    return None
+
+
 class TheRealMatrixPinsARealCommit(unittest.TestCase):
     def test_it_passes(self):
         checker.problems.clear()
@@ -43,6 +82,9 @@ class TheRealMatrixPinsARealCommit(unittest.TestCase):
         self.assertEqual([], checker.problems)
 
     def test_it_says_what_it_read(self):
+        reason = pin_unfetched()
+        if reason:
+            self.skipTest(reason)
         checker.problems.clear()
         checker.checked.clear()
         checker.requirement_matrix_verification_pin_is_real()
@@ -73,6 +115,9 @@ class BadPinsAreRejected(unittest.TestCase):
         return " ".join(checker.problems)
 
     def test_a_sha_that_matches_no_commit_is_rejected(self):
+        reason = not_a_shallow_clone()
+        if reason:
+            self.skipTest(reason)
         message = self._pin_to("deadbee1")
         self.assertIn("not a commit in this repository", message)
 
@@ -240,6 +285,11 @@ class TheMatrixCitationsAreChecked(unittest.TestCase):
         # happened to carry the same citations, so deleting the guard left it green. The
         # repository's root commit is used instead: it predates ADR-0059, the gate and every
         # other citation a DONE row makes, and it is guaranteed to exist in any full clone.
+        reason = pin_unfetched()
+        if reason:
+            # `rev-list --max-parents=0` returns the tip itself in a depth-1 clone, so there
+            # is no pre-evidence commit to pin to and the assertion below would test nothing.
+            self.skipTest(reason)
         root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"],
                               cwd=SCRIPTS.parent, capture_output=True, text=True
                               ).stdout.split()
@@ -339,6 +389,13 @@ class APinMustBeOnTheDefaultBranch(unittest.TestCase):
         MATRIX.write_text(self.original, encoding="utf-8")
 
     def test_a_branch_only_commit_is_not_an_acceptable_pin(self):
+        code, _ = git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/main")
+        if code != 0:
+            # The check resolves `origin/main` and falls back to `HEAD` when it is absent, so
+            # in a single-branch clone the pin becomes an ancestor of itself and no problem is
+            # reported -- a green result where this case expects a rejection. Without the
+            # remote-tracking ref there is no branch to be off, so the premise is missing.
+            self.skipTest("no refs/remotes/origin/main to measure branch-only pins against")
         own = subprocess.run(["git", "rev-parse", "HEAD"], cwd=SCRIPTS.parent,
                              capture_output=True, text=True).stdout.strip()
         if not own:
