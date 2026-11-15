@@ -35,21 +35,42 @@ MATRIX = SCRIPTS.parent / "docs" / "governance" / "alpha-4-requirement-matrix.md
 PIN = re.compile(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", re.M)
 
 
-def shallow_history():
-    """Why a pin test cannot run here, or None when the history it asks about is present.
+def git(*args):
+    """Run a git command in the repository, returning (returncode, stdout)."""
+    done = subprocess.run(["git", *args], cwd=SCRIPTS.parent,
+                          capture_output=True, text=True)
+    return done.returncode, done.stdout.strip()
 
-    These cases ask about a commit *other* than the tip -- whether a pin resolves, whether
-    it is an ancestor, whether a row's evidence exists at it. A depth-1 clone has one commit,
-    so the question has no subject and the case fails on an absent premise rather than on a
-    defect. Skipping is honest; a suite that goes red for anyone who reads this repository
-    with `--depth 1` trains the reader to ignore it.
+
+def pin_unfetched():
+    """Why the matrix's own pin cannot be read here, or None when it is present.
+
+    A depth-1 clone holds one commit, so a pin to any earlier commit is absent. That is a
+    property of the clone, not of the pin, and the check under test already distinguishes the
+    two with `--is-shallow-repository`. Guards key on the specific commit each case needs
+    rather than on the repository-wide shallow flag, because a clone can be shallow and still
+    contain the pin -- at depth seven it does, and a flag-based guard would skip a case that
+    was answerable.
     """
-    shallow = subprocess.run(
-        ["git", "rev-parse", "--is-shallow-repository"],
-        cwd=SCRIPTS.parent, capture_output=True, text=True,
-    ).stdout.strip()
-    if shallow == "true":
-        return "shallow clone: the history this check asks about is not fetched"
+    code, _ = git("rev-parse", "--verify", "--quiet",
+                  f"{PIN.search(MATRIX.read_text(encoding='utf-8')).group(1)}^{{commit}}")
+    if code != 0:
+        return "the pinned commit is not fetched in this clone"
+    return None
+
+
+def not_a_shallow_clone():
+    """Why an absent SHA cannot be told apart from an unfetched one here, or None.
+
+    `test_a_sha_that_matches_no_commit_is_rejected` needs the check to report "not a commit in
+    this repository" for a fabricated SHA. The check deliberately reports a `note` instead
+    when the clone is shallow, because there the same absence means "not fetched". This case
+    therefore depends on the shallow flag itself, not on whether some particular commit is
+    present.
+    """
+    code, out = git("rev-parse", "--is-shallow-repository")
+    if code == 0 and out == "true":
+        return "shallow clone: an absent SHA cannot be told from an unfetched one"
     return None
 
 
@@ -61,7 +82,7 @@ class TheRealMatrixPinsARealCommit(unittest.TestCase):
         self.assertEqual([], checker.problems)
 
     def test_it_says_what_it_read(self):
-        reason = shallow_history()
+        reason = pin_unfetched()
         if reason:
             self.skipTest(reason)
         checker.problems.clear()
@@ -94,10 +115,8 @@ class BadPinsAreRejected(unittest.TestCase):
         return " ".join(checker.problems)
 
     def test_a_sha_that_matches_no_commit_is_rejected(self):
-        reason = shallow_history()
+        reason = not_a_shallow_clone()
         if reason:
-            # In a shallow clone every SHA is "not a commit in this repository", including a
-            # correct pin, so this case cannot distinguish the two failure modes it tests.
             self.skipTest(reason)
         message = self._pin_to("deadbee1")
         self.assertIn("not a commit in this repository", message)
@@ -266,7 +285,7 @@ class TheMatrixCitationsAreChecked(unittest.TestCase):
         # happened to carry the same citations, so deleting the guard left it green. The
         # repository's root commit is used instead: it predates ADR-0059, the gate and every
         # other citation a DONE row makes, and it is guaranteed to exist in any full clone.
-        reason = shallow_history()
+        reason = pin_unfetched()
         if reason:
             # `rev-list --max-parents=0` returns the tip itself in a depth-1 clone, so there
             # is no pre-evidence commit to pin to and the assertion below would test nothing.
@@ -370,13 +389,13 @@ class APinMustBeOnTheDefaultBranch(unittest.TestCase):
         MATRIX.write_text(self.original, encoding="utf-8")
 
     def test_a_branch_only_commit_is_not_an_acceptable_pin(self):
-        reason = shallow_history()
-        if reason:
-            # In a shallow clone `origin/main` is absent, so the ancestry test below cannot
-            # run and the check under test falls back to `HEAD` -- which makes the pin an
-            # ancestor of itself and reports no problem. The case would then fail on a
-            # premise the clone removed rather than on the defect it describes.
-            self.skipTest(reason)
+        code, _ = git("rev-parse", "--verify", "--quiet", "refs/remotes/origin/main")
+        if code != 0:
+            # The check resolves `origin/main` and falls back to `HEAD` when it is absent, so
+            # in a single-branch clone the pin becomes an ancestor of itself and no problem is
+            # reported -- a green result where this case expects a rejection. Without the
+            # remote-tracking ref there is no branch to be off, so the premise is missing.
+            self.skipTest("no refs/remotes/origin/main to measure branch-only pins against")
         own = subprocess.run(["git", "rev-parse", "HEAD"], cwd=SCRIPTS.parent,
                              capture_output=True, text=True).stdout.strip()
         if not own:
