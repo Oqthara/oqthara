@@ -49,13 +49,24 @@ one thing, silently absorbing it.
 ## Decision
 
 `finally` is a **reserved word**. It is a member of `Lexer.KEYWORDS`, so it can never lex as
-an identifier, and it starts no statement: every position rejects it with one diagnostic that
-names the real problem and offers the supported alternative.
+an identifier, and it starts no statement. The rule the decision buys is that no program can
+contain a `finally` line and still run: every grammar position refuses it.
+
+The *message* is not identical everywhere, and an earlier draft of this ADR claimed it was.
+Measurement of 140 `finally`-bearing programs across 30-odd positions produced eight distinct
+diagnostics. Four slots that only a name can fill -- a variable, a parameter, the `catch`
+name and a function call target -- reach `Parser.reserved` and say `finally does not exist`.
+The rest are refused by whatever rule owns that position, which is the correct outcome but a
+different sentence each time: `class finally()` is `unexpected keyword 'finally' after a
+statement`, a class-body field is `expected '(' after the type name`, `a, finally = [1, 2]`
+is `unexpected ',' after a statement`, and `"a {finally} b"` is
+`invalid expression inside text: finally does not exist`. The guarantee is that the word is
+never accepted and never silently skipped, not that one string covers every site.
 
 ```
 error: finally does not exist
-  --> f1.oq:6:1
-   6 | finally
+  --> f1.oq:5:1
+   5 | finally
        ^^^^^^^
 
   help: Oqthara has no 'finally' clause: it was rejected in ADR-0061. Put the cleanup at the
@@ -89,6 +100,26 @@ gate reads, so the classification cannot drift from the docs.
 `Lexer.RESERVED` names the subset of keywords that are reserved but unimplemented. It exists
 so the parser can produce the targeted "does not exist" diagnostic instead of the generic
 "unexpected keyword" one, and so a future reserved word has somewhere to go.
+
+### A reserved word pre-empts the delimiter diagnostic
+
+`Parser.expect` raises the reservation before it raises its own complaint, so a reserved word
+sitting in a slot that wants punctuation names the construct rather than the punctuation:
+
+```
+$ oq run g1.oq          # x = [1 finally]
+error: finally does not exist
+
+$ oq run g2.oq          # x = [1 catch]
+error: expected ']' to close the list
+```
+
+`catch` is a keyword but not reserved, so it falls through to the delimiter message. The
+asymmetry is deliberate. `catch` there is a plausible typo for a value the writer meant to type,
+and "a `]` is missing" is the repair. `finally` there is evidence the writer believes the language
+has a cleanup construct, and telling them a bracket is missing would send them to fix the wrong
+thing -- they would add the `]`, run again, and still not have `finally`. Naming the word is the
+only message that can stop that loop, which is the whole point of reserving it.
 
 ## Consequences
 

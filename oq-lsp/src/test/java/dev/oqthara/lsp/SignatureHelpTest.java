@@ -205,12 +205,23 @@ class SignatureHelpTest {
     void wordsThatAreOnlyIdentifiersAreNotTreatedAsKeywords() {
         // The same list also named words the lexer does not reserve -- `match`, `throw`, `is`,
         // `implements`, `extends`, `export`, `where`, `import`, `case` -- and each one silently
-        // suppressed signature help for a call that really is a call. Only `class` and
-        // `contract` lead a statement without being lexed as keywords.
+        // suppressed signature help for a call that really is a call.
         for (String word : List.of("match", "throw", "is", "implements", "extends",
                 "export", "where", "import", "case")) {
             assertTrue(!SignatureHelp.isKeyword(word),
                     "'" + word + "' is an ordinary identifier, so a call to it needs help");
+        }
+    }
+
+    @Test
+    void contextualStatementLeadersAreStillCalls() {
+        // `class` and `contract` lead a declaration, but the parser decides that by position, so
+        // `fun class(x)` and `fun contract(x)` are legal and `class(1)` / `contract(2)` are real
+        // calls. Listing them as keywords suppressed their help -- the same defect, narrower.
+        // The declaration position is excluded by isDeclarationHeader instead.
+        for (String word : List.of("class", "contract")) {
+            assertTrue(!SignatureHelp.isKeyword(word),
+                    "'" + word + "' is contextual, so it can still be called");
         }
     }
 
@@ -224,6 +235,18 @@ class SignatureHelpTest {
         SignatureHelp.Reply reply = at(source, "match(1, ");
         assertNotNull(reply, "match is an identifier, so this is a call");
         assertEquals("match(first, second)", reply.signatures().get(0).label());
+    }
+
+    @Test
+    void aCallToAFunctionNamedClassStillAnswers() {
+        // The end-to-end consequence for the contextual words: `class` is a legal function name,
+        // so help must appear for its call -- and must still not appear for `class Foo`.
+        String source = "fun class(x)\n  return x\nend\n" + "print class(1, ";
+        SignatureHelp.Reply reply = at(source, "class(1, ");
+        assertNotNull(reply, "class is contextual, so a call to it is a call");
+        assertEquals("class(x)", reply.signatures().get(0).label());
+
+        assertNull(call("class Foo\n"));
     }
 
     @Test

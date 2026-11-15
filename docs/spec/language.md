@@ -1160,8 +1160,8 @@ end
 
 ```
 error: finally does not exist
-  --> f1.oq:6:1
-   6 | finally
+  --> f1.oq:5:1
+   5 | finally
        ^^^^^^^
 
   help: Oqthara has no 'finally' clause: it was rejected in ADR-0061. Put the cleanup at the

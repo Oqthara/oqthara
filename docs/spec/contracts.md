@@ -148,19 +148,22 @@ A programmer who writes `finally` expecting cleanup gets a program that silently
 when nothing fails, and dies with a confusing *undefined name* when something does. The diagnosis
 names the wrong problem: the fault is a language construct that looks supported and is not.
 
-This belongs in the exception taxonomy contract (`#10`) and is recorded in
-`03-runtime.md` §7.3.6.
+This belongs in the exception taxonomy contract (`#10`). An earlier draft of this entry said
+it was recorded in `03-runtime.md` §7.3.6; it was not, and that section still lists no such
+defect, so the pointer is removed rather than left to look like corroboration.
 
 **Resolved.** `finally` is now a hard reserved word (ADR-0061). `Lexer.KEYWORDS` contains it and
 `Lexer.RESERVED` names it, so the word lexes as a keyword and can never be read as a name in any
-position. `Parser` rejects it wherever it appears and reports the same message from both paths,
-so the outcome no longer depends on whether an error occurred:
+position. `Parser` rejects it wherever it appears, with the same message from both code paths,
+so the outcome no longer depends on whether an error occurred. The wording is not byte-identical
+at every site -- a list missing a comma still reports the missing `]` -- but no site accepts the
+word:
 
 ```
 $ java -jar oq.jar run f1.oq     # the try succeeded
 error: finally does not exist
-  --> f1.oq:6:1
-   6 | finally
+  --> f1.oq:5:1
+   5 | finally
        ^^^^^^^
 ```
 
@@ -178,6 +181,7 @@ intended cost of a hard reservation: an ordinary identifier named `finally` stop
 of the corpus found no `.oq` file using the word at all, so nothing in the repository paid that
 cost. Conformance cases `238`, `239` and `240` pin both paths and the name position, and
 `language.md` documents the supported cleanup idiom. Contract `#10` is consistent again.
+
 ## 8.4 What "versioned" means here
 
 The version column tracks how settled a contract is, not how recently it changed:

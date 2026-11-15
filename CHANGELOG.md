@@ -22,7 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   named `match`, `case`, `import`, `throw`, `is`, `implements`, `extends`, `export` and `where`
   as keywords when they are ordinary identifiers. A call to a function named `match` got no
   signature help at all. The predicate is now derived from `Lexer.KEYWORDS`, and a test pins the
-  whole set in both directions so it cannot drift again.
+  whole set in both directions so it cannot drift again. `class` and `contract` are deliberately
+  not keywords here: the parser recognises them by position, so `fun class(x)` is legal and
+  `class(1)` is a real call. Their one non-call position, the declaration header, is excluded
+  separately.
 
 ### Changed
 - **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,
