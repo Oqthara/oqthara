@@ -66,6 +66,46 @@ class RuntimeCompatibilityTest {
         return jar;
     }
 
+    /**
+     * The exact stdout the language program produces, as a fake JVM must reproduce it.
+     *
+     * <p>The fakes below cannot consult the program at runtime, so this is a literal. That is
+     * deliberate: a fake that printed whatever the program printed could not tell a correct
+     * pass from a wrong one. {@link #theLanguageCheckIsAProgramThatRuns()} keeps the
+     * literal honest, so changing the program cannot leave the fakes asserting a dead answer.
+     */
+    private static final String LANGUAGE_OUTPUT = "[1,2,3]\n[\"a\",\"cc\",\"bbb\"]\n10\n";
+
+    /** One {@code echo} per line, POSIX shell. */
+    private static String unixEchoAll() {
+        StringBuilder body = new StringBuilder();
+        for (String line : LANGUAGE_OUTPUT.split("\n", -1)) {
+            if (line.isEmpty()) continue;
+            body.append("echo '").append(line).append("'\n");
+        }
+        return body.toString();
+    }
+
+    /** One {@code echo} per line, {@code cmd.exe}; single quotes would print literally there. */
+    private static String windowsEchoAll() {
+        StringBuilder body = new StringBuilder();
+        for (String line : LANGUAGE_OUTPUT.split("\n", -1)) {
+            if (line.isEmpty()) continue;
+            body.append("echo ").append(line).append("\n");
+        }
+        return body.toString();
+    }
+
+    /** One {@code printf} with explicit CRLF, for the line-ending normalisation test. */
+    private static String unixPrintfCrlf() {
+        StringBuilder body = new StringBuilder("printf '");
+        for (String line : LANGUAGE_OUTPUT.split("\n", -1)) {
+            if (line.isEmpty()) continue;
+            body.append(line).append("\\r\\n");
+        }
+        return body.append("'\n").toString();
+    }
+
     @Test
     void refusesAJvmThatCannotLoadTheJar(@TempDir Path dir) throws Exception {
         // Reports a fine version, then fails every invocation. This is the JDK 25 case: the
@@ -111,8 +151,8 @@ class RuntimeCompatibilityTest {
         // alone; printing "ok" here would be a wrong-output run and is refused by design.
         //
         // cmd.exe echoes single quotes literally, so the Windows body cannot reuse the Unix one.
-        Path java = fakeJava(dir, shellScript("echo '[1,2,3]'\necho 10\nexit 0\n",
-                "echo [1,2,3]\necho 10\nexit /b 0\n"));
+        Path java = fakeJava(dir, shellScript(unixEchoAll() + "exit 0\n",
+                windowsEchoAll() + "exit /b 0\n"));
 
         RuntimeCompatibility.Verdict verdict =
                 new RuntimeCompatibility(emptyJar(dir)).validate(java);
@@ -133,16 +173,14 @@ class RuntimeCompatibilityTest {
                         + "  echo 'no SQLite library on this platform' >&2\n"
                         + "  exit 1\n"
                         + "fi\n"
-                        + "echo '[1,2,3]'\n"
-                        + "echo 10\n"
+                        + unixEchoAll()
                         + "exit 0\n",
                 "if \"%~3\"==\"--version\" ( echo oq 0.1.0 & exit /b 0 )\n"
                         + "findstr /c:\"db_execute\" \"%~3\" >nul 2>nul && (\n"
                         + "  echo no SQLite library on this platform 1>&2\n"
                         + "  exit /b 1\n"
                         + ")\n"
-                        + "echo [1,2,3]\n"
-                        + "echo 10\n"
+                        + windowsEchoAll()
                         + "exit /b 0\n"));
 
         RuntimeCompatibility.Verdict verdict =
@@ -179,8 +217,8 @@ class RuntimeCompatibilityTest {
         // Windows writes \r\n on stdout even when the program printed \n. Comparing raw bytes
         // refused every working JVM on Windows at install time; this pins the normalisation so
         // that cannot return. The comparison itself still checks the full text.
-        Path java = fakeJava(dir, shellScript("printf '[1,2,3]\\r\\n10\\r\\n'\nexit 0\n",
-                "echo [1,2,3]\necho 10\nexit /b 0\n"));
+        Path java = fakeJava(dir, shellScript(unixPrintfCrlf() + "exit 0\n",
+                windowsEchoAll() + "exit /b 0\n"));
 
         RuntimeCompatibility.Verdict verdict =
                 new RuntimeCompatibility(emptyJar(dir)).validate(java);
@@ -189,22 +227,25 @@ class RuntimeCompatibilityTest {
     }
 
     /**
-     * The check's program must actually run.
+     * The check's program must actually run, and print {@link #LANGUAGE_OUTPUT}.
      *
      * <p>Every other test here drives a fake JVM that prints the expected output, so all of them
-     * pass whether or not the program is a valid Oqthara program. The program named
-     * {@code list_sort} and {@code json_stringify}, which are not builtins, and runtime
-     * installation refused every candidate JVM with {@code 'list_sort' is not defined} while
-     * this suite stayed green. Running the source through the interpreter is what distinguishes
-     * "the program is correct" from "the stub printed the right characters".
+     * pass whether or not the program is a valid Oqthara program. This one runs the source
+     * through the interpreter, which is what distinguishes "the program is correct" from "the
+     * stub printed the right characters".
+     *
+     * <p>It is also the guard that keeps {@link #LANGUAGE_OUTPUT} honest: the fakes cannot
+     * consult the program, so the literal would otherwise drift silently the first time the
+     * checked program changes.
      */
     @Test
     void theLanguageCheckIsAProgramThatRuns() {
         OqRunner.Result result = OqRunner.run(RuntimeCompatibility.LANGUAGE_SOURCE);
 
         assertEquals(0, result.code(), result.stderr());
-        assertEquals("[1,2,3]\n10\n", result.stdout());
+        assertEquals(LANGUAGE_OUTPUT, result.stdout());
     }
+
 
     /**
      * The database program must also actually run.

@@ -85,10 +85,19 @@ Every operation is now classified:
 | **Pure, order-preserving where the family has an order** | same family if the receiver is an ordered sequence, else `list` | `reverse` |
 | **Pure, widening** | narrower family to `list`, the general sequence | `to_list`, `items`, `sorted`, `list` |
 | **Pure, converting** | explicitly names the target | `to_set`, `frozenset`, `set`, `tuple` |
-| **Mutating** | returns the receiver or the removed element | `push`, `add`, `set`, `put`, `remove`, `clear`, `sort`, `update` |
+| **Mutating** | returns the receiver or the removed element | `push`, `add`, `set`, `put`, `remove`, `clear`, `update` |
 
 `sorted()` returning a `list` even for a `text` or `set` receiver is deliberate and stays:
 sorting is an ordering operation, and only a sequence has a defined order to preserve.
+
+`sort()` is **not** in the mutating row, contrary to an earlier draft of this table. It was
+listed there beside `push`, which was simply wrong: `v = [3, 1]; t = v.sort()` leaves `v` as
+`[3, 1]` and returns `t` as `[1, 3]`, so it belongs with the pure, order-preserving operations.
+It was the only sorting operation in that row; the other entries there — `push`, `add`, `set`,
+`put`, `remove`, `clear`, `update` — do mutate their receiver, and were measured doing so. The
+row is corrected here rather than silently edited because the classification is what a caller
+reads to decide whether a value can be shared. See [ADR-0060](0060-keyed-sorting.md) for the
+sorting family as a whole.
 
 `reverse()` follows the same reasoning but lands differently per family, and the ADR records
 what was measured rather than one tidy rule:

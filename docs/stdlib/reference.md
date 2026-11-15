@@ -114,6 +114,7 @@ Every entry below is read from the implementation, so this page cannot list a fu
 | `length` | built-in |
 | `list` | built-in |
 | `list_files` | built-in |
+| `list_sort` | built-in |
 | `ln` | built-in |
 | `log10` | built-in |
 | `log2` | built-in |
