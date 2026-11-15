@@ -6,10 +6,17 @@ requires, not whatever the build happens to print: a probe that starts failing m
 bridge regressed, and a probe that starts passing means a defect from the inventory was
 fixed and its expectation must be promoted from `known_defect`.
 
+A known defect is recorded with the exact output it produced when the note was written, and
+either direction of change is an error. Fixing it fails the run, so the marker cannot outlive
+the bug; changing the wrong output also fails the run, so a defect cannot hide a regression
+inside the part of the behaviour that is already wrong. Only one verdict is silent — the
+recorded defect reproducing exactly — which is the only case where nothing has been learned.
+
 Usage:
     python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar>
 
-Exit code is 0 when every non-defect probe matches, 1 otherwise.
+Exit code is 0 when every probe matches its expectation and every recorded defect reproduces
+verbatim, 1 otherwise.
 """
 
 import re
@@ -19,9 +26,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-# (name, expected stdout lines, known-defect marker)
-# A known defect records what the build prints today so a fix is visible as a mismatch
-# rather than silently changing a passing line.
+# (name, expected stdout lines, known-defect record)
+# A known-defect record is (description, the exact lines the build printed when the note was
+# written). It is not a way to accept a mismatch: see the module docstring.
 #
 # `expected` is either a list of stdout lines, or a string meaning the output must contain
 # that text — used by a probe whose correct behaviour is a diagnostic rather than a value.
@@ -68,7 +75,22 @@ PROBES = [
     # The names the two agree on keep working, so the precedence paragraph is not claiming
     # that Java is unreachable for list receivers.
     ("d3_precedence_agree", ["true", "1", "2"], None),
+    # The eight shadowed names and the two the audit miscounted: `size` and `subList` are
+    # shadowed, `clear` is not, and `set` is the language's to_set. Each line of the spec's
+    # precedence paragraph is checked here rather than trusted.
+    (
+        "d5_unit_names",
+        ["3", "[10, 20]", "20", "set() expects 0 arguments, got 1", "nothing", "[]"],
+        None,
+    ),
 ]
+
+
+def matches(lines, expected) -> bool:
+    """Whether the probe's output satisfies its expectation."""
+    if isinstance(expected, str):
+        return expected in "\n".join(lines)
+    return lines == expected
 
 
 def run(jar: Path, program: Path):
@@ -104,13 +126,31 @@ def main() -> int:
             lines.pop()
         lines = [line.strip() for line in lines]
 
+        if defect is not None:
+            # Both directions are errors. A fix is the expected direction, and it still fails
+            # so the note is promoted rather than left describing a bug that is gone; any
+            # other change means the wrong output moved, which the record did not predict.
+            marker, recorded = defect
+            if lines == recorded:
+                defects.append((name, marker))
+            elif isinstance(expected, str) and expected in output and code != 0:
+                failures.append(
+                    f"{name}: recorded defect appears fixed ({marker}); "
+                    f"remove the marker and expect {expected!r}"
+                )
+            else:
+                failures.append(
+                    f"{name}: recorded defect {marker!r} no longer reproduces exactly; "
+                    f"recorded {recorded!r}, got {lines!r} (exit {code}). "
+                    f"Re-check the defect and update the record deliberately."
+                )
+            continue
+
         if isinstance(expected, str):
             # A probe whose correct behaviour is a refusal: the diagnostic has to be
             # present, and the program must not have gone on to succeed first.
             if expected in output and code != 0:
                 pass
-            elif defect is not None:
-                defects.append((name, defect, lines))
             else:
                 failures.append(
                     f"{name}: expected output containing {expected!r}, got {lines!r} (exit {code})"
@@ -118,17 +158,10 @@ def main() -> int:
         elif expected is not None:
             if lines == expected:
                 pass
-            elif defect is not None:
-                # A probe with an expectation and a defect marker is a behaviour that
-                # should hold but does not yet: the mismatch is the defect, not a
-                # regression.
-                defects.append((name, defect, lines))
             else:
-                failures.append(
-                    f"{name}: expected {expected!r}, got {lines!r} (exit {code})"
-                )
-        elif defect is not None:
-            defects.append((name, defect, lines))
+                failures.append(f"{name}: expected {expected!r}, got {lines!r} (exit {code})")
+        else:
+            failures.append(f"{name}: no expectation and no defect record")
 
     if failures:
         print("FAILED")
@@ -136,16 +169,12 @@ def main() -> int:
             print(f"  {failure}")
         return 1
 
-    matched = sum(1 for name, e, _ in PROBES if e is not None and not any(name == d[0] for d in defects))
+    matched = sum(1 for _, e, d in PROBES if e is not None and d is None)
     print(f"ok: {matched} probes match their expectation")
     if defects:
-        print(f"known defects still reproducing: {len(defects)}")
-        for name, defect, lines in defects:
-            # The diagnostic is what makes the defect actionable, so show the first error
-            # line rather than the probe's earlier successful output.
-            detail = next((line for line in lines if "error:" in line), lines[0] if lines else "(no output)")
-            print(f"  {name}: {defect}")
-            print(f"    {detail}")
+        print(f"known defects reproducing verbatim: {len(defects)}")
+        for name, marker in defects:
+            print(f"  {name}: {marker}")
     return 0
 
 

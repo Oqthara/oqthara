@@ -209,9 +209,12 @@ public final class JavaBridge {
      * Calls an instance method on a class object, or returns {@link #NOT_FOUND}.
      *
      * <p>Only {@link #CLASS_SELF_DESCRIPTION} is reachable. Restricting the set is what keeps
-     * this change from widening the language: enabling {@code Class}'s full surface would make
-     * {@code getClass().getDeclaredMethod(...)} and {@code setAccessible} reachable, which no
-     * other part of the bridge allows.
+     * this change from widening the language, and it is a narrowing of what a name can reach —
+     * not a sandbox. Reflection is not <em>exposed by name</em>: {@code getClass()} cannot reach
+     * {@code getDeclaredMethod}. It remains <em>reachable</em>, because {@code MethodHandles}
+     * resolves against this class, which is on the classpath, and {@code setAccessible} on an
+     * application class is permitted by the JVM. See {@code docs/spec/language.md},
+     * "What the boundary does not restrict".
      */
     public static Object callOnClass(Class<?> type, String name, List<Object> args, Span span,
                                      Path cwd, OqHost host) {

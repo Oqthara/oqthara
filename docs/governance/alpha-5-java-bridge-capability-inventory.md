@@ -208,12 +208,30 @@ String("x").getClass().getDeclaredMethod -> error: 'getDeclaredMethod' is reflec
                                                     which is not exposed.
 ```
 
-The narrowing is a security decision, not a missing feature. Enabling the whole surface would make
-`getDeclaredMethod` → `setAccessible` reachable, and no other route in the bridge allows it. The
-JVM blocks that for JDK internals (`InaccessibleObjectException`) but **permits** it for
-application classes on the classpath — verified by an independent Java program that opened a
-private field of its own class and read `s3cr3t`. So the allowlist, not the JVM, is the guard.
-Regression tests: `JavaBridgeClassObjectTest` (8 tests).
+The narrowing limits what a *name* on a class object can reach; it is not a sandbox. Before
+writing it up I claimed "no other route in the bridge allows it", and that claim was wrong. It is
+corrected here rather than quietly dropped, because the difference matters for how much assurance
+the allowlist buys.
+
+Reflection is not **exposed by name**: `getClass()` cannot reach `getDeclaredMethod`. It is still
+**reachable**. `MethodHandles.lookup()` resolves with lookup class `dev.oqthara.core.JavaBridge`,
+which is on the classpath, so a program can find `Class.getDeclaredField` as a virtual method,
+invoke it, call `setAccessible(true)`, and read private state. Reproduced against this build:
+
+```text
+lookup = MethodHandles.lookup()             -> dev.oqthara.core.JavaBridge
+handle = lookup.findVirtual(Class, "getDeclaredField",
+                            MethodType.methodType(Field, String))
+handle.invokeWithArguments(String, "value") -> private java.lang.String java.lang.String.value
+f.setAccessible(true); f.get(nothing)       -> s3cr3t
+```
+
+The JVM blocks that for JDK internals (`InaccessibleObjectException`) but **permits** it for
+application classes on the classpath. Baseline `db23f88` behaves identically, so this is
+pre-existing and not a regression from D2. The accurate statement is that the allowlist reduces
+what is *accidentally* reachable and keeps `Class` from becoming a general-purpose reflective
+surface; the trust boundary remains "running Oqthara code is running code with the host's
+privileges", as the spec says. Regression tests: `JavaBridgeClassObjectTest` (8 tests).
 
 **Residual limitation, stated:** reading a class's declared members is not available. A program
 that needs it must do the work in Java. This is recorded in the acceptance criteria as a boundary
@@ -258,7 +276,38 @@ changed, because none was wrong.
 |---|---|
 | `range` does not cross as a `Collection` | Spec states the rationale and gives the refusal and the materialisation recipe. |
 | Compiled code cannot call Java directly (`use` refused by name) | `backend.md:274` lists it as boundary item 2 with the interpreter fallback, and `oq build` degrades to the interpreter launcher instead of failing. |
-| Only public members are reachable | Consistent with the absence of `setAccessible` and with the stated model. |
+| Only public members are reachable by name | **Amended after review; the unqualified form was false.** `setAccessible` is absent from the bridge's own call paths, so a member is not reachable *through the bridge*. It is reachable through `MethodHandles`, as the corrected D2 section shows, and `setAccessible` then works on application classes. The accurate statement is that the bridge exposes public members only. |
+
+## Findings the adversarial review raised against this document
+
+The review that gated this work read the committed diff rather than this narrative, and raised
+six findings. Four changed the tree; two are recorded here because the resolution is "this is the
+contract, and the audit had described it as a defect" or "this is broader than the audit said".
+Both directions are recorded, because an audit that only records the findings it fixed is
+indistinguishable from one that fixed everything.
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | high | `language.md` listed a shadowed-method set that was wrong: it named `clear` and `set`, and omitted `size` and `subList`. | **Fixed.** Recomputed from the `case` labels in `listMethod` — the set is `add, contains, get, remove, set, size, sort, subList`. `clear` reaches Java. `set` resolves to the language's `to_set`. |
+| 2 | high | `callableArgument` had no unit test, so mutating the callback arity to a constant left all 1650 tests green. | **Fixed.** `CallableArgumentTest`, 8 tests. Reported: the mutation now fails 3 of them. |
+| 3 | medium | `run.py`'s `known_defect` marker turned any output change into a silent pass. | **Fixed.** A defect now records the exact output it produced, and either direction of change fails the run. Verified by injecting both a moving and a fixed defect. |
+| 4 | medium | `getInterfaces` returns a raw `Class[]`, which the review described as unusable. | **Partly correct.** A `Class[]` cannot be indexed or `length`-ed, because the bridge returns Java arrays as opaque objects — but that is true of every array-returning method (`toArray()` behaves the same), so it is a property of the boundary, not of this entry. The array can be passed back into Java (`Arrays.asList(faces)` works), so the entry is not inert. Documented below; no change to the allowlist. |
+| 5 | medium | "[reflection] which no other part of the bridge allows" was false. | **Fixed.** Reproduced with `MethodHandles.lookup()` + `findVirtual` + `setAccessible`, which reads a private field. Reworded here, in `JavaBridge.java`, and in `language.md`. Pre-existing at the baseline, so not a regression. |
+| 6 | low | `list_sort(xs, nothing)` plain-sorts while `sort_by(xs, nothing)` and `xs.sort(nothing)` refuse. | **Not a defect.** ADR-0060 decision 1 states that "omitting it, or passing `nothing`, sorts by the values themselves". Changing it would break a recorded contract, so the asymmetry is documented and a comment in `listSort` points at the ADR. |
+
+### Java arrays arriving as opaque values
+
+An array returned by Java — from `getInterfaces`, `toArray`, or any method with an array return
+type — is a Java object with no indexing or length in Oqthara. It is not converted to a list. It
+can be passed back to a Java method that accepts one, and it prints as its `[L...;@hash` form,
+which is not useful output. This is a real limitation of the boundary and it is stated as one;
+the audit's entry for `getInterfaces` is correct that the value is awkward, and the review was
+right to flag it even though the cause is general rather than specific to that entry.
+
+**Not fixed in this phase.** Converting array returns to lists would change what every
+array-returning method returns, including `toArray`, which the spec's varargs section documents
+as accepted input to Java calls. That is a compatibility decision, not a bug fix, and it belongs
+in a reviewed change of its own.
 
 ## Claims from the Alpha 4 matrix that this audit reclassifies
 

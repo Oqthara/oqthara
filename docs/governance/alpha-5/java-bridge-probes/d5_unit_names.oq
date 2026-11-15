@@ -1,0 +1,19 @@
+# The eight List names Oqthara shadows, and the two the audit once miscounted.
+# Every line is a claim in language.md, "Which method a name means".
+xs = [10, 20, 30]
+
+print(xs.size())           # 3 -- Oqthara's list size, not List.size()
+print(xs.subList(0, 2))    # Oqthara's copy, not List.subList's live view
+print(xs.get(1))           # same answer either way
+
+# `set` is the language's to_set, not List.set, so one argument is the wrong arity for it.
+try
+  print xs.set(0)
+catch err
+  print err.message
+end
+
+# `clear` is NOT shadowed: it reaches java.util.List.clear and mutates in place.
+ys = [1, 2]
+print(ys.clear())
+print(ys)

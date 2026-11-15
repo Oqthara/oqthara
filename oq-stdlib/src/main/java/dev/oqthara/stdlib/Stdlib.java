@@ -2498,6 +2498,10 @@ public final class Stdlib {
      */
     private static List<Object> listSort(OqHost host, List<Object> args, Span span) {
         List<Object> items = new ArrayList<>(Values.iterableList(args.get(0), span));
+        // Omitting the key and passing `nothing` both mean a plain sort, which ADR-0060
+        // decision 1 states as the contract. `sort_by` and `xs.sort(nothing)` refuse the same
+        // argument instead; the difference is recorded in the Alpha 5 inventory rather than
+        // reconciled here, because changing it would break a documented contract.
         if (args.size() == 1 || args.get(1) == null) {
             items.sort((a, b) -> Values.compare(a, b, span));
             return items;
