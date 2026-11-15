@@ -35,6 +35,24 @@ MATRIX = SCRIPTS.parent / "docs" / "governance" / "alpha-4-requirement-matrix.md
 PIN = re.compile(r"^\*\*Last verified:\*\* `([0-9a-f]{7,40})`", re.M)
 
 
+def shallow_history():
+    """Why a pin test cannot run here, or None when the history it asks about is present.
+
+    These cases ask about a commit *other* than the tip -- whether a pin resolves, whether
+    it is an ancestor, whether a row's evidence exists at it. A depth-1 clone has one commit,
+    so the question has no subject and the case fails on an absent premise rather than on a
+    defect. Skipping is honest; a suite that goes red for anyone who reads this repository
+    with `--depth 1` trains the reader to ignore it.
+    """
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        cwd=SCRIPTS.parent, capture_output=True, text=True,
+    ).stdout.strip()
+    if shallow == "true":
+        return "shallow clone: the history this check asks about is not fetched"
+    return None
+
+
 class TheRealMatrixPinsARealCommit(unittest.TestCase):
     def test_it_passes(self):
         checker.problems.clear()
@@ -43,6 +61,9 @@ class TheRealMatrixPinsARealCommit(unittest.TestCase):
         self.assertEqual([], checker.problems)
 
     def test_it_says_what_it_read(self):
+        reason = shallow_history()
+        if reason:
+            self.skipTest(reason)
         checker.problems.clear()
         checker.checked.clear()
         checker.requirement_matrix_verification_pin_is_real()
@@ -73,6 +94,11 @@ class BadPinsAreRejected(unittest.TestCase):
         return " ".join(checker.problems)
 
     def test_a_sha_that_matches_no_commit_is_rejected(self):
+        reason = shallow_history()
+        if reason:
+            # In a shallow clone every SHA is "not a commit in this repository", including a
+            # correct pin, so this case cannot distinguish the two failure modes it tests.
+            self.skipTest(reason)
         message = self._pin_to("deadbee1")
         self.assertIn("not a commit in this repository", message)
 
@@ -240,6 +266,11 @@ class TheMatrixCitationsAreChecked(unittest.TestCase):
         # happened to carry the same citations, so deleting the guard left it green. The
         # repository's root commit is used instead: it predates ADR-0059, the gate and every
         # other citation a DONE row makes, and it is guaranteed to exist in any full clone.
+        reason = shallow_history()
+        if reason:
+            # `rev-list --max-parents=0` returns the tip itself in a depth-1 clone, so there
+            # is no pre-evidence commit to pin to and the assertion below would test nothing.
+            self.skipTest(reason)
         root = subprocess.run(["git", "rev-list", "--max-parents=0", "HEAD"],
                               cwd=SCRIPTS.parent, capture_output=True, text=True
                               ).stdout.split()
