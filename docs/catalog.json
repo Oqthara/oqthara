@@ -362,6 +362,12 @@
       "slug": "docs/adr/0059-ai-review-as-the-review-mechanism"
     },
     {
+      "path": "docs/adr/0060-keyed-sorting.md",
+      "title": "ADR-0060 — Keyed sorting, and why `list_sort` exists",
+      "section": "adr",
+      "slug": "docs/adr/0060-keyed-sorting"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

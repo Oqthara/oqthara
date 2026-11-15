@@ -184,6 +184,13 @@ other test in the class drives a fake JVM that prints the expected output, so al
 against a program that could not run. A test that only checks what a stub printed cannot tell a
 working program from a broken one, which is why the program is now named and run for real.
 
+The resolution is [ADR-0060](0060-keyed-sorting.md): `list_sort` was implemented rather than
+removed from the check, so the check now passes because the capability exists. `json_stringify`
+is not implemented, because the language already spells that operation `json_write` and a second
+name for one function would have no rule to choose between them. The expected output is held in
+one constant that the fake JVMs print and the real run asserts, so the stubs cannot drift from
+the program without failing the test that runs it.
+
 The installer runs this check only when it has the jar built from the release being installed,
 which is the one case where the answer is about *this* Oqthara rather than a guess. That seal is
 tested by `refusesAJvmThatReportsTheFloorAndCannotRunOqthara`: the version probe is told to
@@ -222,7 +229,9 @@ this ADR is the record of: the language program named `list_sort` and `json_stri
 that have never existed, and `oq runtime install` refused every candidate JVM on every platform
 with `'list_sort' is not defined`. Nothing caught it, because every other test of the check
 drives a fake JVM that prints the expected output — a stub that echoes the right characters
-cannot tell a working program from a broken one.
+cannot tell a working program from a broken one. The name is kept and the capability was built
+([ADR-0060](0060-keyed-sorting.md)), and the check now exercises the keyed form too, so the
+guarantee it tests is the sorting contract rather than the existence of a name.
 
 The database program had the same exposure and would have been quieter still. Because the
 database check is reported rather than enforced, its failure is folded into a `Verdict` summary

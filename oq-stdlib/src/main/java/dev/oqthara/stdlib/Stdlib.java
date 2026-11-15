@@ -249,16 +249,28 @@ public final class Stdlib {
             Object candidate = args.get(1);
             if (!(candidate instanceof OqCallable key)) {
                 throw new OqError("sort_by() needs a key function", span,
-                        "Pass a function: sort_by(items, fun(x) return x.score end).");
+                        "Pass a function: sort_by(items, x -> x.score).");
             }
             items.sort((a, b) -> Values.compare(
-                    host.call(key, List.of(a), span), host.call(key, List.of(b), span), span));
+                    host.call(key, singleArgument(a), span),
+                    host.call(key, singleArgument(b), span), span));
             return items;
         }).named("items", "key"));
         interpreter.defineBuiltin(NativeFunction.of("map", 2, (host, args, span) ->
                 invokeMethod(host, args.get(0), "map", List.of(args.get(1)), span)).named("items", "function"));
         interpreter.defineBuiltin(NativeFunction.of("filter", 2, (host, args, span) ->
                 invokeMethod(host, args.get(0), "filter", List.of(args.get(1)), span)).named("items", "predicate"));
+        // `sort_by` above evaluates its key on every comparison, which is not merely slow: a
+        // key with state decides the order. Measured on `[10, 20, 30]` with a counter key, the
+        // result was [30, 20, 10] because each comparison consumed the next counter value. The
+        // call count is input-dependent (46 on one ten-item list, 18 on the same items in
+        // another order), so the defect is the dependence, not any particular number. This
+        // builtin is the contract that fixes it — the key is evaluated exactly once per item,
+        // before any comparison, so a sort cannot observe how many comparisons were made.
+        // `sort` and `sorted` stay as they are: `sort` is the receiver-method form and
+        // `sorted` is single-arity, so neither could carry a key without breaking a caller.
+        interpreter.defineBuiltin(NativeFunction.variadic("list_sort", 1, 2, (host, args, span) ->
+                listSort(host, args, span)).named("items", "key"));
         interpreter.defineBuiltin(NativeFunction.of("clone", 1, (host, args, span) -> deepCopy(args.get(0)))
                 .named("value"));
     }
@@ -2420,6 +2432,60 @@ public final class Stdlib {
         List<Object> copy = new ArrayList<>(items);
         copy.sort((a, b) -> Values.compare(a, b, span));
         return copy;
+    }
+
+    /**
+     * One argument, as a list that tolerates {@code nothing}.
+     *
+     * <p>{@link List#of} rejects {@code null}, and {@code nothing} is {@code null}, so building
+     * a callback's arguments with it turns a program holding {@code nothing} into an internal
+     * error that aborts the process instead of a language error the program can see.
+     */
+    private static List<Object> singleArgument(Object value) {
+        List<Object> one = new ArrayList<>(1);
+        one.add(value);
+        return one;
+    }
+
+    /**
+     * {@code list_sort(items)} and {@code list_sort(items, key)}: a new sorted list, leaving
+     * the argument untouched.
+     *
+     * <p>The point of this builtin is the key contract. The key is called <em>exactly once per
+     * item</em>, before any comparison happens, and the comparisons then run on the cached
+     * keys. Python's {@code sorted} makes the same promise, and it matters for more than speed:
+     * a key that counts cannot change the answer, and the key is called <em>n</em> times for
+     * <em>n</em> items whether the input is already ordered or reversed.
+     *
+     * <p>Two consequences are deliberate. The sort is stable, so equal keys keep their input
+     * order — {@link List#sort} is documented as stable, and indexing into the input rather
+     * than permuting it is what preserves that. And a key that raises aborts the whole call
+     * with no partially ordered list escaping, because the keys are collected first.
+     *
+     * <p>An input that cannot be ordered is rejected by {@link Values#compare} with the message
+     * every other comparison raises, so {@code list_sort([1, "a"])} and {@code 1 < "a"} fail
+     * identically.
+     */
+    private static List<Object> listSort(OqHost host, List<Object> args, Span span) {
+        List<Object> items = new ArrayList<>(Values.iterableList(args.get(0), span));
+        if (args.size() == 1 || args.get(1) == null) {
+            items.sort((a, b) -> Values.compare(a, b, span));
+            return items;
+        }
+        if (!(args.get(1) instanceof OqCallable key)) {
+            throw new OqError("list_sort() needs a function as argument 2", span,
+                    "Pass a function, or omit it: list_sort(items, x -> x.name).");
+        }
+        List<Object> cache = new ArrayList<>(items.size());
+        for (Object item : items) {
+            cache.add(host.call(key, singleArgument(item), span));
+        }
+        List<Integer> order = new ArrayList<>(items.size());
+        for (int i = 0; i < items.size(); i++) order.add(i);
+        order.sort((a, b) -> Values.compare(cache.get(a), cache.get(b), span));
+        List<Object> result = new ArrayList<>(items.size());
+        for (int index : order) result.add(items.get(index));
+        return result;
     }
 
     /** A single, deliberately shared generator: {@code SecureRandom} is thread-safe. */

@@ -46,7 +46,7 @@ final class RuntimeCompatibility {
 
     /**
      * Exercises the interpreter with a function, a loop, a collection and arithmetic, and the
-     * standard library with a sort and a JSON encode.
+     * standard library with a keyed sort and a JSON encode.
      *
      * <p>A bare script path is dispatched to {@code oq run}, so this reaches the interpreter and
      * not the bytecode compiler. The javadoc said "bytecode backend" for as long as the check
@@ -66,13 +66,16 @@ final class RuntimeCompatibility {
               total = add(total, n)
             end
 
-            items = sort([3, 1, 2])
+            items = list_sort([3, 1, 2])
+            by_size = list_sort(["bbb", "a", "cc"], s -> length(s))
             print(json_write(items))
+            print(json_write(by_size))
             print(total)
             """;
 
     private static final Check LANGUAGE =
-            new Check("language and standard library", LANGUAGE_SOURCE, "[1,2,3]\n10\n");
+            new Check("language and standard library", LANGUAGE_SOURCE,
+                    "[1,2,3]\n[\"a\",\"cc\",\"bbb\"]\n10\n");
 
     /**
      * Opens a database, writes and reads it back. The only check that needs a native library.
