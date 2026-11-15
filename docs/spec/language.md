@@ -2663,6 +2663,59 @@ where a value is required is refused rather than passed as `null`:
 error: '<lambda>' returned nothing, which boolean cannot hold
 ```
 
+### Which method a name means
+
+A method name that Oqthara also defines on a value goes to Oqthara. Eight of Java's `List` names
+are also Oqthara list methods — `add`, `contains`, `get`, `remove`, `set`, `size`, `sort` and
+`subList` — and on a list these always mean the Oqthara method. So `xs.sort()` is the language's
+stable sort rather than `List.sort`, and `xs.remove("x")` is refused as a wrong argument type
+instead of quietly choosing `remove(Object)`. The precedence is deliberate and identical on both
+backends: asking Java first would let whatever a JDK class happens to declare redefine a
+built-in, so the same program would change behaviour with the JDK version.
+
+Every other `List` name reaches Java, including `clear`. That asymmetry is worth knowing before
+relying on it: `xs.clear()` on an Oqthara list mutates it through `List.clear`, which is not the
+same as being an Oqthara method, and it throws Java's own error if the list the runtime holds is
+immutable.
+
+Where the two meanings happen to agree, the choice is invisible: `add` and `contains` append and
+search the same way on both sides. `get` takes an index either way. It is `remove`, `sort`,
+`size` and `subList` that differ, and `remove` is the one with no separate spelling for Java's
+overload — `remove_value(x)` is the language's equivalent of `remove(Object)`. A diagnostic that
+names the language's method is naming the one that ran, so it is not a claim that Java has no such
+method:
+
+```text
+error: remove takes an index, not text
+
+  help: To remove the first matching value, use remove_value(x).
+```
+
+### What the boundary does not restrict
+
+`use` reaches any class the classpath makes visible, and a program can call whatever that class
+exposes. That includes `ProcessBuilder` and `Runtime`, so starting a process, and `System.getenv`,
+so reading the environment. This is not a widening of privilege; it is the same reach the
+language already has through `run_command` and `env()`, stated above where the runtime's trust
+boundary is described: Oqthara is not a sandbox, and a program can do what the user running it
+can do. The interop boundary adds no sandbox of its own, and no capability is granted by `use`
+that `run_command` would not already grant. Run untrusted code the way you would run any
+untrusted program, with the operating system's own restrictions on the process that hosts it.
+
+Reflection is narrower than Java here, by name. A class object answers questions about itself —
+`getName`, `getSimpleName`, `isInterface`, `getSuperclass`, and the like — but not lookup of its
+declared members: `getDeclaredMethod`, `getMethod`, `getField`, and the other lookup entry points
+are refused with a help line that says so.
+
+That refusal is a narrowing of what a name reaches, not a sandbox, and it would be wrong to read
+it as one. `java.lang.invoke.MethodHandles` is an ordinary class, so `use` reaches it, and
+`MethodHandles.lookup()` resolves against the bridge's own class — which is on the classpath —
+rather than against JDK internals. From there `findVirtual` on `Class` and `setAccessible(true)`
+reach the members the allowlist refuses by name; the JVM permits that for application classes and
+blocks it only for JDK internals. A program that wants reflection can have it. Treat the allowlist
+as keeping `Class` from becoming a reflective surface by accident, and treat the trust statement
+above as the real boundary.
+
 ### Objects Java returns
 
 A value Java hands back is an ordinary Java object, and its methods are called the same way as

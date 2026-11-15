@@ -1,0 +1,7 @@
+use java.lang.String
+use java.util.Arrays
+
+print String.format("%s-%s", "a", "b")
+print String.join(",", ["a"])
+print String.join(",", [])
+print Arrays.asList("x", "y").size()

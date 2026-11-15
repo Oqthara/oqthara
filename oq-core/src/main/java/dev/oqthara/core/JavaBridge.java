@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 
 public final class JavaBridge {
     public static final Object NOT_FOUND = new Object();
@@ -172,6 +173,64 @@ public final class JavaBridge {
         return null;
     }
 
+    /**
+     * Methods a class object may answer about itself.
+     *
+     * <p>{@code Class} is a value, so {@code getClass().getName()} should work the way any
+     * other returned object's methods do. It is also the doorway to reflection: {@code
+     * getDeclaredMethod} plus {@code setAccessible} reaches members the language otherwise
+     * treats as unreachable, and that doorway is deliberately not opened (see the interop
+     * section's statement that reflection is not exposed as an escape hatch). The methods
+     * below only describe the class — its name, its shape, its hierarchy — which is what a
+     * program plausibly asks a class for. Everything else keeps failing, with the diagnostic
+     * saying why rather than claiming the method is not static.
+     */
+    private static final Set<String> CLASS_SELF_DESCRIPTION = Set.of(
+            "getName", "getSimpleName", "getCanonicalName", "getTypeName",
+            "toString", "equals", "hashCode",
+            "isInterface", "isEnum", "isArray", "isPrimitive", "isAnnotation",
+            "isSynthetic", "isRecord", "isAssignableFrom", "isInstance",
+            "getPackageName", "getModifiers", "getSuperclass",
+            "getInterfaces", "getComponentType", "getClassLoader");
+
+    /**
+     * Reflection entry points a class object would otherwise answer, named so the refusal can
+     * say what it is rather than claim the method does not exist.
+     */
+    private static final Set<String> CLASS_REFLECTION = Set.of(
+            "getDeclaredMethod", "getDeclaredMethods", "getDeclaredField", "getDeclaredFields",
+            "getDeclaredConstructor", "getDeclaredConstructors", "getDeclaredClasses",
+            "getMethod", "getMethods", "getField", "getFields", "getConstructor",
+            "getConstructors", "getClasses", "getEnclosingClass", "getEnclosingMethod",
+            "getEnclosingConstructor", "newInstance", "cast", "getModule",
+            "getRecordComponents", "getPermittedSubclasses", "getNestHost");
+
+    /**
+     * Calls an instance method on a class object, or returns {@link #NOT_FOUND}.
+     *
+     * <p>Only {@link #CLASS_SELF_DESCRIPTION} is reachable. Restricting the set is what keeps
+     * this change from widening the language, and it is a narrowing of what a name can reach —
+     * not a sandbox. Reflection is not <em>exposed by name</em>: {@code getClass()} cannot reach
+     * {@code getDeclaredMethod}. It remains <em>reachable</em>, because {@code MethodHandles}
+     * resolves against this class, which is on the classpath, and {@code setAccessible} on an
+     * application class is permitted by the JVM. See {@code docs/spec/language.md},
+     * "What the boundary does not restrict".
+     */
+    public static Object callOnClass(Class<?> type, String name, List<Object> args, Span span,
+                                     Path cwd, OqHost host) {
+        if (!CLASS_SELF_DESCRIPTION.contains(name)) return NOT_FOUND;
+        return callMethod(type, name, args, span, cwd, host);
+    }
+
+    /** The help line for a class-object call that was refused, or null for the default. */
+    public static String classMethodHint(Class<?> type, String name) {
+        if (!CLASS_REFLECTION.contains(name)) return null;
+        if (CLASS_SELF_DESCRIPTION.contains(name)) return null;
+        return "'" + name + "' is reflection, which is not exposed. "
+                + "A class object answers questions about itself — name, kind, hierarchy — "
+                + "but not lookup of its declared members.";
+    }
+
     public static Object callStatic(Class<?> type, String name, List<Object> args, Span span,
                                     Path cwd) {
         return callStatic(type, name, args, span, cwd, null);
@@ -250,6 +309,26 @@ public final class JavaBridge {
     /** Explains a functional Java value called with the wrong number of arguments. */
     private static OqError wrongArity(Object value, int given, int wanted, Span span) {
         return new OqError("wrong number of arguments", span, Values.wrongArityHelp(value, given, wanted));
+    }
+
+    /**
+     * The parameter count of {@code value}'s single abstract method, or -1 when the value is not
+     * a Java functional interface.
+     *
+     * <p>A higher-order builtin such as {@code sort} needs to ask this before it decides whether
+     * its argument can be called: {@code host.call} would accept the value, but the builtin used
+     * to coerce with {@code instanceof OqCallable} and refuse it instead, so the same
+     * {@code Comparator} was callable as {@code c(1, 2)} yet not passable to
+     * {@code [3, 1, 2].sort(c)}. This is the question the builtin has to ask, answered by the
+     * same rule the call itself applies.
+     */
+    public static int callableArity(Object value) {
+        if (value == null || value instanceof Class<?> || value instanceof String
+                || value instanceof Long || value instanceof Double || value instanceof Boolean
+                || value instanceof OqCallable) {
+            return -1;
+        }
+        return functionalArityOf(value.getClass());
     }
 
     /**

@@ -87,8 +87,16 @@ public final class Methods {
                                 List.class, Span.class, Path.class, OqHost.class)
                         .invoke(null, type, name, list, span, Path.of("."), HOST);
                 if (result != notFound(bridge)) return result;
+                // Statics first, then the class's own descriptive methods: the same order the
+                // interpreter uses, so a program that works interpreted works compiled.
+                result = bridge.getMethod("callOnClass", Class.class, String.class, List.class,
+                                Span.class, Path.class, OqHost.class)
+                        .invoke(null, type, name, list, span, Path.of("."), HOST);
+                if (result != notFound(bridge)) return result;
                 throw new OqError("Java class " + type.getSimpleName()
-                        + " has no static method '" + name + "'", span);
+                        + " has no static method '" + name + "'", span,
+                        (String) bridge.getMethod("classMethodHint", Class.class, String.class)
+                                .invoke(null, type, name));
             }
             Object result = bridge.getMethod("callMethod", Object.class, String.class, List.class,
                             Span.class, Path.class, OqHost.class)

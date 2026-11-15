@@ -1,0 +1,11 @@
+use java.lang.Character
+use java.time.DayOfWeek
+use java.util.EnumSet
+use java.math.BigDecimal
+use java.nio.file.Path
+
+print Character.isDigit("5")
+print Character.toUpperCase("a")
+print EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.FRIDAY)
+print BigDecimal("0.1").add(BigDecimal("0.2"))
+print Path.of("/tmp").getFileName()

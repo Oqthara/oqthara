@@ -1,0 +1,9 @@
+use java.lang.Integer
+use java.lang.Math
+use java.lang.Long
+
+print Integer.MAX_VALUE
+print Math.PI
+print Long.MIN_VALUE
+print Math.abs(-7)
+print Integer.toString(42)

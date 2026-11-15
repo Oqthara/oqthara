@@ -1,0 +1,7 @@
+use java.lang.String
+use java.util.Comparator
+c = String("x").getClass()
+print c.getName()
+print c.getSimpleName()
+print c.isInterface()
+print Comparator.naturalOrder().getClass().isInterface()

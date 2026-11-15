@@ -240,6 +240,32 @@ class ListSortTest {
                 "unexpected message: " + error.getMessage());
     }
 
+    /**
+     * A Java functional value is a function, so it must be usable as one.
+     *
+     * <p>This builtin used to coerce its argument with {@code instanceof OqCallable}, which a
+     * {@code java.util.function.Function} is not. The value was callable — {@code
+     * Function.identity()(3)} answered {@code 3} — so the refusal denied something the
+     * language had just allowed, and {@code map}/{@code filter} accepted the same value
+     * because they pass it to the host unresolved. The arity check is what keeps this from
+     * being a free pass: a two-argument comparator cannot be used as a one-argument key.
+     */
+    @Test
+    void aJavaFunctionalValueIsAcceptedAsAKey() {
+        assertEquals(list(1L, 2L, 3L),
+                asList(call("list_sort", list(3L, 1L, 2L),
+                        java.util.function.Function.<Object>identity())));
+    }
+
+    @Test
+    void aTwoArgumentComparatorIsRefusedAsAKeyWithItsArityNamed() {
+        OqError error = assertThrows(OqError.class,
+                () -> call("list_sort", list(3L, 1L, 2L),
+                        java.util.Comparator.<Long>naturalOrder()));
+        assertTrue(error.getMessage().contains("taking 1 argument"),
+                "unexpected message: " + error.getMessage());
+    }
+
     @Test
     void aRaisingKeyAbortsTheSort() {
         OqCallable exploding = key((callHost, args, span) -> {

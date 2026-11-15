@@ -1,0 +1,5 @@
+use java.util.function.Function
+xs = [3, 1, 2]
+key = Function.identity()
+print key(3)
+print xs.sort(key)

@@ -246,11 +246,11 @@ public final class Stdlib {
         // which named a method the caller never wrote.
         interpreter.defineBuiltin(NativeFunction.of("sort_by", 2, (host, args, span) -> {
             List<Object> items = new ArrayList<>(Values.iterableList(args.get(0), span));
-            Object candidate = args.get(1);
-            if (!(candidate instanceof OqCallable key)) {
-                throw new OqError("sort_by() needs a key function", span,
-                        "Pass a function: sort_by(items, x -> x.score).");
-            }
+            Object key = keyFunction(
+                    "sort_by() needs a key function",
+                    "sort_by() needs a key function taking 1 argument",
+                    args.get(1),
+                    "sort_by(items, x -> x.score)", span);
             items.sort((a, b) -> Values.compare(
                     host.call(key, singleArgument(a), span),
                     host.call(key, singleArgument(b), span), span));
@@ -2448,6 +2448,36 @@ public final class Stdlib {
     }
 
     /**
+     * The key function of {@code sort_by}/{@code list_sort}, or a diagnostic naming it.
+     *
+     * <p>Shared because both builtins ask the same question and had each answered it with
+     * {@code instanceof OqCallable}. A Java functional value with one argument is callable —
+     * {@code host.call} resolves it — so refusing it here made {@code sort} reject a value that
+     * {@code c(1)} accepted. The arity has to be one because the result is used as a key, not as
+     * a comparison: a two-argument {@code Comparator} would be applied to a single element.
+     */
+    private static Object keyFunction(
+            String notAFunction, String wrongArity, Object value, String call, Span span) {
+        int arity;
+        if (value instanceof OqCallable callable) {
+            arity = callable.arity();
+        } else {
+            // Decided before the count, not by its sign: OqCallable.VARIADIC is -1 and so is
+            // the bridge's "not callable", so testing the sentinel first would let a plain
+            // value through to be refused later by the host with a vaguer message.
+            arity = dev.oqthara.core.JavaBridge.callableArity(value);
+            if (arity < 0) {
+                throw new OqError(notAFunction, span,
+                        "Pass a function, or omit it: " + call + ".");
+            }
+        }
+        if (arity == 1 || arity == OqCallable.VARIADIC) return value;
+        throw new OqError(wrongArity, span,
+                "It got a function taking " + arity + ", so it cannot be applied to one item. "
+                        + "Write " + call + ".");
+    }
+
+    /**
      * {@code list_sort(items)} and {@code list_sort(items, key)}: a new sorted list, leaving
      * the argument untouched.
      *
@@ -2468,14 +2498,18 @@ public final class Stdlib {
      */
     private static List<Object> listSort(OqHost host, List<Object> args, Span span) {
         List<Object> items = new ArrayList<>(Values.iterableList(args.get(0), span));
+        // Omitting the key and passing `nothing` both mean a plain sort, which ADR-0060
+        // decision 1 states as the contract. `sort_by` and `xs.sort(nothing)` refuse the same
+        // argument instead; the difference is recorded in the Alpha 5 inventory rather than
+        // reconciled here, because changing it would break a documented contract.
         if (args.size() == 1 || args.get(1) == null) {
             items.sort((a, b) -> Values.compare(a, b, span));
             return items;
         }
-        if (!(args.get(1) instanceof OqCallable key)) {
-            throw new OqError("list_sort() needs a function as argument 2", span,
-                    "Pass a function, or omit it: list_sort(items, x -> x.name).");
-        }
+        Object key = keyFunction(
+                "list_sort() needs a function as argument 2",
+                "list_sort() needs a key function taking 1 argument",
+                args.get(1), "list_sort(items, x -> x.name)", span);
         List<Object> cache = new ArrayList<>(items.size());
         for (Object item : items) {
             cache.add(host.call(key, singleArgument(item), span));
