@@ -2,11 +2,24 @@
 
 ## Status: every requirement row is `DONE`
 
-This record is written against `5015580` and describes only what the repository contains. It
-does not claim independent human review, and it does not claim CPython parity.
+This record is written against `b7fb6c7`, the merge of the change that moved the requirement
+matrix pin onto a merge commit, and describes only what the repository contains. It does not
+claim independent human review, and it does not claim CPython parity.
+
+That baseline is itself a correction. This record previously named `5015580`, the tip of the
+branch behind pull request #221. Squash-merge discarded that commit, so the reference resolved
+nowhere on `main`. The figures were not invented — fetched by SHA they do reproduce at
+`5015580` (77 tests OK, 20 reported checks, exit 0) — but a reader who did what the record says
+and checked them against the repository could not reach them, and the pin the matrix carried
+there, `c2b2b16`, was discarded the same way. At `b7fb6c7` the identical figures reproduce on
+`main` itself, which is why the baseline moved rather than the numbers.
+
+The gate table below keeps both readings, because the pair is the point: the script suite still
+reads 77 tests at `b7fb6c7`, and the documentation gate reads 20 reported checks — the same
+numbers on a commit a reader can actually check out.
 
 The managed-runtime defect in §"Defects that only an audit could find" item 5 was found after
-that commit and fixed in `28ef7b2`; the figures in §17.9 and the gate table were re-measured
+`b7fb6c7` and fixed in `28ef7b2`; the figures in §17.9 and the gate table were re-measured
 against `28ef7b2`, where the documented global count is 205.
 
 ## What the last two states were, and how the second one closed
@@ -121,13 +134,13 @@ the §17.9 criteria were measured with a script rather than read off the referen
 
 ## Gates
 
-Run against `5015580` on branch `fix-verify-signature-identity`, then re-run against `28ef7b2`
-on `main` after the managed-runtime fix. Where the two differ the re-run is listed second.
+Run against `b7fb6c7`, then re-run against `28ef7b2` on `main` after the managed-runtime fix.
+Where the two differ the re-run is listed second.
 
 | Gate | Command | Result |
 |---|---|---|
-| Script unit tests | `python3 -m unittest discover -s scripts/tests` | 77 tests OK at `5015580`; **198 OK (1 skipped)** at `28ef7b2` |
-| Documentation drift | `python3 scripts/check-docs-sync.py` | exit 0, 20 reported checks at `5015580`; exit 0, 24 reported checks at `28ef7b2` |
+| Script unit tests | `python3 -m unittest discover -s scripts/tests` | 77 tests OK at `b7fb6c7`; **198 OK (1 skipped)** at `28ef7b2` |
+| Documentation drift | `python3 scripts/check-docs-sync.py` | exit 0, 20 reported checks at `b7fb6c7`; exit 0, 24 reported checks at `28ef7b2` |
 | Conformance | `python3 scripts/verify-conformance.py` | **205 compiled, 9 fallback (214 of 214 executable), 0 divergences across 237 programs** at `28ef7b2` |
 | Builtin coverage audit | word-boundary match of 205 globals against specs, ADRs and five test trees | 0 undocumented, 0 untested |
 | Full build | `./gradlew build` | 52 tasks SUCCESSFUL, `oq-core` coverage 91.8% (gate 80%) at `28ef7b2` |
