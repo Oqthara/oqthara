@@ -192,3 +192,17 @@ reference, so a row cannot drift from the measurement it cites.
 - **Alpine/musl is unsupported** because the SQLite driver is JNI-bound.
 - **A built program carries the database driver**, so each jar is 13.5 MB regardless of whether
   it queries a database.
+- **The review gate's ancestry rule is PR-time only, so merged records are not re-auditable.**
+  `check-ai-review.py` requires a critical or high finding's resolution to name a commit that is
+  an ancestor of the branch, so a resolution cannot cite an unrelated fix. Squash merge then
+  erases every branch commit — the same defect this record was corrected for. Run against `main`,
+  the gate fails on every merged review record. In a fresh clone the cited commits are not merely
+  off-branch, they are absent objects: `951cf12` (PR-224), `7ae7fb7` (PR-225), `36a145e` (PR-227),
+  `164749f` (PR-228) and `039053b` (PR-226's reviewed commit) all fail
+  `git cat-file -t`. This is measured in a `git clone` of `main`, not inferred. It matters because
+  evidence that cannot be checked out is exactly what the Alpha 3 closure work was about, and
+  because a reviewer re-running the gate on `main` sees a failure that is not a defect in the
+  change. CI is unaffected: the gate step exits 0 on a push event and runs only for pull requests,
+  so it enforces as designed at the moment it can act. A proper fix has the record cite the merge
+  commit, or adds a post-merge mode resolving findings against the merge diff; both change the
+  policy in ADR-0059 and were not done here. Recorded rather than claimed.
