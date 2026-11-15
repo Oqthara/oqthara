@@ -14,6 +14,15 @@ recorded defect reproducing exactly — which is the only case where nothing has
 
 Usage:
     python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar>
+    python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar> --both
+
+`--both` additionally compiles every probe with `oq build` and runs the resulting jar, then
+requires the compiled output to equal the interpreted output line for line. That is what A5.7
+claims ("interpreter and compiled backends agree on every probe"), and it is a separate claim
+from "the interpreter produces the documented output": a probe can pass the first check and
+still disagree across backends. Probes whose documented behaviour is a diagnostic are compared
+too, because a backend that accepts what the interpreter refuses is exactly the disagreement
+worth catching.
 
 Exit code is 0 when every probe matches its expectation and every recorded defect reproduces
 verbatim, 1 otherwise.
@@ -22,6 +31,7 @@ verbatim, 1 otherwise.
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -102,23 +112,73 @@ def run(jar: Path, program: Path):
     return result.stdout + result.stderr, result.returncode
 
 
+def compile_program(jar: Path, program: Path):
+    """Compiles a probe in a scratch copy.
+
+    `oq build` has no output flag: it writes `<name>.jar` beside the source. Copying the probe
+    to a temporary directory keeps the generated jars out of the working tree, which matters
+    because this runs in CI where a dirty tree fails the docs check.
+    """
+    import shutil
+
+    scratch = Path(tempfile.mkdtemp())
+    copied = scratch / program.name
+    shutil.copy2(program, copied)
+    result = subprocess.run(
+        [sys.executable and "java", "-jar", str(jar), "build", str(copied)],
+        capture_output=True,
+        text=True,
+    )
+    return scratch / f"{program.stem}.jar", result.stdout + result.stderr, result.returncode
+
+
+def run_compiled(target: Path):
+    result = subprocess.run(
+        [sys.executable and "java", "-jar", str(target)],
+        capture_output=True,
+        text=True,
+        cwd=str(target.parent),
+    )
+    return result.stdout + result.stderr, result.returncode
+
+
 def main() -> int:
-    if len(sys.argv) != 2:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    both = "--both" in sys.argv[1:]
+    if len(args) != 1:
         print(__doc__.strip())
         return 2
-    jar = Path(sys.argv[1]).resolve()
+    jar = Path(args[0]).resolve()
     if not jar.is_file():
         print(f"no jar at {jar}")
         return 2
 
     failures = []
     defects = []
+    compared = 0
     for name, expected, defect in PROBES:
         program = HERE / f"{name}.oq"
         if not program.is_file():
             failures.append(f"{name}: missing probe file")
             continue
         output, code = run(jar, program)
+        if both:
+            # Compare the two backends on the same program. A refusal is compared as text, so
+            # a backend that runs a program the interpreter rejects is caught.
+            target, build_output, build_code = compile_program(jar, program)
+            if build_code != 0 or not target.is_file():
+                tail = build_output.strip().splitlines()[-1] if build_output.strip() else "no output"
+                failures.append(
+                    f"{name}: oq build did not produce a jar (exit {build_code}): {tail}"
+                )
+                continue
+            compiled_output, compiled_code = run_compiled(target)
+            compared += 1
+            if compiled_output != output:
+                failures.append(
+                    f"{name}: backends disagree; interpreter {output.splitlines()!r} "
+                    f"(exit {code}), compiled {compiled_output.splitlines()!r} (exit {compiled_code})"
+                )
         # Trailing blank lines are stripped; inner ones are kept, because a probe such as
         # `String.join(",", [])` prints an empty line on purpose.
         lines = output.splitlines()
@@ -171,6 +231,8 @@ def main() -> int:
 
     matched = sum(1 for _, e, d in PROBES if e is not None and d is None)
     print(f"ok: {matched} probes match their expectation")
+    if both:
+        print(f"ok: {compared} probes produce identical output on both backends")
     if defects:
         print(f"known defects reproducing verbatim: {len(defects)}")
         for name, marker in defects:
