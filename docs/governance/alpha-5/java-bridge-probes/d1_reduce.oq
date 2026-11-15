@@ -1,0 +1,6 @@
+use java.util.Comparator
+use java.util.function.BinaryOperator
+xs = [1, 2, 3]
+b = BinaryOperator.maxBy(Comparator.naturalOrder())
+print b(1, 2)
+print xs.reduce(b, 0)

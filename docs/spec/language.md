@@ -2663,6 +2663,45 @@ where a value is required is refused rather than passed as `null`:
 error: '<lambda>' returned nothing, which boolean cannot hold
 ```
 
+### Which method a name means
+
+A method name that Oqthara also defines on a value goes to Oqthara. Lists carry `sort`,
+`remove`, `add`, `get`, `set`, `clear`, and `contains` — the names Java's `List` uses, given
+Oqthara's meanings — so `xs.sort()` is the language's stable sort, not `List.sort`, and
+`xs.remove("x")` is refused as a wrong argument type rather than silently choosing
+`remove(Object)`. The precedence is a deliberate choice and is identical on both backends: the
+alternative, asking Java first, would let whatever a JDK class happens to declare redefine a
+built-in, so the same program would change behaviour with the JDK version.
+
+Reach the Java method explicitly when its meaning is wanted, except where the two agree. `add`,
+`get`, `set`, and `contains` agree. `remove` does not, and there is no separate spelling for
+`remove(Object)`; `remove_value(x)` is the language's equivalent. A diagnostic that names the
+language's method is naming the one that ran, so it is not a claim that Java has no such method:
+
+```text
+error: remove takes an index, not text
+
+  help: To remove the first matching value, use remove_value(x).
+```
+
+### What the boundary does not restrict
+
+`use` reaches any class the classpath makes visible, and a program can call whatever that class
+exposes. That includes `ProcessBuilder` and `Runtime`, so starting a process, and `System.getenv`,
+so reading the environment. This is not a widening of privilege; it is the same reach the
+language already has through `run_command` and `env()`, stated above where the runtime's trust
+boundary is described: Oqthara is not a sandbox, and a program can do what the user running it
+can do. The interop boundary adds no sandbox of its own, and no capability is granted by `use`
+that `run_command` would not already grant. Run untrusted code the way you would run any
+untrusted program, with the operating system's own restrictions on the process that hosts it.
+
+Reflection is the one place this is narrower than Java itself. A class object answers questions
+about itself — `getName`, `getSimpleName`, `isInterface`, `getSuperclass`, and the like — but not
+lookup of its declared members: `getDeclaredMethod`, `getMethod`, `getField`, and the other
+lookup entry points are refused with a help line that says so, because reflection is how a
+program would reach a member the language otherwise treats as unreachable, and how it would call
+`setAccessible` on one.
+
 ### Objects Java returns
 
 A value Java hands back is an ordinary Java object, and its methods are called the same way as

@@ -1,0 +1,11 @@
+use java.util.ArrayList
+use java.util.Comparator
+
+al = ArrayList()
+al.add(3)
+al.add(1)
+print al.size()
+print al.isEmpty()
+print al.get(0)
+print al.contains(1)
+print Comparator.naturalOrder().compare(1, 2)

@@ -72,7 +72,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
         return switch (name) {
             case "lock" -> dev.oqthara.runtime.NativeFunction.of(name, 1,
                     (host, args, callSpan) -> mutex.lock(
-                            host, callableArgument(name, args.get(0), 1, "m.lock(body)", callSpan), callSpan));
+                            host, callableArgument(name, args.get(0), 1, "m.lock(body)", 0, callSpan), callSpan));
             case "is_free" -> fixed(name, 0, (host, args) -> mutex.isFree());
             default -> null;
         };
@@ -81,14 +81,47 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
     /**
      * The argument at a callback position, or a diagnostic naming it.
      *
+     * <p>{@code OqCallable} is not the only thing that can be called. A Java value whose class
+     * declares one abstract method is callable too — {@code Comparator.naturalOrder()(1, 2)}
+     * answers {@code -1} — and {@code host.call} accepts it. Coercing with
+     * {@code instanceof OqCallable} therefore refused a value the language had just said is
+     * callable, so the same comparator worked as {@code c(1, 2)} but not as
+     * {@code [3, 1, 2].sort(c)}. The value is passed through unchanged and the arity the builtin
+     * needs is checked against {@link #callableArityOf}, so a real mismatch still names the
+     * counts instead of denying that the value can be called at all.
+     *
      * @param position the 1-based position the caller should hear about
      * @param call     the call shape to quote, so the reader sees the expected order
+     * @param wanted   the argument count the builtin will call the value with
      */
-    private static OqCallable callableArgument(
-            String name, Object value, int position, String call, Span span) {
-        if (value instanceof OqCallable callable) return callable;
-        throw new OqError("'" + name + "' needs a function as argument " + position, span,
-                "It got " + Values.typeName(value) + ". Write " + call + ".");
+    private static Object callableArgument(
+            String name, Object value, int position, String call, int wanted, Span span) {
+        if (value instanceof OqCallable callable) {
+            if (callable.arity() != OqCallable.VARIADIC && callable.arity() != wanted) {
+                throw new OqError(
+                        "'" + name + "' needs a function taking " + wanted + " argument"
+                                + (wanted == 1 ? "" : "s") + " as argument " + position,
+                        span,
+                        "It got " + Values.typeName(value) + " taking " + callable.arity()
+                                + ". Write " + call + ".");
+            }
+            return callable;
+        }
+        // The bridge answers -1 for "not a function", and OqCallable.VARIADIC is also -1, so
+        // callability is decided before the count is compared rather than by its sign.
+        int arity = dev.oqthara.core.JavaBridge.callableArity(value);
+        if (arity < 0) {
+            throw new OqError("'" + name + "' needs a function as argument " + position, span,
+                    "It got " + Values.typeName(value) + ". Write " + call + ".");
+        }
+        if (arity != wanted) {
+            throw new OqError(
+                    "'" + name + "' needs a function taking " + wanted + " argument"
+                            + (wanted == 1 ? "" : "s") + " as argument " + position,
+                    span,
+                    "It got " + Values.typeName(value) + " taking " + arity + ". Write " + call + ".");
+        }
+        return value;
     }
 
     /**
@@ -192,7 +225,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 return -1L;
             });
             case "reduce" -> new dev.oqthara.runtime.NativeFunction(name, 1, 2, (host, args, callSpan) -> {
-                OqCallable fn = callableArgument(name, args.get(0), 1, "reduce(fn, start)", callSpan);
+                Object fn = callableArgument(name, args.get(0), 1, "reduce(fn, start)", 2, callSpan);
                 int start = 0;
                 Object acc;
                 if (args.size() == 2) {
@@ -214,7 +247,7 @@ public final class MethodResolverImpl implements dev.oqthara.runtime.MethodResol
                 if (args.isEmpty()) {
                     comparator = (a, b) -> Values.compare(a, b, callSpan);
                 } else {
-                    OqCallable fn = callableArgument(name, args.get(0), 1, "sort(fn)", callSpan);
+                    Object fn = callableArgument(name, args.get(0), 1, "sort(fn)", 1, callSpan);
                     comparator = (a, b) -> {
                         Object keyA = host.call(fn, List.of(a), callSpan);
                         Object keyB = host.call(fn, List.of(b), callSpan);

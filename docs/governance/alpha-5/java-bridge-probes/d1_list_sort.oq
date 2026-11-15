@@ -1,0 +1,3 @@
+use java.util.function.Function
+xs = [3, 1, 2]
+print list_sort(xs, Function.identity())

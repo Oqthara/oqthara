@@ -124,7 +124,9 @@ governance itself.
    the existing `sort_by` evaluated its key once per *comparison* — measured at 46 calls for ten
    items on one ordering and 18 on others, and the ordering of a stateful key changes the answer
    outright. The defect is the dependence, not any particular count. [ADR-0060](../../adr/0060-keyed-sorting.md)
-   records the decision; 20 tests in `ListSortTest` cover it and are mutation-tested.
+   records the decision; 22 tests in `ListSortTest` cover it and are mutation-tested. The last
+   two were added by the Alpha 5 Java-bridge audit: a Java functional value is accepted where a
+   key is wanted, and a two-argument comparator is refused by count.
 
    An adversarial review of that change then found a **critical** defect in it: the keyed path
    built its callback arguments with `List.of(...)`, which rejects null, and `nothing` is null, so

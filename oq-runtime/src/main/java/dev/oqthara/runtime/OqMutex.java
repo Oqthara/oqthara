@@ -27,11 +27,13 @@ public final class OqMutex {
      * {@code finally}: a body that raises would otherwise leave the mutex held forever, and a
      * permanently held mutex is a hang with no diagnostic.
      *
-     * @param body a callback the caller supplies; it runs on the acquiring thread
+     * @param body a callback the caller supplies; it runs on the acquiring thread. Typed as
+     *     {@code Object} because {@link OqHost#call} accepts a Java functional value as well
+     *     as an {@code OqCallable}, and a mutex body is no different from any other callee.
      * @param span the call site, for the re-entry error
      * @return whatever the body returned
      */
-    public Object lock(OqHost host, OqCallable body, Span span) {
+    public Object lock(OqHost host, Object body, Span span) {
         // Checked before acquiring, not after a failed one: ReentrantLock grants a second
         // acquisition to the same thread, so a nested lock would silently succeed and produce
         // exactly the interleaving this exists to prevent.

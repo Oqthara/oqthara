@@ -750,11 +750,18 @@ public final class Interpreter implements OqHost {
         if (receiver instanceof Class<?> type) {
             Object result = JavaBridge.callStatic(type, call.method(), args, call.span(),
                     workingDirectory, this);
-            if (result == JavaBridge.NOT_FOUND) {
-                throw new OqError("Java class " + type.getSimpleName() + " has no static method '"
-                        + call.method() + "'", call.span());
-            }
-            return result;
+            if (result != JavaBridge.NOT_FOUND) return result;
+            // A class object is also a value. `String.class.getName()` is documented to work
+            // — a returned Java value's methods are called like any other receiver's — and
+            // before this fallback the call was answered as a *static* lookup and failed with
+            // "Java class String has no static method 'getName'". Statics are still tried
+            // first, so no program that worked changes meaning; only calls that used to fail
+            // arrive here.
+            result = JavaBridge.callOnClass(type, call.method(), args, call.span(), workingDirectory, this);
+            if (result != JavaBridge.NOT_FOUND) return result;
+            throw new OqError("Java class " + type.getSimpleName() + " has no static method '"
+                    + call.method() + "'", call.span(),
+                    JavaBridge.classMethodHint(type, call.method()));
         }
         Object result = JavaBridge.callMethod(receiver, call.method(), args, call.span(),
                 workingDirectory, this);

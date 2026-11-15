@@ -1,0 +1,7 @@
+use java.util.ArrayList
+al = ArrayList()
+al.add(1)
+al.add(2)
+print al.contains(2)
+print al.get(0)
+print al.size()
