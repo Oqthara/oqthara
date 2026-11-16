@@ -149,8 +149,8 @@ public final class JarBuilder {
      *
      * <p>This is sound rather than a heuristic, and the argument is worth recording because the
      * obvious version of it is wrong. "Does the program call a {@code db_*} builtin" is <em>not</em>
-     * sufficient: {@code use java.sql.DriverManager} compiles to {@code Class.forName}, so a
-     * program can reach the driver without naming any builtin. What closes the gap is that
+     * sufficient: {@code use java.sql.DriverManager} binds the driver class, so a program can
+     * reach the driver without naming any builtin. What closes the gap is that
      * {@code use} is the <em>only</em> route from Oqthara to an arbitrary JVM class — the
      * interpreter calls {@code Class.forName} in exactly one place, {@code loadClass}, reached
      * only from a {@code UseStmt}. So a program with neither a database builtin nor a {@code use}

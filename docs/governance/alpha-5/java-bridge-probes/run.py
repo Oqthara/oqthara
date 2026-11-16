@@ -36,6 +36,30 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
+# A rendered diagnostic quotes the offending source line and points a caret at the column. A
+# compiled jar embeds no source at all, so `oq build` documents that its excerpt is absent
+# (`docs/spec/backend.md`, "Runtime error reporting"). Comparing the raw text therefore failed
+# every probe whose documented behaviour is a diagnostic the moment the probe started
+# compiling. The excerpt is removed from both sides so the comparison is about the message,
+# the position and the hint, which both backends must agree on.
+EXCERPT = re.compile(r"^\s+(?:\d+ \|.*|\^\s*)$", re.MULTILINE)
+# Removing two lines from one side and none from the other also leaves a different number of
+# blank lines behind, so runs of them collapse before the comparison.
+BLANK_RUN = re.compile(r"\n\s*\n(?:\s*\n)+")
+
+
+POSITION = "  --> "
+
+
+def comparable(text):
+    # Ordinary output is compared verbatim, blank lines included: `String.join(",", [])` prints
+    # an empty line on purpose, so normalising whitespace everywhere would hide a real
+    # difference. Only a rendered diagnostic gets the documented exemption.
+    if POSITION not in text:
+        return text
+    return BLANK_RUN.sub("\n\n", EXCERPT.sub("", text))
+
+
 # (name, expected stdout lines, known-defect record)
 # A known-defect record is (description, the exact lines the build printed when the note was
 # written). It is not a way to accept a mismatch: see the module docstring.
@@ -174,7 +198,7 @@ def main() -> int:
                 continue
             compiled_output, compiled_code = run_compiled(target)
             compared += 1
-            if compiled_output != output:
+            if comparable(compiled_output) != comparable(output):
                 failures.append(
                     f"{name}: backends disagree; interpreter {output.splitlines()!r} "
                     f"(exit {code}), compiled {compiled_output.splitlines()!r} (exit {compiled_code})"

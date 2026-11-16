@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -28,6 +29,23 @@ class BuildCommandTest {
         int exit = new Main.Runner(out, err, null).build(args);
         return new Run(exit, outBytes.toString(StandardCharsets.UTF_8),
                 errBytes.toString(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A `use` naming a class that does not exist must report like every other program mistake.
+     * The class is resolved while lowering, which happens inside `oq build`, so without a
+     * handler in that command the error reached the top level as a Java stack trace: the same
+     * typo produced a diagnostic from `oq run` and a crash from `oq build`.
+     */
+    @Test
+    void anUnknownClassNameIsADiagnosticNotAStackTrace(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("bad.oq");
+        Files.writeString(source, "use java.lang.Mathh\nprint 1");
+        Run run = build(source.toString());
+        assertEquals(1, run.exit());
+        assertTrue(run.err().contains("error: cannot find Java class 'java.lang.Mathh'"), run.err());
+        assertFalse(run.err().contains("\tat dev.oqthara"), run.err());
+        assertFalse(Files.exists(dir.resolve("bad.jar")), "a refused program writes no jar");
     }
 
     @Test

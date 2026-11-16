@@ -384,7 +384,7 @@ for TH-15 because the compiler refuses the path into compiled code.
 |---|---|
 | `JavaBridgeVarargsTest` | Varargs selection does not pick the wrong overload |
 | `JavaBridgeFieldTest` | Static field reads return `NOT_FOUND` rather than throwing across the boundary |
-| `BytecodeCompilerTest.javaInteropIsRefusedByName` | `use` is refused by name, so the bridge cannot enter compiled bytecode |
+| `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` | Compiled output must equal the interpreter's for every conformance program, so a `use` that reaches bytecode cannot change behaviour (A6.1 closed the refusal this row used to describe) |
 | `BytecodeCompilerTest.hostDependentBuiltinsStayOnTheInterpreter` | Six host builtins are refused by name, not by accident |
 
 **Missing tests.** No test asserts that a private member is unreachable. No test asserts the

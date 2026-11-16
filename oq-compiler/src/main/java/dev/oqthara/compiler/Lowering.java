@@ -72,6 +72,25 @@ public final class Lowering {
      * at every call, which makes capturing it safe.
      */
     private Set<String> reassigned = Set.of();
+    /**
+     * Simple names bound by a {@code use} statement lowered so far, mapped to the class they
+     * name.
+     *
+     * <p>Sequential, not hoisted: the interpreter registers a class as the statement runs, so a
+     * name used before its {@code use} is undefined there and must be here too. This is
+     * deliberately a different registry from {@code localScopes}, which does hoist, because
+     * {@code fun} declarations are visible before their line and {@code use} statements are not.
+     */
+    private final Map<String, Class<?>> useTypes = new LinkedHashMap<>();
+    /**
+     * How many function bodies enclose the statement being lowered.
+     *
+     * <p>A {@code use} below the top level is refused (ADR-0064): the interpreter leaks the
+     * binding out of the function, and a generated method has no way to publish a name back to
+     * {@code main}. Both {@link #function} and {@link #block} increment this, because a function
+     * body is lowered by {@code function} without going through {@code block}.
+     */
+    private int depth = 0;
 
     public static Ir.Program lower(Ast.Program program) {
         return lowerWithReport(program).program();
@@ -207,6 +226,39 @@ public final class Lowering {
         return false;
     }
 
+    /** The bare name a {@code use} path binds, matching {@code Interpreter.simpleName}. */
+    private static String simpleName(String path) {
+        int dot = path.lastIndexOf('.');
+        return dot < 0 ? path : path.substring(dot + 1);
+    }
+
+    /**
+     * Resolves a {@code use} path, in the same order and with the same wording as
+     * {@code Interpreter.loadClass}: the path as written, then {@code java.lang.} and
+     * {@code java.util.} prefixes, the latter two only when the path has no dot at all.
+     *
+     * <p>Resolving while compiling means a misspelled package fails the build with the
+     * interpreter's own diagnostic instead of becoming a run-time failure in a program that
+     * built successfully.
+     */
+    private static Class<?> resolveClass(String path, Span span) {
+        List<String> candidates = new ArrayList<>();
+        candidates.add(path);
+        if (!path.contains(".")) {
+            candidates.add("java.lang." + path);
+            candidates.add("java.util." + path);
+        }
+        for (String candidate : candidates) {
+            try {
+                return Class.forName(candidate);
+            } catch (ClassNotFoundException ignored) {
+                // try next
+            }
+        }
+        throw new OqError("cannot find Java class '" + path + "'", span,
+                "Check the package name, for example: use java.time.LocalDate");
+    }
+
     private DataType lookupType(String name) {
         for (Map<String, DataType> scope : typeScopes) {
             DataType type = scope.get(name);
@@ -301,10 +353,22 @@ public final class Lowering {
                 code.add(new Ir.SetField(assign.field()));
             }
             case Ast.TryStmt attempt -> tryStatement(attempt);
-            case Ast.UseStmt ignored -> {
-                // Resolving a Java class is interpreter-only; compiling it would need the
-                // Java interop bridge, which the backend does not emit yet.
-                code.add(new Ir.Refuse("'use' imports a Java class, which is not compiled yet"));
+            case Ast.UseStmt use -> {
+                // Registered either way, so a later read of the name lowers as a class value
+                // and the refusal below is the reason the compiler reports. Recording the name
+                // cannot change what runs, because the refusal makes the jar fall back to the
+                // interpreter, which resolves the name itself.
+                useTypes.put(simpleName(use.path()), resolveClass(use.path(), use.span()));
+                if (depth > 0) {
+                    // A nested `use` is conditional and escapes its block: the interpreter
+                    // registers the class in one program-wide map only when the statement runs,
+                    // so `if flag` / `use java.lang.Math` / `end` leaves Math defined
+                    // afterwards exactly when the branch was taken. A compiled name is resolved
+                    // before the program starts and cannot be conditional, and no program in
+                    // the corpus nests a `use`, so refuse it rather than compile a program that
+                    // works with the branch taken and fails without it.
+                    code.add(new Ir.Refuse("'use' only compiles at the top level"));
+                }
             }
             case Ast.ImportStmt ignored -> {
                 code.add(new Ir.Refuse("module imports are not compiled yet"));
@@ -853,9 +917,11 @@ public final class Lowering {
             expression(value.body());
             code.add(new Ir.Return());
         } else {
+            depth++;
             for (Ast.Stmt stmt : value.blockBody()) {
                 statement(stmt);
             }
+            depth--;
             code.add(new Ir.Const(null));
             code.add(new Ir.Return());
         }
@@ -967,9 +1033,11 @@ public final class Lowering {
         localScopes.peek().addAll(params);
         Set<String> savedReassigned = reassigned;
         reassigned = reassignedIn(body);
+        depth++;
         for (Ast.Stmt stmt : body) {
             statement(stmt);
         }
+        depth--;
         reassigned = savedReassigned;
         popTypes();
         code.add(new Ir.Const(null));
@@ -982,9 +1050,11 @@ public final class Lowering {
     /** Lowers a nested block, with the `data` types the interpreter would hoist into it. */
     private void block(List<Ast.Stmt> statements) {
         pushTypes(statements);
+        depth++;
         for (Ast.Stmt stmt : statements) {
             statement(stmt);
         }
+        depth--;
         popTypes();
     }
 
@@ -1134,7 +1204,17 @@ public final class Lowering {
             case Ast.BoolLit bool -> code.add(new Ir.Const(bool.value()));
             case Ast.NothingLit ignored -> code.add(new Ir.Const(null));
             case Ast.StringLit text -> stringLiteral(text);
-            case Ast.Var var -> code.add(new Ir.Load(var.name()));
+            case Ast.Var var -> {
+                Class<?> used = useTypes.get(var.name());
+                if (used != null && !isLocal(var.name())) {
+                    // A `use` name is a class value, not a slot. The interpreter checks locals
+                    // first and the class table second, so a binding of the same name wins and
+                    // is lowered as an ordinary load below.
+                    code.add(new Ir.Const(used));
+                } else {
+                    code.add(new Ir.Load(var.name()));
+                }
+            }
             case Ast.TryExpr attempt -> tryExpression(attempt);
             case Ast.ListLit list -> {
                 operands(list.items());
@@ -1209,6 +1289,13 @@ public final class Lowering {
                     DataType type = lookupType(var.name());
                     if (type != null) {
                         constructor(call, type);
+                    } else if (useTypes.containsKey(var.name()) && !isLocal(var.name())) {
+                        // `ArrayList()` constructs a Java object in the interpreter, which a
+                        // class value reaching Callables.call reproduces exactly.
+                        code.add(new Ir.Const(useTypes.get(var.name())));
+                        emitCallArguments(call.args());
+                        mark(call.span());
+                        code.add(new Ir.CallValue(call.args().size(), var.name()));
                     } else if (callableNames.contains(var.name()) || isLocal(var.name())) {
                         // The name resolves to a value in scope, so the call dispatches through
                         // that value. Calling it statically would let a builtin or a `fun` of

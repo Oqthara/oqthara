@@ -1168,11 +1168,40 @@ class BytecodeCompilerTest {
     }
 
     @Test
-    void javaInteropIsRefusedByName() {
-        String use = BytecodeCompiler.whyNot(ir("use java.time.LocalDate\nprint 1"));
-        assertNotNull(use);
-        assertTrue(use.contains("use"), use);
+    void javaInteropCompilesAndCallsAStaticMethod(@TempDir Path dir) throws Exception {
+        // The interpreter reaches a used class through one program-wide map; the compiled
+        // backend resolves the same name at compile time, so the output must match it.
+        String source = "use java.lang.Math\nprint Math.abs(-3)\nprint Math.PI";
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(),
+                compileAndRun(source, dir));
+        assertNull(BytecodeCompiler.whyNot(ir(source)));
     }
+
+    @Test
+    void javaInteropConstructsAnInstanceAndCallsItsMethods(@TempDir Path dir) throws Exception {
+        String source = "use java.util.ArrayList\n"
+                + "xs = ArrayList()\n"
+                + "xs.add(2)\n"
+                + "xs.add(1)\n"
+                + "print xs\n"
+                + "print xs.size()";
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(),
+                compileAndRun(source, dir));
+    }
+
+    @Test
+    void aVariableShadowsTheUsedClassName(@TempDir Path dir) throws Exception {
+        String source = "use java.lang.Math\nprint Math.abs(-3)\nMath = 5\nprint Math";
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(),
+                compileAndRun(source, dir));
+    }
+
+    @Test
+    void useInsideANestedBlockFallsBackWithTheTrueReason() {
+        String reason = BytecodeCompiler.whyNot(ir("if true\n  use java.lang.Math\nend\nprint Math.abs(-3)"));
+        assertEquals("'use' only compiles at the top level", reason);
+    }
+
 
     @Test
     void compilesForToLoop(@TempDir Path dir) throws Exception {
@@ -1342,9 +1371,14 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(208, compiled,
+        assertEquals(209, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-16: 208 compiled / 9 fallback / 0 divergences over 247 programs
+        // Measured 2026-11-16: 209 compiled / 9 fallback / 0 divergences over 248 programs
+        // (218 executable). The one new executable program is 248-java-interop-by-use, which
+        // the compiler handles because a top-level `use` now lowers to a class constant
+        // (ADR-0064). It is the first conformance program to exercise `use` at all.
+        //
+        // Previous measurement: 208 compiled / 9 fallback / 0 divergences over 247 programs
         // (217 executable). The one new executable program is 245-nan-is-unordered, which the
         // compiler handles because the relational operators are ordinary IR comparisons.
         // Before it, 207 compiled over 216 executable.

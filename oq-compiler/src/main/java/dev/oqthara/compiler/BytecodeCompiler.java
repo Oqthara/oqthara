@@ -641,9 +641,11 @@ public final class BytecodeCompiler {
             if (binding == null) {
                 refuseEnclosing(name);
                 // A bare `fun` name is handled by the load arm of `plan`, so reaching this
-                // point means the name was never a function or a variable in this method.
+                // point means the name is not a parameter, a local, or a `fun` of this method.
+                // It may have been assigned somewhere this method cannot see, or never at all,
+                // so say what is known rather than claiming a missing assignment (ADR-0064).
                 throw new NotSupportedException(
-                        "variable '" + name + "' is used before assignment");
+                        "variable '" + name + "' is not defined in this scope");
             }
             return binding;
         }
@@ -1080,6 +1082,14 @@ public final class BytecodeCompiler {
         }
 
         /** Pushes the {@code Class} object for an internal name such as {@code oq/generated/Program}. */
+        /**
+         * The JVM internal name of a class: dots become slashes, and arrays keep their
+         * descriptor form because {@code CONSTANT_Class} encodes an array that way.
+         */
+        private static String internalName(Class<?> type) {
+            return type.getName().replace('.', '/');
+        }
+
         private void emitClassConstant(String internalName) {
             int index = pool.classRef(internalName);
             bytes.write(LDC_W);
@@ -1124,6 +1134,13 @@ public final class BytecodeCompiler {
                 bytes.write(hi(index));
                 bytes.write(lo(index));
                 push();
+                return;
+            }
+            if (value instanceof Class<?> type) {
+                // A `use` name is a class value. `LDC` of a CONSTANT_Class resolves the type
+                // from whichever JDK runs the jar, so nothing is copied into the file, and it
+                // yields the same Class instance every time, so identity checks keep working.
+                emitClassConstant(internalName(type));
                 return;
             }
             throw new NotSupportedException("constant of type "

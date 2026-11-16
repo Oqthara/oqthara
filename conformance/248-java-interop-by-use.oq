@@ -1,0 +1,20 @@
+# A `use` binds a class value, so the name answers to the class itself and to its static
+# members. `Math.max` never existed as a variable: it is a resolved static method.
+use java.lang.Math
+# A constructor is reached the same way, and the instance is an ordinary host object.
+use java.util.ArrayList
+
+print Math.max(3, 7)
+print Math.abs(-4)
+print Math.sqrt(16.0)
+
+xs = ArrayList()
+xs.add(1)
+xs.add(2)
+print xs.size()
+print xs.get(0) + xs.get(1)
+
+# The bound name is a value like any other, so a later assignment shadows it. The interpreter
+# lets a variable win over the class; the compiled path must agree.
+Math = "shadowed"
+print Math

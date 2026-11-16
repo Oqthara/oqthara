@@ -154,17 +154,32 @@ public final class Methods {
         return bridge;
     }
 
+    /**
+     * The host a compiled program gives Java code that calls back into it. Shared with
+     * {@link Callables} so a constructor taking a functional interface behaves the same however
+     * the call site reached it.
+     */
+    static OqHost host() {
+        return HOST;
+    }
+
     private static final OqHost HOST = new OqHost() {
         private final BufferedReader in = new BufferedReader(new StringReader(""));
 
         @Override
         public Object call(Object callee, List<Object> args, Span span) {
             // A compiled lambda reaches a stdlib method such as `map` or `sort_by` through
-            // here. It is an ordinary OqCallable, so the method resolves it the same way the
-            // interpreter does; anything else gets the interpreter's own diagnostic.
+            // here. This mirrors `Interpreter.invoke` step for step, because a callback and a
+            // direct call must agree: once `use` compiles, a probe can hand `map` a Java
+            // functional value, and accepting only OqCallable refused what the interpreter ran.
             if (callee instanceof OqCallable callable) {
                 return callable.call(this, args, span);
             }
+            if (callee instanceof Class<?> type) {
+                return Callables.construct(type, args, span, this);
+            }
+            Object fromJava = Callables.callFunctional(callee, args, span, this);
+            if (!Callables.isNotFound(fromJava)) return fromJava;
             throw new OqError("'" + Values.typeName(callee) + "' is not a function", span,
                     "This value cannot be called.");
         }

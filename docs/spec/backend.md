@@ -89,10 +89,10 @@ is safe: a program either compiles to equivalent bytecode or runs exactly as `oq
 
 ## The compiled subset, measured
 
-As of Alpha 6, **208 of the 217 executable conformance programs** compile to real bytecode
+As of Alpha 6, **209 of the 218 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`
-(`assertEquals(208, compiled, ...)`), so it cannot silently go down. 217 is the number of
+(`assertEquals(209, compiled, ...)`), so it cannot silently go down. 218 is the number of
 executable programs in `conformance/`: every `*.oq` without a sibling `*.err`. Every refusal
 is reported by name in the `oq build` output.
 
@@ -271,9 +271,13 @@ smaller than the language. Today's boundary, in the order it would be widened:
 1. **Capturing closures.** Non-capturing lambdas already compile. A lambda that reads an
    enclosing variable, and a function that touches a top-level variable, are refused because
    capture would copy at creation time while the interpreter reads at call time.
-2. **Java interop.** `use` is refused by name; compiled code cannot call Java classes
-   directly. Method calls on Java objects that arrive from a compiled call still work,
-   because they go through `Methods` -> `JavaBridge`, exactly as under the interpreter.
+2. **Java interop.** A top-level `use` compiles: the name is bound to the class as a
+   constant, so a static call (`Math.max(3, 7)`), a static field (`Math.PI`), a constructor
+   (`ArrayList()`) and a class value used as a value (`print Math`) all compile. A `use`
+   below the top level is refused by the statement, because whether the name exists depends
+   on whether that block ran (ADR-0064). Method calls on Java objects that arrive from a
+   compiled call still work, because they go through `Methods` -> `JavaBridge`, exactly as
+   under the interpreter.
 3. **Modules as separate artifacts.** Module sources are flattened into one program.
 4. **Host-dependent builtins.** Files, time, randomness, HTTP, process state, `args`,
    `input`, `exit` and the concurrency helpers stay on the interpreter, for the reasons
@@ -378,7 +382,7 @@ java -jar examples/hello.jar
 
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` compiles every
 compilable conformance program, runs it, and asserts that stdout equals `oq run`'s, then
-asserts the compiled count is 208 of the 217 executable programs. `BuildJarTest` builds a
+asserts the compiled count is 209 of the 218 executable programs. `BuildJarTest` builds a
 jar for every deterministic example, runs it, and asserts that stdout and exit code equal
 the interpreter's; any divergence fails the build. `parallel.oq` is excluded because it
 prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they are interactive or need

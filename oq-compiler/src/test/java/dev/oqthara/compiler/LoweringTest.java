@@ -401,11 +401,39 @@ class LoweringTest {
     }
 
     @Test
-    void lambdasLowerToAGeneratedMethodAndJavaInteropIsRefusedByName() {
+    void lambdasLowerToAGeneratedMethod() {
         String disassembly = Ir.disassemble(lower("f = x -> x"));
         assertTrue(disassembly.contains("lambda lambda$0/1"), disassembly);
         assertTrue(disassembly.contains("function lambda$0"), disassembly);
-        assertTrue(Ir.disassemble(lower("use java.time.LocalDate")).contains("'use'"));
+    }
+
+    @Test
+    void useBindsTheClassAsAConstant() {
+        // The class is recorded at the statement and materialised where it is read, so a
+        // program that names nothing pays for no constant.
+        String declaration = Ir.disassemble(lower("use java.time.LocalDate"));
+        assertFalse(declaration.contains("refuse"), declaration);
+        assertFalse(declaration.contains("const class"), declaration);
+
+        String reference = Ir.disassemble(lower("use java.time.LocalDate\nprint LocalDate"));
+        assertFalse(reference.contains("refuse"), reference);
+        assertTrue(reference.contains("const class java.time.LocalDate"), reference);
+    }
+
+    @Test
+    void useInsideANestedBlockIsRefusedByTheStatement() {
+        String disassembly = Ir.disassemble(lower("if true\n  use java.time.LocalDate\nend"));
+        assertTrue(disassembly.contains("'use' only compiles at the top level"), disassembly);
+    }
+
+    @Test
+    void aVariableShadowsTheClassName() {
+        // Both a class value and a variable answer to `Math`; the assignment must win, because
+        // the interpreter's environment is consulted before its class registry.
+        Ir.Program program = lower("use java.lang.Math\nprint Math\nMath = 5\nprint Math");
+        String disassembly = Ir.disassemble(program);
+        assertTrue(disassembly.contains("const class java.lang.Math"), disassembly);
+        assertTrue(disassembly.contains("load Math"), disassembly);
     }
 
     @Test
