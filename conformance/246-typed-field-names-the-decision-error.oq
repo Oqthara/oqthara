@@ -1,0 +1,9 @@
+# Typed data fields are a decided question, not missing work — type-system-decision-brief.md
+# answered "no typed fields" on 2026-11-13 and nothing needs to be implemented. The diagnostic
+# must therefore say so instead of reporting "expected ')' to close the field list", which sends
+# the writer looking for a bracket that is not missing. This is the same defect shape that
+# ADR-0062 fixed for comprehensions and PR #234 fixed for tuple literals.
+#
+# ParserTest.aTypedFieldNamesTheDecisionInsteadOfABracket covers every position in the list;
+# this pins one end to end.
+data P(x: Int, y)

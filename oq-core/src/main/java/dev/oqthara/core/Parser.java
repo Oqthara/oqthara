@@ -340,6 +340,7 @@ public final class Parser {
                 if (match(Token.Kind.ASSIGN)) {
                     defaultValue = expression();
                 }
+                rejectTypedField();
                 fields.add(new Ast.FieldDef(field.lexeme(), defaultValue, field.span()));
             } while (match(Token.Kind.COMMA));
         }
@@ -397,6 +398,7 @@ public final class Parser {
                 if (match(Token.Kind.ASSIGN)) {
                     defaultValue = expression();
                 }
+                rejectTypedField();
                 fields.add(new Ast.FieldDef(field.lexeme(), defaultValue, field.span()));
             } while (match(Token.Kind.COMMA));
         }
@@ -1051,6 +1053,21 @@ public final class Parser {
      * construct, so the writer gets told the feature is absent instead of being sent to look
      * for a bracket they did not forget.
      */
+    /**
+     * Refuses a typed field by name. `data P(x: Int)` is a decided question, not missing work
+     * (docs/governance/remediation/type-system-decision-brief.md, 2026-11-13), so the writer is
+     * told the language is dynamically typed rather than sent to look for a bracket they did not
+     * forget. A colon after a field name has no other reading, so the refusal is contextual.
+     */
+    private void rejectTypedField() {
+        if (!check(Token.Kind.COLON)) {
+            return;
+        }
+        throw error(peek(), "typed fields are not supported",
+                "Oqthara is dynamically typed: write the field as a plain name, "
+                        + "without a type after it.");
+    }
+
     private void rejectComprehension(String shape) {
         if (!check(Token.Kind.KEYWORD) || !peek().lexeme().equals("for")) {
             return;

@@ -388,6 +388,38 @@ class ParserTest {
     }
 
     @Test
+    void aTypedFieldNamesTheDecisionInsteadOfABracket() {
+        // Typed fields are decided against, not unimplemented (type-system-decision-brief.md,
+        // 2026-11-13), so `data P(x: Int)` must not report an unclosed bracket: nothing is
+        // unclosed. Every position in the list has to be covered, because the colon lands after
+        // the first field in one case and a later one in another.
+        List<String> sources = List.of(
+                "data P(x: Int)",
+                "data P(x: Int, y)",
+                "data P(x, y: Int)",
+                "data P(x, y: Int = 2)",
+                "class C(v: Int)\nend",
+                "class C(v, w: Int)\nend");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertEquals("typed fields are not supported", error.getMessage(), source);
+            assertFalse(error.getMessage().contains("field list"),
+                    "still blaming an unclosed bracket for: " + source);
+            assertTrue(error.hint().contains("dynamically typed"),
+                    "expected the decision in the hint for: " + source);
+        }
+    }
+
+    @Test
+    void aFieldDefaultIsNotMistakenForAType() {
+        // The colon check has to run after the default expression, or `x = 1` would be read as
+        // a type annotation and every default would be refused.
+        assertDoesNotThrow(() -> Parser.parse("t", "data P(x = 1, y = 2)"));
+        assertDoesNotThrow(() -> Parser.parse("t", "class C(v = 5)\nend"));
+    }
+
+    @Test
     void everyOtherBuiltinRequiresParentheses() {
         // `write_text` is an alias of `write` reachable only in function form. The spec once
         // showed `write_text "x"`; this pins the boundary the spec now states.

@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and hard-reserving them would have broken two shipped programs. It runs at the point where a
   variable reference is built, so every expression position is covered rather than the statement
   forms someone remembered to patch.
+- **A decided question was reported as a syntax error.** `data Point(x: Int, y: Int)` reported
+  `expected ')' to close the field list`, which sends the writer looking for a bracket that is
+  not missing: the real answer is that Oqthara is dynamically typed and has no typed fields, a
+  decision recorded on 2026-11-13 rather than work still to do. Adding the bracket does not
+  produce the program the writer meant, it produces a different one, so the diagnostic was
+  misleading in the way ADR-0062 forbids. `data` and `class` now report
+  `typed fields are not supported` and name the decision in the hint. Field defaults are
+  unaffected, because the check runs after the default expression — `data P(x = 1)` is still a
+  default, not a type.
 - **Seven of the sixteen comparisons against `NaN` returned the wrong answer.** `NaN` is
   unordered, so every relational operator must answer false for it. Instead `nan > 1.0`,
   `nan >= 1.0`, `nan <= nan`, `nan >= nan`, `1.0 < nan`, `1.0 <= nan` and `nan >= 2.0` all

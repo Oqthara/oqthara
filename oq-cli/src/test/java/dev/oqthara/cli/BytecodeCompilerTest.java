@@ -1344,7 +1344,7 @@ class BytecodeCompilerTest {
         }
         assertEquals(208, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-16: 208 compiled / 9 fallback / 0 divergences over 245 programs
+        // Measured 2026-11-16: 208 compiled / 9 fallback / 0 divergences over 246 programs
         // (217 executable). The one new executable program is 245-nan-is-unordered, which the
         // compiler handles because the relational operators are ordinary IR comparisons.
         // Before it, 207 compiled over 216 executable.
