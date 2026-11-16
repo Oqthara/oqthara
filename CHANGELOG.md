@@ -26,6 +26,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not keywords here: the parser recognises them by position, so `fun class(x)` is legal and
   `class(1)` is a real call. Their one non-call position, the declaration header, is excluded
   separately.
+- **A construct Oqthara does not have was reported as a problem with the token after it.** Each
+  of `match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import` and `throw`,
+  written the way it would be in the language the writer was thinking of, was absorbed as a
+  variable read and then blamed the following token: `match x` reported
+  `unexpected 'x' after a statement`, `throw "boom"` reported `unexpected text after a
+  statement`. Both are true and both describe the wrong thing, so removing the "offending" token
+  produced a different program rather than the intended one. Comprehensions were worse: `[n * 2
+  for n in 1 to 3]` reported `expected ']' to close the list`, and adding the bracket yielded a
+  valid program with the wrong behaviour. Each construct now names itself
+  (`error: match is not a construct in Oqthara`, `error: list comprehensions are not
+  implemented`) with a hint naming the supported alternative (ADR-0062). The refusal is
+  contextual — it requires the operand — because `match`, `from` and `await` are ordinary names
+  in `examples/grep.oq` and `examples/hanoi.oq`, and hard-reserving them would have broken two
+  shipped programs.
 
 ### Changed
 - **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,

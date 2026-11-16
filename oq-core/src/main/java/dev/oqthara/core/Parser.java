@@ -11,6 +11,18 @@ public final class Parser {
     private static final Set<String> COMMANDS = Set.of("print", "write", "assert");
 
     /**
+     * Words a reader of mainstream pseudocode expects to be syntax and this dialect does not
+     * implement. Every one is a legal identifier, and {@code match}, {@code from} and
+     * {@code await} are used as names in {@code examples/}, so they cannot be reserved the
+     * way {@code finally} was (ADR-0061). They are refused only where the surrounding
+     * syntax proves the writer meant the construct: a bare name followed directly by the
+     * operand the construct would take. See ADR-0062.
+     */
+    private static final Set<String> CONSTRUCT_LEADERS = Set.of(
+            "match", "case", "switch", "yield", "def", "async", "await",
+            "from", "import", "throw");
+
+    /**
      * Maximum expression nesting. The parser is recursive descent, so hostile input such as
      * "((((...1...))))" would otherwise overflow the JVM stack and crash without a
      * diagnostic. The limit is far above any real program, and exceeding it produces a
@@ -211,6 +223,7 @@ public final class Parser {
         Ast.Expr expr = expression();
         if (match(Token.Kind.ASSIGN)) {
             Ast.Expr value = expression();
+            rejectUnimplementedConstruct(value);
             endStatement();
             return assignmentFrom(expr, value);
         }
@@ -218,6 +231,7 @@ public final class Parser {
                 || check(Token.Kind.STAR_ASSIGN) || check(Token.Kind.SLASH_ASSIGN)) {
             Token op = advance();
             Ast.Expr value = expression();
+            rejectUnimplementedConstruct(value);
             endStatement();
             if (!(expr instanceof Ast.Var var)) {
                 throw error(op, "compound assignment needs a variable on the left", null);
@@ -230,6 +244,7 @@ public final class Parser {
             };
             return new Ast.CompoundAssign(var.name(), kind, value, op.span());
         }
+        rejectUnimplementedConstruct(expr);
         endStatement();
         return new Ast.ExprStmt(expr, expr.span());
     }
@@ -970,6 +985,7 @@ public final class Parser {
             if (match(Token.Kind.COMMA)) {
                 return tupleLiteral(paren, inner);
             }
+            rejectComprehension("generator");
             expect(Token.Kind.RPAREN, "to close the expression");
             return new Ast.Grouping(inner, paren.span());
         }
@@ -1029,6 +1045,20 @@ public final class Parser {
         return new Ast.TupleLit(items, paren.span());
     }
 
+    /**
+     * Refuses a comprehension by name. A {@code for} inside brackets is unambiguously the
+     * construct, so the writer gets told the feature is absent instead of being sent to look
+     * for a bracket they did not forget.
+     */
+    private void rejectComprehension(String shape) {
+        if (!check(Token.Kind.KEYWORD) || !peek().lexeme().equals("for")) {
+            return;
+        }
+        throw error(peek(), shape + " comprehensions are not implemented",
+                "Build the collection with a loop instead: create it, then push each "
+                        + "element inside the loop body.");
+    }
+
     private Ast.Expr listLiteral(Token bracket) {
         List<Ast.Expr> items = new ArrayList<>();
         skipNewlines();
@@ -1041,6 +1071,7 @@ public final class Parser {
                 if (check(Token.Kind.RBRACKET)) break;
             }
         }
+        rejectComprehension("list");
         expect(Token.Kind.RBRACKET, "to close the list");
         return new Ast.ListLit(items, bracket.span());
     }
@@ -1065,6 +1096,7 @@ public final class Parser {
                 entries.add(new Ast.Entry(key, expression()));
                 skipNewlines();
             }
+            rejectComprehension("map");
             expect(Token.Kind.RBRACE, "to close the map");
             return new Ast.MapLit(entries, brace.span());
         }
@@ -1077,6 +1109,7 @@ public final class Parser {
             items.add(expression());
             skipNewlines();
         }
+        rejectComprehension("set");
         expect(Token.Kind.RBRACE, "to close the set");
         return new Ast.SetLit(items, brace.span());
     }
@@ -1290,8 +1323,44 @@ public final class Parser {
             return;
         }
         if (check(Token.Kind.EOF)) return;
+        if (check(Token.Kind.KEYWORD) && Lexer.RESERVED.contains(peek().lexeme())) {
+            throw reserved(peek());
+        }
         throw error(peek(), "unexpected " + describe(peek()) + " after a statement",
                 "Statements end at the end of the line.");
+    }
+
+    /**
+     * Names the construct instead of the operand for a leader word that was consumed as a bare
+     * identifier expression. {@code match x} would otherwise blame {@code x}, which sends the
+     * writer to look for a broken statement after a line that looked correct to them.
+     */
+    private void rejectUnimplementedConstruct(Ast.Expr expr) {
+        if (!(expr instanceof Ast.Var var) || !CONSTRUCT_LEADERS.contains(var.name())) {
+            return;
+        }
+        if (atStatementEnd()) {
+            // A bare name on its own line is a variable read, which is exactly what a program
+            // that means `match` as a name does. Nothing here proves the construct was meant.
+            return;
+        }
+        throw error(previous(), var.name() + " is not a construct in Oqthara",
+                constructHint(var.name()));
+    }
+
+    private static String constructHint(String leader) {
+        return switch (leader) {
+            case "match", "case", "switch" -> "Oqthara has no pattern matching. Compare with "
+                    + "'if' / 'else if' and read the value with a 'data' field or an index.";
+            case "def" -> "'fun' declares a function: write 'fun name(args)'.";
+            case "async", "await" -> "Oqthara has no asynchronous functions. Call the function "
+                    + "and use its result directly.";
+            case "from", "import" -> "'use' is the only import: write 'use java.util.ArrayList' "
+                    + "or 'use ./helper.oq'.";
+            case "yield" -> "Oqthara has no generators. Build a list and return it.";
+            case "throw" -> "Raise an error with 'error(\"message\")'; catch it with 'try'.";
+            default -> "It is not part of the grammar.";
+        };
     }
 
     private static boolean isAdjacent(Token left, Token right) {

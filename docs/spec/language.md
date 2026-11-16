@@ -1216,6 +1216,63 @@ error: index 5 is out of range for a list of length 3
 Raise your own with `error("message")`. Guard with `assert(condition, "message")`.
 `exit(n)` stops the program with status `n`.
 
+### Constructs that do not exist
+
+Oqthara has no pattern matching, no generators, no `async`, and no second import form. Writing
+one is a parse error that names the construct, because the alternative is a message about the
+token after it:
+
+```
+match x
+```
+
+```
+error: match is not a construct in Oqthara
+  --> m.oq:1:1
+   1 | match x
+       ^^^^^
+
+  help: Oqthara has no pattern matching. Compare with 'if' / 'else if' and read the value with
+        a 'data' field or an index.
+```
+
+The words `match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import` and
+`throw` are only refused when they are **used as syntax**, that is, when something follows them
+on the line. Each one remains a legal name, because `match` and `from` already are in shipped
+examples:
+
+```
+match = 5
+print match             # 5
+for match in [1, 2]
+  print match           # 1, then 2
+end
+fun add(from, to)
+  return from + to
+end
+```
+
+A comprehension is refused by name too, in all four shapes, because a `for` inside brackets
+cannot begin anything else:
+
+```
+result = [n * 2 for n in 1 to 3]
+```
+
+```
+error: list comprehensions are not implemented
+  --> c.oq:1:17
+   1 | result = [n * 2 for n in 1 to 3]
+                       ^^^
+
+  help: Build the collection with a loop instead: create it, then push each element inside the
+        loop body.
+```
+
+The map, set and generator forms say `map`, `set` and `generator` respectively. See ADR-0062,
+and `scripts/probe-construct-leaders.py` for the measured behaviour of every leader in every
+name position.
+
 ## The standard library
 
 Text: `upper`, `lower`, `trim`, `split`, `join`, `replace`, `contains`, `regex`,

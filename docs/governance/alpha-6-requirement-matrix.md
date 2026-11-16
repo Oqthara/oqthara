@@ -34,19 +34,19 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 | String interpolation | `DONE` | `n = 3` then `"n is {n}"` prints `n is 3` | — |
 | `use` Java interop | `DONE` | `use java.lang.Math` then `Math.abs(-3)` prints `3` | — |
 | `try` / `catch` with a bound error | `DONE` | `try print 1/0 catch e print "caught"` prints `caught` | — |
-| Pattern matching (`match` / `case`) | `NOT STARTED` | `match x` exits 1 with `unexpected 'x' after a statement` | Not implemented in either form (statement or expression). The diagnostic names the scrutinee, not the construct |
-| List comprehension | `NOT STARTED` | `[n * 2 for n in 1 to 3]` exits 1 with `expected ']' to close the list` | Not implemented. The diagnostic describes a missing bracket |
-| Map comprehension | `NOT STARTED` | `{n: n for n in 1 to 3}` exits 1 with `expected '}' to close the map` | Not implemented |
-| Set comprehension | `NOT STARTED` | `{n for n in 1 to 3}` exits 1 with `expected '}' to close the set` | Not implemented |
-| Generator expression | `NOT STARTED` | `(n for n in 1 to 3)` exits 1 with `expected ')' to close the expression` | Not implemented |
-| `yield` | `NOT STARTED` | `yield 1` exits 1 with `unexpected number 1 after a statement` | Not implemented. `yield` is consumed as an identifier expression, so the complaint is about the next token |
+| Pattern matching (`match` / `case`) | `NOT STARTED` | `match x` exits 1 with `match is not a construct in Oqthara`; `case 1:` likewise | Not implemented in either form (statement or expression). ADR-0062 makes the diagnostic name the construct |
+| List comprehension | `NOT STARTED` | `[n * 2 for n in 1 to 3]` exits 1 with `list comprehensions are not implemented` | Not implemented. ADR-0062 makes the diagnostic name the shape |
+| Map comprehension | `NOT STARTED` | `{n: n for n in 1 to 3}` exits 1 with `map comprehensions are not implemented` | Not implemented |
+| Set comprehension | `NOT STARTED` | `{n for n in 1 to 3}` exits 1 with `set comprehensions are not implemented` | Not implemented |
+| Generator expression | `NOT STARTED` | `(n for n in 1 to 3)` exits 1 with `generator comprehensions are not implemented` | Not implemented |
+| `yield` | `NOT STARTED` | `yield 1` exits 1 with `yield is not a construct in Oqthara` | Not implemented. `yield` remains a legal identifier, so the refusal is contextual (ADR-0062) |
 | Lazy iteration over a range | `NOT STARTED` | `(1 to 1000000).take(3)` exits 1 with `type range has no method 'take'` | Ranges are eager and materialised; there is no lazy view or iterator protocol |
-| `switch` | `NOT STARTED` | `switch 1` exits 1 with `unexpected number 1 after a statement` | Not implemented |
+| `switch` | `NOT STARTED` | `switch 1` exits 1 with `switch is not a construct in Oqthara` | Not implemented |
 | Typed `data` fields | `NOT STARTED` | `data P(x: Int)` exits 1 with `expected ')' to close the field list` | Not implemented, and decided against on 2026-11-13 — see [type-system-decision-brief.md](remediation/type-system-decision-brief.md) |
-| `import` as a statement | `NOT STARTED` | `import math` exits 1 with `unexpected 'math' after a statement` | `use` is the only import mechanism. `import` remains a legal identifier |
-| `throw` statement | `NOT STARTED` | `throw "boom"` exits 1 with `unexpected text after a statement` | Errors are raised by the runtime and by `1/0`; there is no source-level raise |
-| `def` as a function keyword | `NOT STARTED` | `def f(x)` exits 1 with `unexpected 'f' after a statement` | `fun` is the only keyword. `def` is deliberately not accepted |
-| `async` / `await` | `NOT STARTED` | `async fun f()` exits 1 with `unexpected keyword 'fun' after a statement` | Not implemented. Note the diagnostic names `fun`, one token late |
+| `import` as a statement | `NOT STARTED` | `import math` exits 1 with `import is not a construct in Oqthara` | `use` is the only import mechanism. `import` remains a legal identifier |
+| `throw` statement | `NOT STARTED` | `throw "boom"` exits 1 with `throw is not a construct in Oqthara` | No source-level raise; `error("message")` is the mechanism. The hint says so |
+| `def` as a function keyword | `NOT STARTED` | `def f(x)` exits 1 with `def is not a construct in Oqthara` | `fun` is the only keyword. `def` is deliberately not accepted |
+| `async` / `await` | `NOT STARTED` | `async fun f()` exits 1 with `async is not a construct in Oqthara`; `await f()` gives the same shape | Not implemented. The diagnostic no longer names `fun`, one token late |
 
 ## Numerics (IEEE-754 policy)
 
@@ -62,8 +62,8 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 
 | Requirement | State | Evidence | Gaps |
 | --- | --- | --- | --- |
-| An unimplemented construct is refused rather than accepted | `DONE` | all 14 `NOT STARTED` rows above exit 1; none exits 0 | — |
-| An unimplemented construct is named in its diagnostic | `NOT STARTED` | `match x` reports the scrutinee `x`; `yield 1` reports the number `1`; `def f(x)` reports `f`; `async fun` reports `fun` | The leader word is consumed as an identifier expression statement, and the statement terminator check then blames the token after it. Every word involved (`match`, `yield`, `case`, `throw`, `from`, `def`, `switch`, `import`) is a legal identifier, and `match`/`from`/`await` are used as such in `examples/`, so the fix must be contextual and cannot be hard reservation |
+| An unimplemented construct is refused rather than accepted | `DONE` | all 13 `NOT STARTED` rows and the one `PARTIAL` row above exit 1; none exits 0 (re-run one by one with the fixed jar, 2026-11-15) | — |
+| An unimplemented construct is named in its diagnostic | `DONE` | 10 leaders (`match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import`, `throw`) report `<word> is not a construct in Oqthara`, in a bare statement and in both assignment branches; 4 comprehension shapes name themselves; `scripts/probe-construct-leaders.py` reports 10/10 operands, 10/10 hints, 20/20 assignment values, 4/4 shapes and 60/60 name positions still accepted, and exits 1 with 24 failures on the pre-change build | None. The refusal is contextual (ADR-0062): it needs the operand, so all ten words remain legal names, and `match`/`from`/`await` keep working in `examples/` |
 
 ## How a row is closed
 

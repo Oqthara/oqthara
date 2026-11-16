@@ -1,0 +1,211 @@
+# ADR-0062 — A diagnostic names the construct, not the token after it
+
+**Status:** Accepted
+**Date:** 2026-11-15
+**Related:** [`contracts.md`](../spec/contracts.md) §8.3 (the same wrong-token class),
+[`language.md`](../spec/language.md) §Errors (the specification it makes true),
+ADR-0061 (`finally` is refused outright, which this record contrasts with),
+`Parser.CONSTRUCT_LEADERS`, `scripts/probe-construct-leaders.py` (the measured figures)
+
+## Context
+
+Oqthara has no pattern matching, no generators, no `async`, and no `import`. It never has.
+Writing any of them, however, produced a diagnostic about something else entirely:
+
+```
+$ oq run m.oq           # match x
+error: unexpected 'x' after a statement
+
+$ oq run y.oq           # yield 1
+error: unexpected number 1 after a statement
+
+$ oq run c.oq           # result = [n * 2 for n in 1 to 3]
+error: expected ']' to close the list
+```
+
+Each of those is true and each is useless. `match x` does contain an unexpected `x` from the
+parser's point of view, so the message is not a lie; it simply describes the wrong thing. The
+writer did not type a stray `x`, they typed a construct the language does not have, and no
+amount of removing the `x` will produce a program that does what they meant.
+
+The cost is a repair loop. A reader told `unexpected 'x'` deletes the `x`, runs again, and gets
+`unexpected '='` or nothing at all. The `]` message is worse, because it is actionable: adding
+the bracket produces a valid program with different behaviour than the comprehension the writer
+intended. The diagnostic actively leads away from the answer.
+
+The comprehension case is the sharpest, because the shape is unambiguous. A `for` inside `[`,
+`{` or `(` cannot begin anything else Oqthara accepts, so there is exactly one thing the writer
+could have meant.
+
+## Decision
+
+Two contextual rules, both in the parser.
+
+**A leader word with an operand names the construct.** `Parser.CONSTRUCT_LEADERS` is
+`match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import`, `throw`.
+When an expression is a bare `Ast.Var` reading one of those names *and* the parser is not at the
+end of the statement, the error names the word and carries a hint saying what to write instead.
+
+The rule has to run on **every** statement path, not only the bare-expression one. The first
+version of this change placed it only on that path, so `yield 1` named the construct while
+`x = yield 1` still reported `unexpected number 1 after a statement`. The assignment branch
+reached `endStatement` before the value was examined. Probing the matrix's evidence rows caught
+it; the probe now covers both assignment branches and the regression test
+`anUnimplementedConstructIsNamedInAnAssignmentValue` fails without the two extra calls.
+
+```
+error: match is not a construct in Oqthara
+  --> m.oq:1:1
+   1 | match x
+       ^^^^^
+
+  help: Oqthara has no pattern matching. Compare with 'if' / 'else if' and read the value with
+        a 'data' field or an index.
+```
+
+**A comprehension names its shape.** When the token wanting a closing bracket is the keyword
+`for`, the error names the comprehension instead of the bracket:
+
+```
+error: list comprehensions are not implemented
+  --> c.oq:1:17
+   1 | result = [n * 2 for n in 1 to 3]
+                       ^^^
+
+  help: Build the collection with a loop instead: create it, then push each element inside the
+        loop body.
+```
+
+Every message is measured by `scripts/probe-construct-leaders.py`, which probes all ten leaders
+before an operand, all four comprehension shapes, and sixty name positions:
+
+```
+$ python3 scripts/probe-construct-leaders.py
+leaders probed: 10
+operand diagnostics naming the construct: 10 of 10
+diagnostics carrying a construct-specific hint: 10 of 10
+assignment values naming the construct: 20 of 20
+name positions per leader: 6
+name positions still accepted: 60 of 60
+comprehension shapes naming themselves: 4 of 4
+
+ok: every construct leader names itself before an operand and stays usable as a name
+```
+
+The hint row is not decorative. The parser already emits a generic hint at that position --
+`Statements end at the end of the line.` -- so a probe that only asked whether *a* hint exists
+would report 10 of 10 before the change and prove nothing. The probe requires a
+construct-specific fragment per leader for that reason, and an earlier draft of this record
+carried the weaker figure until the baseline run exposed it.
+
+Behind each row, the message that used to appear, measured on the same programs before the
+change by running the same probe against the pre-change parser:
+
+```
+before: operand diagnostics naming the construct: 0 of 10
+before: diagnostics carrying a construct-specific hint: 0 of 10
+before: comprehension shapes naming themselves: 0 of 4
+before: name positions still accepted: 60 of 60
+
+after:  operand diagnostics naming the construct: 10 of 10
+after:  diagnostics carrying a construct-specific hint: 10 of 10
+after:  comprehension shapes naming themselves: 4 of 4
+after:  name positions still accepted: 60 of 60
+after:  assignment values naming the construct: 20 of 20
+```
+
+`60 of 60` in the "before" column is the point of the fourth row: the name positions were never
+broken, and the fix had to leave them exactly as they were. The probe exits 1 on the before
+build with 24 failures and 0 on the after build, so it can gate.
+
+and the messages themselves, side by side:
+
+| Written | Before | After |
+|---|---|---|
+| `match x` | `unexpected 'x' after a statement` | `match is not a construct in Oqthara` |
+| `case 1:` | `unexpected number 1 after a statement` | `case is not a construct in Oqthara` |
+| `switch x` | `unexpected 'x' after a statement` | `switch is not a construct in Oqthara` |
+| `yield 1` | `unexpected number 1 after a statement` | `yield is not a construct in Oqthara` |
+| `def f(x)` | `unexpected 'f' after a statement` | `def is not a construct in Oqthara` |
+| `async fun g()` | `unexpected keyword 'fun' after a statement` | `async is not a construct in Oqthara` |
+| `await f()` | `unexpected 'f' after a statement` | `await is not a construct in Oqthara` |
+| `from x import y` | `unexpected 'x' after a statement` | `from is not a construct in Oqthara` |
+| `import foo` | `unexpected 'foo' after a statement` | `import is not a construct in Oqthara` |
+| `throw "boom"` | `unexpected text after a statement` | `throw is not a construct in Oqthara` |
+| `[n * 2 for n in 1 to 3]` | `expected ']' to close the list` | `list comprehensions are not implemented` |
+| `{n: n for n in 1 to 3}` | `expected '}' to close the map` | `map comprehensions are not implemented` |
+| `{n for n in 1 to 3}` | `expected '}' to close the set` | `set comprehensions are not implemented` |
+| `(n for n in 1 to 3)` | `expected ')' to close the expression` | `generator comprehensions are not implemented` |
+
+### Why these ten are not reserved
+
+ADR-0061 reserved `finally` as a keyword, and the obvious move here is to do the same. It is
+the wrong move, and the reason is that `finally` and these words differ in one decisive way:
+nobody writes `finally` as an ordinary variable name, and people write `match` and `from` all
+the time.
+
+They already do, in this repository:
+
+```
+examples/grep.oq:20   for match in search(file, pattern)
+examples/hanoi.oq:5   fun hanoi(n, from, to, via)
+```
+
+`await` is a plausible name for a field holding a pending result. Reserving the set would have
+turned two shipped examples into parse errors, which is a regression sold as a diagnostic
+improvement. So the refusal is *contextual*: it needs the operand. The guard is
+`!atStatementEnd()`, and it is the load-bearing half of the rule — `match` alone at the end of a
+statement is a variable read, and `match x` is a construct that does not exist.
+
+That distinction is exactly what the probe tests. Its sixty name positions (`assign-target`,
+`command-argument`, `for-variable`, `parameter`, `function-name`, `bare-read`, for each of ten
+leaders) must all keep parsing, so the fix cannot silently drift into the hard reservation it
+was written to avoid. A future contributor who "simplifies" this by adding the words to
+`Lexer.KEYWORDS` fails the probe and `ParserTest.everyConstructLeaderRemainsUsableAsAName`.
+
+### Why the comprehension rule needs no such guard
+
+`for` *is* a keyword, so no legal collection literal can contain it. The rule "next token is
+`for`" cannot misfire, and `(1 + 2)` and `[[1], [2]]` are pinned by
+`ParserTest.anOrdinaryCollectionLiteralIsStillAccepted` so it stays that way.
+
+The four shapes get four messages rather than one, because the repair differs: a list is built
+with `push`, a map with an index assignment, a set with `add`. A single "comprehensions are not
+implemented" would be accurate and would leave the reader to work out which of the four they
+wrote.
+
+### The reserved-word check moved first in `endStatement`
+
+`Parser.endStatement` is where every wrong-token message in a statement originates. It now
+checks `Lexer.RESERVED` before its generic message, so a reserved word in statement position
+reports the reservation rather than the token after it. The two rules compose: `finally` used
+as a construct is refused by the reservation (ADR-0061), and a leader word with an operand is
+refused by this rule.
+
+### What this does not do
+
+It does not implement any of the ten constructs, and it does not make the gap smaller. A
+program that uses `match` still cannot be written. The change is that the refusal now says so
+in one step instead of two, and lands on the word the writer has to remove rather than on the
+token after it.
+
+The matrix rows for pattern matching, generators, lazy iteration and modules stay `NOT STARTED`
+or `PARTIAL`; only the row for the diagnostic itself closes.
+
+## Consequences
+
+- The keyword count is unchanged at 22. The ten leader words are not keywords, so
+  `docs/stdlib/reference.md`, `CONTRIBUTING.md` and `docs/spec/design.md` do not move and the
+  documentation gate in `scripts/check-docs-sync.py` is untouched.
+- Two shipped examples and any downstream code using these words as names keep working; the
+  probe enforces it.
+- Five new parser tests pin the behaviour, and the mutation evidence is that each one fails
+  when its rule is removed: deleting the construct check, forcing the contextual guard off,
+  removing the `atStatementEnd` early return, deleting one comprehension call, and removing the
+  two assignment-path calls each produce a failing test.
+- Three conformance cases were added: `242` and `243` are `.err` cases pinning the message, and
+  `244` is executable and proves the leader words still work as names. `244` moved the measured
+  corpus from 215 to 216 executable and 206 to 207 compiled; all three baseline pins were
+  updated from that measurement, not toward it.
+- A future attempt to implement any of these ten constructs must remove its entry from
+  `CONSTRUCT_LEADERS` and supersede this record.

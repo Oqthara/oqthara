@@ -1,0 +1,16 @@
+# The leader words are legal identifiers, and `match`, `from` and `await` are names in
+# shipped examples (examples/grep.oq, examples/hanoi.oq). The refusal is contextual: it
+# needs the operand the construct would take. A bare name, an assignment, a loop variable
+# and a parameter must all keep working, or this fix would have turned the diagnostic into
+# the hard reservation it was written to avoid.
+match = 5
+print match
+for match in [1, 2]
+  print match
+end
+fun add(from, to)
+  return from + to
+end
+print add(1, 2)
+def = 7
+print def

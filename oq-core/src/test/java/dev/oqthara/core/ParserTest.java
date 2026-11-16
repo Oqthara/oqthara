@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -171,6 +172,106 @@ class ParserTest {
                 end
                 """));
         assertEquals("finally does not exist", afterError.getMessage());
+    }
+
+    @Test
+    void anUnimplementedConstructIsNamedInsteadOfItsOperand() {
+        // `match x` parsed as the bare name `match` followed by a stray `x`, so the complaint
+        // was about the token after a line that looked correct. Each construct must now be
+        // named. ADR-0062.
+        List<String> sources = List.of(
+                "match x",
+                "case 1:",
+                "switch x",
+                "yield 1",
+                "def f(x)",
+                "async fun g()\nend",
+                "await f()",
+                "from x import y",
+                "import foo",
+                "throw \"boom\"");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertEquals(leadingWord(source) + " is not a construct in Oqthara",
+                    error.getMessage(), source);
+            // The statement-terminator rule already emits a generic hint here, so "a hint
+            // exists" passes before the change and proves nothing. Require the sentence that
+            // names the replacement construct.
+            assertFalse(error.hint().contains("Statements end at the end of the line"),
+                    "generic hint left in place for: " + source);
+            assertTrue(error.hint().length() > 20,
+                    "expected a construct-specific hint for: " + source);
+        }
+    }
+
+    @Test
+    void anUnimplementedConstructIsNamedInAnAssignmentValue() {
+        // The check had to run on every statement path, not only the bare-expression one.
+        // `x = yield 1` reached the terminator before the value was examined and still blamed
+        // the `1`, so the two assignment branches call it too.
+        List<String> sources = List.of(
+                "x = yield 1",
+                "x = match y",
+                "x = await f()",
+                "x += yield 1");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            String message = error.getMessage();
+            assertTrue(message.endsWith(" is not a construct in Oqthara"),
+                    source + " reported '" + message + "' instead of naming the construct");
+        }
+    }
+
+    @Test
+    void everyConstructLeaderRemainsUsableAsAName() {
+        // These words are identifiers in shipped examples, so the refusal must depend on the
+        // surrounding syntax and never on the word alone. If this test fails, the diagnostic
+        // has become hard reservation and `examples/grep.oq` no longer parses.
+        for (String leader : List.of("match", "case", "switch", "yield", "def", "async",
+                "await", "from", "import", "throw")) {
+            Parser.parse("t", leader + " = 1");
+            Parser.parse("t", "print " + leader);
+            Parser.parse("t", "for " + leader + " in [1]\nend");
+            Parser.parse("t", "fun f(" + leader + ")\nend");
+            Parser.parse("t", "fun " + leader + "()\nend");
+            Parser.parse("t", leader);
+        }
+    }
+
+    @Test
+    void aComprehensionNamesTheConstructInsteadOfTheBracket() {
+        // The missing-bracket diagnosis sent the writer to fix a bracket they had not
+        // forgotten. A `for` inside the literal is unambiguously the construct.
+        List<String> sources = List.of(
+                "x = [n * 2 for n in 1 to 3]",
+                "x = {n: n for n in 1 to 3}",
+                "x = {n for n in 1 to 3}",
+                "x = (n for n in 1 to 3)");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertTrue(error.getMessage().endsWith("comprehensions are not implemented"),
+                    source + " produced: " + error.getMessage());
+        }
+    }
+
+    @Test
+    void anOrdinaryCollectionLiteralIsStillAccepted() {
+        // The comprehension check must not fire on a collection that merely contains the
+        // identifier `for`-adjacent syntax. These are the shapes real programs use.
+        Parser.parse("t", "a = [1, 2, 3]");
+        Parser.parse("t", "b = {1, 2}");
+        Parser.parse("t", "c = {\"x\": 1}");
+        Parser.parse("t", "d = (1 + 2)");
+        Parser.parse("t", "e = [[1], [2]]");
+    }
+
+    private static String leadingWord(String source) {
+        int end = 0;
+        while (end < source.length() && Character.isLetter(source.charAt(end))) end++;
+        return source.substring(0, end);
     }
 
     @Test

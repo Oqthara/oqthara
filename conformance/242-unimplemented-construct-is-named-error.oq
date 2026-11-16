@@ -1,0 +1,4 @@
+# `match` is consumed as a bare identifier, so the statement-terminator check used to blame
+# the token after it. The refusal must name the construct. Covered for every leader by
+# ParserTest.anUnimplementedConstructIsNamedInsteadOfItsOperand; this pins one end to end.
+match x

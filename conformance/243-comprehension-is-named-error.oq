@@ -1,0 +1,4 @@
+# A `for` inside brackets is unambiguously a comprehension, so the diagnostic names the
+# construct instead of reporting a bracket the writer did not forget. Covered for all four
+# shapes by ParserTest.aComprehensionNamesTheConstructInsteadOfTheBracket.
+result = [n * 2 for n in 1 to 3]

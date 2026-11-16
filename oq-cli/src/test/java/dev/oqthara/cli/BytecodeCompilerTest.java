@@ -1342,9 +1342,14 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(206, compiled,
+        assertEquals(207, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-15: `scripts/verify-conformance.py` reported 206 compiled / 9
+        // Measured 2026-11-15: 207 compiled / 9 fallback / 0 divergences over 244 programs
+        // (216 executable). The one new executable program is
+        // 244-construct-leaders-remain-names, which the compiler handles because the leader
+        // words are ordinary names there. Before it, 206 compiled over 215 executable.
+        //
+        // Previous measurement: `scripts/verify-conformance.py` reported 206 compiled / 9
         // fallback / 0 divergences over 241 programs (215 executable). The one new executable
         // program is 241-non-finite-arithmetic, which the compiler handles because `**`, `/`
         // and `-` over decimals are ordinary arithmetic. Before it, 205 compiled over 214
