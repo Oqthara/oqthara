@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -171,6 +173,186 @@ class ParserTest {
                 end
                 """));
         assertEquals("finally does not exist", afterError.getMessage());
+    }
+
+    @Test
+    void anUnimplementedConstructIsNamedInsteadOfItsOperand() {
+        // `match x` parsed as the bare name `match` followed by a stray `x`, so the complaint
+        // was about the token after a line that looked correct. Each construct must now be
+        // named. ADR-0062.
+        List<String> sources = List.of(
+                "match x",
+                "case 1:",
+                "switch x",
+                "yield 1",
+                "def f(x)",
+                "async fun g()\nend",
+                "await f()",
+                "from x import y",
+                "import foo",
+                "throw \"boom\"");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertEquals(leadingWord(source) + " is not a construct in Oqthara",
+                    error.getMessage(), source);
+            // The statement-terminator rule already emits a generic hint here, so "a hint
+            // exists" passes before the change and proves nothing. Require the sentence that
+            // names the replacement construct.
+            assertFalse(error.hint().contains("Statements end at the end of the line"),
+                    "generic hint left in place for: " + source);
+            assertTrue(error.hint().length() > 20,
+                    "expected a construct-specific hint for: " + source);
+        }
+    }
+
+    @Test
+    void anUnimplementedConstructIsNamedInAnAssignmentValue() {
+        // `x = yield 1` reached the statement terminator before the value was examined and
+        // still blamed the `1`, which is why the guard runs where the name is created rather
+        // than on one statement path.
+        List<String> sources = List.of(
+                "x = yield 1",
+                "x = match y",
+                "x = await f()",
+                "x += yield 1");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            String message = error.getMessage();
+            assertTrue(message.endsWith(" is not a construct in Oqthara"),
+                    source + " reported '" + message + "' instead of naming the construct");
+        }
+    }
+
+    @Test
+    void anUnimplementedConstructIsNamedWhereverAnExpressionMayAppear() {
+        // The guard used to run on the bare-expression and assignment paths only, so every
+        // nested position still blamed the operand. Running it where the name is created
+        // covers these without a call site per statement form.
+        List<String> sources = List.of(
+                "return yield 1",
+                "print yield 1",
+                "if yield 1\nend",
+                "while yield 1\nend",
+                "f(yield 1)",
+                "[yield 1]",
+                "assert yield 1",
+                "x[i] = yield 1",
+                "for x in yield 1\nend",
+                "x = [yield 1]");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertEquals("yield is not a construct in Oqthara", error.getMessage(), source);
+        }
+    }
+
+    @Test
+    void anOperatorAfterALeaderNameIsStillAnExpression() {
+        // The adjacency rule must not treat an operator keyword or a symbolic operator as the
+        // operand the missing construct would take. `match and 1` and `match - 3` are ordinary
+        // expressions over a variable called `match`, and a false positive here would break
+        // programs that use these words as names.
+        List<String> sources = List.of(
+                "match and 1",
+                "match or 1",
+                "print not match",
+                "match - 3",
+                "match * 2",
+                "match in [1]",
+                "from - 1",
+                "match == 1",
+                "match < 2",
+                "await + 1");
+        for (String source : sources) {
+            assertDoesNotThrow(() -> Parser.parse("t", source),
+                    "rejected an ordinary expression: " + source);
+        }
+    }
+
+    @Test
+    void aContextualRangeOperatorAfterALeaderNameIsStillARange() {
+        // `to` and `until` are range operators that also lex as identifiers, so an identifier
+        // in the next position does not always mean the missing construct. `from until until`
+        // is the range from the variable `from` to the variable `until`, and refusing it broke
+        // conformance 204.
+        List<String> sources = List.of(
+                "for n in from until until\nend",
+                "for n in await to match\nend",
+                "x = from until 3");
+        for (String source : sources) {
+            assertDoesNotThrow(() -> Parser.parse("t", source),
+                    "rejected a range over variables: " + source);
+        }
+    }
+
+    @Test
+    void everyConstructLeaderRemainsUsableAsAName() {
+        // These words are identifiers in shipped examples, so the refusal must depend on the
+        // surrounding syntax and never on the word alone. If this test fails, the diagnostic
+        // has become hard reservation and `examples/grep.oq` no longer parses.
+        for (String leader : List.of("match", "case", "switch", "yield", "def", "async",
+                "await", "from", "import", "throw")) {
+            Parser.parse("t", leader + " = 1");
+            Parser.parse("t", "print " + leader);
+            Parser.parse("t", "for " + leader + " in [1]\nend");
+            Parser.parse("t", "fun f(" + leader + ")\nend");
+            Parser.parse("t", "fun " + leader + "()\nend");
+            Parser.parse("t", leader);
+        }
+    }
+
+    @Test
+    void aComprehensionNamesTheConstructInsteadOfTheBracket() {
+        // The missing-bracket diagnosis sent the writer to fix a bracket they had not
+        // forgotten. A `for` inside the literal is unambiguously the construct.
+        List<String> sources = List.of(
+                "x = [n * 2 for n in 1 to 3]",
+                "x = {n: n for n in 1 to 3}",
+                "x = {n for n in 1 to 3}",
+                "x = (n for n in 1 to 3)",
+                "x = (1, 2, n for n in 1 to 3)");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertTrue(error.getMessage().endsWith("comprehensions are not implemented"),
+                    source + " produced: " + error.getMessage());
+        }
+    }
+
+    @Test
+    void anOrdinaryCollectionLiteralIsStillAccepted() {
+        // The comprehension check must not fire on a collection that merely contains the
+        // identifier `for`-adjacent syntax. These are the shapes real programs use.
+        Parser.parse("t", "a = [1, 2, 3]");
+        Parser.parse("t", "b = {1, 2}");
+        Parser.parse("t", "c = {\"x\": 1}");
+        Parser.parse("t", "d = (1 + 2)");
+        Parser.parse("t", "e = [[1], [2]]");
+    }
+
+    @Test
+    void aBlockTerminatorAfterALeaderIsNotBlamedAsAConstruct() {
+        // `match end` is invalid for the same reason `x end` is: the terminator does not belong
+        // on the line. Saying the word is a construct would assert something false.
+        List<String> sources = List.of(
+                "if true\n  match end\nend",
+                "if true\n  match else\nend",
+                "x = match end",
+                "fun f()\n  yield end\nend");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertFalse(error.getMessage().contains("is not a construct in Oqthara"),
+                    source + " incorrectly blamed the leader: " + error.getMessage());
+        }
+    }
+
+    private static String leadingWord(String source) {
+        int end = 0;
+        while (end < source.length() && Character.isLetter(source.charAt(end))) end++;
+        return source.substring(0, end);
     }
 
     @Test

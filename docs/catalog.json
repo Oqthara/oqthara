@@ -374,6 +374,12 @@
       "slug": "docs/adr/0061-finally-is-a-reserved-word"
     },
     {
+      "path": "docs/adr/0062-a-diagnostic-names-the-construct.md",
+      "title": "ADR-0062 — A diagnostic names the construct, not the token after it",
+      "section": "adr",
+      "slug": "docs/adr/0062-a-diagnostic-names-the-construct"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

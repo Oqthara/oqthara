@@ -11,6 +11,18 @@ public final class Parser {
     private static final Set<String> COMMANDS = Set.of("print", "write", "assert");
 
     /**
+     * Words a reader of mainstream pseudocode expects to be syntax and this dialect does not
+     * implement. Every one is a legal identifier, and {@code match}, {@code from} and
+     * {@code await} are used as names in {@code examples/}, so they cannot be reserved the
+     * way {@code finally} was (ADR-0061). They are refused only where the surrounding
+     * syntax proves the writer meant the construct: a bare name followed directly by the
+     * operand the construct would take. See ADR-0062.
+     */
+    private static final Set<String> CONSTRUCT_LEADERS = Set.of(
+            "match", "case", "switch", "yield", "def", "async", "await",
+            "from", "import", "throw");
+
+    /**
      * Maximum expression nesting. The parser is recursive descent, so hostile input such as
      * "((((...1...))))" would otherwise overflow the JVM stack and crash without a
      * diagnostic. The limit is far above any real program, and exceeding it produces a
@@ -181,7 +193,9 @@ public final class Parser {
                             + "cleanup at the end of the 'try' block and at the end of the "
                             + "'catch' block, or call one function from both.");
             default -> error(token, "'" + token.lexeme() + "' is reserved",
-                    "It is kept for future syntax and cannot be used as a name.");
+                    "It is kept for future syntax, so it is refused everywhere rather than "
+                            + "silently becoming a variable that fails only when the line runs. "
+                            + "Rename the variable.");
         };
     }
 
@@ -970,6 +984,7 @@ public final class Parser {
             if (match(Token.Kind.COMMA)) {
                 return tupleLiteral(paren, inner);
             }
+            rejectComprehension("generator");
             expect(Token.Kind.RPAREN, "to close the expression");
             return new Ast.Grouping(inner, paren.span());
         }
@@ -989,6 +1004,7 @@ public final class Parser {
                 Ast.Expr body = expression();
                 return new Ast.Lambda(List.of(name.lexeme()), body, null, name.span());
             }
+            rejectUnimplementedConstruct(name);
             return new Ast.Var(name.lexeme(), name.span());
         }
         throw error(peek(), "expected an expression", "Found " + describe(peek()) + " instead.");
@@ -1025,8 +1041,23 @@ public final class Parser {
             skipNewlines();
             if (!match(Token.Kind.COMMA)) break;
         }
+        rejectComprehension("tuple");
         expect(Token.Kind.RPAREN, "to close the tuple");
         return new Ast.TupleLit(items, paren.span());
+    }
+
+    /**
+     * Refuses a comprehension by name. A {@code for} inside brackets is unambiguously the
+     * construct, so the writer gets told the feature is absent instead of being sent to look
+     * for a bracket they did not forget.
+     */
+    private void rejectComprehension(String shape) {
+        if (!check(Token.Kind.KEYWORD) || !peek().lexeme().equals("for")) {
+            return;
+        }
+        throw error(peek(), shape + " comprehensions are not implemented",
+                "Build the collection with a loop instead: create it, then push each "
+                        + "element inside the loop body.");
     }
 
     private Ast.Expr listLiteral(Token bracket) {
@@ -1041,6 +1072,7 @@ public final class Parser {
                 if (check(Token.Kind.RBRACKET)) break;
             }
         }
+        rejectComprehension("list");
         expect(Token.Kind.RBRACKET, "to close the list");
         return new Ast.ListLit(items, bracket.span());
     }
@@ -1065,6 +1097,7 @@ public final class Parser {
                 entries.add(new Ast.Entry(key, expression()));
                 skipNewlines();
             }
+            rejectComprehension("map");
             expect(Token.Kind.RBRACE, "to close the map");
             return new Ast.MapLit(entries, brace.span());
         }
@@ -1077,6 +1110,7 @@ public final class Parser {
             items.add(expression());
             skipNewlines();
         }
+        rejectComprehension("set");
         expect(Token.Kind.RBRACE, "to close the set");
         return new Ast.SetLit(items, brace.span());
     }
@@ -1290,8 +1324,68 @@ public final class Parser {
             return;
         }
         if (check(Token.Kind.EOF)) return;
+        rejectReserved();
         throw error(peek(), "unexpected " + describe(peek()) + " after a statement",
                 "Statements end at the end of the line.");
+    }
+
+    /**
+     * Names the construct instead of the operand when a leader word has been read as a bare
+     * identifier and the token after it cannot continue an expression. `match x` and
+     * `yield 1` are two expressions in a row, which the grammar has no rule for, so the only
+     * reading is a writer asking for syntax that does not exist here. An operator, a call
+     * parenthesis, a dot, a bracket, an assignment or a line end all continue the expression
+     * normally and stay legal, which is what keeps `match - 1` and `async fun g()` distinct.
+     */
+    private void rejectUnimplementedConstruct(Token name) {
+        if (!CONSTRUCT_LEADERS.contains(name.lexeme()) || continuesExpression()) {
+            return;
+        }
+        throw error(name, name.lexeme() + " is not a construct in Oqthara",
+                constructHint(name.lexeme()));
+    }
+
+    private boolean continuesExpression() {
+        if (peek().kind() == Token.Kind.IDENT) {
+            // `to` and `until` are contextual range operators that also lex as identifiers, so
+            // `from until until` is the range from the variable `from` to the variable `until`
+            // (conformance 204). An ordinary identifier after a leader is the operand the
+            // missing construct would take, so only these two continue the expression.
+            String text = peek().lexeme();
+            return text.equals("to") || text.equals("until");
+        }
+        return switch (peek().kind()) {
+            case NEWLINE, EOF, SEMICOLON, COMMA, COLON, DOT, PIPE,
+                 LPAREN, RPAREN, LBRACKET, RBRACKET, RBRACE,
+                 PLUS, MINUS, STAR, SLASH, PERCENT, STARSTAR,
+                 ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN,
+                 EQEQ, NOTEQ, LT, LE, GT, GE -> true;
+            // `and`, `or` and `in` are operators, so `match and 1` is an ordinary expression
+            // over a variable named `match`. `end`, `else` and `catch` close a block, so a
+            // leader before one of them is a bare name in a position the grammar rejects for
+            // any name -- `match end` is no more a construct than `x end` is. Every other
+            // keyword can be the operand a construct would take, including `fun` after
+            // `async`, which is the one leader spelling followed by syntax.
+            case KEYWORD -> checkKeyword("and") || checkKeyword("or") || checkKeyword("in")
+                    || checkKeyword("end") || checkKeyword("else") || checkKeyword("catch")
+                    || Lexer.RESERVED.contains(peek().lexeme());
+            case NUMBER, STRING, MULTILINE, IDENT, LBRACE -> false;
+        };
+    }
+
+    private static String constructHint(String leader) {
+        return switch (leader) {
+            case "match", "case", "switch" -> "Oqthara has no pattern matching. Compare with "
+                    + "'if' / 'else if' and read the value with a 'data' field or an index.";
+            case "def" -> "'fun' declares a function: write 'fun name(args)'.";
+            case "async", "await" -> "Oqthara has no asynchronous functions. Call the function "
+                    + "and use its result directly.";
+            case "from", "import" -> "'use' is the only import: write 'use java.util.ArrayList' "
+                    + "or 'use ./helper.oq'.";
+            case "yield" -> "Oqthara has no generators. Build a list and return it.";
+            case "throw" -> "Raise an error with 'error(\"message\")'; catch it with 'try'.";
+            default -> "It is not part of the grammar.";
+        };
     }
 
     private static boolean isAdjacent(Token left, Token right) {
@@ -1399,6 +1493,10 @@ public final class Parser {
 
     private boolean check(Token.Kind kind) {
         return peek().kind() == kind;
+    }
+
+    private boolean checkKeyword(String keyword) {
+        return peek().kind() == Token.Kind.KEYWORD && peek().lexeme().equals(keyword);
     }
 
     private boolean checkNext(Token.Kind kind) {

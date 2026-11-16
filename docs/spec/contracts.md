@@ -94,8 +94,8 @@ Neither is a defect; both are gaps that the Alpha 4 `data` work (directive §14.
 
 ## 8.3 Contradictions found while writing this register
 
-Recording the contracts exposed one place where the implementation, the specification and the
-parser disagreed. It is kept here as the worked example of a contradiction that was real and is
+Recording the contracts exposed two places where the implementation, the specification and the
+parser disagreed. Both are kept here as worked examples of contradictions that were real and are
 now closed; the reproductions below are historical evidence, not current behaviour.
 
 **`finally` was accepted by the parser although it does not exist in the language.** `language.md`
@@ -184,6 +184,54 @@ of the corpus found no pre-existing `.oq` file using the word, so nothing in the
 that cost; the only files that mention it are the conformance cases `238`, `239` and `240` added
 here, which pin both paths and the name position. `language.md` documents the supported cleanup
 idiom. Contract `#10` is consistent again.
+
+**Unimplemented constructs named the token after them, not themselves.** The same class of defect
+as the one above, and the reason `finally` could not simply be left alone. Every construct
+Oqthara does not have was reported as a problem with whatever followed it:
+
+```
+$ oq run m.oq           # match x
+error: unexpected 'x' after a statement
+
+$ oq run c.oq           # result = [n * 2 for n in 1 to 3]
+error: expected ']' to close the list
+```
+
+Both messages are true and both describe the wrong thing. The writer did not type a stray `x`;
+they typed a construct the language lacks, and deleting the `x` produces a different program, not
+the one they meant. The `]` message is worse still, because it is actionable: adding the bracket
+yields a valid program with behaviour unlike the comprehension intended.
+
+**Resolved.** Two contextual parser rules (ADR-0062). A leader word names the construct when the
+next token cannot continue an expression, and a `for` where a closing bracket is expected names
+the comprehension shape:
+
+```
+$ java -jar oq.jar run m.oq
+error: match is not a construct in Oqthara
+
+$ java -jar oq.jar run c.oq
+error: list comprehensions are not implemented
+```
+
+These words are deliberately **not** reserved, unlike `finally`. `examples/grep.oq:20` writes
+`for match in search(...)` and `examples/hanoi.oq:5` writes `fun hanoi(n, from, to, via)`, so hard
+reservation would turn two shipped examples into parse errors. The refusal is contextual: it
+requires that the next token cannot continue an expression, so `match = 5`, `print match`,
+`match - 1` and `match and 1` still parse. A `for` inside brackets has no such conflict, because
+`for` is already a keyword and no legal collection literal can contain it.
+
+The chokepoint is the `Ast.Var` construction, not the statement paths. An earlier version checked
+only the bare-expression and assignment forms, so `return yield 1`, `print yield 1`, `f(yield 1)`,
+`[yield 1]` and six other positions still blamed the operand. Putting the guard where a variable
+reference is created covers every expression position with one call site.
+
+`scripts/probe-construct-leaders.py` measures both halves -- ten leaders naming themselves in ten
+operand positions, eight nested positions and two assignment positions, four comprehension shapes
+naming themselves, sixty name positions and one hundred and fifty continuation positions still
+accepted -- and exits 1 if any half regresses. Conformance cases `242` and `243` pin the messages;
+`244` is executable and pins that the words remain usable as names; `204` guards the contextual
+range case.
 
 ## 8.4 What "versioned" means here
 
