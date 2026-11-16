@@ -202,8 +202,9 @@ they typed a construct the language lacks, and deleting the `x` produces a diffe
 the one they meant. The `]` message is worse still, because it is actionable: adding the bracket
 yields a valid program with behaviour unlike the comprehension intended.
 
-**Resolved.** Two contextual parser rules (ADR-0062). A leader word followed by an operand names
-the construct, and a `for` where a closing bracket is expected names the comprehension shape:
+**Resolved.** Two contextual parser rules (ADR-0062). A leader word names the construct when the
+next token cannot continue an expression, and a `for` where a closing bracket is expected names
+the comprehension shape:
 
 ```
 $ java -jar oq.jar run m.oq
@@ -216,12 +217,21 @@ error: list comprehensions are not implemented
 These words are deliberately **not** reserved, unlike `finally`. `examples/grep.oq:20` writes
 `for match in search(...)` and `examples/hanoi.oq:5` writes `fun hanoi(n, from, to, via)`, so hard
 reservation would turn two shipped examples into parse errors. The refusal is contextual: it
-requires the operand, so `match = 5` and `print match` still parse. A `for` inside brackets has no
-such conflict, because `for` is already a keyword and no legal collection literal can contain it.
-`scripts/probe-construct-leaders.py` measures both halves -- ten leaders naming themselves, four
-comprehension shapes naming themselves, and sixty name positions still accepted -- and exits 1 if
-either half regresses. Conformance cases `242` and `243` pin the messages; `244` is executable and
-pins that the words remain usable as names.
+requires that the next token cannot continue an expression, so `match = 5`, `print match`,
+`match - 1` and `match and 1` still parse. A `for` inside brackets has no such conflict, because
+`for` is already a keyword and no legal collection literal can contain it.
+
+The chokepoint is the `Ast.Var` construction, not the statement paths. An earlier version checked
+only the bare-expression and assignment forms, so `return yield 1`, `print yield 1`, `f(yield 1)`,
+`[yield 1]` and six other positions still blamed the operand. Putting the guard where a variable
+reference is created covers every expression position with one call site.
+
+`scripts/probe-construct-leaders.py` measures both halves -- ten leaders naming themselves in ten
+operand positions, eight nested positions and two assignment positions, four comprehension shapes
+naming themselves, sixty name positions and one hundred and fifty continuation positions still
+accepted -- and exits 1 if any half regresses. Conformance cases `242` and `243` pin the messages;
+`244` is executable and pins that the words remain usable as names; `204` guards the contextual
+range case.
 
 ## 8.4 What "versioned" means here
 

@@ -69,8 +69,29 @@ class ConstructLeaderProbeTest(unittest.TestCase):
         missing = [label for label, template in self.probe.VALUE_POSITIONS if "{source}" not in template]
         self.assertEqual([], missing, "these value positions never substitute the leader")
 
+    def test_every_nested_and_terminated_template_holds_the_source_slot(self):
+        # The nested rows are the ones that exposed the statement-path design; the terminated
+        # rows expose the opposite error. Both substitute the leader, so a template that forgot
+        # the slot would silently pass either check.
+        for group in ("NESTED_POSITIONS", "TERMINATED_STATEMENTS"):
+            missing = [label for label, template in getattr(self.probe, group) if "{source}" not in template]
+            self.assertEqual([], missing, f"these {group} rows never substitute the leader")
+
+    def test_every_continued_expression_holds_the_leader_slot(self):
+        # A continuation row that does not name the leader tests an ordinary expression, which
+        # passes on any build and proves nothing about the contextual guard.
+        missing = [label for label, template in self.probe.CONTINUED_EXPRESSIONS if "{leader}" not in template]
+        self.assertEqual([], missing, "these continuation rows never substitute the leader")
+
+    def test_every_leader_is_refused_in_every_nested_position(self):
+        # The chokepoint covers these only if the guard is reached from nested expressions, so
+        # the probe must exercise all of them for all ten leaders, not a sample.
+        self.assertEqual(10, len(self.probe.OPERANDS))
+        self.assertGreaterEqual(len(self.probe.NESTED_POSITIONS), 8)
+
     def test_labels_are_unique(self):
-        for group in ("OPERANDS", "VALUE_POSITIONS", "NAME_POSITIONS", "COMPREHENSIONS"):
+        for group in ("OPERANDS", "VALUE_POSITIONS", "NAME_POSITIONS", "NESTED_POSITIONS",
+                      "CONTINUED_EXPRESSIONS", "TERMINATED_STATEMENTS", "COMPREHENSIONS"):
             rows = getattr(self.probe, group)
             labels = [row[0] for row in rows]
             self.assertEqual(len(labels), len(set(labels)), f"duplicate labels in {group}")

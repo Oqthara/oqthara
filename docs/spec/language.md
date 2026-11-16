@@ -1237,9 +1237,9 @@ error: match is not a construct in Oqthara
 ```
 
 The words `match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import` and
-`throw` are only refused when they are **used as syntax**, that is, when something follows them
-on the line. Each one remains a legal name, because `match` and `from` already are in shipped
-examples:
+`throw` are only refused when they are **used as syntax**, that is, when the token after them
+cannot continue an expression. Each one remains a legal name, because `match` and `from` already
+are in shipped examples:
 
 ```
 match = 5
@@ -1250,9 +1250,35 @@ end
 fun add(from, to)
   return from + to
 end
+print add(1, 2)         # 3
 ```
 
-A comprehension is refused by name too, in all four shapes, because a `for` inside brackets
+The rule is stated as "the next token cannot continue an expression" rather than "something
+follows on the line", because operators, brackets, dots, assignment, the end of a statement and
+the contextual range words `to` and `until` all continue an expression. `match x` and `yield 1`
+put two expressions side by side, which the grammar never allows, so no other reading exists.
+
+A leader name may be followed by an operator, because that is an ordinary expression over a
+variable:
+
+```
+match = 5
+print match - 1         # 4
+print match * 2         # 10
+```
+
+The range words are the subtle case, since `to` and `until` also lex as identifiers. `from until
+until` is the range from a variable named `from` to a variable named `until`:
+
+```
+from = 1
+until = 4
+for n in from until until
+  print n               # 1, 2, 3
+end
+```
+
+A comprehension is refused by name too, in all five shapes, because a `for` inside brackets
 cannot begin anything else:
 
 ```
@@ -1269,7 +1295,8 @@ error: list comprehensions are not implemented
         loop body.
 ```
 
-The map, set and generator forms say `map`, `set` and `generator` respectively. See ADR-0062,
+The map, set, generator and tuple forms say `map`, `set`, `generator` and `tuple`
+respectively. See ADR-0062,
 and `scripts/probe-construct-leaders.py` for the measured behaviour of every leader in every
 name position.
 

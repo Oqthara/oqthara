@@ -63,11 +63,10 @@ word: finally
 positions probed: 42
 accepted: 0
 rejected: 42
-refused by the reservation itself: 32
-distinct messages: 6
-   32x error: finally does not exist
-    4x error: expected ']' to close the list
-    3x error: unexpected keyword 'finally' after a statement
+refused by the reservation itself: 35
+distinct messages: 5
+   35x error: finally does not exist
+    4x error: list comprehensions are not implemented
     1x error: unexpected ',' after a statement
     1x error: unexpected keyword 'finally' in a class body
     1x error: invalid expression inside text: finally does not exist
@@ -75,11 +74,10 @@ distinct messages: 6
 ok: no position accepts 'finally' as a name
 ```
 
-Thirty-two of the 42 slots that only a name can fill -- a variable, a parameter, a field, the
+Thirty-five of the 42 slots that only a name can fill -- a variable, a parameter, a field, the
 `catch` name, a call target, an index -- reach `Parser.reserved` and say
-`finally does not exist`. The other ten are refused by whatever rule owns that position, which is
-the right outcome but a different sentence: `class finally()` and `contract finally` are
-`unexpected keyword 'finally' after a statement`, a `finally` in a class body is
+`finally does not exist`. The other seven are refused by whatever rule owns that position, which
+is the right outcome but a different sentence: a `finally` in a class body is
 `unexpected keyword 'finally' in a class body`, `a, finally = [1, 2]` is
 `unexpected ',' after a statement`, and a `finally` inside text interpolation is folded into the
 enclosing message, giving `invalid expression inside text: finally does not exist`. The guarantee
@@ -87,11 +85,12 @@ is that the word is never accepted and never silently skipped, not that one stri
 site. The probe exits non-zero if any position ever accepts the word, so `--check` can be wired
 into a gate.
 
-The four `expected ']' to close the list` rows are comprehensions, and they are not evidence
-either way: comprehensions are unimplemented (`alpha-6-requirement-matrix.md` records every form
-as `NOT STARTED`), so the list rule refuses the program before the word is examined. An earlier
-draft of this paragraph listed a comprehension clause as a slot that reaches `Parser.reserved`,
-which the language cannot produce.
+The four `list comprehensions are not implemented` rows are not evidence either way:
+comprehensions are unimplemented, so the list rule refuses the program before the word is
+examined. An earlier draft of this paragraph listed a comprehension clause as a slot that reaches
+`Parser.reserved`, which the language cannot produce. ADR-0062 later moved `for` in that position
+from the bracket message to a comprehension name, which is why these four rows read differently
+from the earlier measurement this record carried.
 
 ```
 error: finally does not exist

@@ -193,7 +193,9 @@ public final class Parser {
                             + "cleanup at the end of the 'try' block and at the end of the "
                             + "'catch' block, or call one function from both.");
             default -> error(token, "'" + token.lexeme() + "' is reserved",
-                    "It is kept for future syntax and cannot be used as a name.");
+                    "It is kept for future syntax, so it is refused everywhere rather than "
+                            + "silently becoming a variable that fails only when the line runs. "
+                            + "Rename the variable.");
         };
     }
 
@@ -223,7 +225,6 @@ public final class Parser {
         Ast.Expr expr = expression();
         if (match(Token.Kind.ASSIGN)) {
             Ast.Expr value = expression();
-            rejectUnimplementedConstruct(value);
             endStatement();
             return assignmentFrom(expr, value);
         }
@@ -231,7 +232,6 @@ public final class Parser {
                 || check(Token.Kind.STAR_ASSIGN) || check(Token.Kind.SLASH_ASSIGN)) {
             Token op = advance();
             Ast.Expr value = expression();
-            rejectUnimplementedConstruct(value);
             endStatement();
             if (!(expr instanceof Ast.Var var)) {
                 throw error(op, "compound assignment needs a variable on the left", null);
@@ -244,7 +244,6 @@ public final class Parser {
             };
             return new Ast.CompoundAssign(var.name(), kind, value, op.span());
         }
-        rejectUnimplementedConstruct(expr);
         endStatement();
         return new Ast.ExprStmt(expr, expr.span());
     }
@@ -1005,6 +1004,7 @@ public final class Parser {
                 Ast.Expr body = expression();
                 return new Ast.Lambda(List.of(name.lexeme()), body, null, name.span());
             }
+            rejectUnimplementedConstruct(name);
             return new Ast.Var(name.lexeme(), name.span());
         }
         throw error(peek(), "expected an expression", "Found " + describe(peek()) + " instead.");
@@ -1041,6 +1041,7 @@ public final class Parser {
             skipNewlines();
             if (!match(Token.Kind.COMMA)) break;
         }
+        rejectComprehension("tuple");
         expect(Token.Kind.RPAREN, "to close the tuple");
         return new Ast.TupleLit(items, paren.span());
     }
@@ -1323,29 +1324,53 @@ public final class Parser {
             return;
         }
         if (check(Token.Kind.EOF)) return;
-        if (check(Token.Kind.KEYWORD) && Lexer.RESERVED.contains(peek().lexeme())) {
-            throw reserved(peek());
-        }
+        rejectReserved();
         throw error(peek(), "unexpected " + describe(peek()) + " after a statement",
                 "Statements end at the end of the line.");
     }
 
     /**
-     * Names the construct instead of the operand for a leader word that was consumed as a bare
-     * identifier expression. {@code match x} would otherwise blame {@code x}, which sends the
-     * writer to look for a broken statement after a line that looked correct to them.
+     * Names the construct instead of the operand when a leader word has been read as a bare
+     * identifier and the token after it cannot continue an expression. `match x` and
+     * `yield 1` are two expressions in a row, which the grammar has no rule for, so the only
+     * reading is a writer asking for syntax that does not exist here. An operator, a call
+     * parenthesis, a dot, a bracket, an assignment or a line end all continue the expression
+     * normally and stay legal, which is what keeps `match - 1` and `async fun g()` distinct.
      */
-    private void rejectUnimplementedConstruct(Ast.Expr expr) {
-        if (!(expr instanceof Ast.Var var) || !CONSTRUCT_LEADERS.contains(var.name())) {
+    private void rejectUnimplementedConstruct(Token name) {
+        if (!CONSTRUCT_LEADERS.contains(name.lexeme()) || continuesExpression()) {
             return;
         }
-        if (atStatementEnd()) {
-            // A bare name on its own line is a variable read, which is exactly what a program
-            // that means `match` as a name does. Nothing here proves the construct was meant.
-            return;
+        throw error(name, name.lexeme() + " is not a construct in Oqthara",
+                constructHint(name.lexeme()));
+    }
+
+    private boolean continuesExpression() {
+        if (peek().kind() == Token.Kind.IDENT) {
+            // `to` and `until` are contextual range operators that also lex as identifiers, so
+            // `from until until` is the range from the variable `from` to the variable `until`
+            // (conformance 204). An ordinary identifier after a leader is the operand the
+            // missing construct would take, so only these two continue the expression.
+            String text = peek().lexeme();
+            return text.equals("to") || text.equals("until");
         }
-        throw error(previous(), var.name() + " is not a construct in Oqthara",
-                constructHint(var.name()));
+        return switch (peek().kind()) {
+            case NEWLINE, EOF, SEMICOLON, COMMA, COLON, DOT, PIPE,
+                 LPAREN, RPAREN, LBRACKET, RBRACKET, RBRACE,
+                 PLUS, MINUS, STAR, SLASH, PERCENT, STARSTAR,
+                 ASSIGN, PLUS_ASSIGN, MINUS_ASSIGN, STAR_ASSIGN, SLASH_ASSIGN,
+                 EQEQ, NOTEQ, LT, LE, GT, GE -> true;
+            // `and`, `or` and `in` are operators, so `match and 1` is an ordinary expression
+            // over a variable named `match`. `end`, `else` and `catch` close a block, so a
+            // leader before one of them is a bare name in a position the grammar rejects for
+            // any name -- `match end` is no more a construct than `x end` is. Every other
+            // keyword can be the operand a construct would take, including `fun` after
+            // `async`, which is the one leader spelling followed by syntax.
+            case KEYWORD -> checkKeyword("and") || checkKeyword("or") || checkKeyword("in")
+                    || checkKeyword("end") || checkKeyword("else") || checkKeyword("catch")
+                    || Lexer.RESERVED.contains(peek().lexeme());
+            case NUMBER, STRING, MULTILINE, IDENT, LBRACE -> false;
+        };
     }
 
     private static String constructHint(String leader) {
@@ -1468,6 +1493,10 @@ public final class Parser {
 
     private boolean check(Token.Kind kind) {
         return peek().kind() == kind;
+    }
+
+    private boolean checkKeyword(String keyword) {
+        return peek().kind() == Token.Kind.KEYWORD && peek().lexeme().equals(keyword);
     }
 
     private boolean checkNext(Token.Kind kind) {

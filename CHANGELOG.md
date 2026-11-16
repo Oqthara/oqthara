@@ -37,9 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   valid program with the wrong behaviour. Each construct now names itself
   (`error: match is not a construct in Oqthara`, `error: list comprehensions are not
   implemented`) with a hint naming the supported alternative (ADR-0062). The refusal is
-  contextual — it requires the operand — because `match`, `from` and `await` are ordinary names
-  in `examples/grep.oq` and `examples/hanoi.oq`, and hard-reserving them would have broken two
-  shipped programs.
+  contextual — it fires only when the next token cannot continue an expression — because
+  `match`, `from` and `await` are ordinary names in `examples/grep.oq` and `examples/hanoi.oq`,
+  and hard-reserving them would have broken two shipped programs. It runs at the point where a
+  variable reference is built, so every expression position is covered rather than the statement
+  forms someone remembered to patch.
 
 ### Changed
 - **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,

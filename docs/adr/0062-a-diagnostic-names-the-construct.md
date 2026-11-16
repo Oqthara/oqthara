@@ -41,17 +41,31 @@ could have meant.
 
 Two contextual rules, both in the parser.
 
-**A leader word with an operand names the construct.** `Parser.CONSTRUCT_LEADERS` is
-`match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import`, `throw`.
-When an expression is a bare `Ast.Var` reading one of those names *and* the parser is not at the
-end of the statement, the error names the word and carries a hint saying what to write instead.
+**A leader word that cannot continue an expression names the construct.** `Parser.CONSTRUCT_LEADERS`
+is `match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import`, `throw`.
+When the parser has just read a bare identifier naming one of those words and the next token
+cannot continue the expression, the error names the word and carries a hint saying what to write
+instead.
 
-The rule has to run on **every** statement path, not only the bare-expression one. The first
-version of this change placed it only on that path, so `yield 1` named the construct while
-`x = yield 1` still reported `unexpected number 1 after a statement`. The assignment branch
-reached `endStatement` before the value was examined. Probing the matrix's evidence rows caught
-it; the probe now covers both assignment branches and the regression test
-`anUnimplementedConstructIsNamedInAnAssignmentValue` fails without the two extra calls.
+Two expressions cannot sit next to each other in this grammar, so `match x` and `yield 1` have
+no reading other than a writer asking for syntax that does not exist. Everything that *can*
+continue an expression keeps the name legal, and that list is longer than it looks: operators,
+call parentheses, dots, brackets, assignment, and the contextual range words `to` and `until`.
+
+The rule is stated as "cannot continue" rather than "is followed by an operand" because the
+inverse formulation was wrong twice. The first draft refused a leader followed by an identifier,
+a number, a string, or any non-reserved keyword, which broke `match and 1` -- `and` is an
+operator, so that is an ordinary expression over a variable named `match`. Taking literal
+keywords only then broke `async fun g()`, where the token after `async` is the `fun` keyword
+rather than an operand, and it is the one leader spelling that is followed by syntax.
+
+The rule lives where the `Ast.Var` is created, not on the statement paths. The first two
+versions put it on statement forms: the bare-expression path, then additionally the two
+assignment branches after `x = yield 1` escaped. Both were incomplete in the same way --
+`return yield 1`, `print yield 1`, `if yield 1`, `while yield 1`, `f(yield 1)`, `[yield 1]`,
+`assert yield 1`, `for x in yield 1` and `x = [yield 1]` all still blamed the operand. Running
+the check at the single site that constructs a variable reference covers every position at once
+and cannot drift as statement forms are added.
 
 ```
 error: match is not a construct in Oqthara
@@ -77,7 +91,9 @@ error: list comprehensions are not implemented
 ```
 
 Every message is measured by `scripts/probe-construct-leaders.py`, which probes all ten leaders
-before an operand, all four comprehension shapes, and sixty name positions:
+before an operand, in two assignment positions, eight nested positions and three
+terminator positions, all five comprehension shapes, sixty name positions, and one hundred and
+fifty expression-continuation positions:
 
 ```
 $ python3 scripts/probe-construct-leaders.py
@@ -85,9 +101,12 @@ leaders probed: 10
 operand diagnostics naming the construct: 10 of 10
 diagnostics carrying a construct-specific hint: 10 of 10
 assignment values naming the construct: 20 of 20
+nested positions naming the construct: 80 of 80
 name positions per leader: 6
 name positions still accepted: 60 of 60
-comprehension shapes naming themselves: 4 of 4
+expressions after a leader still accepted: 150 of 150
+terminated statements not blamed as constructs: 30 of 30
+comprehension shapes naming themselves: 5 of 5
 
 ok: every construct leader names itself before an operand and stays usable as a name
 ```
@@ -104,21 +123,32 @@ change by running the same probe against the pre-change parser:
 ```
 before: operand diagnostics naming the construct: 0 of 10
 before: diagnostics carrying a construct-specific hint: 0 of 10
-before: comprehension shapes naming themselves: 0 of 4
+before: assignment values naming the construct: 0 of 20
+before: nested positions naming the construct: 0 of 80
+before: comprehension shapes naming themselves: 0 of 5
 before: name positions still accepted: 60 of 60
+before: expressions after a leader still accepted: 150 of 150
+before: terminated statements not blamed as constructs: 30 of 30
 
 after:  operand diagnostics naming the construct: 10 of 10
 after:  diagnostics carrying a construct-specific hint: 10 of 10
-after:  comprehension shapes naming themselves: 4 of 4
-after:  name positions still accepted: 60 of 60
 after:  assignment values naming the construct: 20 of 20
+after:  nested positions naming the construct: 80 of 80
+after:  comprehension shapes naming themselves: 5 of 5
+after:  name positions still accepted: 60 of 60
+after:  expressions after a leader still accepted: 150 of 150
+after:  terminated statements not blamed as constructs: 30 of 30
 ```
 
-`60 of 60` in the "before" column is the point of the fourth row: the name positions were never
-broken, and the fix had to leave them exactly as they were. The probe exits 1 on the before
-build with 24 failures and 0 on the after build, so it can gate.
+`60 of 60`, `150 of 150` and `30 of 30` in the "before" column are the point of the last three
+rows: none of those positions were ever broken, and the fix had to leave all three exactly as
+they were. The probe exits 1 on the before build with 125 failures -- one per refused probe --
+and 0 on the after build, so it can gate. An earlier draft of this record claimed 24; that was
+the operand and hint rows alone, counted before the assignment, nested, tuple and terminator
+rows existed, and re-running the current probe against the pre-change jar is the only way to
+get the number this table now states.
 
-and the messages themselves, side by side:
+The messages themselves, side by side:
 
 | Written | Before | After |
 |---|---|---|
@@ -136,6 +166,7 @@ and the messages themselves, side by side:
 | `{n: n for n in 1 to 3}` | `expected '}' to close the map` | `map comprehensions are not implemented` |
 | `{n for n in 1 to 3}` | `expected '}' to close the set` | `set comprehensions are not implemented` |
 | `(n for n in 1 to 3)` | `expected ')' to close the expression` | `generator comprehensions are not implemented` |
+| `(1, 2, n for n in 1 to 3)` | `expected ')' to close the tuple` | `tuple comprehensions are not implemented` |
 
 ### Why these ten are not reserved
 
@@ -153,15 +184,19 @@ examples/hanoi.oq:5   fun hanoi(n, from, to, via)
 
 `await` is a plausible name for a field holding a pending result. Reserving the set would have
 turned two shipped examples into parse errors, which is a regression sold as a diagnostic
-improvement. So the refusal is *contextual*: it needs the operand. The guard is
-`!atStatementEnd()`, and it is the load-bearing half of the rule — `match` alone at the end of a
+improvement. So the refusal is *contextual*: it needs the next token to be one that cannot
+continue an expression. The guard is `continuesExpression()`, and it is the load-bearing half of
+the rule — `match` followed by an operator, a bracket, a dot, an assignment or the end of a
 statement is a variable read, and `match x` is a construct that does not exist.
 
-That distinction is exactly what the probe tests. Its sixty name positions (`assign-target`,
-`command-argument`, `for-variable`, `parameter`, `function-name`, `bare-read`, for each of ten
-leaders) must all keep parsing, so the fix cannot silently drift into the hard reservation it
-was written to avoid. A future contributor who "simplifies" this by adding the words to
-`Lexer.KEYWORDS` fails the probe and `ParserTest.everyConstructLeaderRemainsUsableAsAName`.
+That distinction is exactly what the probe tests, in two directions. Its sixty name positions
+(`assign-target`, `command-argument`, `for-variable`, `parameter`, `function-name`, `bare-read`,
+for each of ten leaders) must all keep parsing, and so must its one hundred and fifty
+continuation positions (fifteen ways of continuing an expression for each of ten leaders). A
+future contributor who "simplifies" this by adding the words to `Lexer.KEYWORDS` fails the probe
+and `ParserTest.everyConstructLeaderRemainsUsableAsAName`; one who "simplifies" it by refusing
+any following token fails `ParserTest.anOperatorAfterALeaderNameIsStillAnExpression` and
+`ParserTest.aContextualRangeOperatorAfterALeaderNameIsStillARange`.
 
 ### Why the comprehension rule needs no such guard
 
@@ -169,7 +204,7 @@ was written to avoid. A future contributor who "simplifies" this by adding the w
 `for`" cannot misfire, and `(1 + 2)` and `[[1], [2]]` are pinned by
 `ParserTest.anOrdinaryCollectionLiteralIsStillAccepted` so it stays that way.
 
-The four shapes get four messages rather than one, because the repair differs: a list is built
+The five shapes get five messages rather than one, because the repair differs: a list is built
 with `push`, a map with an index assignment, a set with `add`. A single "comprehensions are not
 implemented" would be accurate and would leave the reader to work out which of the four they
 wrote.
@@ -181,6 +216,36 @@ checks `Lexer.RESERVED` before its generic message, so a reserved word in statem
 reports the reservation rather than the token after it. The two rules compose: `finally` used
 as a construct is refused by the reservation (ADR-0061), and a leader word with an operand is
 refused by this rule.
+
+### Why these ten and not the others
+
+The inclusion test is narrow on purpose: a word is a leader only if it is the keyword of a
+construct that another language a pseudocode reader is likely to have written would use, **and**
+the word can stay a legal identifier. Ten words pass. The ones that do not are worth naming,
+because they were each considered:
+
+- `class` is not a leader because `class` is implemented. `conformance/228-classes-and-contracts.oq`
+  runs `class Square(side) implements Shape` today.
+- `fn` is not a leader because `examples/memoize.oq:2` declares `fun memoize(fn)` and reads
+  `fn(n)`. It is a shipped parameter name.
+- `let`, `var`, `new`, `foreach`, `lambda`, `struct`, `enum`, `interface`, `repeat`, `function`
+  and `unless` all still produce `unexpected '<token>' after a statement`. They are absent
+  because nothing in the corpus writes them and the ten that are present cover every construct
+  the matrix records as missing. Adding one is a one-line change to `CONSTRUCT_LEADERS` plus a
+  probe row, and costs nothing against the keyword budget, because the rule is contextual.
+
+That last property is the reason the set can grow safely: a word added to `CONSTRUCT_LEADERS`
+that a program legitimately uses as a name in a continuing position is unaffected, and the
+probe's sixty name positions and one hundred and fifty continuation positions would catch a
+word that was not.
+
+### A block terminator after a leader is not a construct
+
+`match end` is invalid, but not because `match` is a construct: `x end` is invalid the same way,
+since `end` does not belong on the line. So the refusal exempts `end`, `else`, `catch` and the
+reserved words, and the program gets the ordinary `unexpected keyword 'end' after a statement`
+instead. This was found in review against the first committed version, which asserted something
+false about the source.
 
 ### What this does not do
 
@@ -199,13 +264,18 @@ or `PARTIAL`; only the row for the diagnostic itself closes.
   documentation gate in `scripts/check-docs-sync.py` is untouched.
 - Two shipped examples and any downstream code using these words as names keep working; the
   probe enforces it.
-- Five new parser tests pin the behaviour, and the mutation evidence is that each one fails
-  when its rule is removed: deleting the construct check, forcing the contextual guard off,
-  removing the `atStatementEnd` early return, deleting one comprehension call, and removing the
-  two assignment-path calls each produce a failing test.
+- Five new parser tests pin the behaviour, and the mutation evidence is that each fails when its
+  rule is removed: forcing the guard off, making `continuesExpression()` always return false, and
+  deleting the `rejectUnimplementedConstruct(name)` call site each produced three failing tests.
+  The statement-path design this record superseded needed per-path mutation checks because each
+  call site was independent; the chokepoint has exactly one.
 - Three conformance cases were added: `242` and `243` are `.err` cases pinning the message, and
   `244` is executable and proves the leader words still work as names. `244` moved the measured
   corpus from 215 to 216 executable and 206 to 207 compiled; all three baseline pins were
   updated from that measurement, not toward it.
+- Conformance case `204` uses `from` and `until` as parameter names and reads
+  `for n in from until until`, which is why `to` and `until` are exempt from the refusal. That
+  case is the standing regression guard for the contextual-range false positive; it caught the
+  bug that unit tests and a hand-run sweep both missed.
 - A future attempt to implement any of these ten constructs must remove its entry from
   `CONSTRUCT_LEADERS` and supersede this record.
