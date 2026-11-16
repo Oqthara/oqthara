@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -397,6 +398,7 @@ class ParserTest {
                 "data P(x: Int)",
                 "data P(x: Int, y)",
                 "data P(x, y: Int)",
+                "data P(x: Int = 1)",
                 "data P(x, y: Int = 2)",
                 "class C(v: Int)\nend",
                 "class C(v, w: Int)\nend");
@@ -404,19 +406,49 @@ class ParserTest {
             OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
                     "expected a refusal for: " + source);
             assertEquals("typed fields are not supported", error.getMessage(), source);
-            assertFalse(error.getMessage().contains("field list"),
-                    "still blaming an unclosed bracket for: " + source);
             assertTrue(error.hint().contains("dynamically typed"),
                     "expected the decision in the hint for: " + source);
         }
     }
 
     @Test
-    void aFieldDefaultIsNotMistakenForAType() {
-        // The colon check has to run after the default expression, or `x = 1` would be read as
-        // a type annotation and every default would be refused.
-        assertDoesNotThrow(() -> Parser.parse("t", "data P(x = 1, y = 2)"));
-        assertDoesNotThrow(() -> Parser.parse("t", "class C(v = 5)\nend"));
+    void aParameterNamesTheDecisionInsteadOfABracket() {
+        // The same decided question, one construct to the left. A colon cannot start a
+        // parameter default, so there is no spelling that makes this guard ambiguous.
+        List<String> sources = List.of(
+                "fun f(a: Point)\n  return a\nend",
+                "fun f(a, b: Point)\n  return a\nend",
+                "fun f()\n  g = fun(x: Int) x\n  return g\nend",
+                "class C(v)\n  fun m(a: Int)\n    return a\n  end\nend",
+                "contract K\n  fun m(a: Int)\nend");
+        for (String source : sources) {
+            OqError error = assertThrows(OqError.class, () -> Parser.parse("t", source),
+                    "expected a refusal for: " + source);
+            assertEquals("typed parameters are not supported", error.getMessage(), source);
+            assertTrue(error.hint().contains("dynamically typed"),
+                    "expected the decision in the hint for: " + source);
+        }
+    }
+
+    @Test
+    void aFieldDefaultSurvivesAsADefault() {
+        // Placing the colon check ahead of the default expression is only safe if a default
+        // never begins with a colon. Pin the AST, not just the absence of a throw: a guard that
+        // swallowed the default would parse and silently lose the value.
+        Ast.DataDecl data = (Ast.DataDecl) Parser.parse("t", "data P(x = 1, y = 2)").statements().get(0);
+        assertEquals(2, data.fields().size());
+        assertInstanceOf(Ast.NumberLit.class, data.fields().get(0).defaultValue());
+        assertInstanceOf(Ast.NumberLit.class, data.fields().get(1).defaultValue());
+
+        Ast.ClassDecl klass = (Ast.ClassDecl) Parser.parse("t", "class C(v = 5)\nend").statements().get(0);
+        assertEquals(1, klass.fields().size());
+        assertInstanceOf(Ast.NumberLit.class, klass.fields().get(0).defaultValue());
+
+        Ast.DataDecl bare = (Ast.DataDecl) Parser.parse("t", "data Q(x, y)").statements().get(0);
+        assertNull(bare.fields().get(0).defaultValue());
+
+        // A default whose expression contains a colon must not be mistaken for a type.
+        assertDoesNotThrow(() -> Parser.parse("t", "data P(m = {\"a\": 1})"));
     }
 
     @Test

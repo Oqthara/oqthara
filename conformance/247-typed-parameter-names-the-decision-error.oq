@@ -1,0 +1,10 @@
+# Typed parameters are the same decided question as typed fields: type-system-decision-brief.md
+# answered "no typed fields" on 2026-11-13, and a parameter annotation is the same request one
+# construct to the left. Before this, `fun f(a: Int)` reported "expected ')' to close the
+# parameter list" — the identical misleading bracket message ADR-0062 forbids.
+#
+# ParserTest.aParameterNamesTheDecisionInsteadOfABracket covers `fun`, anonymous `fun`, methods
+# and contract signatures; this pins one end to end.
+fun f(a: Int)
+  return a
+end

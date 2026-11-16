@@ -48,9 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decision recorded on 2026-11-13 rather than work still to do. Adding the bracket does not
   produce the program the writer meant, it produces a different one, so the diagnostic was
   misleading in the way ADR-0062 forbids. `data` and `class` now report
-  `typed fields are not supported` and name the decision in the hint. Field defaults are
-  unaffected, because the check runs after the default expression — `data P(x = 1)` is still a
-  default, not a type.
+  `typed fields are not supported`, and `fun`, anonymous `fun` and contract signatures report
+  `typed parameters are not supported`; each names the type model in its hint. Defaults are
+  unaffected: a default expression can never begin with a colon, so `data P(x = 1)` is still a
+  default, not a type. Typed parameters are covered too because the same decision answers them,
+  and leaving them one construct away would have kept the identical misleading message.
 - **Seven of the sixteen comparisons against `NaN` returned the wrong answer.** `NaN` is
   unordered, so every relational operator must answer false for it. Instead `nan > 1.0`,
   `nan >= 1.0`, `nan <= nan`, `nan >= nan`, `1.0 < nan`, `1.0 <= nan` and `nan >= 2.0` all

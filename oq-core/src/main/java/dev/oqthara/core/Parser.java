@@ -319,6 +319,7 @@ public final class Parser {
         if (!check(Token.Kind.RPAREN)) {
             do {
                 params.add(expect(Token.Kind.IDENT, "a parameter name").lexeme());
+                rejectTypedParameter();
             } while (match(Token.Kind.COMMA));
         }
         expect(Token.Kind.RPAREN, "to close the parameter list");
@@ -336,11 +337,11 @@ public final class Parser {
         if (!check(Token.Kind.RPAREN)) {
             do {
                 Token field = expect(Token.Kind.IDENT, "a field name");
+                rejectTypedField();
                 Ast.Expr defaultValue = null;
                 if (match(Token.Kind.ASSIGN)) {
                     defaultValue = expression();
                 }
-                rejectTypedField();
                 fields.add(new Ast.FieldDef(field.lexeme(), defaultValue, field.span()));
             } while (match(Token.Kind.COMMA));
         }
@@ -394,11 +395,11 @@ public final class Parser {
         if (!check(Token.Kind.RPAREN)) {
             do {
                 Token field = expect(Token.Kind.IDENT, "a field name");
+                rejectTypedField();
                 Ast.Expr defaultValue = null;
                 if (match(Token.Kind.ASSIGN)) {
                     defaultValue = expression();
                 }
-                rejectTypedField();
                 fields.add(new Ast.FieldDef(field.lexeme(), defaultValue, field.span()));
             } while (match(Token.Kind.COMMA));
         }
@@ -458,6 +459,7 @@ public final class Parser {
         if (!check(Token.Kind.RPAREN)) {
             do {
                 params.add(expect(Token.Kind.IDENT, "a parameter name").lexeme());
+                rejectTypedParameter();
             } while (match(Token.Kind.COMMA));
         }
         expect(Token.Kind.RPAREN, "to close the parameter list");
@@ -504,6 +506,7 @@ public final class Parser {
                 if (!check(Token.Kind.RPAREN)) {
                     do {
                         expect(Token.Kind.IDENT, "a parameter name");
+                        rejectTypedParameter();
                         arity++;
                     } while (match(Token.Kind.COMMA));
                 }
@@ -1018,6 +1021,7 @@ public final class Parser {
         if (!check(Token.Kind.RPAREN)) {
             do {
                 params.add(expect(Token.Kind.IDENT, "a parameter name").lexeme());
+                rejectTypedParameter();
             } while (match(Token.Kind.COMMA));
         }
         expect(Token.Kind.RPAREN, "to close the parameter list");
@@ -1049,15 +1053,11 @@ public final class Parser {
     }
 
     /**
-     * Refuses a comprehension by name. A {@code for} inside brackets is unambiguously the
-     * construct, so the writer gets told the feature is absent instead of being sent to look
-     * for a bracket they did not forget.
-     */
-    /**
-     * Refuses a typed field by name. `data P(x: Int)` is a decided question, not missing work
-     * (docs/governance/remediation/type-system-decision-brief.md, 2026-11-13), so the writer is
-     * told the language is dynamically typed rather than sent to look for a bracket they did not
-     * forget. A colon after a field name has no other reading, so the refusal is contextual.
+     * Refuses a typed field by name. {@code data P(x: Int)} is a decided question, not missing
+     * work (docs/governance/remediation/type-system-decision-brief.md, 2026-11-13), so the
+     * writer is told the language is dynamically typed rather than sent to look for a bracket
+     * they did not forget. A colon after a field name has no other reading, so the refusal is
+     * contextual: it fires on the colon and never on a legal program.
      */
     private void rejectTypedField() {
         if (!check(Token.Kind.COLON)) {
@@ -1068,6 +1068,25 @@ public final class Parser {
                         + "without a type after it.");
     }
 
+    /**
+     * Refuses a typed parameter by name, for the same decided question as {@link #rejectTypedField}.
+     * A colon is not legal in a parameter list, so it can only be an attempted type annotation and
+     * the writer should be told that rather than sent to look for an unclosed bracket.
+     */
+    private void rejectTypedParameter() {
+        if (!check(Token.Kind.COLON)) {
+            return;
+        }
+        throw error(peek(), "typed parameters are not supported",
+                "Oqthara is dynamically typed: write the parameter as a plain name, "
+                        + "without a type after it.");
+    }
+
+    /**
+     * Refuses a comprehension by name. A {@code for} inside brackets is unambiguously the
+     * construct, so the writer gets told the feature is absent instead of being sent to look
+     * for a bracket they did not forget.
+     */
     private void rejectComprehension(String shape) {
         if (!check(Token.Kind.KEYWORD) || !peek().lexeme().equals("for")) {
             return;

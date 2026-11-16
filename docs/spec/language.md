@@ -912,11 +912,12 @@ print p
 `data` generates a constructor, field access and mutation, structural equality, a
 hash, and a readable text form. Fields may have defaults. There is no inheritance.
 
-Fields are never typed. `data Point(x: Int, y: Int)` reports `typed fields are not
+Fields and parameters are never typed. `data Point(x: Int, y: Int)` and
+`fun f(p: Point)` report `typed fields are not supported` and `typed parameters are not
 supported`; this is a decided question rather than missing work, recorded in
 [type-system-decision-brief.md](../governance/remediation/type-system-decision-brief.md)
-(2026-11-13). The diagnostic names the decision, because reporting an unclosed bracket
-would send the writer looking for a bracket they did not forget.
+(2026-11-13). The diagnostic names the type model instead of reporting an unclosed bracket,
+because reporting a bracket would send the writer looking for one they did not forget.
 
 Default expressions are evaluated **for each new instance**, so a mutable default does not
 leak between objects:
