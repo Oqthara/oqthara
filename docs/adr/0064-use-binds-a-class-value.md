@@ -110,15 +110,7 @@ prints `class java.lang.Math`, while the same program with `if false` fails with
 `'Math' is not defined`. So the leak is not a scope rule that can be modelled statically —
 whether the name exists depends on a value the compiler cannot read.
 
-`Lowering.block()`, `Lowering.function(...)` and `Lowering.lambda(...)` each lower into a
-different place than `main`, and none of them has a way to publish a name into the enclosing
-method's constant table on the path that reached them. Modelling the leak would need a registry
-shared across generated methods and initialised on whichever path ran first, which is a second
-mechanism for one statement that no program in the corpus uses: the only `use` in `examples/`
-is `examples/interop.oq` line 1, and `conformance/` contains none at all, top level or
-otherwise.
-
-So a `use` at depth greater than zero is **registered, then refused**:
+A `use` at depth greater than zero is **refused by name**, before its path is resolved:
 
 ```
 'use' only compiles at the top level
@@ -126,18 +118,76 @@ So a `use` at depth greater than zero is **registered, then refused**:
 
 and the jar falls back to the interpreter, which runs the program correctly. This is the same
 choice ADR-0031 made for other constructs: refuse truthfully rather than compile something
-subtly different.
+subtly different. The depth counter increments wherever lowering leaves `main`: `block()`,
+`function(...)`, `lambda(...)`, and `branchValue(...)` for a `try` expression's body and
+handler. `branchValue` needs its own increment because `tryExpression` emits a single
+`ScopeEnter` around the whole expression while lowering the two branches as separate scopes;
+without it, a `use` inside a `try` expression was analysed with the enclosing scope's
+registries and escaped the refusal entirely.
 
-Registering before refusing is load-bearing, not tidiness. `BytecodeCompiler.plan()` throws
-`variable 'x' is not defined in this scope` when it sees a load of a name that was never
-registered, and it reaches that load before it reaches the refusal opcode. Refusing without
-registering therefore masked the real reason behind a message blaming the reader's variable,
-which is exactly the misdirection ADR-0062 forbids. A refusal forces interpreter fallback, and
-the interpreter resolves the name itself, so a registration that is never used costs nothing.
+Two details of the refusal are load-bearing.
 
-The depth counter increments in all three of `block()`, `function(...)` and `lambda(...)`
-because each lowers its body somewhere other than `main`, and none of them goes through the
-others.
+**The path is not resolved first.** Resolving and then refusing was the original shape, and it
+made a nested `use java.lang.Mathh` fail with `cannot find Java class` instead of naming the
+construct that is unsupported — blame aimed at a spelling the writer may not have mistyped,
+which is what ADR-0062 forbids. The depth test therefore comes before `resolveClass`.
+
+**A second `use` of the same simple name is refused too**, with
+
+```
+'Date' is already the name of a used class
+```
+
+because the interpreter rebinds the name as each statement runs while a compiled name is fixed
+for the whole method. `use java.util.Date` / `use java.sql.Date` / `print Date(0)` prints
+`java.sql.Date`'s value when interpreted, and a compiler that kept only the first registration
+would print the other class's.
+
+`BytecodeCompiler.plan()` also raises a refusal as soon as it reaches one, rather than only
+when it emits it. `plan()` throws `variable 'x' is not defined in this scope` for a load of a
+name it never saw bound, and it walks the whole body before emitting anything, so a refusal
+that sat behind such a load would never be the reason reported. That is not hypothetical: a
+nested `use` followed by a read of its name reported the read. Raising in `plan()` keeps the
+refusal the reason, whichever instruction would have failed first.
+
+### Which binding hides the class: the current frame, not the chain
+
+A value that answers to the same name as a used class hides the class, but only when the
+binding is in the **frame the read happens in**. The interpreter decides this with
+`Env.hasLocal`, which is `values.containsKey(name)` and does not walk parents:
+
+```java
+if (env.hasLocal(var.name())) yield env.get(var.name());
+Class<?> type = javaTypes.get(var.name());
+if (type != null) yield type;
+```
+
+`evaluateCall` gates the same way. So a name bound in an enclosing scope does **not** hide the
+class in a nested block, and a top-level `Math = 5` followed by `if true` / `print Math` / `end`
+prints `5` outside the block and `class java.lang.Math` inside it. That asymmetry is the
+language, not an accident: the compiled backend reproduces it rather than smoothing it over.
+
+Two consequences for the lowering, both of which were wrong before review.
+
+**Scope analysis must mirror the frame, not the chain.** `Lowering` decides whether to lower a
+`use` name as a class constant or as a variable. Doing that with a chain walk hid the class
+wherever any enclosing scope had the name, so an outer assignment made a nested read compile to
+the variable while the interpreter still resolved the class — the two backends printed
+different things. It now asks only the current analysis scope, plus the declarations
+`Interpreter.hoist` binds into that scope before the block runs (a `fun`, `data`, `class` or
+`contract` named like a used class therefore hides it, which is also what happens interpreted).
+
+**A name declared into a block's frame is a current-scope binding of that block.**
+`Interpreter.executeBlock` runs its statements in the frame it is given, and the loop and
+handler arms hand it the very frame holding the loop variable or the caught error. Those names
+are thus current-scope bindings of the body, and the lowering seeds the body's analysis scope
+with them. Pushing a plain nested scope instead would make them look enclosing, which is the
+opposite of what the interpreter does.
+
+The call path is deliberately different: a callee bound in any enclosing scope still has to
+dispatch through the stored value, because the interpreter's `Env.get` does walk parents. So
+lowering keeps two predicates — one for "is this name a binding here", used by the class-value
+gates, and one for "is this name bound anywhere", used by dispatch and lambda capture.
 
 ### The `used before assignment` message is rewritten
 
@@ -157,7 +207,8 @@ does not claim an assignment the writer never wrote.
 
 Compiled programs call Java. `Math.abs`, `Integer.MAX_VALUE`, `ArrayList()` and `print Math`
 produce byte-identical output under `oq run` and `oq build`, and `docs/spec/backend.md`
-boundary item 2 is closed.
+boundary item 2 is narrowed to `modules` and the conditional `use` forms. It is not closed:
+a nested `use` still falls back, so interop is compiled exactly when every `use` is top level.
 
 Overload selection, argument conversion, and error hints are the interpreter's, reached
 reflectively, so the two backends cannot drift.
@@ -165,8 +216,13 @@ reflectively, so the two backends cannot drift.
 A `use` statement still costs nothing at run time beyond one `LDC`, and the class it names is
 never copied into the jar.
 
-`use` inside a function body is refused by name, so a program that does it keeps working through
-the fallback while the reason on the `codepath:` line says what is actually unsupported.
+`use` inside a function body, a block or a `try` expression is refused by name, so a program
+that does it keeps working through the fallback while the reason on the `codepath:` line says
+what is actually unsupported.
+
+The scope rule above is pinned by `conformance/249-use-name-shadowing-scopes.oq`, which covers
+a loop variable, a destructured name, a caught error name, and the outer-assignment case that
+must *not* hide the class in a nested block.
 
 `JarBuilder.needsDatabaseDriver` decides whether to bundle a JDBC driver by matching source text
 for `use`, not IR, so it stays sound: it is now conservative in the other direction too, since a

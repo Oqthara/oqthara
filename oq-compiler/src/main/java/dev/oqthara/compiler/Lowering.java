@@ -60,6 +60,20 @@ public final class Lowering {
      */
     private final java.util.Deque<Set<String>> localScopes = new java.util.ArrayDeque<>();
     /**
+     * The declarations the interpreter hoists into each lexical scope, one entry per
+     * {@link #localScopes} entry.
+     *
+     * <p>{@code Interpreter.hoist} binds every {@code fun}, {@code data}, {@code class} and
+     * {@code contract} of a block into the very frame {@code executeBlock} was given, before any
+     * statement runs. Those names are therefore local bindings of that frame from its first
+     * statement, which is why they must defeat a {@code use} of the same name here too: a
+     * {@code fun} named like a used class hides the class in the interpreter, so it must hide it
+     * in the compiled program. They are kept apart from {@link #localScopes} because a hoisted
+     * {@code fun} is still called statically, while a name a statement binds to a value must
+     * dispatch through the value.
+     */
+    private final java.util.Deque<Set<String>> hoistedScopes = new java.util.ArrayDeque<>();
+    /**
      * Names the function being lowered stores <em>more than once</em>, or updates with a
      * compound assignment.
      *
@@ -189,37 +203,71 @@ public final class Lowering {
         }
     }
 
-    /** Registers the `data` declarations the interpreter hoists into this block. */
+    /**
+     * Opens one lexical scope for both the type registry and the two binding registries.
+     *
+     * <p>The {@code data} declarations give the type registry the constructors the interpreter
+     * hoists; the other three declaration kinds give {@link #hoistedScopes} the names it binds
+     * before the block runs. They are the same set for two different purposes, which is why both
+     * are filled here.
+     */
     private void pushTypes(List<Ast.Stmt> statements) {
         Map<String, DataType> types = new LinkedHashMap<>();
+        Set<String> hoisted = new java.util.LinkedHashSet<>();
         for (Ast.Stmt stmt : statements) {
             if (stmt instanceof Ast.DataDecl data) {
                 types.put(data.name(), new DataType(data.name(), data.fields(), data.immutable()));
+                hoisted.add(data.name());
+            } else if (stmt instanceof Ast.FuncDecl function) {
+                hoisted.add(function.name());
+            } else if (stmt instanceof Ast.ClassDecl classDecl) {
+                hoisted.add(classDecl.name());
+            } else if (stmt instanceof Ast.ContractDecl contract) {
+                hoisted.add(contract.name());
             }
         }
         typeScopes.push(types);
+        hoistedScopes.push(hoisted);
         localScopes.push(new java.util.LinkedHashSet<>());
     }
 
     private void popTypes() {
         typeScopes.pop();
+        hoistedScopes.pop();
         localScopes.pop();
     }
 
-    /** Records that {@code name} is a local binding visible from this point on. */
+    /** Records that {@code name} is a local binding from this point on in this scope. */
     private void bindLocal(String name) {
         localScopes.peek().add(name);
     }
 
     /**
-     * True when {@code name} resolves to a local binding here.
+     * True when the <em>current</em> scope holds a binding of {@code name}.
      *
-     * <p>Scope hoisting matters: Oqthara lets a {@code fun} be used before its declaration, so
-     * the whole scope is consulted rather than only the names bound so far. A call to a name
-     * that is local must dispatch through the stored value, because that is what the
-     * interpreter does for every call it evaluates.
+     * <p>This deliberately does not walk the enclosing scopes, because {@code Env.hasLocal} does
+     * not either: it is {@code values.containsKey}. The interpreter consults it to decide whether
+     * a {@code use} name denotes the class, so a name bound only in an enclosing scope does not
+     * shadow the class in a nested block — the class still wins there. Walking the chain, as this
+     * used to do, made a nested read of a {@code use} name compile to the outer variable while the
+     * interpreter still resolved the class.
+     *
+     * <p>Hoisted declarations count, because {@code Interpreter.hoist} binds them into this very
+     * frame before the block runs. A {@code fun} named like a used class therefore hides the
+     * class here exactly as it does there.
      */
-    private boolean isLocal(String name) {
+    private boolean inCurrentScope(String name) {
+        return localScopes.peek().contains(name) || hoistedScopes.peek().contains(name);
+    }
+
+    /**
+     * True when {@code name} is bound in the current scope or any enclosing one.
+     *
+     * <p>Used to decide whether a callee must be dispatched through a stored value instead of
+     * statically: {@code Ast.Var} falls back to {@code Env.get}, which does walk parents, so an
+     * enclosing variable is still the value that gets called.
+     */
+    private boolean boundSomewhere(String name) {
         for (Set<String> scope : localScopes) {
             if (scope.contains(name)) return true;
         }
@@ -265,6 +313,39 @@ public final class Lowering {
             if (type != null) return type;
         }
         return null;
+    }
+
+    /**
+     * Records the class a {@code use} statement binds, or refuses the statement with the reason
+     * it is not compiled.
+     *
+     * <p>A nested {@code use} is refused before its path is resolved. The interpreter registers
+     * the class in one program-wide map only when the statement runs, so {@code if flag} /
+     * {@code use java.lang.Math} / {@code end} leaves Math defined afterwards exactly when the
+     * branch was taken. A compiled name is resolved before the program starts and cannot be
+     * conditional, so the statement is refused rather than compiled into something that works
+     * with the branch taken and fails without it. Refusing first also means a nested {@code use}
+     * of a misspelled path reports the construct that is unsupported instead of blaming the
+     * spelling, which is what ADR-0062 asks of a diagnostic.
+     */
+    private void useStatement(Ast.UseStmt use) {
+        if (depth > 0) {
+            code.add(new Ir.Refuse("'use' only compiles at the top level"));
+            return;
+        }
+        String name = simpleName(use.path());
+        // Two `use` statements naming the same simple name would leave the last class
+        // registered here, while the interpreter rebinds the name as each statement runs, so a
+        // `fun` declared between them would resolve a different class on each backend. Refused
+        // rather than silently picking one.
+        if (useTypes.containsKey(name)) {
+            code.add(new Ir.Refuse("'" + name + "' is already the name of a used class"));
+            return;
+        }
+        // Registered only once the class resolves, so a misspelled top-level `use` fails the
+        // build with the interpreter's own diagnostic instead of becoming a run-time failure in
+        // a program that built successfully.
+        useTypes.put(name, resolveClass(use.path(), use.span()));
     }
 
     private void statement(Ast.Stmt stmt) {
@@ -353,23 +434,7 @@ public final class Lowering {
                 code.add(new Ir.SetField(assign.field()));
             }
             case Ast.TryStmt attempt -> tryStatement(attempt);
-            case Ast.UseStmt use -> {
-                // Registered either way, so a later read of the name lowers as a class value
-                // and the refusal below is the reason the compiler reports. Recording the name
-                // cannot change what runs, because the refusal makes the jar fall back to the
-                // interpreter, which resolves the name itself.
-                useTypes.put(simpleName(use.path()), resolveClass(use.path(), use.span()));
-                if (depth > 0) {
-                    // A nested `use` is conditional and escapes its block: the interpreter
-                    // registers the class in one program-wide map only when the statement runs,
-                    // so `if flag` / `use java.lang.Math` / `end` leaves Math defined
-                    // afterwards exactly when the branch was taken. A compiled name is resolved
-                    // before the program starts and cannot be conditional, and no program in
-                    // the corpus nests a `use`, so refuse it rather than compile a program that
-                    // works with the branch taken and fails without it.
-                    code.add(new Ir.Refuse("'use' only compiles at the top level"));
-                }
-            }
+            case Ast.UseStmt use -> useStatement(use);
             case Ast.ImportStmt ignored -> {
                 code.add(new Ir.Refuse("module imports are not compiled yet"));
             }
@@ -404,7 +469,7 @@ public final class Lowering {
         code.add(new Ir.CatchValue());
         code.add(new Ir.ScopeEnter());
         code.add(new Ir.Declare(attempt.errorName(), true));
-        branchValue(attempt.handler(), result);
+        branchValue(attempt.handler(), result, attempt.errorName());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(done));
         code.add(new Ir.Load(result));
@@ -412,6 +477,29 @@ public final class Lowering {
 
     /** Emits a block whose final expression statement's value is stored into {@code target}. */
     private void branchValue(List<Ast.Stmt> statements, String target) {
+        branchValue(statements, target, null);
+    }
+
+    /**
+     * Emits a branch's statements in their own analysis scope, seeded with {@code seed} when the
+     * caller declared a name into the frame the branch runs in.
+     *
+     * <p>The scope is pure analysis: {@code tryExpression} already emitted the
+     * {@code ScopeEnter} that owns it. It exists so a {@code use} or a {@code fun} inside a
+     * {@code try} expression is analysed like one inside any other block, instead of being
+     * lowered with the enclosing scope's registries and escaping the refusal in
+     * {@link #statement} for {@code use}.
+     */
+    private void branchValue(List<Ast.Stmt> statements, String target, String seed) {
+        pushTypes(statements);
+        if (seed != null) bindLocal(seed);
+        depth++;
+        branchValueIn(statements, target);
+        depth--;
+        popTypes();
+    }
+
+    private void branchValueIn(List<Ast.Stmt> statements, String target) {
         int last = statements.size() - 1;
         List<Ast.Stmt> head = last < 0 ? List.of() : statements.subList(0, last);
         for (Ast.Stmt stmt : head) {
@@ -630,7 +718,7 @@ public final class Lowering {
         code.add(new Ir.CatchValue());
         code.add(new Ir.ScopeEnter());
         code.add(new Ir.Declare(attempt.errorName(), true));
-        block(attempt.handler());
+        seededBlock(attempt.handler(), attempt.errorName());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(done));
     }
@@ -672,7 +760,7 @@ public final class Lowering {
             // value would freeze it, so the lambda is refused instead of printing a wrong
             // answer; see the `reassigned` field.
             if (reassigned.contains(name)) return null;
-            if (isLocal(name) || callableNames.contains(name)) free.add(name);
+            if (boundSomewhere(name) || callableNames.contains(name)) free.add(name);
         }
         // Captured values travel as arguments, so a lambda that assigns one would update its
         // own parameter and leave the enclosing binding untouched. The interpreter shares the
@@ -1058,6 +1146,27 @@ public final class Lowering {
         popTypes();
     }
 
+    /**
+     * Lowers a block the caller has already declared a name into, sharing that name's scope.
+     *
+     * <p>{@code Interpreter.executeBlock} runs a body in the frame it is handed, so a
+     * {@code for} loop and its body, and a {@code try} handler and its caught error, share one
+     * frame. The body therefore sees the loop variable as a <em>current-scope</em> binding, which
+     * is what decides whether a used class is hidden. Lowering the body through plain
+     * {@link #block} would open a deeper analysis scope and lose that, so the seed is added to
+     * the frame being opened instead.
+     */
+    private void seededBlock(List<Ast.Stmt> statements, String name) {
+        pushTypes(statements);
+        bindLocal(name);
+        depth++;
+        for (Ast.Stmt stmt : statements) {
+            statement(stmt);
+        }
+        depth--;
+        popTypes();
+    }
+
     private void ifStatement(Ast.If conditional) {
         String end = label("end");
         for (Ast.Branch branch : conditional.branches()) {
@@ -1130,7 +1239,7 @@ public final class Lowering {
         code.add(new Ir.Load(iterator));
         code.add(new Ir.IterNext());
         code.add(new Ir.Declare(loop.name(), true));
-        block(loop.body());
+        seededBlock(loop.body(), loop.name());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(step));
         code.add(new Ir.JumpLabel(head));
@@ -1158,6 +1267,7 @@ public final class Lowering {
             code.add(new Ir.Const((long) i));
             code.add(new Ir.Index());
             callableNames.remove(name);
+            bindLocal(name);
             if (destructure.mutable()) {
                 code.add(new Ir.Store(name));
             } else {
@@ -1190,7 +1300,7 @@ public final class Lowering {
         code.add(new Ir.Load(iterator));
         code.add(new Ir.IterNext());
         code.add(new Ir.Declare(loop.name(), true));
-        block(loop.body());
+        seededBlock(loop.body(), loop.name());
         code.add(new Ir.ScopeExit());
         code.add(new Ir.Label(step));
         code.add(new Ir.JumpLabel(head));
@@ -1206,7 +1316,7 @@ public final class Lowering {
             case Ast.StringLit text -> stringLiteral(text);
             case Ast.Var var -> {
                 Class<?> used = useTypes.get(var.name());
-                if (used != null && !isLocal(var.name())) {
+                if (used != null && !inCurrentScope(var.name())) {
                     // A `use` name is a class value, not a slot. The interpreter checks locals
                     // first and the class table second, so a binding of the same name wins and
                     // is lowered as an ordinary load below.
@@ -1289,14 +1399,14 @@ public final class Lowering {
                     DataType type = lookupType(var.name());
                     if (type != null) {
                         constructor(call, type);
-                    } else if (useTypes.containsKey(var.name()) && !isLocal(var.name())) {
+                    } else if (useTypes.containsKey(var.name()) && !inCurrentScope(var.name())) {
                         // `ArrayList()` constructs a Java object in the interpreter, which a
                         // class value reaching Callables.call reproduces exactly.
                         code.add(new Ir.Const(useTypes.get(var.name())));
                         emitCallArguments(call.args());
                         mark(call.span());
                         code.add(new Ir.CallValue(call.args().size(), var.name()));
-                    } else if (callableNames.contains(var.name()) || isLocal(var.name())) {
+                    } else if (callableNames.contains(var.name()) || boundSomewhere(var.name())) {
                         // The name resolves to a value in scope, so the call dispatches through
                         // that value. Calling it statically would let a builtin or a `fun` of
                         // the same name win over a variable that must shadow it.

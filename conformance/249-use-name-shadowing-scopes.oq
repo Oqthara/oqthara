@@ -1,0 +1,29 @@
+# A `use` name is a value, and the interpreter decides whether it still means the class by
+# asking its current frame only. A name bound in the current frame wins; a name bound in an
+# enclosing scope does not. The compiled backend has to reproduce both halves, because a
+# program that reads the wrong one prints a class where a number belongs.
+use java.lang.Math
+
+# A loop header binds into the frame the body runs in, so the number wins in the body.
+for Math in [1, 2]
+  print Math
+end
+
+# A destructuring assignment binds the same way.
+a, Math = [10, 20]
+print Math
+
+# The name a `catch` binds shares the handler's frame.
+try
+  error("boom")
+catch Math
+  print "caught " + text(Math)
+end
+
+# An outer assignment does not reach into a nested block: the block's own frame has no
+# binding, so the class wins there while the outer read still sees the value.
+Math = 99
+print Math
+if true
+  print Math.abs(-5)
+end

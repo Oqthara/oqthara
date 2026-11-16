@@ -482,6 +482,12 @@ public final class BytecodeCompiler {
                         }
                         scopes.pop();
                     }
+                    // A refusal is raised here as well as in `emit`, so an unsupported
+                    // construct is reported ahead of any error that only exists because of
+                    // it. Without this, `if ... / use <class> / end` followed by a read of
+                    // the name reported that the name was undefined -- a cascade, not the
+                    // reason the program cannot be compiled (ADR-0062).
+                    case Ir.Refuse refuse -> throw new NotSupportedException(refuse.reason());
                     case Ir.Declare declare ->
                             resolved[i] = declare(declare.name(), declare.fixed(), next++);
                     case Ir.Store store -> resolved[i] = assign(store.name(), next++);

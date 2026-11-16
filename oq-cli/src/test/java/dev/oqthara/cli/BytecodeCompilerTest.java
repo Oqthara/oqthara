@@ -1202,6 +1202,87 @@ class BytecodeCompilerTest {
         assertEquals("'use' only compiles at the top level", reason);
     }
 
+    /**
+     * A name a loop header binds belongs to the frame the body runs in, so the class the `use`
+     * registered must not win in the body. The interpreter reads the loop variable; a compiled
+     * program that read the class would print the class instead of the number.
+     */
+    @Test
+    void aLoopVariableShadowsTheUsedClassName(@TempDir Path dir) throws Exception {
+        String source = "use java.lang.Math\nfor Math in [1, 2]\n  print Math\nend";
+        assertEquals("1\n2\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("1\n2\n", compileAndRun(source, dir));
+    }
+
+    /** The same rule for a name a destructuring assignment binds. */
+    @Test
+    void aDestructuredNameShadowsTheUsedClassName(@TempDir Path dir) throws Exception {
+        String source = "use java.lang.Math\na, Math = [1, 2]\nprint Math";
+        assertEquals("2\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("2\n", compileAndRun(source, dir));
+    }
+
+    /** The same rule for the name a `catch` binds, which shares the handler's frame. */
+    @Test
+    void aCaughtErrorNameShadowsTheUsedClassName(@TempDir Path dir) throws Exception {
+        String source = "use java.lang.Math\ntry\n  error(\"boom\")\ncatch Math\n  print Math\nend";
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(), compileAndRun(source, dir));
+    }
+
+    /**
+     * An assignment at the top level does not reach into a nested block: the class is bound in
+     * the block's own frame, so it wins there while the outer read still sees the number. This is
+     * the asymmetry the interpreter has, and the compiler must reproduce it rather than smoothing
+     * it over.
+     */
+    @Test
+    void anAssignmentDoesNotHideTheClassNameInANestedBlock(@TempDir Path dir) throws Exception {
+        String source = "use java.lang.Math\nMath = 5\nprint Math\nif true\n  print Math\nend";
+        assertEquals("5\nclass java.lang.Math\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("5\nclass java.lang.Math\n", compileAndRun(source, dir));
+    }
+
+    /** A `fun` named like a used class is hoisted into the frame, so it hides the class. */
+    @Test
+    void aFunNamedLikeAUsedClassHidesTheClassName(@TempDir Path dir) throws Exception {
+        String source = "use java.lang.Math\nfun Math()\n  return 42\nend\nprint Math\nprint Math()";
+        assertEquals("<function Math>\n42\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("<function Math>\n42\n", compileAndRun(source, dir));
+    }
+
+    /**
+     * A `use` inside a `try` expression is conditional, so it is refused; the refusal must name
+     * the construct and the program must still run through the interpreter, which honours the
+     * registration only when the body reaches it.
+     */
+    @Test
+    void useInsideATryExpressionIsRefusedAndRunsThroughTheInterpreter(@TempDir Path dir) throws Exception {
+        String source = "x = try\n  error(\"no\")\n  use java.lang.Math\n  1\ncatch e\n  2\nend\nprint x";
+        String reason = BytecodeCompiler.whyNot(
+                Lowering.lower(Parser.parse("<t>", source)));
+        assertEquals("'use' only compiles at the top level", reason);
+        assertEquals("2\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+    }
+
+    /**
+     * Registering the same simple name twice would leave whichever class the compiler saw last
+     * while the interpreter rebinds as each statement runs, so the second `use` is refused
+     * instead of silently choosing one.
+     */
+    @Test
+    void aSecondUseOfTheSameNameIsRefused(@TempDir Path dir) throws Exception {
+        String source = "use java.util.Date\nuse java.sql.Date\nprint Date(0)";
+        assertEquals("'Date' is already the name of a used class",
+                BytecodeCompiler.whyNot(Lowering.lower(Parser.parse("<t>", source))));
+        // The refusal only chooses the backend; the program itself still runs. Because the
+        // interpreter rebinds the name as each statement runs, the output must match a program
+        // that used the second class alone -- asserted against that program rather than a
+        // literal, since a date renders in the machine's time zone.
+        String secondOnly = "use java.sql.Date\nprint Date(0)\nprint Date(0).getTime()";
+        assertEquals(OqRunner.run("<t>", secondOnly, List.of(), "", dir).stdout(),
+                OqRunner.run("<t>", source + "\nprint Date(0).getTime()", List.of(), "", dir).stdout());
+    }
+
 
     @Test
     void compilesForToLoop(@TempDir Path dir) throws Exception {
@@ -1371,12 +1452,13 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(209, compiled,
+        assertEquals(210, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-16: 209 compiled / 9 fallback / 0 divergences over 248 programs
-        // (218 executable). The one new executable program is 248-java-interop-by-use, which
-        // the compiler handles because a top-level `use` now lowers to a class constant
-        // (ADR-0064). It is the first conformance program to exercise `use` at all.
+        // Measured 2026-11-16: 210 compiled / 9 fallback / 0 divergences over 249 programs
+        // (219 executable). 248-java-interop-by-use was the first program to exercise `use`
+        // at all, handled because a top-level `use` lowers to a class constant (ADR-0064).
+        // 249-use-name-shadowing-scopes pins which scope a `use` name still denotes the class
+        // in, the half of ADR-0064 that a value-only test cannot see.
         //
         // Previous measurement: 208 compiled / 9 fallback / 0 divergences over 247 programs
         // (217 executable). The one new executable program is 245-nan-is-unordered, which the

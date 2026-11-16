@@ -181,7 +181,7 @@ public final class Methods {
             Object fromJava = Callables.callFunctional(callee, args, span, this);
             if (!Callables.isNotFound(fromJava)) return fromJava;
             throw new OqError("'" + Values.typeName(callee) + "' is not a function", span,
-                    "This value cannot be called.");
+                    Values.notCallableHelp(callee));
         }
 
         @Override

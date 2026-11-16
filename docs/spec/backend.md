@@ -89,10 +89,10 @@ is safe: a program either compiles to equivalent bytecode or runs exactly as `oq
 
 ## The compiled subset, measured
 
-As of Alpha 6, **209 of the 218 executable conformance programs** compile to real bytecode
+As of Alpha 6, **210 of the 219 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`
-(`assertEquals(209, compiled, ...)`), so it cannot silently go down. 218 is the number of
+(`assertEquals(210, compiled, ...)`), so it cannot silently go down. 219 is the number of
 executable programs in `conformance/`: every `*.oq` without a sibling `*.err`. Every refusal
 is reported by name in the `oq build` output.
 
@@ -100,8 +100,9 @@ is reported by name in the `oq build` output.
 |---|---|
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
 | variables: assignment, reassignment, scoping, shadowing | lambdas that capture an enclosing variable |
-| top-level `fun` with parameters, `return`, recursion, mutual recursion | `use`, modules |
-| `+ - * / % **` and unary `-`, unary `+` | Java constructors, Java instance methods and static methods reached through `use` |
+| top-level `fun` with parameters, `return`, recursion, mutual recursion | modules |
+| a top-level `use`, and the class value and static members it binds (ADR-0064) | `use` nested in a block or a `try` expression, or a second `use` of the same simple name |
+| `+ - * / % **` and unary `-`, unary `+` | |
 | `try` / `catch`, nested, with rethrow | `try` with an empty body |
 | comparisons `== != < <= > >=` | `spawn`, `await`, `done`, `par_map`, `sort_by`, `map`, `filter` and other callable-taking builtins |
 | `and`, `or`, `not` with short-circuiting | `args()`, `input()`, `exit()` |
@@ -382,7 +383,7 @@ java -jar examples/hello.jar
 
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` compiles every
 compilable conformance program, runs it, and asserts that stdout equals `oq run`'s, then
-asserts the compiled count is 209 of the 218 executable programs. `BuildJarTest` builds a
+asserts the compiled count is 210 of the 219 executable programs. `BuildJarTest` builds a
 jar for every deterministic example, runs it, and asserts that stdout and exit code equal
 the interpreter's; any divergence fails the build. `parallel.oq` is excluded because it
 prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they are interactive or need
