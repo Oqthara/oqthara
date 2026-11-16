@@ -17,12 +17,21 @@ Usage:
     python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar> --both
 
 `--both` additionally compiles every probe with `oq build` and runs the resulting jar, then
-requires the compiled output to equal the interpreted output line for line. That is what A5.7
-claims ("interpreter and compiled backends agree on every probe"), and it is a separate claim
-from "the interpreter produces the documented output": a probe can pass the first check and
-still disagree across backends. Probes whose documented behaviour is a diagnostic are compared
-too, because a backend that accepts what the interpreter refuses is exactly the disagreement
-worth catching.
+requires two things. The compiled output must equal the interpreted output line for line, which
+is what A5.7 claims ("interpreter and compiled backends agree on every probe"), and a separate
+claim from "the interpreter produces the documented output": a probe can pass the first check
+and still disagree across backends. The jar must also report `codepath: compiled bytecode`,
+which is what A6.3 claims. Without that second check `--both` is satisfied by an interpreter
+launcher, so every probe could regress to the fallback and the run would stay green; the
+compiled output would match because it was produced by the interpreter.
+
+`COMPILED` is what every probe must report. One does not, and says so in `FALLBACK` with the
+reason its own build printed: `d1_sort_by` calls `sort_by`, which the backend has never
+lowered, so `oq build` writes an interpreter launcher for it. Naming it keeps the fallback a
+stated fact rather than something the runner quietly tolerates, and because the check is
+"compiled unless declared", a second probe falling back fails the run — it cannot become a
+general licence. Fixing `sort_by` fails the run too, the same way a fixed defect does, so the
+entry cannot outlive the gap.
 
 Exit code is 0 when every probe matches its expectation and every recorded defect reproduces
 verbatim, 1 otherwise.
@@ -58,6 +67,27 @@ def comparable(text):
     if POSITION not in text:
         return text
     return BLANK_RUN.sub("\n\n", EXCERPT.sub("", text))
+
+
+# A6.3 is the claim that compiled code answers `Class` self-description *without* falling back
+# to the interpreter. `oq build` already prints which path it took, so the runner reads that
+# line rather than inferring the path from the fact that a jar exists — an interpreter
+# launcher is still a jar, and its output matches byte for byte because the interpreter
+# produced it. Checking only the output therefore cannot see this claim at all.
+COMPILED = "codepath: compiled bytecode"
+
+# Probes whose build reports something other than COMPILED, mapped to the exact line the build
+# printed. Not a wildcard: a probe absent from here must report COMPILED.
+FALLBACK = {
+    "d1_sort_by": (
+        "codepath: interpreter launcher "
+        "(call to 'sort_by' with 2 argument(s) is not compiled yet)"
+    ),
+}
+
+# The `codepath:` line is the only field of the build output this runner reads, and it is
+# printed on stdout, so a probe's own program output can never be mistaken for it.
+CODEPATH = re.compile(r"^codepath: .*$", re.MULTILINE)
 
 
 # (name, expected stdout lines, known-defect record)
@@ -166,6 +196,31 @@ def run_compiled(target: Path):
     return result.stdout + result.stderr, result.returncode
 
 
+def codepath_failure(name, build_output):
+    """Return why this probe's build is not the path A6.3 requires, or None if it is.
+
+    Split out of `main` so the decision can be tested without a jar: the three outcomes are
+    "compiled", "the one declared fallback", and "anything else is a failure", and the last
+    one has to include silence. A build that stops printing the line would otherwise read as
+    a pass because the substring check never ran.
+    """
+    found = CODEPATH.search(build_output)
+    if found is None:
+        return f"{name}: oq build printed no codepath line, so the backend is unknown"
+    actual = found.group(0).strip()
+    expected = FALLBACK.get(name, COMPILED)
+    if actual == expected:
+        return None
+    if name in FALLBACK:
+        # The gap this entry records has closed. Fail so the entry is deleted rather than
+        # left claiming a fallback that no longer happens.
+        return (
+            f"{name}: recorded fallback is gone; expected {expected!r}, got {actual!r}. "
+            f"Remove the FALLBACK entry and require COMPILED."
+        )
+    return f"{name}: expected {expected!r}, got {actual!r}"
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     both = "--both" in sys.argv[1:]
@@ -180,6 +235,7 @@ def main() -> int:
     failures = []
     defects = []
     compared = 0
+    compiled_only = 0
     for name, expected, defect in PROBES:
         program = HERE / f"{name}.oq"
         if not program.is_file():
@@ -196,6 +252,15 @@ def main() -> int:
                     f"{name}: oq build did not produce a jar (exit {build_code}): {tail}"
                 )
                 continue
+            # A6.3: the jar must have been produced by the compiler, not by the interpreter
+            # launcher. Checked before the jar runs, so a probe that silently fell back is
+            # reported as a codepath failure rather than as a puzzling output mismatch.
+            refusal = codepath_failure(name, build_output)
+            if refusal is not None:
+                failures.append(refusal)
+                continue
+            if CODEPATH.search(build_output).group(0).strip() == COMPILED:
+                compiled_only += 1
             compiled_output, compiled_code = run_compiled(target)
             compared += 1
             if comparable(compiled_output) != comparable(output):
@@ -257,6 +322,11 @@ def main() -> int:
     print(f"ok: {matched} probes match their expectation")
     if both:
         print(f"ok: {compared} probes produce identical output on both backends")
+        # A6.3, stated as its own count so a reader can see the claim and not just trust it.
+        print(
+            f"ok: {compiled_only} of {compared} probes ran compiled bytecode "
+            f"({len(FALLBACK)} declared fallback)"
+        )
     if defects:
         print(f"known defects reproducing verbatim: {len(defects)}")
         for name, marker in defects:

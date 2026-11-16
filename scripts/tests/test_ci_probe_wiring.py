@@ -20,6 +20,7 @@ The YAML is read with PyYAML rather than by scanning for `- name:` lines, becaus
 cannot tell which job a step belongs to -- and the `installers` job has no `matrix.java`, so a
 step moved there would be skipped while still looking present.
 """
+import importlib.util
 import pathlib
 import subprocess
 import sys
@@ -162,6 +163,72 @@ class RunnerHonoursItsArgument(unittest.TestCase):
         )
         self.assertEqual(done.returncode, 2, done.stdout + done.stderr)
         self.assertIn("Usage", done.stdout + done.stderr)
+
+
+class CodepathIsCheckedNotAssumed(unittest.TestCase):
+    """A6.3: `--both` must prove the jar was compiled, not merely that a jar exists.
+
+    Before this check, `--both` compared output and nothing else. An interpreter launcher is
+    still a jar and its output matches the interpreter byte for byte, because the interpreter
+    produced it — so every probe could have regressed to the fallback and the run would have
+    stayed green. That is the whole claim A6.3 makes, and it was untested.
+
+    These tests call the decision function the runner uses, so they fail if the rule changes
+    rather than if a copy of the rule here disagrees with it.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("probe_runner", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.runner = module
+
+    def check(self, name, codepath):
+        build = f"compiled {name}.oq\nbackend=classfile\ncodepath: {codepath}\n"
+        return self.runner.codepath_failure(name, build)
+
+    def test_a_compiled_probe_passes(self):
+        self.assertIsNone(self.check("d2_class_instance", "compiled bytecode"))
+
+    def test_an_undeclared_fallback_fails(self):
+        # The regression A6.3 exists to catch: the build falls back and nothing records it.
+        refused = self.check("d2_class_instance", "interpreter launcher (classes are not compiled)")
+        self.assertIsNotNone(refused)
+        self.assertIn("expected 'codepath: compiled bytecode'", refused)
+
+    def test_a_recorded_fallback_passes_verbatim(self):
+        for name, line in self.runner.FALLBACK.items():
+            self.assertIsNone(self.check(name, line.split("codepath: ", 1)[1]))
+
+    def test_a_recorded_fallback_that_closed_fails(self):
+        # Fixing the gap must fail too, so the entry cannot outlive it.
+        for name in self.runner.FALLBACK:
+            refused = self.check(name, "compiled bytecode")
+            self.assertIsNotNone(refused, name)
+            self.assertIn("recorded fallback is gone", refused)
+
+    def test_a_changed_fallback_reason_fails(self):
+        # The entry is an exact line, not a prefix: a different reason is a different state.
+        for name in self.runner.FALLBACK:
+            refused = self.check(name, "interpreter launcher (something else entirely)")
+            self.assertIsNotNone(refused, name)
+
+    def test_a_build_with_no_codepath_line_fails(self):
+        # `oq build` could stop reporting the path. Silence must not read as "compiled".
+        refused = self.runner.codepath_failure("d2_class_instance", "backend=classfile\n")
+        self.assertIsNotNone(refused)
+        self.assertIn("no codepath line", refused)
+
+    def test_the_declared_compiled_line_matches_the_cli(self):
+        # The runner's constant and the CLI's printed text must be the same string, or every
+        # probe fails for a reason that has nothing to do with the backend.
+        source = (ROOT / "oq-cli" / "src" / "main" / "java" / "dev" / "oqthara" / "cli"
+                  / "Main.java")
+        self.assertIn(self.runner.COMPILED, source.read_text(encoding="utf-8"))
+
+    def test_every_fallback_entry_names_a_real_probe(self):
+        names = {name for name, _, _ in self.runner.PROBES}
+        self.assertEqual(set(self.runner.FALLBACK) - names, set())
 
 
 if __name__ == "__main__":
