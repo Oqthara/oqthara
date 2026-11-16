@@ -13,9 +13,12 @@ report success, so the shape of the tables is tested here:
     so removing one cannot silently reduce coverage;
   * the expected counts in ADR-0063 must match the tables, so prose cannot drift from code.
 
-The discriminating test is the last one: it proves the probe can report a failure at all.
+The discriminating test injects a row that is known to be wrong and asserts that the
+probe reports it, so a harness that compared nothing could not pass.
 """
+import contextlib
 import importlib.util
+import io
 import pathlib
 import unittest
 
@@ -24,13 +27,16 @@ PROBE = ROOT / "scripts" / "probe-non-finite.py"
 ADR = ROOT / "docs" / "adr" / "0063-relational-operators-follow-ieee-order.md"
 
 # The rows that answered wrongly before ADR-0063, recorded here so a test can state the size of
-# the repair without restating the ADR. Six NaN comparisons and four signed-zero comparisons.
+# the repair without restating the ADR. Seven NaN comparisons and four signed-zero comparisons.
+# Every one of the four operators appears at least once, which is the point: the defect was not
+# confined to a single operator.
 WRONG_NAN_BEFORE = {
     "nan-greater-than-one",
     "nan-greater-or-equal-one",
     "nan-less-or-equal-nan",
     "nan-greater-or-equal-nan",
     "one-less-than-nan",
+    "one-less-or-equal-nan",
     "nan-greater-or-equal-two",
 }
 WRONG_ZERO_BEFORE = {
@@ -108,9 +114,9 @@ class NonFiniteProbeTest(unittest.TestCase):
             len(self.probe.NAN_AS_A_KEY),
             len(self.probe.ORDINARY_COMPARISONS),
         ]
-        self.assertEqual([8, 11, 14, 9, 5, 6, 10], groups)
+        self.assertEqual([8, 11, 16, 9, 8, 6, 10], groups)
         total = sum(groups)
-        self.assertEqual(63, total)
+        self.assertEqual(68, total)
         text = ADR.read_text(encoding="utf-8")
         self.assertIn(f"{total} cases across seven groups", text)
 
@@ -120,7 +126,7 @@ class NonFiniteProbeTest(unittest.TestCase):
         # halves of each phrase have to agree with each other.
         nan_before = [row for row in self.probe.NAN_COMPARISONS if row[0] in WRONG_NAN_BEFORE]
         zero_before = [row for row in self.probe.SIGNED_ZERO if row[0] in WRONG_ZERO_BEFORE]
-        self.assertEqual(6, len(nan_before), "the six wrong NaN rows changed identity")
+        self.assertEqual(7, len(nan_before), "the seven wrong NaN rows changed identity")
         self.assertEqual(4, len(zero_before), "the four wrong signed-zero rows changed identity")
         for table, wrong in ((self.probe.NAN_COMPARISONS, nan_before), (self.probe.SIGNED_ZERO, zero_before)):
             correct = len(table) - len(wrong)
@@ -132,27 +138,37 @@ class NonFiniteProbeTest(unittest.TestCase):
             self.assertIn(f"{name} =", self.probe.PREAMBLE, f"the preamble does not define {name}")
 
     def test_labels_are_unique(self):
+        # Every table has to be listed. Omitting one silently exempts its rows, and the probe
+        # addresses rows by label, so a duplicate there is a row that can never be reported.
         groups = [
             self.probe.SILENT_VALUES,
             self.probe.RAISING,
             self.probe.NAN_COMPARISONS,
             self.probe.SIGNED_ZERO,
             self.probe.TOTAL_ORDER,
+            self.probe.NAN_AS_A_KEY,
             self.probe.ORDINARY_COMPARISONS,
         ]
         labels = [row[0] for group in groups for row in group]
         self.assertEqual(len(labels), len(set(labels)), "two rows share a label")
 
     def test_a_disagreeing_expectation_is_reported_as_a_failure(self):
-        # The discriminating property: the probe must be able to fail. `1 < NaN` is false, so
-        # asking the probe whether it is true has to be refuted by the real JVM. This proves the
-        # check compares printed output with the expected literal rather than merely requiring a
-        # successful run.
+        # The discriminating property: the probe must be able to fail. `nan > 1.0` is false, so
+        # handing in a row that expects true has to produce a non-zero exit and name the row.
+        # Testing only that `run` returns the real answer would pass on a probe that compared
+        # nothing at all, which is the failure mode this test exists to rule out.
         if not self.probe.JAR.exists():
             self.skipTest(f"missing {self.probe.JAR}; run ./gradlew :oq-cli:standaloneJar")
         code, lines = self.probe.run(self.probe.PREAMBLE + "print nan > 1.0\n")
         self.assertEqual(0, code, "the program must still run")
         self.assertEqual(["false"], lines, "the probe must observe the real answer")
+
+        with contextlib.redirect_stdout(io.StringIO()) as captured:
+            status = self.probe.main([], nan_rows=[("deliberately-wrong", "nan > 1.0", True)])
+        self.assertEqual(1, status, "a disagreeing expectation must exit non-zero")
+        self.assertIn("deliberately-wrong", captured.getvalue(), "the failing row must be named")
+        self.assertIn("expected true, got 'false'", captured.getvalue(),
+                      "the failure must show both what was expected and what was seen")
 
     def test_the_key_group_pins_store_then_miss(self):
         # The property is not "NaN is a bad key" in the abstract; it is the two-step trap: the

@@ -389,9 +389,9 @@ class ValuesTest {
     }
 
     // NaN is unordered, so every relational operator must answer false for it, exactly as
-    // IEEE-754 requires. The subtle part is <= and >=: they are not (<) or (==), because that
-    // would make nan <= nan true -- < is false and == is false -- while nan <= 1.0 stayed false
-    // by accident. Defining them as (< or ==) keeps them consistent with == by construction.
+    // IEEE-754 requires. The trap is rewriting them as the negation of the opposite operator:
+    // `not (nan > nan)` is true, so defining `<=` as `not (>)` would make `nan <= nan` true.
+    // Defining it as `(<) or (==)` instead leaves NaN false by both halves at once.
     @Test
     void everyRelationalOperatorIsFalseForNaN() {
         double nan = Double.NaN;
@@ -401,16 +401,28 @@ class ValuesTest {
         assertFalse(Values.greaterThan(nan, nan, span));
         assertFalse(Values.greaterThan(nan, 1.0d, span));
         assertFalse(Values.greaterThan(1.0d, nan, span));
+        // The inclusive pair derives `(<) or (==)`, which is false for both halves here. A
+        // negation-based definition would answer true, so these four are what pins the formula.
+        assertFalse(Values.lessOrEqual(nan, nan, span));
+        assertFalse(Values.lessOrEqual(nan, 1.0d, span));
+        assertFalse(Values.lessOrEqual(1.0d, nan, span));
+        assertFalse(Values.greaterOrEqual(nan, nan, span));
+        assertFalse(Values.greaterOrEqual(nan, 1.0d, span));
+        assertFalse(Values.greaterOrEqual(1.0d, nan, span));
     }
 
     @Test
-    void NaNIsTheOnlyValueNotEqualToItself() {
+    void nanIsTheOnlyAtomicValueNotEqualToItself() {
         double nan = Double.NaN;
         assertFalse(Values.equal(nan, nan));
         assertTrue(Values.equal(1.0d, 1.0d));
         // The total order used by sort/min/max is a different relation and still orders NaN.
         assertEquals(0, Values.compare(nan, nan, span));
         assertTrue(Values.compare(nan, 1.0d, span) > 0);
+        // A container inherits it rather than being an exception: equality of lists bottoms out
+        // in equality of members, so `[nan] == [nan]` is false for the same reason. The name of
+        // this test says "atomic" because of this.
+        assertFalse(Values.equal(List.of(nan), List.of(nan)));
     }
 
     @Test
@@ -422,6 +434,10 @@ class ValuesTest {
         assertFalse(Values.lessThan(0.0d, -0.0d, span));
         assertFalse(Values.greaterThan(-0.0d, 0.0d, span));
         assertFalse(Values.greaterThan(0.0d, -0.0d, span));
+        assertTrue(Values.lessOrEqual(-0.0d, 0.0d, span));
+        assertTrue(Values.lessOrEqual(0.0d, -0.0d, span));
+        assertTrue(Values.greaterOrEqual(-0.0d, 0.0d, span));
+        assertTrue(Values.greaterOrEqual(0.0d, -0.0d, span));
         assertTrue(Values.equal(-0.0d, 0.0d));
         // The collection order keeps them distinct, which is why it could not be reused here.
         assertTrue(Values.compare(-0.0d, 0.0d, span) < 0);
@@ -453,6 +469,51 @@ class ValuesTest {
         // what a lexicographic order does, and what Python does for the same two lists.
         assertTrue(Values.lessThan(List.of(1.0d), List.of(1.0d, Double.NaN), span));
         assertFalse(Values.lessThan(List.of(1.0d, Double.NaN), List.of(1.0d), span));
+    }
+
+    @Test
+    void tuplesOrderAmongThemselvesButNeverAgainstAList() {
+        assertTrue(Values.lessThan(OqTuple.of(List.of(1L, 2L)), OqTuple.of(List.of(1L, 3L)), span));
+        assertTrue(Values.greaterThan(OqTuple.of(List.of(2L)), OqTuple.of(List.of(1L, 9L)), span));
+        assertFalse(Values.lessThan(OqTuple.of(List.of(1L)), OqTuple.of(List.of(1L)), span));
+        // A tuple is an AbstractList, so without the guard in front of the List branch it would
+        // be compared with a list element by element instead of being refused.
+        var error = assertThrows(OqError.class,
+                () -> Values.lessThan(OqTuple.of(List.of(1L)), List.of(1L), span));
+        assertTrue(error.getMessage().contains("cannot compare tuple with list"));
+        var mirrored = assertThrows(OqError.class,
+                () -> Values.greaterThan(OqTuple.of(List.of(1L)), List.of(1L), span));
+        assertTrue(mirrored.getMessage().contains("cannot compare tuple with list"));
+        // The collection order needs the same guard, because it is the relation `sort` uses and
+        // a tuple reaching its List branch would be sorted as if it were a list.
+        var ordered = assertThrows(OqError.class,
+                () -> Values.compare(OqTuple.of(List.of(1L)), List.of(1L), span));
+        assertTrue(ordered.getMessage().contains("cannot compare tuple with list"));
+    }
+
+    @Test
+    void anUnorderablePairIsNamedInSourceOrderByEveryOperator() {
+        // `greaterThan` used to delegate as `lessThan(b, a)`, which made `>` and `>=` report the
+        // two types in reverse: `1 > "a"` said "text with number". Every operator must name the
+        // left operand first, which is the wording `<` and `<=` always had.
+        for (var comparison : List.<java.util.function.Supplier<Boolean>>of(
+                () -> Values.lessThan(1L, "a", span),
+                () -> Values.greaterThan(1L, "a", span),
+                () -> Values.lessOrEqual(1L, "a", span),
+                () -> Values.greaterOrEqual(1L, "a", span))) {
+            assertEquals("cannot compare number with text",
+                    assertThrows(OqError.class, comparison::get).getMessage());
+        }
+    }
+
+    @Test
+    void anInclusiveComparisonRaisesForAValueTheOrderingRejectsEvenWhenItIsEqual() {
+        // `nothing == nothing` is true, so `<=` cannot honestly answer from equality alone. The
+        // ordering rejects the pair first and the comparison raises. This matches what `<=` did
+        // before ADR-0063 and is recorded so a later change cannot silently make it true.
+        assertTrue(Values.equal(null, null));
+        assertThrows(OqError.class, () -> Values.lessOrEqual(null, null, span));
+        assertThrows(OqError.class, () -> Values.greaterOrEqual(null, null, span));
     }
 
     @Test

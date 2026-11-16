@@ -79,7 +79,7 @@ public final class Arithmetic {
     }
 
     public static Object lessOrEqual(Object a, Object b) {
-        return Values.lessThan(a, b, Errors.current()) || Values.equal(a, b);
+        return Values.lessOrEqual(a, b, Errors.current());
     }
 
     public static Object greater(Object a, Object b) {
@@ -87,7 +87,7 @@ public final class Arithmetic {
     }
 
     public static Object greaterOrEqual(Object a, Object b) {
-        return Values.greaterThan(a, b, Errors.current()) || Values.equal(a, b);
+        return Values.greaterOrEqual(a, b, Errors.current());
     }
 
     public static Object equal(Object a, Object b) {

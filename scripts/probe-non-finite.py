@@ -61,9 +61,10 @@ RAISING: list[tuple[str, str, str]] = [
     ("fractional-root-of-negative", "print pow(-8, 0.5)\n", "no real result"),
 ]
 
-# NaN is unordered: all twelve relational outcomes must be the IEEE ones. The old defect made
-# six of them wrong, and it made them wrong in a way that contradicted `==`, which is why every
-# row names the operator and the expected literal rather than just "true" or "false".
+# NaN is unordered: all the relational outcomes must be the IEEE ones. The old defect made six
+# of them wrong, and every operator was wrong in at least one operand order, which is why the
+# table pairs each operator with both spellings. Every row names the operator and the expected
+# literal rather than just "true" or "false".
 NAN_COMPARISONS: list[tuple[str, str, bool]] = [
     ("nan-equals-nan", "nan == nan", False),
     ("nan-not-equals-nan", "nan != nan", True),
@@ -76,7 +77,9 @@ NAN_COMPARISONS: list[tuple[str, str, bool]] = [
     ("nan-greater-than-nan", "nan > nan", False),
     ("nan-greater-or-equal-nan", "nan >= nan", False),
     ("one-less-than-nan", "1.0 < nan", False),
+    ("one-less-or-equal-nan", "1.0 <= nan", False),
     ("one-greater-than-nan", "1.0 > nan", False),
+    ("one-greater-or-equal-nan", "1.0 >= nan", False),
     ("nan-less-or-equal-two", "nan <= 2.0", False),
     ("nan-greater-or-equal-two", "nan >= 2.0", False),
 ]
@@ -89,6 +92,9 @@ TOTAL_ORDER: list[tuple[str, str, str]] = [
     ("min", "print min(nan, 1.0)\n", "1.0"),
     ("max", "print max(nan, 1.0)\n", "NaN"),
     ("clamp", "print clamp(nan, 0.0, 10.0)\n", "10.0"),
+    ("list-sort", "print list_sort([nan, 1.0, 2.0])\n", "[1.0, 2.0, NaN]"),
+    ("heap-push", "print heap_push(heap_push(heap_push([], nan), 1.0), 2.0)\n", "[1.0, NaN, 2.0]"),
+    ("heap-pop", "print heap_pop(heap_push(heap_push([], nan), 1.0))\n", "1.0"),
 ]
 
 # The same root cause produced a second contradiction that had nothing to do with NaN.
@@ -172,11 +178,19 @@ def error_line(source: str) -> tuple[int, str]:
     return completed.returncode, message
 
 
-def main() -> int:
+def main(argv: list[str] | None = None, *, nan_rows: list[tuple[str, str, bool]] | None = None) -> int:
+    """Runs every table and reports the counts.
+
+    ``nan_rows`` replaces the NaN comparison table so a test can hand in a row it knows to be
+    wrong and confirm the probe reports it. Without that seam the only thing testable is the
+    full green run, which cannot distinguish "checked nothing" from "checked everything".
+    """
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--verbose", action="store_true", help="print every case")
     parser.add_argument("--check", action="store_true", help="exit 1 if any case disagrees")
-    arguments = parser.parse_args()
+    arguments = parser.parse_args(argv)
+
+    nan_comparisons = NAN_COMPARISONS if nan_rows is None else nan_rows
 
     if not JAR.exists():
         print(f"missing {JAR}; run: ./gradlew :oq-cli:standaloneJar", file=sys.stderr)
@@ -206,7 +220,7 @@ def main() -> int:
             print(f"raise   {label:26} {message or '<none>':40} exit {code}")
 
     unordered = 0
-    for label, expression, expected in NAN_COMPARISONS:
+    for label, expression, expected in nan_comparisons:
         code, lines = run(PREAMBLE + f"print {expression}\n")
         actual = lines[-1] if lines else ""
         if code == 0 and actual == str(expected).lower():
@@ -262,7 +276,7 @@ def main() -> int:
 
     print(f"non-finite values produced silently: {silent_values} of {len(SILENT_VALUES)}")
     print(f"domain errors that raise: {raising} of {len(RAISING)}")
-    print(f"NaN comparisons following IEEE order: {unordered} of {len(NAN_COMPARISONS)}")
+    print(f"NaN comparisons following IEEE order: {unordered} of {len(nan_comparisons)}")
     print(f"signed-zero comparisons following IEEE order: {signed} of {len(SIGNED_ZERO)}")
     print(f"total-order consumers still ordering NaN: {total} of {len(TOTAL_ORDER)}")
     print(f"NaN unusable as a key or member: {keys} of {len(NAN_AS_A_KEY)}")

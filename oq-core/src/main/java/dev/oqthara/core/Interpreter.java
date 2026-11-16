@@ -823,9 +823,9 @@ public final class Interpreter implements OqHost {
             case EQEQ -> Values.equal(left, right);
             case NOTEQ -> !Values.equal(left, right);
             case LT -> Values.lessThan(left, right, span);
-            case LE -> Values.lessThan(left, right, span) || Values.equal(left, right);
+            case LE -> Values.lessOrEqual(left, right, span);
             case GT -> Values.greaterThan(left, right, span);
-            case GE -> Values.greaterThan(left, right, span) || Values.equal(left, right);
+            case GE -> Values.greaterOrEqual(left, right, span);
             default -> throw new OqError("unsupported operator " + op, span);
         };
     }

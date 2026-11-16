@@ -10,7 +10,13 @@ print nan >= 1.0
 print nan <= nan
 print nan >= nan
 print 1.0 < nan
+print 1.0 <= nan
+print 1.0 > nan
+print 1.0 >= nan
 print nan < 1.0
+print nan <= 1.0
+print nan <= 2.0
+print nan >= 2.0
 # The tests that do work, and the one that identifies a NaN.
 print nan == nan
 print nan != nan

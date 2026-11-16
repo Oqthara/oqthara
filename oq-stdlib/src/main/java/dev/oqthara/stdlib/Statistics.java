@@ -408,8 +408,10 @@ final class Statistics {
      * (ADR-0041 D7).
      *
      * <p>A heap needs every pair to order, so this is deliberately the total order and not the
-     * {@code <} relation. The two differ only for {@code NaN}: {@link Values#compare} places it
-     * above every number, while {@code NaN < x} is false (ADR-0063).
+     * {@code <} relation. The two differ in two places. {@link Values#compare} places {@code NaN}
+     * above every number, while {@code NaN < x} is false, and it separates {@code -0.0} from
+     * {@code 0.0}, while {@code -0.0 < 0.0} is false because {@code ==} calls them one value
+     * (ADR-0063, ADR-0017). Lists holding either inherit the same two differences.
      */
     private static int compare(Object left, Object right, Span span) {
         return Values.compare(left, right, span);

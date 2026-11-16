@@ -3,7 +3,7 @@
 **Status:** Accepted
 **Date:** 2026-11-16
 **Related:** ADR-0051 (non-finite numbers and transcendentals), ADR-0017 (equality and
-hashing), ADR-0060 (keyed sorting), ADR-0041 (ordered search), the requirement matrix §59
+hashing), ADR-0060 (keyed sorting), ADR-0041 (ordered search), the requirement matrix §60
 
 ## Context
 
@@ -28,10 +28,14 @@ CLI found that `==` and `<` disagreed about the same pair of values:
 | `nan > nan` | `false` | correct |
 | **`nan >= nan`** | **`true`** | **wrong** |
 | **`1.0 < nan`** | **`true`** | **wrong** |
+| **`1.0 <= nan`** | **`true`** | **wrong** |
 | `1.0 > nan` | `false` | correct |
+| `1.0 >= nan` | `false` | correct |
+| `nan <= 2.0` | `false` | correct |
+| **`nan >= 2.0`** | **`true`** | **wrong** |
 
-Six of twelve were wrong, and the wrong ones were not uniformly wrong: they were three of the
-four operators in three of the four operand orders. `nan > 1.0` was true while `nan == 1.0`
+Seven of these sixteen were wrong, and the wrong ones were not uniformly wrong: every one of the
+four operators was wrong in at least one operand order. `nan > 1.0` was true while `nan == 1.0`
 was false, so the language said a value was greater than another while denying the two were
 unequal. `nan <= nan` was true while `nan < nan` was false, so `<=` was not `(<) or (==)`.
 
@@ -77,15 +81,18 @@ Both now agree, because both were changed; the conformance case runs on both.
 order: `sort`, `sorted`, `min`/`max` through `extremeOf`, `clamp`, `list_sort`, and the
 `Statistics` heap. Changing `compare` to return "unordered" would break `sort`, which is why
 the fix is a second relation rather than a changed first one. This was verified rather than
-assumed: every consumer above was probed after the change and still orders `NaN` (see
-Consequences).
+assumed: six consumers were probed after the change and all still order `NaN` — `sort`,
+`sorted`, `min`, `max`, `clamp`, `list_sort`, plus `heap_push`/`heap_pop` (see Consequences).
 
 ## Decision
 
 ### 1. The relational operators are a partial order defined from `<` and `==`
 
-`Values.lessThan(a, b, span)` is the single definition of `<`, and `Values.greaterThan` is
-`lessThan` with the operands exchanged. The two remaining operators are built from them:
+`Values.lessThan(a, b, span)` is the single definition of `<`, and `Values.greaterThan` is the
+same relation with the operands exchanged — spelled out per pair rather than delegating as
+`lessThan(b, a)`, because the exchange is where a diagnostic naming the types in reverse order
+comes from. `Values.lessOrEqual` and `Values.greaterOrEqual` are the single definitions of the
+inclusive pair, so neither backend can build them differently:
 
 ```
 a <= b  is  a < b  or  a == b
@@ -104,16 +111,17 @@ the *same* relation — the first unequal pair decides, and a length difference 
 after a common prefix is equal. A list therefore inherits the partial order rather than
 bypassing it: `[nan] < [nan]` is false, and so is `[1.0, nan] < [1.0, 1.0]`.
 
-An unorderable pair still raises the same message it always did, because the fallback calls
-`compare` and keeps the refusal and its hint in one place.
+An unorderable pair still raises the same message it always did, and still names its types in
+source order (`1 > "a"` says `cannot compare number with text`), because the fallback calls
+`compare` in the original argument order and keeps the refusal and its hint in one place.
 
 ### 2. `Values.compare` stays a total order, and says so
 
 `compare` is unchanged for numbers. Its javadoc now states that it is the collection order and
-explicitly **not** the definition of `<`, naming `NaN` as the only value where they differ.
-The `Statistics` heap javadoc claimed the heap and the operator "agree by construction"; that
-was true before this ADR and is false after it, so it was corrected to say the heap agrees
-with `sort` and `min` — which is the property the heap actually needs.
+explicitly **not** the definition of `<`, naming `NaN` and signed zero as the two places where
+they differ. The `Statistics` heap javadoc claimed the heap and the operator "agree by
+construction"; that was true before this ADR and is false after it, so it was corrected to say
+the heap agrees with `sort` and `min` — which is the property the heap actually needs.
 
 ### 3. `min`, `max` and `clamp` keep the total order, and are not NaN-aware
 
@@ -135,18 +143,18 @@ the change so the behaviour cannot drift silently.
 
 ### 4. The policy is reproducible from a script
 
-`scripts/probe-non-finite.py` runs 63 cases across seven groups: silently produced non-finite
-values, domain errors that raise, the fourteen `NaN` comparisons, the nine signed-zero
-comparisons, the five total-order consumers, the six `NaN` key and membership cases, and ten
+`scripts/probe-non-finite.py` runs 68 cases across seven groups: silently produced non-finite
+values, domain errors that raise, the sixteen `NaN` comparisons, the nine signed-zero
+comparisons, the eight total-order consumers, the six `NaN` key and membership cases, and ten
 ordinary comparisons. `--check` exits non-zero if any disagrees. The numbers quoted in this ADR
 come from that script rather than being transcribed from a one-off session, and the counts below
 are its output.
 
-Against `origin/main` (the commit before this change) the script reports **8 of 14** `NaN`
-comparisons correct, so 6 are wrong. And **5 of 9** signed-zero comparisons are correct, so 4 are wrong.
-All five other groups pass, so the failures are exactly the six `NaN` rows and the four
-signed-zero rows above and nothing else. After the change it reports **14 of 14** and **9 of 9**,
-with every other group unchanged at 8/8, 11/11, 5/5, 6/6 and 10/10. The isolation matters: it
+Against `origin/main` (the commit before this change) the script reports **9 of 16** `NaN`
+comparisons correct, so 7 are wrong. And **5 of 9** signed-zero comparisons are correct, so 4 are wrong.
+All five other groups pass, so the failures are exactly the seven `NaN` rows and the four
+signed-zero rows above and nothing else. After the change it reports **16 of 16** and **9 of 9**,
+with every other group unchanged at 8/8, 11/11, 8/8, 6/6 and 10/10. The isolation matters: it
 shows the change touched the operators and nothing else.
 
 ### 5. `NaN` remains the only value that identifies itself by inequality
@@ -157,19 +165,25 @@ obvious way, and it is already documented.
 
 ## Consequences
 
-- All twelve `NaN` relational outcomes are now the IEEE ones, in both backends.
+- All sixteen `NaN` relational outcomes in the probe are now the IEEE ones, in both backends;
+  seven of them were wrong before.
 - `-0.0` and `0.0` compare as equal under all four relational operators, so `<` no longer
   contradicts `==` for signed zero either.
-- `<=` and `>=` are consistent with `==` for every pair of values, by construction rather than
-  by convention.
+- `<=` and `>=` are consistent with `==` for every pair the ordering accepts: any pair that
+  raises for `<` still raises, and any pair that orders satisfies `a <= b` exactly when
+  `a < b or a == b`. The exception the operators inherit from `<` is `nothing`, which
+  `nothing == nothing` calls equal yet `<` refuses to place.
 - `sort`, `sorted`, `min`, `max`, `clamp`, `list_sort` and the heap are unchanged. Verified by
-  the five total-order rows in the probe and by the existing standard-library tests.
-- `conformance/245-nan-is-unordered.oq` pins all fourteen comparison outcomes plus both
-  signed-zero cases, and runs on both backends because it compiles (208 of 217 executable
-  programs now).
-- The requirement matrix row 59 had carried a stale gap: it claimed `sqrt(-1)` "returns `NaN`
-  without a word … remains unresolved". It raises `sqrt() has no real result for -1.0`, and has
-  since ADR-0051. The row was corrected and a row for the ordering rule was added.
+  the eight total-order rows in the probe and by the existing standard-library tests.
+- `conformance/245-nan-is-unordered.oq` pins all sixteen `NaN` comparison outcomes in the probe
+  plus all five signed-zero cases, and runs on both backends because it compiles (208 of 217
+  executable programs now).
+- The requirement matrix row 59 (division by zero) had carried a stale gap: it claimed
+  `sqrt(-1)` "returns `NaN` without a word … remains unresolved". It raises
+  `sqrt() has no real result for -1.0`, and has since ADR-0051. That is a **separate
+  documentation correction** bundled into this change rather than a consequence of it — the
+  behaviour was already right and only the matrix was wrong. Row 59 was corrected and rows
+  60–63 were added for the ordering rule, the total order, signed zero and `NaN` as a key.
 - One behaviour is now inconsistent on purpose and is worth knowing: `nan != nan` is true, so
   `length(set([nan, nan]))` is 2. That follows from ADR-0017's `double` equality, not from this
   ADR, and it is the price of `n != n` being the `NaN` test. The same equality makes `NaN`

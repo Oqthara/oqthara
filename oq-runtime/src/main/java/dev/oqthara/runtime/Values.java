@@ -429,9 +429,7 @@ public final class Values {
             return Boolean.compare(x, y);
         }
         if (a instanceof OqTuple != b instanceof OqTuple) {
-            throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
-                    "A tuple is compared with another tuple, and a list with another list."
-                            + " Convert the tuple with list(...) first.");
+            throw tupleBesideList(a, b, span);
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
             int limit = Math.min(x.size(), y.size());
@@ -454,10 +452,13 @@ public final class Values {
      * {@code NaN < NaN}, {@code NaN > 1.0} and {@code NaN <= NaN} are all false, and
      * {@code NaN != NaN} stays the test for it (ADR-0051 decision 2). Because {@code <=} and
      * {@code >=} are built from this relation and {@link #equal} rather than compared
-     * separately, no pair can be {@code <=} while being neither {@code <} nor {@code ==}.
+     * separately, no pair the ordering accepts can be {@code <=} while being neither {@code <}
+     * nor {@code ==}. A value the ordering rejects altogether, such as {@code nothing}, raises
+     * instead, even though {@code nothing == nothing} is true.
      *
-     * <p>Lists and tuples order lexicographically by the same relation, so the first pair that
-     * is unequal decides, and a length difference decides only after a common prefix is equal.
+     * <p>Lists order lexicographically by the same relation, so the first unequal pair decides
+     * and a length difference decides only after a common prefix is equal. Tuples order among
+     * themselves the same way but are never ordered against a list.
      */
     public static boolean lessThan(Object a, Object b, Span span) {
         if (isNumber(a) && isNumber(b)) {
@@ -470,8 +471,9 @@ public final class Values {
             return Boolean.compare(x, y) < 0;
         }
         if (a instanceof OqTuple != b instanceof OqTuple) {
-            // Reuse compare so the refusal message and its hint stay in one place.
-            compare(a, b, span);
+            // Always throws: compare rejects a tuple beside a list, because OqTuple extends
+            // AbstractList and would otherwise fall into the List branch and compare element-wise.
+            throw tupleBesideList(a, b, span);
         }
         if (a instanceof List<?> x && b instanceof List<?> y) {
             int limit = Math.min(x.size(), y.size());
@@ -486,9 +488,65 @@ public final class Values {
         return compare(a, b, span) < 0;
     }
 
-    /** The {@code >} relation, defined as {@code <} with the operands exchanged. */
+    /**
+     * The {@code >} relation, which is {@code <} with the operands exchanged.
+     *
+     * <p>The exchange is written out over the operand pairs rather than done by calling
+     * {@code lessThan(b, a)}: the refusal for an unorderable pair names the two types, and a
+     * swapped call would name them in reverse source order. {@code 1 > "a"} must keep saying
+     * {@code cannot compare number with text}, which is what it said before this relation
+     * existed. {@link #lessOrEqual} and {@link #greaterOrEqual} live here for the same reason:
+     * the two backends compose them, and a composition written out twice can drift.
+     */
     public static boolean greaterThan(Object a, Object b, Span span) {
-        return lessThan(b, a, span);
+        if (isNumber(a) && isNumber(b)) {
+            return asDouble(a) > asDouble(b);
+        }
+        if (a instanceof String x && b instanceof String y) {
+            return x.compareTo(y) > 0;
+        }
+        if (a instanceof Boolean x && b instanceof Boolean y) {
+            return Boolean.compare(x, y) > 0;
+        }
+        if (a instanceof OqTuple != b instanceof OqTuple) {
+            // Always throws: compare rejects a tuple beside a list. Stated as a throw so that
+            // control cannot fall through into the List branch below.
+            throw tupleBesideList(a, b, span);
+        }
+        if (a instanceof List<?> x && b instanceof List<?> y) {
+            int limit = Math.min(x.size(), y.size());
+            for (int i = 0; i < limit; i++) {
+                Object left = x.get(i);
+                Object right = y.get(i);
+                if (greaterThan(left, right, span)) return true;
+                if (!equal(left, right)) return false;
+            }
+            return x.size() > y.size();
+        }
+        return compare(a, b, span) > 0;
+    }
+
+    /**
+     * The {@code <=} relation, defined as {@code <} or {@code ==}.
+     *
+     * <p>Deriving it instead of comparing separately is what keeps it consistent with
+     * {@code ==}: no pair can be {@code <=} while being neither less than nor equal to the
+     * other. Only values the ordering accepts can be compared at all, so a value that
+     * {@code ==} accepts but the ordering rejects, such as {@code nothing}, raises here too.
+     */
+    public static boolean lessOrEqual(Object a, Object b, Span span) {
+        return lessThan(a, b, span) || equal(a, b);
+    }
+
+    /** The {@code >=} relation, defined as {@code >} or {@code ==}. See {@link #lessOrEqual}. */
+    public static boolean greaterOrEqual(Object a, Object b, Span span) {
+        return greaterThan(a, b, span) || equal(a, b);
+    }
+
+    private static OqError tupleBesideList(Object a, Object b, Span span) {
+        return new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
+                "A tuple is compared with another tuple, and a list with another list."
+                        + " Convert the tuple with list(...) first.");
     }
 
     public static Object negate(Object value, Span span) {

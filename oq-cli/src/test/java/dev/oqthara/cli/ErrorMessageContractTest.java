@@ -43,6 +43,19 @@ class ErrorMessageContractTest {
     }
 
     @Test
+    void anUnorderableComparisonNamesItsTypesInSourceOrder() {
+        // `>` used to swap its operands before reporting, so `1 > "a"` said
+        // "cannot compare text with number" — the reverse of what was written. Every operator
+        // is asserted from the same operand order because one of them delegating to another
+        // with the arguments exchanged is exactly how that happened.
+        goodError("print 1 < \"a\"", "cannot compare number with text");
+        goodError("print 1 <= \"a\"", "cannot compare number with text");
+        goodError("print 1 > \"a\"", "cannot compare number with text");
+        goodError("print 1 >= \"a\"", "cannot compare number with text");
+        goodError("print \"a\" > 1", "cannot compare text with number");
+    }
+
+    @Test
     void loopControlOutsideLoopIsAUserError() {
         goodError("break", "'break' outside a loop");
         goodError("continue", "'continue' outside a loop");
