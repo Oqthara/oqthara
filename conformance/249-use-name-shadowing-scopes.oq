@@ -13,11 +13,13 @@ end
 a, Math = [10, 20]
 print Math
 
-# The name a `catch` binds shares the handler's frame.
+# The name a `catch` binds shares the handler's frame. Reading the message proves the name
+# holds the error and not the class; the position is left out so the line number stays out of
+# the expected output.
 try
   error("boom")
 catch Math
-  print "caught " + text(Math)
+  print Math.message
 end
 
 # An outer assignment does not reach into a nested block: the block's own frame has no
