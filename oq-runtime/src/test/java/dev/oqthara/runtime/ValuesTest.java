@@ -387,4 +387,77 @@ class ValuesTest {
         // A whole-valued decimal is a number, so it converts like an integer.
         assertTrue(Values.contains(range, 3.0d, span));
     }
+
+    // NaN is unordered, so every relational operator must answer false for it, exactly as
+    // IEEE-754 requires. The subtle part is <= and >=: they are not (<) or (==), because that
+    // would make nan <= nan true -- < is false and == is false -- while nan <= 1.0 stayed false
+    // by accident. Defining them as (< or ==) keeps them consistent with == by construction.
+    @Test
+    void everyRelationalOperatorIsFalseForNaN() {
+        double nan = Double.NaN;
+        assertFalse(Values.lessThan(nan, nan, span));
+        assertFalse(Values.lessThan(nan, 1.0d, span));
+        assertFalse(Values.lessThan(1.0d, nan, span));
+        assertFalse(Values.greaterThan(nan, nan, span));
+        assertFalse(Values.greaterThan(nan, 1.0d, span));
+        assertFalse(Values.greaterThan(1.0d, nan, span));
+    }
+
+    @Test
+    void NaNIsTheOnlyValueNotEqualToItself() {
+        double nan = Double.NaN;
+        assertFalse(Values.equal(nan, nan));
+        assertTrue(Values.equal(1.0d, 1.0d));
+        // The total order used by sort/min/max is a different relation and still orders NaN.
+        assertEquals(0, Values.compare(nan, nan, span));
+        assertTrue(Values.compare(nan, 1.0d, span) > 0);
+    }
+
+    @Test
+    void signedZeroComparesEqualUnderEveryRelationalOperator() {
+        // Double.compare ranks -0.0 below 0.0 while == calls them one value, so a relation that
+        // is both ordered and equal contradicts itself. ADR-0017 decided -0.0 == 0, which makes
+        // the ordering the half that had to give.
+        assertFalse(Values.lessThan(-0.0d, 0.0d, span));
+        assertFalse(Values.lessThan(0.0d, -0.0d, span));
+        assertFalse(Values.greaterThan(-0.0d, 0.0d, span));
+        assertFalse(Values.greaterThan(0.0d, -0.0d, span));
+        assertTrue(Values.equal(-0.0d, 0.0d));
+        // The collection order keeps them distinct, which is why it could not be reused here.
+        assertTrue(Values.compare(-0.0d, 0.0d, span) < 0);
+    }
+
+    @Test
+    void relationalOperatorsAgreeWithEqualityOnOrdinaryValues() {
+        assertTrue(Values.lessThan(1L, 2.0d, span));
+        assertFalse(Values.lessThan(2L, 2.0d, span));
+        assertTrue(Values.equal(2L, 2.0d));
+        assertTrue(Values.lessThan("a", "b", span));
+        assertFalse(Values.lessThan("b", "a", span));
+        assertTrue(Values.greaterThan("b", "a", span));
+        assertTrue(Values.lessThan(false, true, span));
+    }
+
+    @Test
+    void listsAndTuplesOrderLexicographicallyByThatSameRelation() {
+        assertTrue(Values.lessThan(List.of(1L, 2L), List.of(1L, 3L), span));
+        assertFalse(Values.lessThan(List.of(1L, 2L), List.of(1L, 2L), span));
+        // A length difference decides only after the common prefix is fully equal.
+        assertTrue(Values.lessThan(List.of(1L), List.of(1L, 2L), span));
+        assertFalse(Values.lessThan(List.of(2L), List.of(1L, 2L), span));
+        // A NaN inside a list makes the pair that decides it unordered, so it is not less.
+        assertFalse(Values.lessThan(List.of(Double.NaN), List.of(Double.NaN), span));
+        assertFalse(Values.lessThan(List.of(1L, Double.NaN), List.of(1L, 1.0d), span));
+        // A NaN blocks only where it is actually compared. `[1.0]` and `[1.0, NaN]` share an
+        // equal prefix, so the length decides without ever reaching the NaN — which is exactly
+        // what a lexicographic order does, and what Python does for the same two lists.
+        assertTrue(Values.lessThan(List.of(1.0d), List.of(1.0d, Double.NaN), span));
+        assertFalse(Values.lessThan(List.of(1.0d, Double.NaN), List.of(1.0d), span));
+    }
+
+    @Test
+    void comparingIncomparableValuesStillNamesBothTypes() {
+        var error = assertThrows(OqError.class, () -> Values.lessThan(1L, "a", span));
+        assertTrue(error.getMessage().contains("cannot compare number with text"));
+    }
 }

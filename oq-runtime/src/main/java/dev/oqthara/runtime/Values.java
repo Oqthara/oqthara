@@ -408,6 +408,16 @@ public final class Values {
         return true;
     }
 
+    /**
+     * Orders two values for {@code sort}, {@code min}, {@code max} and {@code clamp}, which need
+     * a total order so that every collection has exactly one sorted form.
+     *
+     * <p>This is deliberately <em>not</em> the definition of {@code <}. {@link Double#compare}
+     * places {@code NaN} above every number, so a relational operator built on it would report
+     * {@code NaN > 1.0} as true while {@link #equal} reports {@code NaN == NaN} as false. The
+     * relational operators therefore use {@link #lessThan}, which follows IEEE-754 and answers
+     * false for every comparison involving {@code NaN}.
+     */
     public static int compare(Object a, Object b, Span span) {
         if (isNumber(a) && isNumber(b)) {
             return Double.compare(asDouble(a), asDouble(b));
@@ -434,6 +444,51 @@ public final class Values {
         throw new OqError("cannot compare " + typeName(a) + " with " + typeName(b), span,
                 "Comparison works between two numbers, two texts, two booleans or two lists."
                         + hintFor(a, b));
+    }
+
+    /**
+     * The {@code <} relation, which is a partial order rather than the total order of
+     * {@link #compare}.
+     *
+     * <p>Numbers compare by IEEE-754, where every comparison involving {@code NaN} is false:
+     * {@code NaN < NaN}, {@code NaN > 1.0} and {@code NaN <= NaN} are all false, and
+     * {@code NaN != NaN} stays the test for it (ADR-0051 decision 2). Because {@code <=} and
+     * {@code >=} are built from this relation and {@link #equal} rather than compared
+     * separately, no pair can be {@code <=} while being neither {@code <} nor {@code ==}.
+     *
+     * <p>Lists and tuples order lexicographically by the same relation, so the first pair that
+     * is unequal decides, and a length difference decides only after a common prefix is equal.
+     */
+    public static boolean lessThan(Object a, Object b, Span span) {
+        if (isNumber(a) && isNumber(b)) {
+            return asDouble(a) < asDouble(b);
+        }
+        if (a instanceof String x && b instanceof String y) {
+            return x.compareTo(y) < 0;
+        }
+        if (a instanceof Boolean x && b instanceof Boolean y) {
+            return Boolean.compare(x, y) < 0;
+        }
+        if (a instanceof OqTuple != b instanceof OqTuple) {
+            // Reuse compare so the refusal message and its hint stay in one place.
+            compare(a, b, span);
+        }
+        if (a instanceof List<?> x && b instanceof List<?> y) {
+            int limit = Math.min(x.size(), y.size());
+            for (int i = 0; i < limit; i++) {
+                Object left = x.get(i);
+                Object right = y.get(i);
+                if (lessThan(left, right, span)) return true;
+                if (!equal(left, right)) return false;
+            }
+            return x.size() < y.size();
+        }
+        return compare(a, b, span) < 0;
+    }
+
+    /** The {@code >} relation, defined as {@code <} with the operands exchanged. */
+    public static boolean greaterThan(Object a, Object b, Span span) {
+        return lessThan(b, a, span);
     }
 
     public static Object negate(Object value, Span span) {

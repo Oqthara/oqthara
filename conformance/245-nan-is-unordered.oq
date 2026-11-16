@@ -1,0 +1,34 @@
+# NaN is unordered, so every relational operator must answer false for it. This was wrong
+# until ADR-0063: the operators consumed a total order in which NaN sorts above infinity, so
+# `nan > 1.0`, `nan >= nan`, `nan <= nan` and `1.0 < nan` all came back true while
+# `nan == nan` and `nan < nan` came back false. The two spellings of "order" had been fused
+# into one function because `sort` and `min` genuinely need every pair to order.
+big = 1.0e308 * 10
+nan = big - big
+print nan > 1.0
+print nan >= 1.0
+print nan <= nan
+print nan >= nan
+print 1.0 < nan
+print nan < 1.0
+# The tests that do work, and the one that identifies a NaN.
+print nan == nan
+print nan != nan
+print nan < nan
+print nan > nan
+# An infinity is not a NaN, so it does order, and it is still not less than itself.
+inf = 1.0e308 * 10
+print inf < inf
+print inf <= inf
+print inf > 1.0
+print inf < nan
+# The same fusion broke signed zero, which shares nothing with NaN except that `Double.compare`
+# and `==` disagree about it. `-0.0` and `0.0` are one value to `==`, so they are one value to
+# the ordering too; `-0.0 < 0.0` used to be true alongside `-0.0 == 0.0`.
+nz = -0.0
+z = 0.0
+print nz < z
+print nz <= z
+print nz > z
+print nz >= z
+print nz == z

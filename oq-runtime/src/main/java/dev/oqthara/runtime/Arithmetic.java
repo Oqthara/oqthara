@@ -75,19 +75,19 @@ public final class Arithmetic {
     }
 
     public static Object less(Object a, Object b) {
-        return Values.compare(a, b, Errors.current()) < 0;
+        return Values.lessThan(a, b, Errors.current());
     }
 
     public static Object lessOrEqual(Object a, Object b) {
-        return Values.compare(a, b, Errors.current()) <= 0;
+        return Values.lessThan(a, b, Errors.current()) || Values.equal(a, b);
     }
 
     public static Object greater(Object a, Object b) {
-        return Values.compare(a, b, Errors.current()) > 0;
+        return Values.greaterThan(a, b, Errors.current());
     }
 
     public static Object greaterOrEqual(Object a, Object b) {
-        return Values.compare(a, b, Errors.current()) >= 0;
+        return Values.greaterThan(a, b, Errors.current()) || Values.equal(a, b);
     }
 
     public static Object equal(Object a, Object b) {

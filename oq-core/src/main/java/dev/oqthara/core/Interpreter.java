@@ -822,10 +822,10 @@ public final class Interpreter implements OqHost {
             case STARSTAR -> Values.power(left, right, span);
             case EQEQ -> Values.equal(left, right);
             case NOTEQ -> !Values.equal(left, right);
-            case LT -> Values.compare(left, right, span) < 0;
-            case LE -> Values.compare(left, right, span) <= 0;
-            case GT -> Values.compare(left, right, span) > 0;
-            case GE -> Values.compare(left, right, span) >= 0;
+            case LT -> Values.lessThan(left, right, span);
+            case LE -> Values.lessThan(left, right, span) || Values.equal(left, right);
+            case GT -> Values.greaterThan(left, right, span);
+            case GE -> Values.greaterThan(left, right, span) || Values.equal(left, right);
             default -> throw new OqError("unsupported operator " + op, span);
         };
     }
