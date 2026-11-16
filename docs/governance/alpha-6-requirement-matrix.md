@@ -69,6 +69,20 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 | An unimplemented construct is refused rather than accepted | `DONE` | all 12 `NOT STARTED` rows exit 1; none exits 0 (re-run one by one with the fixed jar, 2026-11-15) | — |
 | An unimplemented construct is named in its diagnostic | `DONE` | 10 leaders (`match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import`, `throw`) report `<word> is not a construct in Oqthara` in every expression position; 5 comprehension shapes name themselves; `scripts/probe-construct-leaders.py` reports 10/10 operands, 10/10 hints, 20/20 assignment values, 80/80 nested positions, 5/5 shapes, 60/60 name positions and 150/150 continuation positions still accepted, and exits 1 on the pre-change build | None. The refusal is contextual (ADR-0062): it fires only when the next token cannot continue an expression, so all ten words remain legal names and `match`/`from`/`await` keep working in `examples/` |
 
+## Alpha 6 acceptance criteria
+
+The four criteria are defined in
+[alpha-5-java-bridge-capability-inventory.md](alpha-5-java-bridge-capability-inventory.md), which
+is where their wording is authoritative. They appear here because a criterion with a gate is a
+capability, and this file is where capability state is recorded.
+
+| Requirement | State | Evidence | Gaps |
+| --- | --- | --- | --- |
+| A6.1 compiled code calls Java directly | `NOT STARTED` | `use` in a compiled program still falls back to the interpreter, so boundary item 2 of `backend.md` stands | Needs native lowering of `use`, static calls and argument conversions — the reason it is a phase of its own |
+| A6.2 `Class` reflection is available to programs | `NOT STARTED` | Alpha 5 deliberately refuses reflection and pins the refusal; nothing has changed | Would need a reviewed capability decision and a sandboxing story, because `setAccessible` on application classes is permitted by the JVM. Alpha 6 may decide the answer is permanently no and retire the row |
+| A6.3 compiled code answers `Class` self-description | `BLOCKED` | `Methods.callOnClass` mirrors the interpreter's answers by construction, so the two agree, but a jar whose `use` forces the interpreter fallback does not exercise it end to end | Depends on A6.1 |
+| A6.4 the probe harness runs in CI | `DONE` | The `Decision probes (A6.4)` step in `ci.yml` runs `docs/governance/alpha-5/java-bridge-probes/run.py --both` plus the three `scripts/probe-*.py --check` harnesses against the built jar; all four exit 0 locally, and a one-day drift in one probe's expected date makes `run.py` report `FAILED` and exit 1 | — |
+
 ## How a row is closed
 
 A row may move to `DONE` only when all of the following hold on `main`:

@@ -93,6 +93,17 @@ jobs:
         run: |
           ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
           python3 scripts/verify-conformance.py
+      - name: Decision probes (A6.4)
+        # The ADRs quote counts that no ordinary unit test produces. These four harnesses
+        # regenerate them against the shipped jar, so a decision that quietly stops matching its
+        # own record fails the build instead of being discovered by a reader.
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        run: |
+          python3 docs/governance/alpha-5/java-bridge-probes/run.py \
+            oq-cli/build/libs/oq.jar --both
+          python3 scripts/probe-construct-leaders.py --check
+          python3 scripts/probe-non-finite.py --check
+          python3 scripts/probe-reserved-positions.py --check
       - name: Upload test reports
         # Every matrix leg produces the same report tree, so the four uploads differ only in
         # which JVM generated them. Keep this uploading after ordinary test failures (that is
