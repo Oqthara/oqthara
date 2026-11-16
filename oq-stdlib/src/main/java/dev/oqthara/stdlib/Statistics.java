@@ -397,13 +397,21 @@ final class Statistics {
     }
 
     /**
-     * The language's own ordering, so that a heap over mixed numbers behaves like {@code <}.
+     * The language's own total ordering, so that a heap over mixed numbers behaves like the
+     * collection ordering the rest of the standard library uses.
      *
      * <p>Casting to {@code Comparable} was wrong in exactly the way the language is not: Java's
      * {@code Long} and {@code Double} refuse to compare with each other, so
      * {@code heap_push([1], 1.5)} failed with "cannot compare decimal with number" while the
      * expression {@code 1 < 1.5} succeeded. Deferring to {@link Values#compare} makes the heap
-     * and the operator agree by construction instead of by coincidence (ADR-0041 D7).
+     * agree with {@code sort} and {@code min} by construction instead of by coincidence
+     * (ADR-0041 D7).
+     *
+     * <p>A heap needs every pair to order, so this is deliberately the total order and not the
+     * {@code <} relation. The two differ in two places. {@link Values#compare} places {@code NaN}
+     * above every number, while {@code NaN < x} is false, and it separates {@code -0.0} from
+     * {@code 0.0}, while {@code -0.0 < 0.0} is false because {@code ==} calls them one value
+     * (ADR-0063, ADR-0017). Lists holding either inherit the same two differences.
      */
     private static int compare(Object left, Object right, Span span) {
         return Values.compare(left, right, span);

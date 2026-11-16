@@ -42,8 +42,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and hard-reserving them would have broken two shipped programs. It runs at the point where a
   variable reference is built, so every expression position is covered rather than the statement
   forms someone remembered to patch.
+- **Seven of the sixteen comparisons against `NaN` returned the wrong answer.** `NaN` is
+  unordered, so every relational operator must answer false for it. Instead `nan > 1.0`,
+  `nan >= 1.0`, `nan <= nan`, `nan >= nan`, `1.0 < nan`, `1.0 <= nan` and `nan >= 2.0` all
+  returned `true`, while `nan == nan` and `nan < nan` correctly returned `false`. The language therefore claimed one value was
+  greater than another while denying the two were unequal, and `nan <= nan` was true while
+  `nan < nan` was false. The cause was that the operators consumed `Values.compare`, a
+  `Double.compare` **total order** that places `NaN` above every number — correct for `sort`,
+  `min` and `max`, which need every pair to order, and wrong for an operator. Both backends were
+  affected, because the interpreter and the bytecode path each called it separately. The
+  operators now share `Values.lessThan`, and `<=`/`>=` are defined as `(<) or (==)` so they can
+  never disagree with `==` (ADR-0063). `sort`, `sorted`, `min`, `max`, `clamp` and the heap are
+  unchanged.
+- **`-0.0` was reported as less than `0.0` while also being equal to it.** The same total order
+  ranks `-0.0` below `0.0`, because it has to put every pair somewhere, but `==` on doubles — and
+  ADR-0017's decision — says the two are one value. So `-0.0 < 0.0` printed `true` in the same
+  program where `-0.0 == 0.0` printed `true`, and `-0.0 >= 0.0` printed `false`. Nothing about
+  this involves `NaN`; it is the same defect showing a second face, which is what made the
+  single-cause diagnosis certain rather than a guess. All four relational operators now treat
+  signed zero as one value (ADR-0063). `Values.compare` still distinguishes them, which is what
+  a sort needs.
 
 ### Changed
+- **`docs/spec/language.md` now records that `NaN` cannot be stored and read back.** `m[nan] = 1`
+  leaves an entry that `m[nan]` cannot find, and `nan in set([nan])` is `false`. This predates
+  this change and is measured identical before and after; it follows from ADR-0017's `double`
+  equality, not from the ordering rule. It is recorded because the same paragraph documents
+  `n != n` as the test for `NaN` and previously did not warn that the test also makes a stored
+  `NaN` unaddressable. Pinned by six cases in `scripts/probe-non-finite.py`.
+- **`<=` and `>=` are defined from `<` and `==` rather than compared separately.** This is not a
+  behaviour change for any ordered pair of values; it removes the possibility of the two
+  disagreeing, which is how the `NaN` defect arose. `min`/`max`/`clamp` keep returning
+  order-dependent answers for `NaN` (`min(nan, 1.0)` is `1.0`), which ADR-0063 records as a
+  decision: collections order, operators do not.
 - **`finally` can no longer be used as an identifier.** It was legal as a variable, parameter,
   function or field name, and now it is not. No pre-existing file in the repository, the examples
   or the conformance suite used the word, so this cost no existing program; the only `.oq` files

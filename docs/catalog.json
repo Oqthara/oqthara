@@ -380,6 +380,12 @@
       "slug": "docs/adr/0062-a-diagnostic-names-the-construct"
     },
     {
+      "path": "docs/adr/0063-relational-operators-follow-ieee-order.md",
+      "title": "ADR-0063 — The relational operators follow IEEE order, and collections keep a total order",
+      "section": "adr",
+      "slug": "docs/adr/0063-relational-operators-follow-ieee-order"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
