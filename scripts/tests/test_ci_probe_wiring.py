@@ -207,11 +207,15 @@ class CodepathIsCheckedNotAssumed(unittest.TestCase):
             self.assertIsNotNone(refused, name)
             self.assertIn("recorded fallback is gone", refused)
 
-    def test_a_changed_fallback_reason_fails(self):
+    def test_a_changed_fallback_reason_fails_as_a_changed_reason(self):
         # The entry is an exact line, not a prefix: a different reason is a different state.
+        # The message must say the reason changed, not that the gap closed -- only compiling
+        # again closes the gap, and conflating the two sends a reader to delete a live entry.
         for name in self.runner.FALLBACK:
             refused = self.check(name, "interpreter launcher (something else entirely)")
             self.assertIsNotNone(refused, name)
+            self.assertIn("recorded fallback reason changed", refused)
+            self.assertNotIn("gap it recorded has closed", refused)
 
     def test_a_build_with_no_codepath_line_fails(self):
         # `oq build` could stop reporting the path. Silence must not read as "compiled".
@@ -229,6 +233,117 @@ class CodepathIsCheckedNotAssumed(unittest.TestCase):
     def test_every_fallback_entry_names_a_real_probe(self):
         names = {name for name, _, _ in self.runner.PROBES}
         self.assertEqual(set(self.runner.FALLBACK) - names, set())
+
+
+class TheGateIsWiredNotJustDefined(unittest.TestCase):
+    """A6.3: calling `main` must run the codepath check.
+
+    The tests above exercise `codepath_failure` in isolation, and that is not enough: a
+    correct rule that `main` never calls is indistinguishable from no rule at all, and every
+    one of those tests would still pass with the gate deleted. These drive the real `main`
+    with the three subprocess calls stubbed, so deleting the check from the runner fails here.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("probe_runner_main", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.runner = module
+        self.jar = pathlib.Path(tempfile.mkdtemp()) / "q.jar"
+        self.jar.write_bytes(b"")
+
+    def drive(self, codepath_for):
+        """Run `main --both` with the builds simulated; `codepath_for` returns a codepath line.
+
+        Every probe is given output that satisfies its own expectation, whatever shape that
+        expectation has, so the only thing that can fail the run is the codepath check.
+        """
+        by_name = {name: (expected, defect) for name, expected, defect in self.runner.PROBES}
+
+        def output_for(name):
+            expected, defect = by_name[name]
+            if defect is not None:
+                # A recorded defect expects its recorded (wrong) lines verbatim.
+                return [line for line in defect[1]], 0
+            if isinstance(expected, str):
+                # A refusal probe: the diagnostic must be present and the exit non-zero.
+                return [expected], 1
+            return list(expected), 0
+
+        def fake_run(jar, program):
+            lines, code = output_for(program.stem)
+            return "\n".join(lines) + "\n", code
+
+        def fake_build(jar, program):
+            target = jar.parent / f"{program.stem}.jar"
+            target.write_bytes(b"")
+            output = (f"compiled {program.name}\nbackend=classfile\n"
+                      f"{codepath_for(program.stem)}\n")
+            return target, output, 0
+
+        def fake_compiled(target):
+            lines, code = output_for(target.stem)
+            return "\n".join(lines) + "\n", code
+
+        self.runner.run = fake_run
+        self.runner.compile_program = fake_build
+        self.runner.run_compiled = fake_compiled
+        argv, self_argv = self.runner.sys.argv, sys.argv
+        self.runner.sys.argv = ["run.py", str(self.jar), "--both"]
+        sys.argv = self.runner.sys.argv
+        try:
+            import io
+            from contextlib import redirect_stdout
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = self.runner.main()
+            return code, buffer.getvalue()
+        finally:
+            self.runner.sys.argv = argv
+            sys.argv = self_argv
+
+    def declare(self, name):
+        """The codepath this probe should report: compiled, unless it is a declared fallback."""
+        return self.runner.FALLBACK.get(name, "codepath: compiled bytecode")
+
+    def test_a_compiled_run_passes_and_says_what_it_compared(self):
+        code, out = self.drive(self.declare)
+        self.assertEqual(code, 0, out)
+        compiled = len(self.runner.PROBES) - len(self.runner.FALLBACK)
+        self.assertIn(
+            f"ok: {compiled} probes compared compiled bytecode against the interpreter", out
+        )
+
+    def test_a_declared_fallback_that_now_compiles_fails_the_run(self):
+        # Through `main`, not just through the decision function: closing the gap has to fail
+        # the build so the entry is deleted rather than left describing a fixed bug.
+        closed = next(iter(self.runner.FALLBACK))
+        code, out = self.drive(
+            lambda name: ("codepath: compiled bytecode" if name == closed else self.declare(name))
+        )
+        self.assertEqual(code, 1, out)
+        self.assertIn("recorded fallback is gone", out)
+
+    def test_main_fails_when_a_build_silently_falls_back(self):
+        # The exact regression: the build exits 0, writes a jar, and the jar runs -- but the
+        # jar is the interpreter launcher. Only the codepath check can see that.
+        target = self.runner.PROBES[0][0]
+
+        def codepath_for(name):
+            return ("codepath: interpreter launcher" if name == target
+                    else "codepath: compiled bytecode")
+
+        code, out = self.drive(codepath_for)
+        self.assertEqual(code, 1, out)
+        self.assertIn(target, out)
+        self.assertIn("expected 'codepath: compiled bytecode'", out)
+
+    def test_the_fallback_note_is_printed_when_a_probe_does_not_compile(self):
+        # Declaring the fallback keeps the run green, but the summary must not then claim the
+        # probe's output was compared across two backends.
+        code, out = self.drive(self.declare)
+        self.assertEqual(code, 0, out)
+        self.assertIn("not across two backends", out)
 
 
 if __name__ == "__main__":
