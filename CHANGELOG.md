@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a sort needs.
 
 ### Changed
+- **`docs/spec/language.md` now records that `NaN` cannot be stored and read back.** `m[nan] = 1`
+  leaves an entry that `m[nan]` cannot find, and `nan in set([nan])` is `false`. This predates
+  this change and is measured identical before and after; it follows from ADR-0017's `double`
+  equality, not from the ordering rule. It is recorded because the same paragraph documents
+  `n != n` as the test for `NaN` and previously did not warn that the test also makes a stored
+  `NaN` unaddressable. Pinned by six cases in `scripts/probe-non-finite.py`.
 - **`<=` and `>=` are defined from `<` and `==` rather than compared separately.** This is not a
   behaviour change for any ordered pair of values; it removes the possibility of the two
   disagreeing, which is how the `NaN` defect arose. `min`/`max`/`clamp` keep returning

@@ -135,18 +135,19 @@ the change so the behaviour cannot drift silently.
 
 ### 4. The policy is reproducible from a script
 
-`scripts/probe-non-finite.py` runs 57 cases across six groups: silently produced non-finite
+`scripts/probe-non-finite.py` runs 63 cases across seven groups: silently produced non-finite
 values, domain errors that raise, the fourteen `NaN` comparisons, the nine signed-zero
-comparisons, the five total-order consumers, and ten ordinary comparisons. `--check` exits
-non-zero if any disagrees. The numbers quoted in this ADR come from that script rather than
-being transcribed from a one-off session, and the counts below are its output.
+comparisons, the five total-order consumers, the six `NaN` key and membership cases, and ten
+ordinary comparisons. `--check` exits non-zero if any disagrees. The numbers quoted in this ADR
+come from that script rather than being transcribed from a one-off session, and the counts below
+are its output.
 
-Against `origin/main` (the commit before this change) the script reports **6 of 14** `NaN`
-comparisons and **5 of 9** signed-zero comparisons correct, with 0 failures in the four other
-groups — the six `NaN` rows and the four signed-zero rows above, and nothing else. After the
-change it reports **14 of 14** and **9 of 9**, with all four other groups unchanged at 8/8,
-11/11, 5/5 and 10/10. The isolation matters: it shows the change touched the operators and
-nothing else.
+Against `origin/main` (the commit before this change) the script reports **8 of 14** `NaN`
+comparisons correct, so 6 are wrong. And **5 of 9** signed-zero comparisons are correct, so 4 are wrong.
+All five other groups pass, so the failures are exactly the six `NaN` rows and the four
+signed-zero rows above and nothing else. After the change it reports **14 of 14** and **9 of 9**,
+with every other group unchanged at 8/8, 11/11, 5/5, 6/6 and 10/10. The isolation matters: it
+shows the change touched the operators and nothing else.
 
 ### 5. `NaN` remains the only value that identifies itself by inequality
 
@@ -171,4 +172,8 @@ obvious way, and it is already documented.
   since ADR-0051. The row was corrected and a row for the ordering rule was added.
 - One behaviour is now inconsistent on purpose and is worth knowing: `nan != nan` is true, so
   `length(set([nan, nan]))` is 2. That follows from ADR-0017's `double` equality, not from this
-  ADR, and it is the price of `n != n` being the `NaN` test.
+  ADR, and it is the price of `n != n` being the `NaN` test. The same equality makes `NaN`
+  unusable as a key: `m[n] = 1` stores an entry that `m[n]` cannot read back, and
+  `n in set([n])` is false. This predates the change and is untouched by it, but it sits in the
+  paragraph the ordering rule lives in and was previously undocumented, so `docs/spec/language.md`
+  now says so and the probe pins all six cases.

@@ -244,6 +244,11 @@ never disagree with `==`. That rule also settles signed zero: `-0.0 == 0.0` and 
 position — `min(n, 1.0)` is `1.0` while `max(n, 1.0)` is `n`. Filter on `v != v` before
 aggregating if that matters.
 
+Because `NaN` equals nothing, it also cannot be looked up as a key or a member: `m[n] = 1`
+stores an entry, but `m[n]` then answers `nothing` and `n in set([n])` answers `false`. This
+is a consequence of `n != n` being the test for `NaN`, not a separate rule, so keep `NaN`
+out of keys and sets and use it only as a value to test.
+
 The transcendental functions use `java.lang.StrictMath`, so a given input yields the
 same bits on every platform and JVM. `log2` is exact on every power of two, so
 `log2(1024)` is `10.0` and `log2(5e-324)` is `-1074.0`.

@@ -23,6 +23,23 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
 PROBE = ROOT / "scripts" / "probe-non-finite.py"
 ADR = ROOT / "docs" / "adr" / "0063-relational-operators-follow-ieee-order.md"
 
+# The rows that answered wrongly before ADR-0063, recorded here so a test can state the size of
+# the repair without restating the ADR. Six NaN comparisons and four signed-zero comparisons.
+WRONG_NAN_BEFORE = {
+    "nan-greater-than-one",
+    "nan-greater-or-equal-one",
+    "nan-less-or-equal-nan",
+    "nan-greater-or-equal-nan",
+    "one-less-than-nan",
+    "nan-greater-or-equal-two",
+}
+WRONG_ZERO_BEFORE = {
+    "negative-zero-less",
+    "zero-greater-negative",
+    "zero-less-or-equal-negative",
+    "negative-zero-greater-or-equal",
+}
+
 
 def load_probe():
     spec = importlib.util.spec_from_file_location("probe_non_finite", PROBE)
@@ -59,16 +76,10 @@ class NonFiniteProbeTest(unittest.TestCase):
     def test_the_wrong_rows_are_all_represented(self):
         # Six comparisons were wrong before ADR-0063. Every one is pinned by a row, so a
         # regression cannot hide behind the ones that were already correct.
-        wrong_before = {
-            "nan-greater-than-one",
-            "nan-greater-or-equal-one",
-            "nan-less-or-equal-nan",
-            "nan-greater-or-equal-nan",
-            "one-less-than-nan",
-            "nan-greater-or-equal-two",
-        }
         labels = {label for label, _, _ in self.probe.NAN_COMPARISONS}
-        self.assertEqual(set(), wrong_before - labels, "a previously wrong row is not probed")
+        self.assertEqual(set(), WRONG_NAN_BEFORE - labels, "a previously wrong row is not probed")
+        self.assertEqual(set(), WRONG_ZERO_BEFORE - {r[0] for r in self.probe.SIGNED_ZERO},
+                         "a previously wrong signed-zero row is not probed")
 
     def test_total_order_rows_name_the_consumers_that_need_it(self):
         # These are the call sites that would break if `compare` stopped being a total order.
@@ -94,17 +105,27 @@ class NonFiniteProbeTest(unittest.TestCase):
             len(self.probe.NAN_COMPARISONS),
             len(self.probe.SIGNED_ZERO),
             len(self.probe.TOTAL_ORDER),
+            len(self.probe.NAN_AS_A_KEY),
             len(self.probe.ORDINARY_COMPARISONS),
         ]
-        self.assertEqual([8, 11, 14, 9, 5, 10], groups)
+        self.assertEqual([8, 11, 14, 9, 5, 6, 10], groups)
         total = sum(groups)
-        self.assertEqual(57, total)
+        self.assertEqual(63, total)
         text = ADR.read_text(encoding="utf-8")
-        self.assertIn(f"{total} cases across six groups", text)
-        self.assertIn("14 of 14", text)
-        self.assertIn("6 of 14", text)
-        self.assertIn("9 of 9", text)
-        self.assertIn("5 of 9", text)
+        self.assertIn(f"{total} cases across seven groups", text)
+
+        # The ADR quotes how many rows the old build got right. Asserting a literal string there
+        # is what let a wrong number survive: the test repeated the ADR instead of checking it.
+        # Derive the two figures from the tables and their wrong-before rows instead, so the two
+        # halves of each phrase have to agree with each other.
+        nan_before = [row for row in self.probe.NAN_COMPARISONS if row[0] in WRONG_NAN_BEFORE]
+        zero_before = [row for row in self.probe.SIGNED_ZERO if row[0] in WRONG_ZERO_BEFORE]
+        self.assertEqual(6, len(nan_before), "the six wrong NaN rows changed identity")
+        self.assertEqual(4, len(zero_before), "the four wrong signed-zero rows changed identity")
+        for table, wrong in ((self.probe.NAN_COMPARISONS, nan_before), (self.probe.SIGNED_ZERO, zero_before)):
+            correct = len(table) - len(wrong)
+            self.assertIn(f"{correct} of {len(table)}", text)
+            self.assertIn(f"{len(wrong)} are wrong", text)
 
     def test_the_preamble_defines_every_name_the_rows_use(self):
         for name in ("nan", "inf", "big"):
@@ -132,6 +153,18 @@ class NonFiniteProbeTest(unittest.TestCase):
         code, lines = self.probe.run(self.probe.PREAMBLE + "print nan > 1.0\n")
         self.assertEqual(0, code, "the program must still run")
         self.assertEqual(["false"], lines, "the probe must observe the real answer")
+
+    def test_the_key_group_pins_store_then_miss(self):
+        # The property is not "NaN is a bad key" in the abstract; it is the two-step trap: the
+        # write succeeds and the read comes back empty. A row asserting only the miss would also
+        # pass if the write had failed, so both halves have to be present.
+        sources = "\n".join(row[1] for row in self.probe.NAN_AS_A_KEY)
+        self.assertIn("m[nan] = 1", sources, "no row stores a NaN key")
+        self.assertIn("print m[nan]", sources, "no row reads a NaN key back")
+        stored = next(row for row in self.probe.NAN_AS_A_KEY if row[0] == "map-stores-the-entry")
+        missed = next(row for row in self.probe.NAN_AS_A_KEY if row[0] == "map-cannot-read-it-back")
+        self.assertEqual("1", stored[2], "the store must be expected to succeed")
+        self.assertEqual("nothing", missed[2], "the read must be expected to miss")
 
     def test_the_signed_zero_group_covers_both_directions(self):
         # A relation can be wrong in one direction only, which is how the original defect

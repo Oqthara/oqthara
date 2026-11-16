@@ -107,6 +107,18 @@ SIGNED_ZERO: list[tuple[str, str, bool]] = [
     ("negative-zero-equals", "-0.0 == 0.0", True),
 ]
 
+# `NaN` is unusable as a key or a member, which follows from `n != n` and is a trap worth
+# pinning: the entry stores, then the lookup misses. This is unchanged by the ordering fix,
+# and it is recorded so a future change to equality cannot silently move it.
+NAN_AS_A_KEY: list[tuple[str, str, str]] = [
+    ("map-stores-the-entry", "m = {}\nm[nan] = 1\nprint length(m)\n", "1"),
+    ("map-cannot-read-it-back", "m = {}\nm[nan] = 1\nprint m[nan]\n", "nothing"),
+    ("set-holds-two-copies", "print length(set([nan, nan]))\n", "2"),
+    ("set-membership-misses", "print nan in set([nan])\n", "false"),
+    ("list-membership-misses", "print nan in [nan]\n", "false"),
+    ("signed-zero-is-one-key", "print length(set([-0.0, 0.0]))\n", "1"),
+]
+
 # Ordinary comparisons must be untouched, including the two shapes the parser has to disambiguate.
 ORDINARY_COMPARISONS: list[tuple[str, str, str]] = [
     ("integers", "print 1 < 2\n", "true"),
@@ -134,7 +146,13 @@ def run(source: str) -> tuple[int, list[str]]:
             capture_output=True,
             text=True,
         )
-    return completed.returncode, [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    if completed.returncode != 0 and not lines:
+        # A run that produced nothing at all is a harness failure, not a language result. Surface
+        # it here so a broken jar reports as a broken jar instead of as one mysterious empty row.
+        detail = completed.stderr.strip().splitlines()
+        lines = ["<no output; stderr: " + (detail[0] if detail else "empty") + ">"]
+    return completed.returncode, lines
 
 
 def error_line(source: str) -> tuple[int, str]:
@@ -220,6 +238,17 @@ def main() -> int:
         if arguments.verbose:
             print(f"zero    {label:26} {expression:20} {actual or '<none>'}")
 
+    keys = 0
+    for label, source, expected in NAN_AS_A_KEY:
+        code, lines = run(PREAMBLE + source)
+        actual = lines[-1] if lines else ""
+        if code == 0 and actual == expected:
+            keys += 1
+        else:
+            failures.append(f"{label}: expected {expected!r}, got {actual!r} with exit {code}")
+        if arguments.verbose:
+            print(f"key     {label:26} {actual or '<none>'}")
+
     ordinary = 0
     for label, source, expected in ORDINARY_COMPARISONS:
         code, lines = run(PREAMBLE + source)
@@ -236,6 +265,7 @@ def main() -> int:
     print(f"NaN comparisons following IEEE order: {unordered} of {len(NAN_COMPARISONS)}")
     print(f"signed-zero comparisons following IEEE order: {signed} of {len(SIGNED_ZERO)}")
     print(f"total-order consumers still ordering NaN: {total} of {len(TOTAL_ORDER)}")
+    print(f"NaN unusable as a key or member: {keys} of {len(NAN_AS_A_KEY)}")
     print(f"ordinary comparisons unchanged: {ordinary} of {len(ORDINARY_COMPARISONS)}")
 
     if failures:
