@@ -17,12 +17,27 @@ Usage:
     python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar> --both
 
 `--both` additionally compiles every probe with `oq build` and runs the resulting jar, then
-requires the compiled output to equal the interpreted output line for line. That is what A5.7
-claims ("interpreter and compiled backends agree on every probe"), and it is a separate claim
-from "the interpreter produces the documented output": a probe can pass the first check and
-still disagree across backends. Probes whose documented behaviour is a diagnostic are compared
-too, because a backend that accepts what the interpreter refuses is exactly the disagreement
-worth catching.
+requires two things. The compiled output must equal the interpreted output line for line, which
+is what A5.7 claims ("interpreter and compiled backends agree on every probe"), and a separate
+claim from "the interpreter produces the documented output": a probe can pass the first check
+and still disagree across backends. The jar must also report `codepath: compiled bytecode`,
+which is what A6.3 claims. Without that second check `--both` is satisfied by an interpreter
+launcher, so every probe could regress to the fallback and the run would stay green; the
+compiled output would match because it was produced by the interpreter.
+
+`COMPILED` is what every probe must report. One does not, and says so in `FALLBACK` with the
+reason its own build printed: `d1_sort_by` calls `sort_by`, which the backend has never
+lowered, so `oq build` writes an interpreter launcher for it. Naming it keeps the fallback a
+stated fact rather than something the runner quietly tolerates, and because the check is
+"compiled unless declared", a second probe falling back fails the run — it cannot become a
+general licence. Fixing `sort_by` fails the run too, the same way a fixed defect does, so the
+entry cannot outlive the gap.
+
+A declared fallback is counted apart from the probes that actually compiled, and its jar is not
+counted as a two-backend comparison: that jar *is* the interpreter, so its output matching is the
+interpreter agreeing with itself. The summary prints the compiled count, and a note whenever any
+probe ran via the launcher, so the "both backends agree" claim cannot be read onto a probe that
+only ever had one backend in play.
 
 Exit code is 0 when every probe matches its expectation and every recorded defect reproduces
 verbatim, 1 otherwise.
@@ -58,6 +73,27 @@ def comparable(text):
     if POSITION not in text:
         return text
     return BLANK_RUN.sub("\n\n", EXCERPT.sub("", text))
+
+
+# A6.3 is the claim that compiled code answers `Class` self-description *without* falling back
+# to the interpreter. `oq build` already prints which path it took, so the runner reads that
+# line rather than inferring the path from the fact that a jar exists — an interpreter
+# launcher is still a jar, and its output matches byte for byte because the interpreter
+# produced it. Checking only the output therefore cannot see this claim at all.
+COMPILED = "codepath: compiled bytecode"
+
+# Probes whose build reports something other than COMPILED, mapped to the exact line the build
+# printed. Not a wildcard: a probe absent from here must report COMPILED.
+FALLBACK = {
+    "d1_sort_by": (
+        "codepath: interpreter launcher "
+        "(call to 'sort_by' with 2 argument(s) is not compiled yet)"
+    ),
+}
+
+# The `codepath:` line is the only field of the build output this runner reads, and it is
+# printed on stdout, so a probe's own program output can never be mistaken for it.
+CODEPATH = re.compile(r"^codepath: .*$", re.MULTILINE)
 
 
 # (name, expected stdout lines, known-defect record)
@@ -166,6 +202,144 @@ def run_compiled(target: Path):
     return result.stdout + result.stderr, result.returncode
 
 
+def codepath_failure(name, build_output):
+    """Return why this probe's build is not the path A6.3 requires, or None if it is.
+
+    Split out of `main` so the decision can be tested without a jar: the three outcomes are
+    "compiled", "the one declared fallback", and "anything else is a failure", and the last
+    one has to include silence. A build that stops printing the line would otherwise read as
+    a pass because the substring check never ran.
+    """
+    found = CODEPATH.search(build_output)
+    if found is None:
+        return f"{name}: oq build printed no codepath line, so the backend is unknown"
+    actual = found.group(0).strip()
+    expected = FALLBACK.get(name, COMPILED)
+    if actual == expected:
+        return None
+    if name not in FALLBACK:
+        return f"{name}: expected {expected!r}, got {actual!r}"
+    if actual == COMPILED:
+        # The gap this entry records has closed. Fail so the entry is deleted rather than
+        # left claiming a fallback that no longer happens.
+        return (
+            f"{name}: recorded fallback is gone, so the gap it recorded has closed; expected "
+            f"{expected!r}, got {actual!r}. Remove the FALLBACK entry."
+        )
+    # Still falling back, but the build says so differently. Updating the entry to whatever
+    # the build happens to print would make it accept any reason, so this is a deliberate
+    # edit, not an automatic one.
+    return (
+        f"{name}: the recorded fallback reason changed; recorded {expected!r}, "
+        f"got {actual!r}. Re-check the gap and update the FALLBACK entry deliberately."
+    )
+
+
+class Tally:
+    """What one `--both` run actually compared, counted so the summary cannot overstate it.
+
+    `ran` counts probes whose jar ran; `compiled` counts the subset the compiler produced. They
+    are counted apart because an interpreter launcher also produces output, so folding them
+    together is what let a summary say "identical output on both backends" about a probe that
+    only ever had one backend in play.
+    """
+
+    def __init__(self):
+        self.ran = 0
+        self.compiled = 0
+
+    def summary(self) -> list:
+        lines = [
+            # A6.3, stated as its own count so a reader can see the claim, not just a tick.
+            f"ok: {self.compiled} probes compared compiled bytecode against the interpreter",
+        ]
+        fallbacks = self.ran - self.compiled
+        if fallbacks:
+            lines.append(
+                f"note: {fallbacks} probe(s) ran via the interpreter launcher (declared "
+                f"fallback). Their codepath reason is pinned, but their output is the "
+                f"interpreter compared against itself, not across two backends."
+            )
+        return lines
+
+
+def check_probe(name, expected, defect, jar, both, tally, failures, defects):
+    """Run one probe and append its verdicts to `failures` / `defects`.
+
+    The A6.3 codepath check lives here rather than in `main` so it can be tested by calling
+    this function with stubbed `run` / `compile_program` / `run_compiled`, which is the only
+    way a test can tell the gate is wired rather than merely present.
+    """
+    program = HERE / f"{name}.oq"
+    if not program.is_file():
+        failures.append(f"{name}: missing probe file")
+        return
+    output, code = run(jar, program)
+    if both:
+        # Compare the two backends on the same program. A refusal is compared as text, so a
+        # backend that runs a program the interpreter rejects is caught.
+        target, build_output, build_code = compile_program(jar, program)
+        if build_code != 0 or not target.is_file():
+            tail = build_output.strip().splitlines()[-1] if build_output.strip() else "no output"
+            failures.append(f"{name}: oq build did not produce a jar (exit {build_code}): {tail}")
+            return
+        # A6.3: the jar must have been produced by the compiler, not by the interpreter
+        # launcher. Checked before the jar runs, so a probe that silently fell back is
+        # reported as a codepath failure rather than as a puzzling output mismatch.
+        refusal = codepath_failure(name, build_output)
+        if refusal is not None:
+            failures.append(refusal)
+            return
+        compiled_output, compiled_code = run_compiled(target)
+        tally.ran += 1
+        if CODEPATH.search(build_output).group(0).strip() == COMPILED:
+            tally.compiled += 1
+        if comparable(compiled_output) != comparable(output):
+            failures.append(
+                f"{name}: backends disagree; interpreter {output.splitlines()!r} "
+                f"(exit {code}), compiled {compiled_output.splitlines()!r} (exit {compiled_code})"
+            )
+    # Trailing blank lines are stripped; inner ones are kept, because a probe such as
+    # `String.join(",", [])` prints an empty line on purpose.
+    lines = output.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines = [line.strip() for line in lines]
+
+    if defect is not None:
+        # Both directions are errors. A fix is the expected direction, and it still fails so
+        # the note is promoted rather than left describing a bug that is gone; any other
+        # change means the wrong output moved, which the record did not predict.
+        marker, recorded = defect
+        if lines == recorded:
+            defects.append((name, marker))
+        elif isinstance(expected, str) and expected in output and code != 0:
+            failures.append(
+                f"{name}: recorded defect appears fixed ({marker}); "
+                f"remove the marker and expect {expected!r}"
+            )
+        else:
+            failures.append(
+                f"{name}: recorded defect {marker!r} no longer reproduces exactly; "
+                f"recorded {recorded!r}, got {lines!r} (exit {code}). "
+                f"Re-check the defect and update the record deliberately."
+            )
+        return
+
+    if isinstance(expected, str):
+        # A probe whose correct behaviour is a refusal: the diagnostic has to be present, and
+        # the program must not have gone on to succeed first.
+        if not (expected in output and code != 0):
+            failures.append(
+                f"{name}: expected output containing {expected!r}, got {lines!r} (exit {code})"
+            )
+    elif expected is not None:
+        if lines != expected:
+            failures.append(f"{name}: expected {expected!r}, got {lines!r} (exit {code})")
+    else:
+        failures.append(f"{name}: no expectation and no defect record")
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     both = "--both" in sys.argv[1:]
@@ -179,73 +353,9 @@ def main() -> int:
 
     failures = []
     defects = []
-    compared = 0
+    tally = Tally()
     for name, expected, defect in PROBES:
-        program = HERE / f"{name}.oq"
-        if not program.is_file():
-            failures.append(f"{name}: missing probe file")
-            continue
-        output, code = run(jar, program)
-        if both:
-            # Compare the two backends on the same program. A refusal is compared as text, so
-            # a backend that runs a program the interpreter rejects is caught.
-            target, build_output, build_code = compile_program(jar, program)
-            if build_code != 0 or not target.is_file():
-                tail = build_output.strip().splitlines()[-1] if build_output.strip() else "no output"
-                failures.append(
-                    f"{name}: oq build did not produce a jar (exit {build_code}): {tail}"
-                )
-                continue
-            compiled_output, compiled_code = run_compiled(target)
-            compared += 1
-            if comparable(compiled_output) != comparable(output):
-                failures.append(
-                    f"{name}: backends disagree; interpreter {output.splitlines()!r} "
-                    f"(exit {code}), compiled {compiled_output.splitlines()!r} (exit {compiled_code})"
-                )
-        # Trailing blank lines are stripped; inner ones are kept, because a probe such as
-        # `String.join(",", [])` prints an empty line on purpose.
-        lines = output.splitlines()
-        while lines and not lines[-1].strip():
-            lines.pop()
-        lines = [line.strip() for line in lines]
-
-        if defect is not None:
-            # Both directions are errors. A fix is the expected direction, and it still fails
-            # so the note is promoted rather than left describing a bug that is gone; any
-            # other change means the wrong output moved, which the record did not predict.
-            marker, recorded = defect
-            if lines == recorded:
-                defects.append((name, marker))
-            elif isinstance(expected, str) and expected in output and code != 0:
-                failures.append(
-                    f"{name}: recorded defect appears fixed ({marker}); "
-                    f"remove the marker and expect {expected!r}"
-                )
-            else:
-                failures.append(
-                    f"{name}: recorded defect {marker!r} no longer reproduces exactly; "
-                    f"recorded {recorded!r}, got {lines!r} (exit {code}). "
-                    f"Re-check the defect and update the record deliberately."
-                )
-            continue
-
-        if isinstance(expected, str):
-            # A probe whose correct behaviour is a refusal: the diagnostic has to be
-            # present, and the program must not have gone on to succeed first.
-            if expected in output and code != 0:
-                pass
-            else:
-                failures.append(
-                    f"{name}: expected output containing {expected!r}, got {lines!r} (exit {code})"
-                )
-        elif expected is not None:
-            if lines == expected:
-                pass
-            else:
-                failures.append(f"{name}: expected {expected!r}, got {lines!r} (exit {code})")
-        else:
-            failures.append(f"{name}: no expectation and no defect record")
+        check_probe(name, expected, defect, jar, both, tally, failures, defects)
 
     if failures:
         print("FAILED")
@@ -256,7 +366,8 @@ def main() -> int:
     matched = sum(1 for _, e, d in PROBES if e is not None and d is None)
     print(f"ok: {matched} probes match their expectation")
     if both:
-        print(f"ok: {compared} probes produce identical output on both backends")
+        for line in tally.summary():
+            print(line)
     if defects:
         print(f"known defects reproducing verbatim: {len(defects)}")
         for name, marker in defects:
