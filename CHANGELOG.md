@@ -90,6 +90,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   function or field name, and now it is not. No pre-existing file in the repository, the examples
   or the conformance suite used the word, so this cost no existing program; the only `.oq` files
   that contain it are the three conformance cases added by this change.
+- **The decision probes now run in CI.** `docs/governance/alpha-5/java-bridge-probes/run.py`
+  and the three `scripts/probe-*.py` harnesses were complete and passing, but nothing invoked
+  them: `grep -rn java-bridge-probes .github/` matched no workflow, so the counts the ADRs quote
+  were regenerated only when someone remembered to. They are now a required check that reuses the
+  jar the conformance step already builds. This is Alpha 6 criterion A6.4, recorded in
+  `alpha-6-requirement-matrix.md`. `scripts/tests/test_ci_probe_wiring.py` pins the wiring so it
+  cannot be quietly dropped: it locates the step by name in the parsed workflow, checks it sits in
+  the `test` job on the same matrix leg as the conformance step and after it, and fails when a
+  harness line is commented out. The gate covers C1–C8 and the defect probes; the ten C9–C12 rows
+  have no probe and are not gated, which the inventory now says rather than implying otherwise.
 
 ## [0.1.0-alpha.5] - 2026-11-15
 

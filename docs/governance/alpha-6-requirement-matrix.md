@@ -69,6 +69,20 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 | An unimplemented construct is refused rather than accepted | `DONE` | all 12 `NOT STARTED` rows exit 1; none exits 0 (re-run one by one with the fixed jar, 2026-11-15) | — |
 | An unimplemented construct is named in its diagnostic | `DONE` | 10 leaders (`match`, `case`, `switch`, `yield`, `def`, `async`, `await`, `from`, `import`, `throw`) report `<word> is not a construct in Oqthara` in every expression position; 5 comprehension shapes name themselves; `scripts/probe-construct-leaders.py` reports 10/10 operands, 10/10 hints, 20/20 assignment values, 80/80 nested positions, 5/5 shapes, 60/60 name positions and 150/150 continuation positions still accepted, and exits 1 on the pre-change build | None. The refusal is contextual (ADR-0062): it fires only when the next token cannot continue an expression, so all ten words remain legal names and `match`/`from`/`await` keep working in `examples/` |
 
+## Alpha 6 acceptance criteria
+
+The four criteria are defined in
+[alpha-5-java-bridge-capability-inventory.md](alpha-5-java-bridge-capability-inventory.md), which is
+where their wording is authoritative. They are listed here for A6.4 only, because it is a gate:
+its state is what this file records, and it was verified by executing it. A6.1–A6.3 are not
+listed, because they are the Java Bridge and bytecode-backend items the closing section excludes
+— recording them here would assert the executed-probe method this file promises, and no such
+probe exists for them. Their state stays in the inventory.
+
+| Requirement | State | Evidence | Gaps |
+| --- | --- | --- | --- |
+| A6.4 the probe harness runs in CI | `DONE` | The `Decision probes (A6.4)` step in `ci.yml` runs `run.py oq-cli/build/libs/oq.jar --both` plus the three `scripts/probe-*.py --check` harnesses against the jar the conformance step builds; all four exit 0. A one-day drift in one probe's expected date makes `run.py` print `FAILED`, name the probe, and exit 1. `scripts/tests/test_ci_probe_wiring.py` fails if the step is removed, moved to a job without the matrix leg, gated differently from the conformance step, or has a harness commented out | Covers C1–C8 and the D1/D2/D3/D5 defect probes; the ten C9–C12 rows have no probe and are not gated. A6.1, A6.2 and A6.3 remain in the inventory |
+
 ## How a row is closed
 
 A row may move to `DONE` only when all of the following hold on `main`:
