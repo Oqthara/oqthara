@@ -72,16 +72,16 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 ## Alpha 6 acceptance criteria
 
 The four criteria are defined in
-[alpha-5-java-bridge-capability-inventory.md](alpha-5-java-bridge-capability-inventory.md), which
-is where their wording is authoritative. They appear here because a criterion with a gate is a
-capability, and this file is where capability state is recorded.
+[alpha-5-java-bridge-capability-inventory.md](alpha-5-java-bridge-capability-inventory.md), which is
+where their wording is authoritative. They are listed here for A6.4 only, because it is a gate:
+its state is what this file records, and it was verified by executing it. A6.1–A6.3 are not
+listed, because they are the Java Bridge and bytecode-backend items the closing section excludes
+— recording them here would assert the executed-probe method this file promises, and no such
+probe exists for them. Their state stays in the inventory.
 
 | Requirement | State | Evidence | Gaps |
 | --- | --- | --- | --- |
-| A6.1 compiled code calls Java directly | `NOT STARTED` | `use` in a compiled program still falls back to the interpreter, so boundary item 2 of `backend.md` stands | Needs native lowering of `use`, static calls and argument conversions — the reason it is a phase of its own |
-| A6.2 `Class` reflection is available to programs | `NOT STARTED` | Alpha 5 deliberately refuses reflection and pins the refusal; nothing has changed | Would need a reviewed capability decision and a sandboxing story, because `setAccessible` on application classes is permitted by the JVM. Alpha 6 may decide the answer is permanently no and retire the row |
-| A6.3 compiled code answers `Class` self-description | `BLOCKED` | `Methods.callOnClass` mirrors the interpreter's answers by construction, so the two agree, but a jar whose `use` forces the interpreter fallback does not exercise it end to end | Depends on A6.1 |
-| A6.4 the probe harness runs in CI | `DONE` | The `Decision probes (A6.4)` step in `ci.yml` runs `docs/governance/alpha-5/java-bridge-probes/run.py --both` plus the three `scripts/probe-*.py --check` harnesses against the built jar; all four exit 0 locally, and a one-day drift in one probe's expected date makes `run.py` report `FAILED` and exit 1 | — |
+| A6.4 the probe harness runs in CI | `DONE` | The `Decision probes (A6.4)` step in `ci.yml` runs `run.py oq-cli/build/libs/oq.jar --both` plus the three `scripts/probe-*.py --check` harnesses against the jar the conformance step builds; all four exit 0. A one-day drift in one probe's expected date makes `run.py` print `FAILED`, name the probe, and exit 1. `scripts/tests/test_ci_probe_wiring.py` fails if the step is removed, moved to a job without the matrix leg, gated differently from the conformance step, or has a harness commented out | Covers C1–C8 and the D1/D2/D3/D5 defect probes; the ten C9–C12 rows have no probe and are not gated. A6.1, A6.2 and A6.3 remain in the inventory |
 
 ## How a row is closed
 
