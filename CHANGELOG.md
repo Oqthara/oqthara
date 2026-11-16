@@ -74,7 +74,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signed zero as one value (ADR-0063). `Values.compare` still distinguishes them, which is what
   a sort needs.
 
+### Added
+- **Compiled programs can call Java.** `use` used to bind a class only under the interpreter,
+  so any program that touched Java — `Math.max`, `ArrayList()`, even `print Math` — silently
+  fell back to an interpreter launcher jar. A top-level `use` now lowers to a class constant,
+  and the four ways a class value is used all compile: a static call, a static field, a
+  constructor, and the value itself. `examples/interop.oq` went from
+  `codepath: interpreter launcher` to `codepath: compiled bytecode` with byte-identical
+  output. A `use` below the top level is still refused by the statement
+  (`'use' only compiles at the top level`), because whether the name exists depends on
+  whether that block ran: `if true` / `use java.lang.Math` / `end` makes `Math` visible
+  afterwards, and the same program with `if false` does not. Modelling that in generated code
+  would need a registry shared across methods initialised on whichever path ran first, which
+  is a second mechanism for a statement no program in the corpus uses (ADR-0064).
+
+  Three paths had to agree with the interpreter before this worked end to end, and each was
+  found by a probe rather than by reading. `Callables.call` did not fall through to
+  `JavaBridge.callFunctional`, so a compiled `Comparator.naturalOrder()(1, 2)` was refused
+  while the interpreter ran it. `Methods.HOST.call` accepted only an `OqCallable` receiver, so
+  every callback passed to `map`, `sort` and `reduce` from compiled code failed. And the CLI
+  had no handler for the `OqError` that lowering raises, so `oq build` on a mistyped class
+  name produced a Java stack trace where `oq run` produced a diagnostic.
+
 ### Changed
+- **`oq build` now reports a lowering error as a diagnostic instead of a stack trace.** A `use`
+  naming a class that does not exist is resolved while lowering, inside `oq build`; the error
+  reached the top level unhandled and printed a stack trace, where the same program under
+  `oq run` printed `error: cannot find Java class 'java.lang.Mathh'` with a hint. Both paths
+  now render the same diagnostic and exit 1, and no jar is written.
 - **`docs/spec/language.md` now records that `NaN` cannot be stored and read back.** `m[nan] = 1`
   leaves an entry that `m[nan]` cannot find, and `nan in set([nan])` is `false`. This predates
   this change and is measured identical before and after; it follows from ADR-0017's `double`

@@ -73,14 +73,15 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 
 The four criteria are defined in
 [alpha-5-java-bridge-capability-inventory.md](alpha-5-java-bridge-capability-inventory.md), which is
-where their wording is authoritative. They are listed here for A6.4 only, because it is a gate:
-its state is what this file records, and it was verified by executing it. A6.1–A6.3 are not
-listed, because they are the Java Bridge and bytecode-backend items the closing section excludes
-— recording them here would assert the executed-probe method this file promises, and no such
-probe exists for them. Their state stays in the inventory.
+where their wording is authoritative. A6.1 and A6.4 are listed because both now meet this
+file's executed-probe method: A6.1 is pinned by a conformance program that runs on both backends
+and by a probe harness that already ran in CI, and A6.4 is the gate itself. A6.2 and A6.3 are
+not listed, because they are the Java Bridge and bytecode-backend items the closing section
+excludes and no executed probe exists for either. Their state stays in the inventory.
 
 | Requirement | State | Evidence | Gaps |
 | --- | --- | --- | --- |
+| A6.1 compiled code calls Java directly | `DONE` | A top-level `use` lowers to a class constant, so a static call, a static field, a constructor and the class value all compile. `conformance/248-java-interop-by-use.oq` exercises all four plus a variable shadowing the class name, and `conformance/249-use-name-shadowing-scopes.oq` pins which binding hides the class (a loop variable, a destructured name and a caught error are current-scope; an outer assignment is not). Both are byte-identical between `oq run` and the jar. `python3 scripts/verify-conformance.py` reports `210 compiled, 9 fallback (219 of 219 executable), 0 divergences across 249 programs`; the baseline was re-measured twice, from 217/208 to 218/209 to 219/210, not asserted. `run.py --both` reports `ok: 18 probes produce identical output on both backends`. The two tests that asserted `use` was refused were rewritten and were observed failing against the old expectation | A `use` below the top level is still refused by the statement (`'use' only compiles at the top level`), so boundary item 2 in `docs/spec/backend.md` is narrowed rather than deleted. `oq-lsp` has no completion feature at all, so nothing there changed and nothing there is claimed |
 | A6.4 the probe harness runs in CI | `DONE` | The `Decision probes (A6.4)` step in `ci.yml` runs `run.py oq-cli/build/libs/oq.jar --both` plus the three `scripts/probe-*.py --check` harnesses against the jar the conformance step builds; all four exit 0. A one-day drift in one probe's expected date makes `run.py` print `FAILED`, name the probe, and exit 1. `scripts/tests/test_ci_probe_wiring.py` fails if the step is removed, moved to a job without the matrix leg, gated differently from the conformance step, or has a harness commented out | Covers C1–C8 and the D1/D2/D3/D5 defect probes; the ten C9–C12 rows have no probe and are not gated. A6.1, A6.2 and A6.3 remain in the inventory |
 
 ## How a row is closed

@@ -484,7 +484,16 @@ public final class Main {
                 Details.render(err, error, source, path, color);
                 return 1;
             }
-            Lowering.Result lowered = Lowering.lowerWithReport(program);
+            Lowering.Result lowered;
+            try {
+                lowered = Lowering.lowerWithReport(program);
+            } catch (OqError error) {
+                // Lowering rejects what the language rejects, such as a `use` path that names
+                // no class, with the interpreter's own wording. Report it the way `oq run`
+                // would rather than letting it escape as a crash.
+                Details.render(err, error, source, path, color);
+                return 1;
+            }
             Ir.Program ir = lowered.program();
             boolean emitIr = false;
             for (int i = 1; i < args.length; i++) {
