@@ -201,10 +201,16 @@ class ACitedPathMustResolve(unittest.TestCase):
                          f"expected the document's `###` heading, got {match.group(0)!r}")
 
     def test_the_exemption_table_is_found_in_the_real_document(self):
+        # The table's *membership* is deliberately not asserted. A path leaves this
+        # table when it starts existing, and that is the outcome the table exists to
+        # provoke — `gradle/verification-metadata.xml` left it when A7.4 created the
+        # file. Hardcoding membership made this test fail on a correct document, which
+        # is the same defect as hardcoding a count: the test was a second copy of the
+        # document and the copy was wrong. What must hold is that the table parses and
+        # that every row states a reason; the "does it still exist" loop is the
+        # checker's own job and is exercised by `test_no_exempted_path_actually_exists`.
         exemptions = checker.parse_exemptions(self.text)
-        self.assertIn("gradle/verification-metadata.xml", exemptions)
-        self.assertIn("site/versions.json", exemptions)
-        self.assertIn("conformance/", exemptions)
+        self.assertTrue(exemptions, "the exemption table was not found in the real document")
         for path, reason in exemptions.items():
             self.assertTrue(reason.strip(), f"{path} has no stated reason")
 

@@ -53,6 +53,16 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
       - name: Build and test
         run: ./gradlew build --no-daemon --console=plain
+      - name: Prove dependency verification is actually on
+        if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
+        # `./gradlew build` above verifies dependencies only for artifacts it actually
+        # downloads. On a warm cache it resolves nothing, so it passes whether or not the
+        # metadata is right — which is why this runs with --refresh-dependencies on one
+        # configuration that holds both pinned coordinates. Without this step a corrupted
+        # or partially regenerated metadata file would be discovered by a developer whose
+        # cache happened to be cold, not by CI.
+        run: >
+          ./gradlew :oq-cli:standaloneJar --refresh-dependencies --no-daemon --console=plain
       - name: Regenerate documentation and check it is current
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         run: |
@@ -65,6 +75,7 @@ jobs:
           python3 scripts/check-docs-sync.py
           python3 scripts/check-risk-register.py
           python3 scripts/check-threat-model.py
+          python3 scripts/check-dependency-verification.py
       - name: Check the pull request has an AI review record
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         # ADR-0059 makes AI review the review mechanism for this repository, and this step is

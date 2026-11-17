@@ -880,7 +880,7 @@ image, and the Gradle build's dependency resolution.
 | ID | Threat | STRIDE | Status |
 |---|---|---|---|
 | TH-43 | A tampered `oq.jar` is installed because the checksum is fetched from the same place as the jar | Tampering | **Partially mitigated** |
-| TH-44 | A dependency is substituted because no verification metadata pins it | Tampering | **Not mitigated** |
+| TH-44 | A dependency is substituted because no verification metadata pins it | Tampering | **Mitigated** |
 | TH-45 | A compromised action tag runs with `contents: write` | Elevation of privilege | **Not mitigated** |
 | TH-46 | The Docker image runs as root and a program writes outside `/work` | Elevation of privilege | **Mitigated** |
 | TH-47 | A release artefact is not traceable to a commit | Repudiation | **Partially mitigated** |
@@ -915,17 +915,32 @@ PowerShell installer verifies only integrity, for the same artefacts. That asymm
 threat that remains, and it is carried as R-020, whose status moved `Accepted` → `Open` for
 exactly this reason.
 
-**TH-44 — not mitigated.** There is still no `gradle/verification-metadata.xml`: `gradle/` holds
-only `wrapper/`. The two external runtime dependencies are resolved by coordinate and
-checksum-verified only by whatever the registry and the Gradle cache provide by default. Their
-versions moved since this was written — `org.xerial:sqlite-jdbc` is now `3.54.1.0` and
-`org.slf4j:slf4j-nop` is now `2.0.20` in `oq-stdlib/build.gradle.kts` (lines 6 and 9), so the
-pinned coordinates the entry named are stale while the verdict is not. `.github/dependabot.yml`
-exists for `gradle` and `github-actions`, weekly, with a limit of three open PRs, which is a
-reasonable update mechanism and not a substitution control. This is new exposure: ADR-0040 records
-that the project "previously had **zero** external runtime dependencies" and that this ADR "spends
-that property deliberately". The spend is recorded; the consequence — a dependency graph that now
-needs pinning — is not yet addressed.
+**TH-44 — mitigated.** `gradle/verification-metadata.xml` now exists, generated with
+`./gradlew --write-verification-metadata sha256` and committed. It carries a SHA-256 for every
+artefact and module descriptor the build resolves, forty-three components in total, including both
+external runtime dependencies at the coordinates this entry names —
+`org.xerial:sqlite-jdbc:3.54.1.0` and `org.slf4j:slf4j-nop:2.0.20` — so the stale versions the
+entry was written against are gone. `verify-metadata` is `true`, so `.module` files are checked and
+not just jars, which matters because that is where a substituted dependency would hide a changed
+transitive graph. The control was tested rather than assumed: corrupting the `sqlite-jdbc` jar
+checksum to 64 zeros makes `:oq-cli:standaloneJar --refresh-dependencies` fail with
+`One artifact failed verification: sqlite-jdbc-3.54.1.0.jar`, and deleting the component outright
+fails with both the jar and the `.pom` named.
+
+Two things this does **not** cover, both deliberate. It does not make the checksums *correct* — it
+records what the artefacts hashed to the first time the file was generated, so a substitution that
+happened before that point is now the pinned truth. That is the same trust-on-first-use property
+TH-43 records for the installer, and the answer is the same: the file is read in the pull request
+that adds or changes it, which is why a Dependabot version bump must regenerate it rather than be
+merged as-is. It also does not help a developer with a warm cache: `build` verifies only what it
+downloads, so a deleted metadata file leaves every local build succeeding. `.github/workflows/ci.yml`
+answers both halves — `scripts/check-dependency-verification.py` fails if the file, a component, or
+a non-placeholder checksum is missing, and a `--refresh-dependencies` step forces one real
+resolution per run so verification cannot be skipped by a cache hit.
+
+The wider exposure this entry was really recording — that the project "previously had **zero**
+external runtime dependencies" per ADR-0040 and spent that property deliberately — is now recorded
+rather than unfixed. `.github/dependabot.yml` remains the update mechanism, not the control.
 
 **TH-45 — not mitigated.** Every `uses:` in `.github/workflows/` still names a moving tag:
 `actions/checkout@v7`, `actions/setup-java@v6`, `actions/setup-node@v7`,
@@ -988,9 +1003,10 @@ workflow only runs on `push` to `main` and on `release`.
 
 ### Residual risk
 
-The distribution path is honest about what it verifies and silent about what it does not. The two
-substantive gaps are TH-44 (no dependency pinning) and TH-45 (moving action tags), both of which
-are one file away from fixed. TH-46 was one `USER` line, and Alpha 7 spent it.
+The distribution path is honest about what it verifies and silent about what it does not. The one
+substantive gap left in this boundary is TH-45 (moving action tags), which is one file away from
+fixed. TH-44 (no dependency pinning) was one file too, and Alpha 7 spent it; TH-46 was one `USER`
+line, and Alpha 7 spent that as well.
 
 ### Required tests
 
@@ -1117,15 +1133,15 @@ document stating the keyword count agrees with `Lexer.KEYWORDS`.
 
 | Status | Count | Threats |
 |---|---|---|
-| **Mitigated** | 15 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-46, TH-48, TH-49, TH-50, TH-54 |
+| **Mitigated** | 16 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-44, TH-46, TH-48, TH-49, TH-50, TH-54 |
 | **Partially mitigated** | 12 | TH-06, TH-08, TH-15, TH-21, TH-26, TH-33, TH-35, TH-37, TH-38, TH-43, TH-47, TH-52 |
 | **Accepted** | 14 | TH-01, TH-02, TH-03, TH-04, TH-05, TH-07, TH-16, TH-22, TH-30, TH-34, TH-36, TH-40, TH-41, TH-55 |
-| **Not mitigated** | 14 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-44, TH-45, TH-51, TH-53 |
+| **Not mitigated** | 13 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-45, TH-51, TH-53 |
 
 Fifty-five threats. The distribution is the finding: the runtime's *accident* controls are
 excellent and its *adversary* controls are absent by design, while the distribution machinery has
-fourteen genuinely open items that are nearly all small, cheap fixes — a verification-metadata
-file, SHA-pinned actions, a row cap, a fan-out cap.
+thirteen genuinely open items that are nearly all small, cheap fixes — SHA-pinned actions, a row
+cap, a fan-out cap. The verification-metadata file that topped this list was Alpha 7's A7.4.
 
 ## Citations that intentionally do not resolve
 
@@ -1137,7 +1153,6 @@ usually a threat that the absence is the evidence for — needs re-deriving.
 | Path | Why the entry cites it anyway |
 | --- | --- |
 | `site/versions.json` | TH-53. ADR-0011 removed `site/`; the entry exists because `scripts/build-versioned-docs.py` still writes to this path. It appearing means the script became reachable again and TH-53 must be re-read |
-| `gradle/verification-metadata.xml` | TH-44. The absence *is* the threat: no dependency pinning exists. Adding the file closes the threat |
 | `oq.jar.sigstore.json` | TH-43. A release asset, published per tag rather than committed. It is not a repository path and never will be |
 
 ## What this model does not cover
@@ -1197,8 +1212,9 @@ This model is revisited when any of the following happens, and at least once per
 
 1. A builtin is added to or removed from `Builtins.HOST_DEPENDENT`. The list is the entry-point
    inventory, so it changing invalidates the inventory.
-2. A new external runtime dependency is added. `ADR-0040` is the precedent, and the risk it
-   introduced (TH-44) is still open.
+2. A new external runtime dependency is added, or an existing one is bumped. `ADR-0040` is the
+   precedent, and `gradle/verification-metadata.xml` — the control TH-44 now relies on — must be
+   regenerated in the same change, because it records the version it was generated against.
 3. The compiler's refusal list changes. Four refusals carry most of the compile-time security
    story, and adding a fifth or removing one moves several threats at once.
 4. A workflow gains a write permission or a new secret. TH-45 and TH-48 are both about this.
@@ -1229,7 +1245,7 @@ had stopped existing:
 | `TH-15` | Mitigated by "the compiler refuses `use`", refusal #2 of four | Refusal #2 is gone (ADR-0066). `use` compiles; the escape is measured, not inferred |
 | `TH-43` | "integrity but not authenticity"; the sigstore grep "returns nothing" | POSIX installer verifies authenticity via `cosign verify-blob`; gap is Windows-only |
 | `TH-47` | "no signature over the artefact" | `oq.jar.sigstore.json` is published and verified |
-| `TH-44` | `sqlite-jdbc:3.45.3.0`, `slf4j-nop:2.0.13` | `3.54.1.0`, `2.0.20` — verdict unchanged |
+| `TH-44` | `sqlite-jdbc:3.45.3.0`, `slf4j-nop:2.0.13` | `3.54.1.0`, `2.0.20`; verdict changed to `Mitigated` when A7.4 added verification metadata |
 | `TH-45` | six moving pins, no cosign action | nine pins including `sigstore/cosign-installer@v4.1.3` in the `id-token` workflow |
 | `TH-07` | `BuildJarTest` "line 247" | same test at line 327, now cited by name |
 

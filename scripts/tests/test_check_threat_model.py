@@ -88,11 +88,16 @@ class TheRealDocumentIsReadCorrectly(unittest.TestCase):
         self.assertIsNone(error, error)
 
     def test_the_exemption_table_is_found_in_the_real_document(self):
+        # Membership is deliberately not asserted. A path leaves this table when it
+        # starts existing, which is what the table is for: `gradle/verification-metadata.xml`
+        # left it when A7.4 created the file, and a test that named it would have failed
+        # on a correct document. That is the hardcoded-count defect again — a test that
+        # restates the document's contents instead of checking its invariants.
+        # `test_no_exempted_path_actually_exists` below is the invariant that matters.
         text = MODEL.read_text(encoding="utf-8")
         register_check = checker._load("check_risk_register", "check-risk-register.py")
         exemptions = register_check.parse_exemptions(text, checker.EXEMPT_TITLE)
-        self.assertIn("gradle/verification-metadata.xml", exemptions)
-        self.assertIn("site/versions.json", exemptions)
+        self.assertTrue(exemptions, "the exemption table was not found in the real document")
         for path, reason in exemptions.items():
             self.assertTrue(reason.strip(), f"{path} is exempted with no reason")
 

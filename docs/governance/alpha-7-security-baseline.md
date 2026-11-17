@@ -153,12 +153,41 @@ verify, which local runs do not have.
 
 ### A7.4 — Gradle dependency verification metadata
 
-**Closes:** TH-44. **Status today:** `Not mitigated`; `gradle/` holds only `wrapper/`.
+**Closes:** TH-44. **State:** done. **Status today:** `Mitigated`.
 
 **Acceptance:** `gradle/verification-metadata.xml` with a checksum for both dependencies, generated
 by `--write-verification-metadata` and committed, plus a CI step that fails on an unverified
 dependency. The two pinned coordinates in the threat model (`sqlite-jdbc:3.54.1.0`,
 `slf4j-nop:2.0.20`) must be re-read at the time of the change, because both moved once already.
+
+**What was done.** `gradle/verification-metadata.xml` is committed with `verify-metadata` on and a
+SHA-256 for every artefact and module descriptor the build resolves — forty-three components,
+including `org.xerial:sqlite-jdbc:3.54.1.0` and `org.slf4j:slf4j-nop:2.0.20`. Both coordinates in
+the build files matched the threat model's, so no version drift was corrected here.
+
+Generating the file once was not enough. The first generation captured
+`junit-bom-5.12.2.pom` but not `junit-bom-5.12.2.module`, so the next `--refresh-dependencies`
+run failed on a component the generator had skipped; the file was regenerated against
+`:oq-cli:standaloneJar :oq-cli:testClasses` with `--refresh-dependencies` so that every artifact
+was actually resolved before being recorded.
+
+Enforcement was then tested rather than assumed, three ways, each reproduced before being written
+down: corrupting the `sqlite-jdbc` jar checksum to 64 zeros fails with
+`One artifact failed verification: sqlite-jdbc-3.54.1.0.jar`; deleting that component fails with
+both the jar and the `.pom` named; and corrupting the `slf4j-nop` checksum fails on
+`:oq-cli:runtimeClasspath`. The first attempts at this used the `dependencies` report task and
+`--rerun-tasks`, which resolve the graph and reuse the cache without re-verifying artifact bytes,
+so they passed against a deliberately corrupted file. `--refresh-dependencies` on a configuration
+that actually needs the jar is what makes the check real.
+
+**The CI half needed two pieces, because the build alone is not the control.** `./gradlew build`
+verifies only what it downloads, so on a warm cache it passes whether or not the metadata is
+correct, and a deleted metadata file leaves every build green with nothing verified. So CI runs a
+`--refresh-dependencies` resolution of `:oq-cli:standaloneJar` — one real verification per run that
+a cache hit cannot skip — and `scripts/check-dependency-verification.py` separately asserts the
+file exists, metadata verification is on, both pinned coordinates have a component at the version
+the build file declares, and no checksum is a placeholder. That script's own tests and mutations
+are in `scripts/tests/test_check_dependency_verification.py`.
 
 **Why fourth:** it is mechanical but it touches every build, so it wants a quiet branch.
 
