@@ -115,6 +115,76 @@ class DefectsAreCaught(unittest.TestCase):
         self.assertTrue(any("no longer matches the checker" in p for p in problems), problems)
 
 
+class ACitedPathMustResolve(unittest.TestCase):
+    """The register's own stated blind spot: nothing resolved its citations.
+
+    It said its paths were checked "by hand, once" and that "nothing will notice
+    if an entry starts citing a path that has since moved". Three stale numbers
+    survived there. These tests are the notice.
+    """
+
+    def setUp(self):
+        self.text = REGISTER.read_text(encoding="utf-8")
+
+    def test_the_real_register_cites_only_paths_that_resolve(self):
+        self.assertEqual([], checker.check_citations(self.text))
+
+    def test_a_citation_that_resolves_nowhere_is_caught(self):
+        broken = self.text + "\nSee `oq-core/src/main/java/dev/oqthara/core/Ghost.java`.\n"
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("Ghost.java" in p for p in problems), problems)
+
+    def test_a_citation_that_resolves_nowhere_at_the_end_of_the_file_is_caught(self):
+        # The exemption table is a table, so only its two columns may be skipped.
+        # Slicing the document at its heading would let a late entry slide past,
+        # and a late entry is where an unchecked citation actually lands.
+        broken = self.text + "\n\n" + "x " * 200 + "`scripts/gone-script.py`\n"
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("gone-script.py" in p for p in problems), problems)
+
+    def test_a_renamed_citation_is_caught(self):
+        broken = self.text.replace(
+            "`oq-runtime/src/main/java/dev/oqthara/runtime/WaitedBudget.java`",
+            "`oq-runtime/src/main/java/dev/oqthara/runtime/OldBudget.java`", 1)
+        self.assertNotEqual(self.text, broken)
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("OldBudget.java" in p for p in problems), problems)
+
+    def test_an_exempted_path_that_starts_to_exist_is_caught(self):
+        # R-008 and R-022 are true only while their paths are absent, so a
+        # created file must fail the gate rather than quietly validate them.
+        broken = self.text.replace(
+            "| `no/such/file.txt` | absent on purpose |", "", 1)
+        broken = broken.replace(
+            "</summary>", "", 1)
+        with tempfile.TemporaryDirectory() as workspace:
+            root = pathlib.Path(workspace)
+            (root / "no" / "such").mkdir(parents=True)
+            (root / "no" / "such" / "file.txt").write_text("", encoding="utf-8")
+            original = checker.ROOT
+            checker.ROOT = root
+            try:
+                problems = checker.check_citations(
+                    self.text.split(checker.EXEMPT_HEADING, 1)[0]
+                    + "\n"
+                    + checker.EXEMPT_HEADING
+                    + "\n\n| Path | Why |\n| --- | --- |\n"
+                    + "| `no/such/file.txt` | absent on purpose |\n"
+                    + "\n`no/such/file.txt` is cited.\n"
+                )
+            finally:
+                checker.ROOT = original
+        self.assertTrue(any("no/such/file.txt" in p and "now exists" in p for p in problems),
+                        problems)
+
+    def test_an_exemption_without_a_reason_is_caught(self):
+        broken = (self.text.split(checker.EXEMPT_HEADING, 1)[0]
+                  + checker.EXEMPT_HEADING
+                  + "\n\n| Path | Why |\n| --- | --- |\n| `gone.txt` |   |\n")
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("without a stated reason" in p for p in problems), problems)
+
+
 class TheCommandLineBehaves(unittest.TestCase):
     def test_it_exits_zero_on_the_real_register(self):
         import subprocess

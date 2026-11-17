@@ -873,15 +873,24 @@ entry was revised after that pin: R-029, added when the compiled `print` line-fu
 measured, moved to `Mitigated` when `Arithmetic.print` was made to write one line per call. Its
 body carries the before and after measurements and the mutation evidence.
 
-Every file path each entry cites was resolved against the tree by hand, once. All of them either
-exist or are absent exactly as the entry says: `gradle/verification-metadata.xml` and
-`site/versions.json` are cited for their absence, which is the point of R-019 and R-022. Paths
-written relative to `docs/governance/` were resolved from that directory.
+Every file path each entry cites now resolves, and every path an entry cites for its absence is
+absent. This is checked by `scripts/check-risk-register.py`, which runs in CI, so it repeats on every
+change instead of once by hand. Paths written relative to `docs/governance/` are resolved from that
+directory, and a bare file name such as R-003's `Stdlib.java` is resolved against the well-known
+source directories. A path that resolves nowhere fails the gate unless the table below exempts it.
 
-That check is not a gate. It has no exit status and no script, so it does not repeat on the next
-change, and nothing will notice if an entry starts citing a path that has since moved.
-`check-risk-register.py` verifies exposure arithmetic, summary counts and ID uniqueness — it does
-not resolve paths, so a row may cite a file that no longer exists and still pass.
+The two paths that are cited *because* they do not exist are listed here rather than special-cased
+in the script, so the exemption is a visible edit a reviewer reads, and so it is checked in both
+directions: an exempted path that starts to exist fails the gate too, because R-019 and R-022 are
+only true while their paths are absent.
+
+### Citations that intentionally do not resolve
+
+| Path | Why it is cited anyway |
+| --- | --- |
+| `gradle/verification-metadata.xml` | Its absence is R-008: there is no dependency-verification manifest, so Gradle resolves dependencies by coordinate with no checksums. Creating it resolves the entry and must retire the row, not just the citation. |
+| `site/versions.json` | Its absence is R-022: `scripts/build-versioned-docs.py` writes a versioned bundle into a `site/` tree that this repository does not have, because the website was extracted by ADR-0011. Creating it makes the entry false. |
+| `conformance/` | A directory, cited by R-017 for the number of cases it holds rather than for its own existence. |
 
 **Cadence rule 2 asks for all 30 entries to be re-read at an Alpha boundary, and that re-read has
 still not been done.** It remains the first item of the Alpha 7 handoff rather than a claim made
