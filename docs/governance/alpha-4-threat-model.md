@@ -242,8 +242,10 @@ the total.
 bytecode** "is real bytecode, not an embedded interpreter, so it has no step budget and no
 host-call deadlines: only its output is capped". A compiled program that loops runs until
 something outside stops it, and runaway allocation is stopped only by the JVM heap, which
-`BuildJarTest.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` (line 247) pins as a program
-error rather than a crash.
+`BuildJarTest.aCompiledJarReportsRunningOutOfMemoryAsAProgramError` pins as a program
+error rather than a crash. It is cited by method name rather than line, because the line number
+this entry used to carry (247) had drifted to 327 — and it is the third line citation in this
+document found stale during the Alpha 7 re-read.
 
 There are two jar shapes and the distinction is not visible in the file name:
 
@@ -340,7 +342,7 @@ dangerous surface behind a private constructor is not constructible from Oqthara
 | TH-12 | `use java.lang.System` then `exit(0)` ends the process without `exit()` semantics | Denial of service | **Not mitigated** |
 | TH-13 | A reflective call bypasses a builtin's argument validation, so a `run_command`-shaped operation is reachable with arguments | Elevation of privilege | **Not mitigated** |
 | TH-14 | Loading an attacker-named class runs its static initialiser | Elevation of privilege | **Not mitigated** |
-| TH-15 | A host-dependent builtin is reachable from compiled bytecode through the bridge | Elevation of privilege | **Partially mitigated** |
+| TH-15 | A host-dependent *capability* is reachable from compiled bytecode through the Java bridge | Elevation of privilege | **Partially mitigated** |
 
 These are grouped deliberately. `run_command` accepting one executable with no arguments is a
 meaningful restriction; `Runtime.getRuntime().exec(new String[]{"/bin/sh","-c","..."})` is the same
@@ -349,14 +351,53 @@ not widen the *set* of things a program can do — it is already a JVM process �
 every ceiling the standard library imposes, and the ceilings are the only control this project
 has.
 
-**TH-15 is the exception.** `Builtins.supports` (line 69) refuses host-dependent names, so the
-compiler cannot emit a call to one. But the bridge is a *method* path, not a builtin path: a
-compiled program that can call `Class.forName` and then `getMethod(...).invoke(...)` is invoking
-JDK reflection, not a builtin. Whether the compiler refuses `use` is the question that decides
-it, and it does — "use/Java interop" is the second of the four ordered refusals in
-`docs/spec/backend.md` line 274, so a program using the bridge is built as an interpreter
-launcher and keeps its budgets. That is the mitigation, and it is exactly as strong as the
-compiler's refusal list.
+**TH-15 — the stated mitigation is gone, and this is the correction the Alpha 7 re-read found.**
+`Builtins.supports` (`Builtins.java` line 84, refusing at line 86) still refuses host-dependent
+names, so the compiler still cannot emit a *builtin* call to one. That half holds. The other half
+was: "the compiler refuses `use`, so a program using the bridge is built as an interpreter
+launcher and keeps its budgets." **The compiler no longer refuses `use`.** ADR-0066 made the
+`use` statement compile — it registers the class in `dev.oqthara.runtime.UsedClasses` at run time
+— and `docs/spec/backend.md` now says so at the head of its boundary list. Refusal #2 of the four
+that this entry counted on does not exist, so the entry's mitigation was describing a tree three
+releases old.
+
+Measured on the tree that carries this text, not read:
+
+```
+$ java -jar oq.jar build use_runtime.oq -o x.jar      # use java.lang.Runtime
+codepath: compiled bytecode
+$ java -jar x.jar
+called
+
+$ java -jar oq.jar build files_read.oq -o y.jar       # use java.nio.file.Files / Paths
+codepath: compiled bytecode
+$ java -jar y.jar
+true
+
+$ java -jar oq.jar build forname.oq -o z.jar          # use java.lang.Class; Class.forName(...)
+codepath: compiled bytecode
+$ java -jar z.jar
+java.lang.Runtime
+```
+
+So a compiled jar reaches `Files.readString("/etc/hosts")`, `Runtime.getRuntime().exec(...)` and
+`Class.forName` as bytecode. The host-dependent *builtin* names stay refused — `print read("/etc/hosts")`
+still reports `codepath: interpreter launcher (call to 'read' with 1 argument(s) is not compiled
+yet)` — but the bridge is a different door into the same room, and it is open.
+
+What survives is narrower and should be stated as what it is. A compiled jar has no step budget
+(TH-07, already `Accepted` and honestly documented in `docs/spec/language.md` line 2031), so the
+one property the old mitigation bought — "keeps its budgets" — was the property compiled code
+never had. The mitigation that does hold is the JDK's own bytecode verifier and the fact that
+this widens nothing the process could not already do through the interpreter. The mitigation that
+does not hold is any suggestion that choosing `oq build` narrows what a program can reach. It
+does not.
+
+Status stays `Partially mitigated`, but for a different reason than the row implies, and the
+distinction matters: it is no longer mitigated by the compiler refusing the bridge. It is
+mitigated only in that the refusal list still catches the builtin names and the bytecode verifier
+still runs. A reader who took the old text at face value would have concluded that `oq build`
+produced a more contained artefact than `oq run`. It does not.
 
 ### Is this a bug or a design?
 
@@ -376,8 +417,10 @@ that fails `workingDirectory()` and gets a program that cannot read relative pat
 
 The bridge is a complete escape from every library-level control, in one direction only: it grants
 nothing the process did not already have, and removes everything the library added. Status is
-`Not mitigated` for TH-09 through TH-14 because that is the honest reading; `Partially mitigated`
-for TH-15 because the compiler refuses the path into compiled code.
+`Not mitigated` for TH-09 through TH-14 because that is the honest reading. TH-15 is
+`Partially mitigated` only in the narrow sense that the builtin names stay refused and the
+bytecode verifier still runs; the compiler's refusal of `use`, which this section used to cite as
+the control, no longer exists. See the TH-15 correction above.
 
 ### Required tests
 
@@ -834,43 +877,58 @@ image, and the Gradle build's dependency resolution.
 | TH-47 | A release artefact is not traceable to a commit | Repudiation | **Partially mitigated** |
 | TH-48 | A malicious pull request reaches a workflow that holds `SITE_DISPATCH_TOKEN` | Elevation of privilege | **Mitigated** |
 
-**TH-43 — partially mitigated, and the gap is fundamental to the design.**
-`scripts/install.sh` line 143 downloads `oq.jar.sha256` from the same release as `oq.jar`, and
-line 163 compares the two after normalising with `shasum`/`sha256sum`. `scripts/install.ps1` does
-the same with `Get-FileHash -Algorithm SHA256`. Then line 168 runs `java -jar "$tmp" --version` as
-a smoke test, which the shell installer's own test suite covers —
-`scripts/tests/run-installer-tests.sh` includes a checksum-mismatch case —
-`case_checksum_preserves_previous` at line 280, which asserts the message contains "Checksum
-mismatch" at line 292 and that the previous jar survives — and a truncated-download case
-(`case_interrupted_download`, line 296).
+**TH-43 — partially mitigated, and the gap is now only on Windows.**
+This entry described "integrity but not authenticity" and cited a grep that "returns nothing" for
+`cosign`, `sigstore`, `gpg`, `minisign`, `attestation` and `authenticode`. That grep now returns
+`scripts/install.sh`, ADR-0052, the release workflow and the requirement matrix, because Alpha 6
+shipped keyless signing.
 
-A checksum fetched from the same origin as the artefact detects a corrupted download. It does not
-detect a compromised release, because an attacker who can replace the jar can replace the
-checksum in the same action. A grep across the repository for `cosign`, `sigstore`, `gpg`,
-`minisign`, `attestation` and `authenticode` returns nothing. So the control is integrity against
-transit failure, not authenticity against a hostile origin, and the distinction is worth stating
-because "we verify a checksum" reads like the stronger claim.
+`scripts/install.sh` still fetches `oq.jar.sha256` from the same release (line 144) and compares
+after normalising (line 156, 162), which remains integrity-against-corruption and nothing more.
+But it also fetches `oq.jar.sigstore.json` (line 145) and, when `cosign` is present, runs
+`cosign verify-blob --bundle` against it (line 179), reporting `Signature verified (cosign, keyless
+signer)` (line 183). When `cosign` is absent it warns on two lines (line 186) that the signature
+"was not checked", and `OQ_REQUIRE_SIGNATURE=1` turns that warning into a failure (lines 192, 204).
+The distinction between "not checked" and "checked and rejected" is carried in the exit status by
+`scripts/verify-signature.sh` and pinned by 13 tests.
 
-The release workflow (`.github/workflows/release.yml`) regenerates the checksum itself and
-verifies it with `sha256sum -c` in a fresh directory at line 82, then smoke-tests in `/tmp/smoke`
-at line 86. That catches a broken upload; it cannot catch a compromised runner.
+`.github/workflows/release.yml` installs cosign (line 90) and signs under `id-token: write`
+(line 14) with `sign-blob` (lines 97–98), then publishes three assets (line 145). This was
+verified against the real release rather than inferred: `v0.1.0-alpha.6` published `oq.jar`
+(12,821,046 bytes), `oq.jar.sha256` and `oq.jar.sigstore.json`, and sigstore signing — which no
+local check could exercise because `cosign` is not installed here — worked in CI on the first
+release that carried it.
 
-**TH-44 — not mitigated.** There is no `gradle/verification-metadata.xml` in the repository. The
-two external runtime dependencies — `org.xerial:sqlite-jdbc:3.45.3.0` and
-`org.slf4j:slf4j-nop:2.0.13` in `oq-stdlib/build.gradle.kts` — are resolved by coordinate and
-checksum-verified only by whatever the registry and the Gradle cache provide by default.
-`.github/dependabot.yml` exists for `gradle` and `github-actions`, weekly, with a limit of three
-open PRs, which is a reasonable update mechanism and not a substitution control. This is new
-exposure: ADR-0040 records that the project "previously had **zero** external runtime
-dependencies" and that this ADR "spends that property deliberately". The spend is recorded; the
-consequence — a dependency graph that now needs pinning — is not yet addressed.
+**The residual gap is Windows.** `scripts/install.ps1` has `Get-FileHash -Algorithm SHA256`
+(line 109) and nothing else: no signature fetch, no cosign check, no
+`OQ_REQUIRE_SIGNATURE` equivalent. So the POSIX installer verifies authenticity and the
+PowerShell installer verifies only integrity, for the same artefacts. That asymmetry is the
+threat that remains, and it is carried as R-020, whose status moved `Accepted` → `Open` for
+exactly this reason.
 
-**TH-45 — not mitigated.** Every `uses:` in `.github/workflows/` names a moving tag:
-`actions/checkout@v7`, `actions/setup-java@v6`, `gradle/actions/setup-gradle@v6`,
-`actions/setup-node@v4`, `softprops/action-gh-release@v3`, `github/codeql-action/*@v4`. A moving
-tag is a pointer its owner can repoint. `.github/workflows/release.yml` declares
-`permissions: contents: write`, so a compromised action in that workflow can publish a release.
-SHA pinning with a comment naming the version is the standard mitigation and it is not present.
+**TH-44 — not mitigated.** There is still no `gradle/verification-metadata.xml`: `gradle/` holds
+only `wrapper/`. The two external runtime dependencies are resolved by coordinate and
+checksum-verified only by whatever the registry and the Gradle cache provide by default. Their
+versions moved since this was written — `org.xerial:sqlite-jdbc` is now `3.54.1.0` and
+`org.slf4j:slf4j-nop` is now `2.0.20` in `oq-stdlib/build.gradle.kts` (lines 6 and 9), so the
+pinned coordinates the entry named are stale while the verdict is not. `.github/dependabot.yml`
+exists for `gradle` and `github-actions`, weekly, with a limit of three open PRs, which is a
+reasonable update mechanism and not a substitution control. This is new exposure: ADR-0040 records
+that the project "previously had **zero** external runtime dependencies" and that this ADR "spends
+that property deliberately". The spend is recorded; the consequence — a dependency graph that now
+needs pinning — is not yet addressed.
+
+**TH-45 — not mitigated.** Every `uses:` in `.github/workflows/` still names a moving tag:
+`actions/checkout@v7`, `actions/setup-java@v6`, `actions/setup-node@v7`,
+`actions/upload-artifact@v7`, `gradle/actions/setup-gradle@v6`, `github/codeql-action/*@v4`,
+`softprops/action-gh-release@v3` and `sigstore/cosign-installer@v4.1.3`. A moving tag is a pointer
+its owner can repoint, and `cosign-installer@v4.1.3` — added by Alpha 6 — is a new one in the
+workflow that holds `id-token: write` and `contents: write`, which is the highest-privilege
+workflow in the repository. `.github/workflows/release.yml` declares `permissions: contents:
+write`, so a compromised action there can publish a release and can mint a signing identity. SHA
+pinning with a comment naming the version is the standard mitigation and it is not present. That
+the entry's own list needed updating to stay accurate is itself the finding: a threat about
+mutable pins will keep drifting as pins are added.
 
 **TH-46 — not mitigated.** The `Dockerfile` builds from `eclipse-temurin:21-jdk` and runs from
 `eclipse-temurin:21-jre`, sets `WORKDIR /app`, copies the jar, writes a `/usr/local/bin/oq`
@@ -884,11 +942,17 @@ inside its own container; that argument is reasonable and it is not written down
 is why the status is `Not mitigated` rather than `Accepted`.
 
 **TH-47 — partially mitigated.** A release is built by a workflow triggered by a tag, and the PR
-that produced the commit is in the history with the required checks recorded against it. There is
-no build-provenance attestation, no reproducible-build comparison, and no signature over the
-artefact. A user who trusts the release trusts GitHub's account security and the maintainer's
-token hygiene. Release notes are generated by `softprops/action-gh-release@v3`, which records what
-changed but not what was built from where.
+that produced the commit is in the history with the required checks recorded against it. Since
+Alpha 6 there **is** a signature over the artefact: `.github/workflows/release.yml` signs `oq.jar`
+keylessly under `id-token: write` (line 14) after installing `sigstore/cosign-installer` (line 90)
+and publishes `oq.jar.sigstore.json` (line 145), and `scripts/install.sh` verifies it (line 179).
+The Sigstore bundle binds the artefact to the workflow identity and the issuer, which is a
+stronger repudiation control than the entry credited: anyone can check *which workflow* produced
+the jar without trusting this repository's account security. What is still absent is
+build-provenance attestation and a reproducible-build comparison, so a reader can confirm the jar
+came from this repository's release workflow but cannot confirm the workflow's inputs matched the
+tagged source without rebuilding. Release notes are generated by
+`softprops/action-gh-release@v3`, which records what changed but not what was built from where.
 
 **TH-48 — mitigated, and it is the best-designed control in the pipeline.**
 `.github/workflows/site-content-dispatch.yml` runs with `permissions: contents: read`, sets
@@ -911,13 +975,17 @@ are one file away from fixed. TH-46 is one `USER` line.
 
 ### Required tests
 
-`scripts/tests/run-installer-tests.sh` — `case_checksum_preserves_previous` (line 280) and
-`case_interrupted_download` (line 296), both driven by local fixture servers with no network
+`scripts/tests/run-installer-tests.sh` — `case_checksum_preserves_previous` (line 319) and
+`case_interrupted_download` (line 335), both driven by local fixture servers with no network
 access.
 `scripts/dispatch-site-content.mjs --self-test` — ten cases covering the decision matrix.
 
-**Missing tests.** Nothing verifies the Docker image's user. Nothing verifies a signature, because
-there is none.
+**Missing tests.** Nothing verifies the Docker image's user. The signature path is no longer
+untested — `scripts/tests/test_verify_signature.py` (13 tests) drives `scripts/verify-signature.sh`
+through a stub cosign, and the release workflow tampers with a copy and asserts verification fails
+— but nothing verifies that `scripts/install.ps1` checks a signature, because it does not (TH-43).
+A test that fails today is the honest form of that gap, which is why R-020 is `Open` rather than
+`Accepted`.
 
 ---
 
@@ -1040,6 +1108,19 @@ excellent and its *adversary* controls are absent by design, while the distribut
 fifteen genuinely open items that are nearly all small, cheap fixes — a `USER` line, a
 verification-metadata file, SHA-pinned actions, a row cap, a fan-out cap.
 
+## Citations that intentionally do not resolve
+
+Some entries cite a path *because it is absent*. `scripts/check-threat-model.py` resolves every
+backticked path in this document, so those citations are listed here and checked in both
+directions: a path on this list that starts existing is an error, because the entry citing it —
+usually a threat that the absence is the evidence for — needs re-deriving.
+
+| Path | Why the entry cites it anyway |
+| --- | --- |
+| `site/versions.json` | TH-53. ADR-0011 removed `site/`; the entry exists because `scripts/build-versioned-docs.py` still writes to this path. It appearing means the script became reachable again and TH-53 must be re-read |
+| `gradle/verification-metadata.xml` | TH-44. The absence *is* the threat: no dependency pinning exists. Adding the file closes the threat |
+| `oq.jar.sigstore.json` | TH-43. A release asset, published per tag rather than committed. It is not a repository path and never will be |
+
 ## What this model does not cover
 
 | Area | Why not |
@@ -1112,4 +1193,48 @@ requires a test that would fail without the control — a control with no test i
 comment is not a mitigation. A `Not mitigated` status requires nothing but honesty, which is the
 point of having the category.
 
-**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.
+**Last verified:** `43597e7` (merge of PR #243), the Alpha 7 boundary re-read.
+
+### The Alpha 7 boundary re-read
+
+Cadence rule 6 says "at least once per Alpha", and this document had not been re-read since Alpha
+4: the pin above read `27cac46`, and Alphas 5 and 6 shipped after it. The re-read covered all six
+cadence triggers and checked every line citation, version number and status sentence against the
+tree rather than against the previous text.
+
+**Six facts were stale and are corrected above.** Three of them were not drift but a control that
+had stopped existing:
+
+| Entry | Was | Now |
+| --- | --- | --- |
+| `TH-15` | Mitigated by "the compiler refuses `use`", refusal #2 of four | Refusal #2 is gone (ADR-0066). `use` compiles; the escape is measured, not inferred |
+| `TH-43` | "integrity but not authenticity"; the sigstore grep "returns nothing" | POSIX installer verifies authenticity via `cosign verify-blob`; gap is Windows-only |
+| `TH-47` | "no signature over the artefact" | `oq.jar.sigstore.json` is published and verified |
+| `TH-44` | `sqlite-jdbc:3.45.3.0`, `slf4j-nop:2.0.13` | `3.54.1.0`, `2.0.20` — verdict unchanged |
+| `TH-45` | six moving pins, no cosign action | nine pins including `sigstore/cosign-installer@v4.1.3` in the `id-token` workflow |
+| `TH-07` | `BuildJarTest` "line 247" | same test at line 327, now cited by name |
+
+**TH-15 was the finding that mattered.** It is the only entry whose mitigation claim was not
+merely out of date but inverted in effect: a reader following it would conclude that `oq build`
+produces a more contained artefact than `oq run`, when the measured behaviour is that a compiled
+jar reaches `Files.readString`, `Runtime.getRuntime().exec` and `Class.forName` as bytecode with no
+step budget. The status column was already `Partially mitigated` and stays there, so no count in
+the summary moved — which is exactly why a status-count gate would not have caught it. What was
+wrong was the *reason*, and the reason is what the document exists to record.
+
+**Two counts were re-derived and held.** Fifty-five threats, and the four summary buckets
+(14 / 12 / 14 / 15) still equal the ID lists with no threat missing from both a bucket and the
+table. Every `TH-` ID in the body appears in exactly one bucket. The four-status vocabulary is
+unchanged.
+
+**What this round did not do.** It did not attempt to fix any open threat: no `USER` line, no
+dependency verification metadata, no SHA pins, no `install.ps1` signature check, no builtin
+capability hook. Those are Alpha 7 delivery items, not re-read items, and fixing them while
+re-reading would have made the measurement and the change indistinguishable.
+
+**No gate pins this document, and that is the same blind spot the risk register had.** Nothing in
+`scripts/` reads this file. The risk register now has `scripts/check-risk-register.py`; the threat
+model has nothing, so its counts, its ID-to-bucket arithmetic and its line citations can drift
+silently — and three of them did. The mechanism to check a document against a tree now exists and
+is proven on the register; applying it here is an Alpha 7 item recorded in
+[`alpha-7-security-baseline.md`](alpha-7-security-baseline.md).

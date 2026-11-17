@@ -159,24 +159,36 @@ EXEMPT_TITLE = "Citations that intentionally do not resolve"
 # skip and the reverse check while every test still passed, because the tests
 # rebuilt the document from the same wrong constant. The anchor is the title, not
 # the level, and `TheExemptionHeadingIsReadFromTheRealDocument` pins it.
-EXEMPT_HEADING = re.compile(r"^#{1,6}[ \t]+" + re.escape(EXEMPT_TITLE) + r"[ \t]*$", re.MULTILINE)
+def exempt_heading(title: str = EXEMPT_TITLE) -> re.Pattern[str]:
+    """The heading that introduces an exemption table, at any heading level.
+
+    Parameterised by title so a second document can carry its own exemption
+    table through this same code. The risk register and the threat model both
+    cite paths that are deliberately absent — an entry *about* a missing file —
+    and each document lists its own, because an exemption is a reviewed edit
+    rather than data hidden in a checker.
+    """
+    return re.compile(r"^#{1,6}[ \t]+" + re.escape(title) + r"[ \t]*$", re.MULTILINE)
 
 
-def exemption_block_end(text: str) -> int:
+EXEMPT_HEADING = exempt_heading()
+
+
+def exemption_block_end(text: str, title: str = EXEMPT_TITLE) -> int:
     """Offset just past the exemption table, or len(text) if there is no section."""
-    heading = EXEMPT_HEADING.search(text)
+    heading = exempt_heading(title).search(text)
     if heading is None:
         return len(text)
     following = re.compile(r"^#{1,6}[ \t]+\S", re.MULTILINE).search(text, heading.end())
     return following.start() if following else len(text)
 
 
-def parse_exemptions(text: str) -> dict[str, str]:
+def parse_exemptions(text: str, title: str = EXEMPT_TITLE) -> dict[str, str]:
     """Reads the exemption table: unresolved path -> the reason it is cited anyway."""
-    heading = EXEMPT_HEADING.search(text)
+    heading = exempt_heading(title).search(text)
     if heading is None:
         return {}
-    block = text[heading.end():exemption_block_end(text)]
+    block = text[heading.end():exemption_block_end(text, title)]
     exemptions: dict[str, str] = {}
     for line in block.splitlines():
         match = re.match(r"^\|\s*`([^`]+)`\s*\|\s*(.+?)\s*\|$", line)
