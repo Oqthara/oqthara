@@ -150,15 +150,33 @@ SEARCH_DIRS = [
 # means adding one is a visible edit a reviewer reads, and it lets the check run
 # in both directions: an exempt path that starts existing is also an error,
 # because R-019 and R-022 exist only while their paths are absent.
-EXEMPT_HEADING = "## Citations that intentionally do not resolve"
+EXEMPT_TITLE = "Citations that intentionally do not resolve"
+
+# Matched by pattern rather than by literal string because the register is a
+# document that gets restructured: the section was written as `##`, and when it
+# moved under a new `### The Alpha 7 boundary re-read` subsection it became `###`.
+# A literal `startswith` then matched nothing, which silently disabled both the
+# skip and the reverse check while every test still passed, because the tests
+# rebuilt the document from the same wrong constant. The anchor is the title, not
+# the level, and `TheExemptionHeadingIsReadFromTheRealDocument` pins it.
+EXEMPT_HEADING = re.compile(r"^#{1,6}[ \t]+" + re.escape(EXEMPT_TITLE) + r"[ \t]*$", re.MULTILINE)
+
+
+def exemption_block_end(text: str) -> int:
+    """Offset just past the exemption table, or len(text) if there is no section."""
+    heading = EXEMPT_HEADING.search(text)
+    if heading is None:
+        return len(text)
+    following = re.compile(r"^#{1,6}[ \t]+\S", re.MULTILINE).search(text, heading.end())
+    return following.start() if following else len(text)
 
 
 def parse_exemptions(text: str) -> dict[str, str]:
     """Reads the exemption table: unresolved path -> the reason it is cited anyway."""
-    section = text.split(EXEMPT_HEADING, 1)
-    if len(section) < 2:
+    heading = EXEMPT_HEADING.search(text)
+    if heading is None:
         return {}
-    block = section[1].split("\n## ", 1)[0]
+    block = text[heading.end():exemption_block_end(text)]
     exemptions: dict[str, str] = {}
     for line in block.splitlines():
         match = re.match(r"^\|\s*`([^`]+)`\s*\|\s*(.+?)\s*\|$", line)
@@ -208,11 +226,11 @@ def check_citations(text: str) -> list[str]:
     body_lines: list[str] = []
     inside_exemptions = False
     for line in text.splitlines():
-        if line.startswith(EXEMPT_HEADING):
+        if EXEMPT_HEADING.match(line):
             inside_exemptions = True
             continue
         if inside_exemptions:
-            if line.startswith("#") or (line and not line.lstrip().startswith("|")):
+            if re.match(r"^#{1,6}[ \t]+\S", line) or (line and not line.lstrip().startswith("|")):
                 inside_exemptions = False
             else:
                 continue
@@ -231,7 +249,7 @@ def check_citations(text: str) -> list[str]:
             problems.append(
                 f"{cited} is cited but does not resolve from the repository root or"
                 f" from docs/governance/, and it is not listed under"
-                f" '{EXEMPT_HEADING}'"
+                f" '{EXEMPT_TITLE}'"
             )
 
     for cited, reason in exemptions.items():
