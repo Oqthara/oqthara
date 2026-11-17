@@ -5,9 +5,35 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0-alpha.6] - 2026-11-17
 
 ### Fixed
+- **A compiled multi-threaded program could emit lines no program wrote.** The interpreter writes
+  a line with one `println`, holding the output lock across text and newline together; the
+  compiled path called `print(text)` and then `print(newline)`, two acquisitions, so two threads
+  could interleave inside a single line. Reachable with nothing more than
+  `use java.lang.Thread` and two threads that print: measured over 40 runs of 400-character lines,
+  the interpreter fused 0 of 40 and the compiled jar fused 40 of 40, producing 406 lines that were
+  not in the program. `Arithmetic.print` now issues one `println` and flushes, so both backends
+  fuse 0 of 40 and both print all 800 lines. `write` stays non-atomic, which is what it means.
+  Risk register R-029, moved to `Mitigated`.
+- **`sort_by` evaluated its key once per comparison instead of once per item.** For three items
+  that was four calls, and a key with side effects ran an unbounded number of times:
+  `sort_by([10, 20, 30], counterKey)` returned `[30, 20, 10]` while `list_sort` on the same input
+  returned `[10, 20, 30]`. Both now share one decorate-sort-undecorate path and call the key
+  exactly once per item. The old path also made zero key calls for a one-item list, which no test
+  asserted; the empty, single-item, duplicate and equal-key orders are all pinned now. ADR-0067.
+- **Three Javadocs sat on the wrong method.** `BytecodeCompiler.internalName` carried a block
+  describing `emitClassConstant`, `Lowering.operand` restated a rule `spool` already explains, and
+  `Lowering.lambda` carried `freeVariables`' block — so the method that lowers a lambda was
+  documented as computing free variables, and the description of the generated static method and
+  the refused capture-assignment case appeared on no method at all.
+- **`Builtins.HOST_DEPENDENT` justified four refusals with a false premise.** Its javadoc said
+  `spawn`, `await`, `done` and `par_map` stay refused because a compiled jar has no scheduler. The
+  scheduler is a static executor every jar links, and removing the four from the set compiles all
+  four conformance cases and matches the interpreter. The javadoc now records the real reason and
+  the measurement: un-refusing them fixes 218 of 223 rather than 214, which widens the compiler,
+  and that is a capability change rather than part of this release. Recorded for Alpha 7.
 - **`finally` was absorbed into the preceding block instead of being rejected.** The word was
   not a keyword, so it lexed as an identifier and a `finally` line at the end of a `try` or
   `catch` body parsed as a variable read. When the branch never ran, the program was accepted

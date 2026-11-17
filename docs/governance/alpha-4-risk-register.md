@@ -824,13 +824,34 @@ admitted. Closing an entry to `Mitigated` requires a control that exists in the 
 path. Moving an entry to `Accepted` requires an ADR that records the refusal, because "accepted" is
 a decision and decisions in this repository have identifiers.
 
-**Last verified:** `6954a86` (merge of PR #138), 2026-11-12, for the register as a whole. Three
-entries were revisited since, and only those three: R-002's baseline was re-measured from 213/203 to
-223/214 after Alpha 6 widened the compiled subset, R-029 was added when the compiled `print`
-line-fusion defect was measured and moved to `Mitigated` when that defect was fixed, and R-029's
-concurrency exposure was re-derived against the widened compiled subset (218 of 223, 0
-divergences). Cadence rule 2 asks for all 29 to be re-read at an Alpha boundary; that re-read has
-not been done, and is the first item of the Alpha 7 handoff rather than a claim made here.
+**Last verified:** `2364e52` (merge of PR #241), 2026-11-17, for the register as a whole. Every
+one of the 29 entries was re-read for Alpha 6's boundary as cadence rule 2 requires, and the read
+was mechanical where it could be: every file path each entry cites was resolved against the tree
+programmatically, and the five entries whose controls were re-measured are recorded below. Four
+entries changed in this boundary pass:
+
+- **R-002** — baseline re-measured from 213/203 to 223/214 when Alpha 6 widened the compiled
+  subset. The count is read from `verify-conformance.py`'s own output, not retyped.
+- **R-029** — added when the compiled `print` line-fusion defect was measured, and moved to
+  `Mitigated` in this pass when the defect was fixed in `Arithmetic.print`. The body now carries
+  the before and after measurements and the mutation evidence.
+- **R-029's exposure in R-014's neighbourhood** — the widened compiled subset was re-derived at
+  218 of 223 executable, 0 divergences, which is the figure the entry about the four refused
+  builtins rests on.
+- **R-022** — re-read and confirmed still `Open`: `site/` does not exist in this tree, so the
+  versioned-docs script still writes somewhere that should not exist here.
+
+Every other entry was re-read and left unchanged, which is a claim about this pass rather than a
+claim that nothing is wrong with them. Three were checked further than a re-read because their
+controls are machine-checkable, and each check is named here so a reader can repeat it:
+R-023's keyword count is asserted against the lexer by `check-docs-sync.py`; R-027's 198 stdlib
+citations and R-028's slack bound in `WaitedBudgetTest` were read in the source, not assumed from
+the entry text. R-026's `inputs.property("operatingSystem", ...)` is present at `build.gradle.kts:78`,
+which is the control its body names.
+
+Note that the previous pin, `6954a86`, was accurate when written and is kept in the corrections
+section rather than here: this line states what has been verified, and only this pass has verified
+the whole register.
 
 ## Corrections
 
