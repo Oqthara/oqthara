@@ -2848,8 +2848,8 @@ blocks it only for JDK internals. A program that wants reflection can have it. T
 as keeping `Class` from becoming a reflective surface by accident, and treat the trust statement
 above as the real boundary.
 
-This is not left as a claim. `d2_reflection_reachable.oq` builds and prints the same line on both
-backends:
+This is not left as a claim. This program builds and prints `MethodHandle(String)String` on both
+backends, while `getDeclaredMethod` on the same class object prints the help line:
 
 ```
 use java.lang.invoke.MethodHandles
@@ -2860,8 +2860,8 @@ kind = MethodType.methodType(c)
 print MethodHandles.lookup().findVirtual(c, "trim", kind)
 ```
 
-It prints `MethodHandle(String)String`, while `d2_reflection_refused.oq` on the same kind of class
-object prints the help line. ADR-0065 records the decision that this asymmetry is intended:
+`d2_reflection_reachable.oq` is that program held to the probe harness, so the reachability cannot
+regress silently. ADR-0065 records the decision that this asymmetry is intended:
 reflection is reachable deliberately and not by a name on every class object.
 
 ### Objects Java returns
