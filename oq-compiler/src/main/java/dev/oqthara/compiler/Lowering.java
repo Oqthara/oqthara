@@ -691,8 +691,13 @@ public final class Lowering {
         return slot;
     }
 
-    /** Evaluates operands so that a nested {@code try} still starts from an empty stack. */
-    /** Lowers one operand, honouring a {@code try} expression inside it. */
+    /**
+     * Lowers one operand, honouring a {@code try} expression inside it.
+     *
+     * <p>A composite expression that mentions a {@code try} anywhere spools its operands
+     * instead of leaving the earlier ones on the stack, so the nested {@code try} starts from
+     * an empty stack. See {@link #spool(Ast.Expr)}.
+     */
     private void operand(Ast.Expr expr) {
         operands(List.of(expr));
     }
@@ -733,17 +738,6 @@ public final class Lowering {
         code.add(new Ir.Label(done));
     }
 
-    /**
-     * Lowers a lambda to a generated static method plus a {@link Ir.Lambda} that creates the
-     * value. A method named {@code lambda$N} lives next to the program's own functions, so the
-     * body is ordinary emitted bytecode and there is no second execution path.
-     *
-     * <p>A lambda may capture values from the enclosing function: the captured values become
-     * the generated method's leading parameters and the enclosing side pushes them in the same
-     * order when it creates the function value. What cannot be reproduced is a lambda that
-     * <em>assigns</em> a captured variable, because the capture is a copy, so that case is
-     * refused instead of silently freezing the enclosing binding.
-     */
     /**
      * The names a lambda reads from the enclosing function, in first-read order.
      *
@@ -982,12 +976,15 @@ public final class Lowering {
     }
 
     /**
-     * The names a lambda reads from the enclosing function, in first-read order.
+     * Lowers a lambda to a generated static method plus a {@link Ir.Lambda} that creates the
+     * value. A method named {@code lambda$N} lives next to the program's own functions, so the
+     * body is ordinary emitted bytecode and there is no second execution path.
      *
-     * <p>Computed from the AST because the captured values must become the generated method's
-     * leading parameters: their names must be known before lowering the body, since the body's
-     * slot plan starts after them. Only names the enclosing function can actually supply are
-     * captured; a builtin such as {@code print} stays a name reference and is never captured.
+     * <p>A lambda may capture values from the enclosing function: the captured values become
+     * the generated method's leading parameters and the enclosing side pushes them in the same
+     * order when it creates the function value. What cannot be reproduced is a lambda that
+     * <em>assigns</em> a captured variable, because the capture is a copy, so that case is
+     * refused instead of silently freezing the enclosing binding.
      */
     private void lambda(Ast.Lambda value, int captures) {
         String name = "lambda$" + lambdaCounter++;

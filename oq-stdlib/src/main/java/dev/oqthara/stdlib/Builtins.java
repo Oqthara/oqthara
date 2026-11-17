@@ -41,18 +41,19 @@ public final class Builtins {
      * Builtins that read or mutate state outside the program: files, clock, randomness,
      * network, process, environment, program arguments and the concurrency helpers.
      *
-     * <p>The concurrency helpers are here because generated output would not be correct if they
-     * were not. They do run: the shared scheduler lives in {@code Stdlib.TaskRunner.EXECUTOR},
-     * which every jar links, so removing {@code spawn}, {@code await}, {@code done} and
-     * {@code par_map} from this set makes all four compile and, for {@code conformance/138},
-     * {@code 139}, {@code 140} and {@code 141}, print the interpreter's output. What breaks is a
-     * program that prints from more than one thread. The interpreter emits a line with one
-     * {@code PrintStream.println}, so it holds the stream lock across the whole line; the
-     * compiled path calls {@code Arithmetic.print}, which writes the text and the newline as two
-     * {@code print} calls, so two threads can interleave and produce one fused line. Measured on
-     * a two-thread program: 18 of 40 compiled runs printed {@code from taskfrom main}, none of 40
-     * interpreter runs did. That is a real divergence, so the four stay refused until concurrent
-     * output is correct rather than merely usually correct.
+     * <p>The concurrency helpers stay here because their compiled form was never shipped, not
+     * because concurrent output is wrong. That used to be the reason: the interpreter emitted a
+     * line with one {@code PrintStream.println} while the compiled path wrote the text and the
+     * newline as two {@code print} calls, so two threads could interleave and produce one fused
+     * line (measured at 18 of 40 compiled runs, none of 40 interpreter runs; R-029).
+     * {@code Arithmetic.print} now writes one line per call, and the fusion is gone: 0 of 20
+     * compiled runs of a two-thread program fused a line, against 20 of 20 at 801 lines each.
+     *
+     * <p>What is left is a scope decision rather than a defect. Removing these four from the set
+     * makes all of {@code conformance/138}, {@code 139}, {@code 140} and {@code 141} compile and
+     * print the interpreter's output — measured at 218 of 223 compiled with 0 divergences, up
+     * from 214 — but enabling concurrency in compiled output is a capability change with its own
+     * review, so it is recorded as an Alpha 7 item instead of being taken here.
      *
      * <p>The callable-taking collection builtins ({@code map}, {@code filter}, {@code sort_by})
      * are <em>not</em> here: a compiled lambda is a {@code runtime.CompiledFunction}, which
