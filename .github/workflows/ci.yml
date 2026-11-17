@@ -76,6 +76,7 @@ jobs:
           python3 scripts/check-risk-register.py
           python3 scripts/check-threat-model.py
           python3 scripts/check-dependency-verification.py
+          python3 scripts/check-action-pins.py
       - name: Check the pull request has an AI review record
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         # ADR-0059 makes AI review the review mechanism for this repository, and this step is

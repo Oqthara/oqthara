@@ -881,7 +881,7 @@ image, and the Gradle build's dependency resolution.
 |---|---|---|---|
 | TH-43 | A tampered `oq.jar` is installed because the checksum is fetched from the same place as the jar | Tampering | **Partially mitigated** |
 | TH-44 | A dependency is substituted because no verification metadata pins it | Tampering | **Mitigated** |
-| TH-45 | A compromised action tag runs with `contents: write` | Elevation of privilege | **Not mitigated** |
+| TH-45 | A compromised action tag runs with `contents: write` | Elevation of privilege | **Mitigated** |
 | TH-46 | The Docker image runs as root and a program writes outside `/work` | Elevation of privilege | **Mitigated** |
 | TH-47 | A release artefact is not traceable to a commit | Repudiation | **Partially mitigated** |
 | TH-48 | A malicious pull request reaches a workflow that holds `SITE_DISPATCH_TOKEN` | Elevation of privilege | **Mitigated** |
@@ -942,17 +942,30 @@ The wider exposure this entry was really recording — that the project "previou
 external runtime dependencies" per ADR-0040 and spent that property deliberately — is now recorded
 rather than unfixed. `.github/dependabot.yml` remains the update mechanism, not the control.
 
-**TH-45 — not mitigated.** Every `uses:` in `.github/workflows/` still names a moving tag:
-`actions/checkout@v7`, `actions/setup-java@v6`, `actions/setup-node@v7`,
-`actions/upload-artifact@v7`, `gradle/actions/setup-gradle@v6`, `github/codeql-action/*@v4`,
-`softprops/action-gh-release@v3` and `sigstore/cosign-installer@v4.1.3`. A moving tag is a pointer
-its owner can repoint, and `cosign-installer@v4.1.3` — added by Alpha 6 — is a new one in the
-workflow that holds `id-token: write` and `contents: write`, which is the highest-privilege
-workflow in the repository. `.github/workflows/release.yml` declares `permissions: contents:
-write`, so a compromised action there can publish a release and can mint a signing identity. SHA
-pinning with a comment naming the version is the standard mitigation and it is not present. That
-the entry's own list needed updating to stay accurate is itself the finding: a threat about
-mutable pins will keep drifting as pins are added.
+**TH-45 — mitigated.** Every `uses:` in the three workflows that hold write scope now pins a
+40-character commit with a comment naming the version: `.github/workflows/release.yml`
+(`contents: write`, `id-token: write`), `.github/workflows/site-content-dispatch.yml` (references
+`secrets.SITE_DISPATCH_TOKEN`) and `.github/workflows/codeql.yml` (`security-events: write`). A
+moving tag is a pointer its owner can repoint, so on `release` — the highest-privilege workflow
+here — a compromised `cosign-installer` tag could publish a release and mint a signing identity.
+That is no longer reachable by repointing a tag in those files; the commit is named in this
+repository's history and a change to it is a diff.
+
+The scope is computed from what each workflow declares, not from a list, because this entry's own
+list needed updating twice to stay accurate: a threat about mutable pins drifts as pins are added.
+`scripts/check-action-pins.py` derives scope from `*: write` declarations and `secrets.` references
+and fails on a tag, a short SHA, or a pin with no version comment. `.github/workflows/ci.yml`,
+`.github/workflows/docker.yml` and `.github/workflows/nightly.yml` are read-only and keep
+major-version tags, which is a deliberate, stated exception rather than an oversight, and a test
+fails if one of them gains write scope.
+
+**What this does not do.** It does not make the pins stay current — Dependabot does not bump a SHA
+pin without configuration, so these will age, and an aged pin is a stale dependency rather than a
+mutable one. The risk traded away is "the owner repoints the tag" for "we do not pick up fixes
+automatically"; the first was reachable by a third party, the second is visible in this repository.
+It also does not cover workflows by name, so a *new* read-only workflow that later gains a secret is
+caught only from the moment it gains one — which is when the gate starts demanding pins, not
+before.
 
 **TH-46 — mitigated at the Alpha 7 boundary.** The `Dockerfile` builds from
 `eclipse-temurin:21-jdk` and runs from `eclipse-temurin:21-jre`. Until Alpha 7 the runtime stage
@@ -1003,10 +1016,12 @@ workflow only runs on `push` to `main` and on `release`.
 
 ### Residual risk
 
-The distribution path is honest about what it verifies and silent about what it does not. The one
-substantive gap left in this boundary is TH-45 (moving action tags), which is one file away from
-fixed. TH-44 (no dependency pinning) was one file too, and Alpha 7 spent it; TH-46 was one `USER`
-line, and Alpha 7 spent that as well.
+The distribution path is honest about what it verifies and silent about what it does not. Three of
+this boundary's gaps were single-file gaps: TH-44 (no dependency pinning) was one metadata file and
+Alpha 7 spent it, TH-46 was one `USER` line and Alpha 7 spent that, and TH-45 (moving action tags)
+was one attribute per `uses:` and Alpha 7 spent that too. What is left is not a single-file fix:
+TH-43 is the Windows installer's authenticity gap and TH-47 the absence of a signed mapping from
+artefact to commit.
 
 ### Required tests
 
@@ -1133,10 +1148,10 @@ document stating the keyword count agrees with `Lexer.KEYWORDS`.
 
 | Status | Count | Threats |
 |---|---|---|
-| **Mitigated** | 16 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-44, TH-46, TH-48, TH-49, TH-50, TH-54 |
+| **Mitigated** | 17 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-44, TH-45, TH-46, TH-48, TH-49, TH-50, TH-54 |
 | **Partially mitigated** | 12 | TH-06, TH-08, TH-15, TH-21, TH-26, TH-33, TH-35, TH-37, TH-38, TH-43, TH-47, TH-52 |
 | **Accepted** | 14 | TH-01, TH-02, TH-03, TH-04, TH-05, TH-07, TH-16, TH-22, TH-30, TH-34, TH-36, TH-40, TH-41, TH-55 |
-| **Not mitigated** | 13 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-45, TH-51, TH-53 |
+| **Not mitigated** | 12 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-51, TH-53 |
 
 Fifty-five threats. The distribution is the finding: the runtime's *accident* controls are
 excellent and its *adversary* controls are absent by design, while the distribution machinery has
@@ -1246,7 +1261,7 @@ had stopped existing:
 | `TH-43` | "integrity but not authenticity"; the sigstore grep "returns nothing" | POSIX installer verifies authenticity via `cosign verify-blob`; gap is Windows-only |
 | `TH-47` | "no signature over the artefact" | `oq.jar.sigstore.json` is published and verified |
 | `TH-44` | `sqlite-jdbc:3.45.3.0`, `slf4j-nop:2.0.13` | `3.54.1.0`, `2.0.20`; verdict changed to `Mitigated` when A7.4 added verification metadata |
-| `TH-45` | six moving pins, no cosign action | nine pins including `sigstore/cosign-installer@v4.1.3` in the `id-token` workflow |
+| `TH-45` | six moving pins, no cosign action | thirteen `uses:` across three write-scope workflows, each pinned to a commit, including `cosign-installer` in the `id-token` workflow |
 | `TH-07` | `BuildJarTest` "line 247" | same test at line 327, now cited by name |
 
 **TH-15 was the finding that mattered.** It is the only entry whose mitigation claim was not
