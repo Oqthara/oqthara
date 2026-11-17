@@ -392,6 +392,12 @@
       "slug": "docs/adr/0064-use-binds-a-class-value"
     },
     {
+      "path": "docs/adr/0065-reflection-stays-unexposed-by-name.md",
+      "title": "ADR-0065 — Reflection stays unexposed by name",
+      "section": "adr",
+      "slug": "docs/adr/0065-reflection-stays-unexposed-by-name"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

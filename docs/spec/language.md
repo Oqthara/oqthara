@@ -2848,6 +2848,26 @@ blocks it only for JDK internals. A program that wants reflection can have it. T
 as keeping `Class` from becoming a reflective surface by accident, and treat the trust statement
 above as the real boundary.
 
+This is not left as a claim, and it is not demonstrated on a friendly member. `getEnclosingClass`
+is one of the entry points the allowlist refuses, so `c.getEnclosingClass()` fails. The same lookup
+through `MethodHandles` resolves it, invokes it, and prints its answer:
+
+```
+use java.lang.Class
+use java.lang.invoke.MethodHandles
+use java.lang.invoke.MethodType
+use java.lang.String
+c = String("x").getClass()
+kind = MethodType.methodType(Class)
+handle = MethodHandles.lookup().findVirtual(Class, "getEnclosingClass", kind)
+print handle.invokeWithArguments(c)
+```
+
+It prints `nothing` — a class declared at the top level has no enclosing class — on both backends.
+`d2_reflection_reachable.oq` is that program held to the probe harness, so the reachability cannot
+regress silently. ADR-0065 records the decision that this asymmetry is intended:
+reflection is reachable deliberately and not by a name on every class object.
+
 ### Objects Java returns
 
 A value Java hands back is an ordinary Java object, and its methods are called the same way as
