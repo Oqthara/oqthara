@@ -17,6 +17,7 @@ exists to be that pair of eyes.
 """
 import importlib.util
 import pathlib
+import re
 import sys
 import unittest
 
@@ -30,6 +31,23 @@ checker = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(checker)
 
 MODEL = SCRIPTS.parent / "docs" / "governance" / "alpha-4-threat-model.md"
+
+
+def bucket_line(text, status):
+    """The summary table row for `status`, e.g. `| **Mitigated** | 15 | TH-17, ...`.
+
+    Tests mutate the row they find rather than one they spell out. Spelling the
+    row out is how the first version of these tests broke: moving one threat
+    between statuses changed `Mitigated | 14` to `Mitigated | 15` and four tests
+    failed on a document that was correct. A test that hardcodes a count is a
+    second copy of the document, and the two drift.
+    """
+    for line in text.splitlines():
+        if line.startswith(f"| **{status}** |") and re.match(
+            r"\| \*\*[^*]+\*\* \| \d+ \| TH-", line
+        ):
+            return line
+    raise AssertionError(f"no summary row for {status}")
 
 
 class TheRealDocumentPasses(unittest.TestCase):
@@ -91,33 +109,50 @@ class TheRealDocumentIsReadCorrectly(unittest.TestCase):
 class ASummaryCountMustMatchItsIds(unittest.TestCase):
     def test_a_wrong_count_is_rejected(self):
         text = MODEL.read_text(encoding="utf-8")
-        broken = text.replace("| **Mitigated** | 14 |", "| **Mitigated** | 15 |", 1)
+        row = bucket_line(text, "Mitigated")
+        count = int(re.search(r"\| (\d+) \|", row).group(1))
+        lied = row.replace(f"| {count} |", f"| {count + 1} |", 1)
+        broken = text.replace(row, lied, 1)
         self.assertNotEqual(text, broken)
         problems = checker.check(broken)
-        self.assertTrue(any("states 15 but lists 14" in p for p in problems), problems)
+        self.assertTrue(
+            any(f"states {count + 1} but lists {count}" in p for p in problems), problems
+        )
 
     def test_a_dropped_id_is_rejected(self):
         text = MODEL.read_text(encoding="utf-8")
-        broken = text.replace("| **Mitigated** | 14 | TH-17, TH-18,", "| **Mitigated** | 14 | TH-18,", 1)
+        row = bucket_line(text, "Mitigated")
+        listed = re.search(r"TH-\d+(?:, TH-\d+)*", row).group(0).split(", ")
+        dropped = listed[0]
+        broken = text.replace(row, row.replace(f"{dropped}, ", "", 1), 1)
         self.assertNotEqual(text, broken)
         problems = checker.check(broken)
-        self.assertTrue(any("TH-17 has a threat row but is in no summary bucket" in p for p in problems), problems)
+        self.assertTrue(
+            any(f"{dropped} has a threat row but is in no summary bucket" in p for p in problems),
+            problems,
+        )
 
 
 class TheBucketsMustPartitionTheThreats(unittest.TestCase):
     def test_an_id_in_two_buckets_is_rejected(self):
         text = MODEL.read_text(encoding="utf-8")
-        broken = text.replace("| **Not mitigated** | 15 | TH-09, TH-10,", "| **Not mitigated** | 15 | TH-09, TH-10, TH-17,", 1)
+        open_row = bucket_line(text, "Not mitigated")
+        first = re.search(r"TH-\d+", open_row).group(0)
+        duped = re.search(r"TH-\d+", bucket_line(text, "Mitigated")).group(0)
+        inserted = open_row.replace(first, f"{duped}, {first}", 1)
+        broken = text.replace(open_row, inserted, 1)
         self.assertNotEqual(text, broken)
         problems = checker.check(broken)
         self.assertTrue(any("also under another status" in p for p in problems), problems)
 
     def test_an_id_in_no_bucket_is_rejected(self):
         text = MODEL.read_text(encoding="utf-8")
-        broken = text.replace("| **Not mitigated** | 15 | TH-09, TH-10,", "| **Not mitigated** | 15 | TH-10,", 1)
+        open_row = bucket_line(text, "Not mitigated")
+        dropped = re.search(r"TH-\d+", open_row).group(0)
+        broken = text.replace(open_row, open_row.replace(f"{dropped}, ", "", 1), 1)
         self.assertNotEqual(text, broken)
         problems = checker.check(broken)
-        self.assertTrue(any("TH-09 has a threat row" in p for p in problems), problems)
+        self.assertTrue(any(dropped in p and "in no summary bucket" in p for p in problems), problems)
 
     def test_a_total_that_disagrees_with_the_rows_is_rejected(self):
         text = MODEL.read_text(encoding="utf-8")

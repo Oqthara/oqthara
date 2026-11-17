@@ -125,12 +125,27 @@ to the gate itself.
 
 ### A7.3 — `USER` in the Dockerfile, and a test that would fail without it
 
-**Closes:** TH-46. **Status today:** `Not mitigated`, and the entry says the
-container-is-discarded argument "is reasonable and it is not written down anywhere."
+**Closes:** TH-46. **State:** done. **Status today:** `Mitigated`.
 
 **Acceptance:** the runtime stage adds a non-root `USER`; `.github/workflows/docker.yml` runs
 `id -u` in the image and asserts it is not `0`, so removing the directive fails a workflow rather
 than a review.
+
+**What was done.** The runtime stage creates `oq` (uid and gid 1001) with `--create-home`, chowns
+`/work` to it and switches to it before the entrypoint. The workflow asserts both halves of the
+claim: `id -u` is not `0`, and appending to `/app/oq.jar` fails. The second assertion is the one
+that matters — the envelope says a program "writes outside `/work`", and the damage is the ability
+to replace the jar that will run next, not the uid itself.
+
+`/work` is writable so programs can still write where they are meant to; `/app` is root-owned and
+read-only to the runner. `/home/oq` exists and is owned by `oq`, but nothing in the `oq test` path
+writes there — `TestRunner` only reads sources and resolves paths (`TestRunner.java:24-47`), and
+`InstallLock` is not reached from the test path. That is why the existing workflow steps keep
+working unchanged.
+
+**Verification is CI-only.** `docker info` fails on the development machine, so this item's
+executed evidence is the `docker.yml` run on the pull request, not a local build. The pull request
+says so rather than implying a local check happened.
 
 **Why third:** it is the cheapest genuine mitigation on the list and the only one whose absence is
 `Not mitigated` with no recorded decision. It is third because it needs a working Docker daemon to

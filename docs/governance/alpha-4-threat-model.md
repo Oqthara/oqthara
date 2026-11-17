@@ -882,7 +882,7 @@ image, and the Gradle build's dependency resolution.
 | TH-43 | A tampered `oq.jar` is installed because the checksum is fetched from the same place as the jar | Tampering | **Partially mitigated** |
 | TH-44 | A dependency is substituted because no verification metadata pins it | Tampering | **Not mitigated** |
 | TH-45 | A compromised action tag runs with `contents: write` | Elevation of privilege | **Not mitigated** |
-| TH-46 | The Docker image runs as root and a program writes outside `/work` | Elevation of privilege | **Not mitigated** |
+| TH-46 | The Docker image runs as root and a program writes outside `/work` | Elevation of privilege | **Mitigated** |
 | TH-47 | A release artefact is not traceable to a commit | Repudiation | **Partially mitigated** |
 | TH-48 | A malicious pull request reaches a workflow that holds `SITE_DISPATCH_TOKEN` | Elevation of privilege | **Mitigated** |
 
@@ -939,16 +939,26 @@ pinning with a comment naming the version is the standard mitigation and it is n
 the entry's own list needed updating to stay accurate is itself the finding: a threat about
 mutable pins will keep drifting as pins are added.
 
-**TH-46 — not mitigated.** The `Dockerfile` builds from `eclipse-temurin:21-jdk` and runs from
-`eclipse-temurin:21-jre`, sets `WORKDIR /app`, copies the jar, writes a `/usr/local/bin/oq`
-wrapper, then `WORKDIR /work` and `ENTRYPOINT ["java", "-jar", "/app/oq.jar"]`. There is **no
-`USER` directive**, so the container runs as root. `.github/workflows/docker.yml` builds the image
-and runs `--version`, a hello-world program, and `oq test tests` from it — so the image is
-exercised and the root user is not. A program in a container can therefore write to `/app` and
-replace `oq.jar`, and the next invocation of `oq` runs the replaced jar. The mitigating argument is
-that a container is discarded and that a program with root inside its own container has root
-inside its own container; that argument is reasonable and it is not written down anywhere, which
-is why the status is `Not mitigated` rather than `Accepted`.
+**TH-46 — mitigated at the Alpha 7 boundary.** The `Dockerfile` builds from
+`eclipse-temurin:21-jdk` and runs from `eclipse-temurin:21-jre`. Until Alpha 7 the runtime stage
+set `WORKDIR /app`, copied the jar, wrote a `/usr/local/bin/oq` wrapper, then `WORKDIR /work` and
+`ENTRYPOINT ["java", "-jar", "/app/oq.jar"]` — with **no `USER` directive**, so the container ran
+as root. A program in a container could write to `/app` and replace `oq.jar`, and the next
+invocation of `oq` would run the replaced jar.
+
+The runtime stage now creates a dedicated `oq` user (uid and gid 1001), chowns `/work` to it, and
+switches to it before the entrypoint. `/app/oq.jar` stays root-owned and is not writable by the
+container user, which is the property the entry needs: the mitigation is not the uid, it is that
+the replacement write fails. `.github/workflows/docker.yml` asserts both halves — `id -u` is not
+`0`, and appending to `/app/oq.jar` fails — so deleting the `USER` line fails the workflow rather
+than a review.
+
+What this does not do is contain a program that is *supposed* to run: the user can still write
+inside `/work`, which is where programs are expected to write, and the process can still read what
+that user can read. Losing the ability to rewrite the interpreter mid-run is the whole of the
+gain, and it is a real one, because it turned a persistent compromise into a per-invocation one.
+The earlier "a container is discarded" argument was reasonable and is now written down instead of
+standing in for a control.
 
 **TH-47 — partially mitigated.** A release is built by a workflow triggered by a tag, and the PR
 that produced the commit is in the history with the required checks recorded against it. Since
@@ -980,7 +990,7 @@ workflow only runs on `push` to `main` and on `release`.
 
 The distribution path is honest about what it verifies and silent about what it does not. The two
 substantive gaps are TH-44 (no dependency pinning) and TH-45 (moving action tags), both of which
-are one file away from fixed. TH-46 is one `USER` line.
+are one file away from fixed. TH-46 was one `USER` line, and Alpha 7 spent it.
 
 ### Required tests
 
@@ -1107,15 +1117,15 @@ document stating the keyword count agrees with `Lexer.KEYWORDS`.
 
 | Status | Count | Threats |
 |---|---|---|
-| **Mitigated** | 14 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-48, TH-49, TH-50, TH-54 |
+| **Mitigated** | 15 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-46, TH-48, TH-49, TH-50, TH-54 |
 | **Partially mitigated** | 12 | TH-06, TH-08, TH-15, TH-21, TH-26, TH-33, TH-35, TH-37, TH-38, TH-43, TH-47, TH-52 |
 | **Accepted** | 14 | TH-01, TH-02, TH-03, TH-04, TH-05, TH-07, TH-16, TH-22, TH-30, TH-34, TH-36, TH-40, TH-41, TH-55 |
-| **Not mitigated** | 15 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-44, TH-45, TH-46, TH-51, TH-53 |
+| **Not mitigated** | 14 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-44, TH-45, TH-51, TH-53 |
 
 Fifty-five threats. The distribution is the finding: the runtime's *accident* controls are
 excellent and its *adversary* controls are absent by design, while the distribution machinery has
-fifteen genuinely open items that are nearly all small, cheap fixes — a `USER` line, a
-verification-metadata file, SHA-pinned actions, a row cap, a fan-out cap.
+fourteen genuinely open items that are nearly all small, cheap fixes — a verification-metadata
+file, SHA-pinned actions, a row cap, a fan-out cap.
 
 ## Citations that intentionally do not resolve
 

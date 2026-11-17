@@ -25,6 +25,18 @@ COPY --from=build /src/oq-cli/build/libs/oq.jar ./oq.jar
 RUN printf '#!/bin/sh\nexec java -jar /app/oq.jar "$@"\n' > /usr/local/bin/oq \
     && chmod +x /usr/local/bin/oq
 
+# TH-46: without this the container runs as root, so a program can rewrite
+# /app/oq.jar and the next `oq` invocation runs the replaced jar. A dedicated
+# user makes that write fail. The jar stays root-owned and read-only to the
+# runner, and /work is created and chowned here so a mounted working directory
+# still works for the default user.
+RUN groupadd --gid 1001 oq \
+    && useradd --uid 1001 --gid oq --create-home --home-dir /home/oq \
+       --shell /usr/sbin/nologin oq \
+    && mkdir -p /work \
+    && chown oq:oq /work
+
+USER oq
 WORKDIR /work
 ENTRYPOINT ["java", "-jar", "/app/oq.jar"]
 CMD ["--version"]
