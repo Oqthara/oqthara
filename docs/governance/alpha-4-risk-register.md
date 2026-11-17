@@ -780,7 +780,7 @@ real piece of work with its own failure modes, and it belongs in workstream 16 a
 deliverable rather than bolted onto the documentation gate that currently runs in seconds.
 
 *Evidence.* `scripts/check-docs-sync.py` (states a version, matches the build) ·
-`scripts/check-links.py` (213 links) · the `Lexer` example in `docs/spec/language.md`
+`scripts/check-links.py` (271 links) · the `Lexer` example in `docs/spec/language.md`
 "Interoperability with Java", which is the corrected form of the draft that failed.
 
 ## Summary by exposure
