@@ -87,9 +87,14 @@ on the others not moving.
 `sort_by` is not reimplemented on the same path in this change. Changing its key count is a
 behaviour change to a published builtin, and the defect it exposes is better fixed by moving
 callers to `list_sort` than by silently altering what `sort_by` does. The wrong answer is
-pinned by `ListSortTest.sortByStillEvaluatesItsKeyPerComparison`, so the difference between the
-two names is reproducible from a test rather than only from this paragraph. When `sort_by` is
-moved onto the decorate path, that test must move with it.
+pinned by a test, so the difference between the two names is reproducible from a test rather
+than only from this paragraph. When `sort_by` is moved onto the decorate path, that test must
+move with it.
+
+> **Superseded by [ADR-0067](0067-sort-by-shares-the-decorate-path.md).** `sort_by` has since
+> been moved onto that path, and the pin moved with it: the test is now
+> `ListSortTest.sortByCallsItsKeyOncePerItem` and asserts the corrected order. This decision and
+> its measurement are kept as the record of how the defect was found.
 
 ### 5. `list_sort` compiles
 

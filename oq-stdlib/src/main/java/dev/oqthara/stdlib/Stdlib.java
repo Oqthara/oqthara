@@ -251,24 +251,18 @@ public final class Stdlib {
                     "sort_by() needs a key function taking 1 argument",
                     args.get(1),
                     "sort_by(items, x -> x.score)", span);
-            items.sort((a, b) -> Values.compare(
-                    host.call(key, singleArgument(a), span),
-                    host.call(key, singleArgument(b), span), span));
-            return items;
+            return sortedByCachedKeys(host, items, key, span);
         }).named("items", "key"));
         interpreter.defineBuiltin(NativeFunction.of("map", 2, (host, args, span) ->
                 invokeMethod(host, args.get(0), "map", List.of(args.get(1)), span)).named("items", "function"));
         interpreter.defineBuiltin(NativeFunction.of("filter", 2, (host, args, span) ->
                 invokeMethod(host, args.get(0), "filter", List.of(args.get(1)), span)).named("items", "predicate"));
-        // `sort_by` above evaluates its key on every comparison, which is not merely slow: a
-        // key with state decides the order. Measured on `[10, 20, 30]` with a counter key, the
-        // result was [30, 20, 10] because each comparison consumed the next counter value. The
-        // call count is input-dependent (46 on one ten-item list, 18 on the same items in
-        // another order), so the defect is the dependence, not any particular number. This
-        // builtin is the contract that fixes it — the key is evaluated exactly once per item,
-        // before any comparison, so a sort cannot observe how many comparisons were made.
-        // `sort` and `sorted` stay as they are: `sort` is the receiver-method form and
-        // `sorted` is single-arity, so neither could carry a key without breaking a caller.
+        // `sort_by` and `list_sort` now share the decorate path below. Until ADR-0067, `sort_by`
+        // called its key on every comparison, which was not merely slow: a key with state
+        // decided the order. Measured on [10, 20, 30] with a counter key, the result was
+        // [30, 20, 10] because each comparison consumed the next counter value. `list_sort`
+        // was already correct; `sort_by` was the remaining defect. They differ only in their
+        // arity (the key is required) and their refusals, not in how they sort.
         interpreter.defineBuiltin(NativeFunction.variadic("list_sort", 1, 2, (host, args, span) ->
                 listSort(host, args, span)).named("items", "key"));
         interpreter.defineBuiltin(NativeFunction.of("clone", 1, (host, args, span) -> deepCopy(args.get(0)))
@@ -2510,6 +2504,20 @@ public final class Stdlib {
                 "list_sort() needs a function as argument 2",
                 "list_sort() needs a key function taking 1 argument",
                 args.get(1), "list_sort(items, x -> x.name)", span);
+        return sortedByCachedKeys(host, items, key, span);
+    }
+
+    /**
+     * Decorate-sort-undecorate: every key is computed in input order before any comparison, and
+     * the comparison then reads cached keys.
+     *
+     * <p>Shared by {@code sort_by} and {@code list_sort} since ADR-0067, because both ask for
+     * the same guarantee. The key count is exactly the item count, and a stateful key produces
+     * the answer it would produce from one call per item. {@link List#sort} is stable, so items
+     * with equal keys keep their input order.
+     */
+    private static List<Object> sortedByCachedKeys(
+            OqHost host, List<Object> items, Object key, Span span) {
         List<Object> cache = new ArrayList<>(items.size());
         for (Object item : items) {
             cache.add(host.call(key, singleArgument(item), span));
