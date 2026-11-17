@@ -219,7 +219,7 @@ verified while supporting nothing.
 |---|---|---|---|---|---|---|
 | R-006 | SQLite is the first external runtime dependency and multiplies the artifact size | High | Medium | Medium | 8 | Accepted |
 | R-007 | The JNI driver makes Alpine/musl unsupported | Medium | Medium | Medium | 9 | Accepted |
-| R-008 | No dependency verification and no action pinning by digest | Medium | High | High | 9 | Open |
+| R-008 | No action pinning by digest; workflows use moving tags | Medium | High | High | 9 | Open |
 
 **R-006 — SQLite is the first external runtime dependency and multiplies the artifact size.**
 `org.xerial:sqlite-jdbc:3.45.3.0` plus `org.slf4j:slf4j-nop:2.0.13` are the only external runtime
@@ -263,27 +263,31 @@ The failure is deferred to first use.
 *Evidence.* `docs/adr/0040-database-support.md` D1 · `Dockerfile` ·
 `.github/workflows/docker.yml` · `scripts/install.sh`.
 
-**R-008 — No dependency verification and no action pinning by digest.**
-There is no `gradle/verification-metadata.xml`, so Gradle resolves `sqlite-jdbc`, `slf4j-nop`,
-Jazzer and the JUnit BOM by coordinate without a checksum manifest of the project's own. Every
-GitHub Actions `uses:` in the workflows references a moving tag (`actions/checkout@v7`,
+**R-008 — No action pinning by digest.**
+Every GitHub Actions `uses:` in the workflows references a moving tag (`actions/checkout@v7`,
 `actions/setup-java@v6`, `gradle/actions/setup-gradle@v6`, `actions/upload-artifact@v7`) rather than
 a commit SHA. A compromised or retargeted tag executes in a job that holds `GITHUB_TOKEN` and, in
 the release workflow, the publishing path.
+
+This entry used to cover dependency verification too. That half is closed and moved out rather than
+being left here to dilute the count: `gradle/verification-metadata.xml` now pins a SHA-256 for every
+artefact and module descriptor the build resolves, `verify-metadata` is on, and the control is
+tested — corrupting a jar checksum or deleting a component each fail the build under
+`--refresh-dependencies` (TH-44, Alpha 7 A7.4). What remains open in this entry is the action half
+alone, which is TH-45.
 
 *Mitigation.* Partially mitigated by accident of design: CI jobs declare `permissions: contents:
 read`, the release workflow is gated on `scripts/check-circleci.py` fail-closed, and the publish
 step uses `softprops/action-gh-release@v3` with no long-lived registry credential. None of that
 prevents a malicious action from exfiltrating the job token.
 
-*Why open.* Generating verification metadata is a one-command change
-(`./gradlew --write-verification-metadata sha256`), but it must be regenerated on every dependency
-change and it will fail the build until it is. Pinning actions by digest is a mechanical edit across
-six workflow files. Neither is done, so the risk is recorded as `Open` with the fix known and
-unstarted rather than described as mitigated.
+*Why open.* Pinning actions by digest is a mechanical edit across six workflow files, but it is
+unstarted. Dependabot does not rewrite `uses:` to SHAs by default, so the pins would need
+maintaining by hand or by a follow-up automation, and that trade-off is the reason this is
+recorded as `Open` rather than being described as a small job someone will get to.
 
-*Evidence.* absence of `gradle/verification-metadata.xml` · `.github/workflows/ci.yml`,
-`.github/workflows/release.yml`, `.github/workflows/codeql.yml`, `.github/workflows/nightly.yml`,
+*Evidence.* `.github/workflows/ci.yml`, `.github/workflows/release.yml`,
+`.github/workflows/codeql.yml`, `.github/workflows/nightly.yml`,
 `.github/workflows/docker.yml`, `.github/workflows/site-content-dispatch.yml` (`uses:` lines).
 
 ### Resource lifetime and cancellation
@@ -932,7 +936,6 @@ only true while their paths are absent.
 
 | Path | Why it is cited anyway |
 | --- | --- |
-| `gradle/verification-metadata.xml` | Its absence is R-008: there is no dependency-verification manifest, so Gradle resolves dependencies by coordinate with no checksums. Creating it resolves the entry and must retire the row, not just the citation. |
 | `site/versions.json` | Its absence is R-022: `scripts/build-versioned-docs.py` writes a versioned bundle into a `site/` tree that this repository does not have, because the website was extracted by ADR-0011. Creating it makes the entry false. |
 | `conformance/` | A directory, cited by R-017 for the number of cases it holds rather than for its own existence. |
 
