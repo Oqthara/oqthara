@@ -288,6 +288,19 @@ smaller than the language. Today's boundary, in the order it would be widened:
    interpreter (ADR-0066). Method calls on Java objects that arrive from a compiled call
    still work, because they go through `Methods` -> `JavaBridge`, exactly as under the
    interpreter.
+
+   Compiling is a performance decision, not a containment one. A compiled jar reaches
+   `java.nio.file.Files.readString`, `Runtime.exec` and `Class.forName` as bytecode, and
+   unlike `oq run` it has no step budget and no host-call deadline. Reaching the same
+   capability through a builtin such as `read` is refused by name and falls back to the
+   interpreter launcher; reaching it through `use` is not refused and does not. That
+   asymmetry is a known and accepted defect (TH-15), not a claim that compiled programs are
+   more contained.
+
+   If you want the step budget and host-call deadlines that `oq run` enforces, run the
+   program with `oq run` rather than building a jar. Those limits bound accidental
+   exhaustion; they do not contain hostile code, on either backend. Oqthara is not a
+   sandbox — see [SECURITY.md](../../SECURITY.md).
 3. **Modules as separate artifacts.** Module sources are flattened into one program.
 4. **Host-dependent builtins.** Files, time, randomness, HTTP, process state, `args`,
    `input`, `exit` and the concurrency helpers stay on the interpreter, for the reasons

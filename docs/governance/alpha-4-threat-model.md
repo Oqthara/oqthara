@@ -393,6 +393,15 @@ this widens nothing the process could not already do through the interpreter. Th
 does not hold is any suggestion that choosing `oq build` narrows what a program can reach. It
 does not.
 
+**A7.1 closed the documentation half of this at `docs/spec/backend.md`.** The specification now
+states the asymmetry in the boundary list itself rather than leaving a reader to infer that
+compiling is a containment decision: `use` is not refused and does not fall back, a builtin such
+as `read` is refused by name and does, and a compiled jar has no step budget. The entry stays
+`Partially mitigated` — the specification telling the truth does not narrow what a program can
+reach — but the sentence a user would have read as a security property is gone.
+`BuildCommandTest.useEscapesTheRefusalThatABuiltinTriggers` pins both halves so that closing the
+gap later is a deliberate edit to a failing test rather than a silent change.
+
 Status stays `Partially mitigated`, but for a different reason than the row implies, and the
 distinction matters: it is no longer mitigated by the compiler refusing the bridge. It is
 mitigated only in that the refusal list still catches the builtin names and the bytecode verifier
