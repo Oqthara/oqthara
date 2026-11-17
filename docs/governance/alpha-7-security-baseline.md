@@ -240,15 +240,43 @@ tags, is what TH-45 is about.
 
 ### A7.6 — `install.ps1` parity with `install.sh`
 
-**Closes:** R-020, and the Windows half of TH-43. **Status today:** R-020 is `Open`.
+**Closes:** R-020, and the Windows half of TH-43. **State:** done. **Status today:** `Mitigated`.
 
 **Acceptance:** `scripts/install.ps1` fetches `oq.jar.sigstore.json`, verifies it with `cosign`
 when present, warns distinguishably when absent, and honours `OQ_REQUIRE_SIGNATURE`. The installer
 test suite gains the PowerShell equivalents of the POSIX signature cases, including one that
 asserts a tampered jar is rejected.
 
-**Why last:** it requires a Windows verification path this environment cannot execute, so its
-evidence has to come from CI. That is a reason to sequence it, not to skip it.
+**What was done.** The installer downloads the bundle, runs `cosign verify-blob --bundle` against
+the jar it just fetched, and fails the install when verification fails. When `cosign` is absent it
+prints the same warning the POSIX installer prints and `OQ_REQUIRE_SIGNATURE=1` turns that into a
+failure. `OQ_COSIGN` is a test seam. The suite gained six cases — signed verifies, tampered
+rejected, signed-without-cosign warns, signed-without-cosign under `OQ_REQUIRE_SIGNATURE` fails,
+unsigned warns, unsigned under `OQ_REQUIRE_SIGNATURE` fails — plus a positive control proving the
+hash-checking stub accepts an untampered jar.
+
+**What it cost to find out.** The first version read the bundle's size with `Get-Item`, which
+refuses dotfiles without `-Force`. The throw was swallowed and treated as "no signature published",
+so every signed release would have been reported unsigned and verified against nothing. That is a
+silent failure on a path where silence is the whole risk: on a machine with no `cosign`, nothing
+downstream would ever have noticed. Six cases failed first and the `-Force` fix is what turned them
+green; reverting it fails three, including the tampered-jar case.
+
+**A test-harness defect found on the way.** The end-to-end block passed `-WindowStyle Hidden` to
+`Start-Process`, which is Windows-only, so on macOS and Linux the whole block threw before running a
+case. Every end-to-end installer test, including the pre-existing ones, had only ever executed on
+Windows. That was invisible because the block is wrapped in a python-availability check and the
+failure looks like a missing server. It now branches on the platform and the Linux job runs the same
+cases. This is the same shape as the gate defect A7.5 found: a check that reports nothing wrong
+because it never ran.
+
+**Why it was sequenced last:** it needed a Windows verification path. The workaround was to install
+PowerShell locally and run the suite on macOS, which executes the same code — the OS-specific parts
+are the stub extensions and the launcher text, both of which are branched. CI remains the authority;
+this is a reason the item was last, not a reason it was skipped.
+
+**Residual:** authenticity is still opt-in, and neither installer script is itself signed. Both are
+recorded in R-020 rather than solved.
 
 ## What Alpha 7 will not do
 

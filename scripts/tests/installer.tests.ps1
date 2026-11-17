@@ -74,6 +74,68 @@ function Test-NoTempFiles([string]$Dir) {
     return ($left.Count -eq 0)
 }
 
+# A cosign double. It records the jar and bundle it was asked to verify, so a test can
+# assert *which* file reached the verifier rather than only that verification ran.
+$script:CosignLog = Join-Path $root "cosign-verified.txt"
+function New-CosignStub([string]$Name, [string]$Mode) {
+    $path = Join-Path $root "cosign-$Name"
+    $onWin = ($IsWindows -or $env:OS -eq "Windows_NT")
+    if ($onWin) { $path = "$path.cmd" }
+    if ($Mode -eq "pass") {
+        $body = if ($onWin) {
+            "@echo off`r`necho %2 %3 %4 >> `"$($script:CosignLog)`"`r`nexit /b 0`r`n"
+        } else {
+            "#!/usr/bin/env bash`necho `"`$@`" >> '$($script:CosignLog)'`nexit 0`n"
+        }
+    } elseif ($Mode -eq "hashcheck") {
+        # Behaves like cosign: exit 0 only when the signed hash in the bundle equals
+        # the hash of the jar passed to verify-blob. Uses only the file paths in argv
+        # so the same script works under bash and under cmd.
+        $body = if ($onWin) {
+            "@echo off`r`nset BUNDLE=`r`nset JAR=`r`n:loop`r`nif `"%~1`"==`"`" goto done`r`nif `"%~1`"==`"--bundle`" set BUNDLE=%~2`r`nset JAR=%~1`r`nshift`r`ngoto loop`r`n:done`r`nfor /f `"tokens=2 delims=:`" %%a in ('findstr /c:`"signedSha256`" `"%BUNDLE%`"') do set SIGNED=%%a`r`nset SIGNED=%SIGNED:`"=%%`r`nset SIGNED=%SIGNED: =%%`r`nfor /f `"tokens=*`" %%a in ('certutil -hashfile `"%JAR%`" SHA256 ^| findstr /v `"hash`"') do set ACTUAL=%%a`r`nset ACTUAL=%ACTUAL: =%%`r`nif /i `"%SIGNED%`"==`"%ACTUAL%`" exit /b 0`r`nexit /b 1`r`n"
+        } else {
+            "#!/usr/bin/env bash`nbundle=''`njar=''`nprev=''`nfor a in `"`$@`"; do if [ `"`$prev`" = '--bundle' ]; then bundle=`$a; fi; jar=`$a; prev=`$a; done`nsigned=`$(sed -n 's/.*signedSha256`":`"\([0-9a-f]*\)`".*/\1/p' `"`$bundle`")`nactual=`$(shasum -a 256 `"`$jar`" | cut -d' ' -f1)`n[ -n `"`$signed`" ] && [ `"`$signed`" = `"`$actual`" ]`n"
+        }
+    } else {
+        $body = if ($onWin) { "@echo off`r`nexit /b 1`r`n" } else { "#!/usr/bin/env bash`nexit 1`n" }
+    }
+    Set-Content -Path $path -Value $body -Encoding ASCII
+    if (-not $onWin) { chmod +x $path }
+    return $path
+}
+
+# Adds a sigstore bundle to an existing fixture. "good" fixtures carry only a checksum.
+function Add-SignatureFixture([string]$Tag) {
+    $dir = Join-Path $root "www/releases/download/$Tag"
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    Set-Content -Path (Join-Path $dir "oq.jar.sigstore.json") -Value '{"mediaType":"application/vnd.dev.sigstore.bundle+json;version=0.1"}'
+}
+
+# Runs the installer against a fixture and returns @{ Threw; Message; Dir }.
+function Invoke-FixtureInstall([string]$Tag, [string]$DirName, [string]$RequireSignature) {
+    $dir = Join-Path $root $DirName
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $script:TagBase = "http://127.0.0.1:$script:Port/releases/download"
+    $script:JavaBin = $javaVersionStub21
+    $env:OQ_INSTALL_DIR = $dir
+    $env:OQ_VERSION = $Tag
+    if ($RequireSignature) { $env:OQ_REQUIRE_SIGNATURE = $RequireSignature }
+    $threw = $false
+    $message = ""
+    try {
+        Install-Oq
+    } catch {
+        $threw = $true
+        $message = $_.Exception.Message
+    } finally {
+        Remove-Item Env:OQ_INSTALL_DIR -ErrorAction SilentlyContinue
+        Remove-Item Env:OQ_VERSION -ErrorAction SilentlyContinue
+        Remove-Item Env:OQ_REQUIRE_SIGNATURE -ErrorAction SilentlyContinue
+        Remove-Item Env:OQ_COSIGN -ErrorAction SilentlyContinue
+    }
+    return [pscustomobject]@{ Threw = $threw; Message = $message; Dir = $dir }
+}
+
 # ---------------------------------------------------------------------------
 Run-Case "version normalization adds a leading v" {
     Assert-True ((Get-NormalizedTag "0.1.0-alpha.2") -eq "v0.1.0-alpha.2") "missing v"
@@ -177,8 +239,16 @@ if ($python) {
     $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
     $listener.Start()
     $port = $listener.LocalEndpoint.Port
+    $script:Port = $port
     $listener.Stop()
-    $server = Start-Process -FilePath $python.Source -ArgumentList @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $www) -PassThru -WindowStyle Hidden
+    $serverArgs = @("-m", "http.server", "$port", "--bind", "127.0.0.1", "--directory", $www)
+    if ($IsWindows -or $env:OS -eq "Windows_NT") {
+        $server = Start-Process -FilePath $python.Source -ArgumentList $serverArgs -PassThru -WindowStyle Hidden
+    } else {
+        # -WindowStyle is Windows-only, so the end-to-end cases below never ran on
+        # macOS or Linux and a broken installer path could reach the Windows job unseen.
+        $server = Start-Process -FilePath $python.Source -ArgumentList $serverArgs -PassThru
+    }
     $ready = $false
     for ($i = 0; $i -lt 100; $i++) {
         try {
@@ -241,6 +311,94 @@ if ($python) {
             Assert-True ((Get-Content -Raw -LiteralPath (Join-Path $dir "oq.jar")) -eq "OLD JAR") "old jar replaced"
             Assert-True (Test-NoTempFiles $dir) "temp files left behind"
         }
+
+        # Signature cases. install.sh gained these first and install.ps1 did not, so a
+        # Windows user got a checksum-only install while a POSIX user got a verified
+        # one. These are the PowerShell equivalents.
+
+        Run-Case "a signed release with cosign present is verified" {
+            New-Fixture "v0.20.0" "SIGNED JAR" "good"
+            Add-SignatureFixture "v0.20.0"
+            Remove-Item -Force -LiteralPath $script:CosignLog -ErrorAction SilentlyContinue
+            $env:OQ_COSIGN = New-CosignStub "pass" "pass"
+            $r = Invoke-FixtureInstall "v0.20.0" "sig-pass"
+            Assert-True (-not $r.Threw) "install failed: $($r.Message)"
+            Assert-True (Test-Path -LiteralPath (Join-Path $r.Dir "oq.jar")) "jar missing"
+            Assert-True (Test-Path -LiteralPath $script:CosignLog) "cosign was never called"
+            $log = Get-Content -Raw -LiteralPath $script:CosignLog
+            Assert-True ($log -match "verify-blob") "cosign was not asked to verify-blob: $log"
+            Assert-True ($log -match "sigstore\.json") "the bundle did not reach cosign: $log"
+            Assert-True (Test-NoTempFiles $r.Dir) "temp files left behind"
+        }
+
+        Run-Case "a tampered jar is rejected by the signature check" {
+            # The checksum file is rewritten to match the served jar, so the SHA-256
+            # check passes and only the signature can notice. The stub reads the hash
+            # recorded in the bundle — the jar that was actually signed — and compares
+            # it to the jar handed to verify-blob, so this fails if the installer
+            # verifies the wrong file rather than merely if a stub is told to fail.
+            $dir = Join-Path $root "www/releases/download/v0.21.0"
+            New-Fixture "v0.21.0" "SIGNED JAR" "good"
+            $signedHash = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $dir "oq.jar")).Hash.ToLowerInvariant()
+            Set-Content -Path (Join-Path $dir "oq.jar.sigstore.json") -Value "{`"signedSha256`":`"$signedHash`"}"
+            Set-Content -Path (Join-Path $dir "oq.jar") -Value "TAMPERED JAR" -NoNewline
+            $tamperedHash = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $dir "oq.jar")).Hash.ToLowerInvariant()
+            Set-Content -Path (Join-Path $dir "oq.jar.sha256") -Value "$tamperedHash  oq.jar"
+            Assert-True ($tamperedHash -ne $signedHash) "fixture did not actually tamper"
+            $env:OQ_COSIGN = New-CosignStub "hashcheck" "hashcheck"
+            $r = Invoke-FixtureInstall "v0.21.0" "sig-bad"
+            Assert-True $r.Threw "a tampered jar was accepted"
+            Assert-True ($r.Message -like "*Signature verification FAILED*") "wrong message: $($r.Message)"
+            Assert-True (-not (Test-Path -LiteralPath (Join-Path $r.Dir "oq.jar"))) "the tampered jar was installed"
+            Assert-True (Test-NoTempFiles $r.Dir) "temp files left behind"
+        }
+
+        Run-Case "an untampered jar passes the same hash-checking stub" {
+            # Guards the case above: proves the stub rejects because the hashes differ
+            # and not because the stub never works.
+            $dir = Join-Path $root "www/releases/download/v0.21.1"
+            New-Fixture "v0.21.1" "SIGNED JAR OK" "good"
+            $signedHash = (Get-FileHash -Algorithm SHA256 -Path (Join-Path $dir "oq.jar")).Hash.ToLowerInvariant()
+            Set-Content -Path (Join-Path $dir "oq.jar.sigstore.json") -Value "{`"signedSha256`":`"$signedHash`"}"
+            $env:OQ_COSIGN = New-CosignStub "hashcheck" "hashcheck"
+            $r = Invoke-FixtureInstall "v0.21.1" "sig-good-hash"
+            Assert-True (-not $r.Threw) "an untampered jar was rejected: $($r.Message)"
+            Assert-True (Test-Path -LiteralPath (Join-Path $r.Dir "oq.jar")) "jar missing"
+        }
+
+        Run-Case "a signed release without cosign warns and installs" {
+            New-Fixture "v0.22.0" "SIGNED NO COSIGN" "good"
+            Add-SignatureFixture "v0.22.0"
+            $env:OQ_COSIGN = Join-Path $root "cosign-does-not-exist"
+            $r = Invoke-FixtureInstall "v0.22.0" "sig-nocosign"
+            Assert-True (-not $r.Threw) "install failed: $($r.Message)"
+            Assert-True (Test-Path -LiteralPath (Join-Path $r.Dir "oq.jar")) "jar missing"
+        }
+
+        Run-Case "OQ_REQUIRE_SIGNATURE refuses a signed release without cosign" {
+            New-Fixture "v0.23.0" "REQUIRE NO COSIGN" "good"
+            Add-SignatureFixture "v0.23.0"
+            $env:OQ_COSIGN = Join-Path $root "cosign-does-not-exist"
+            $r = Invoke-FixtureInstall "v0.23.0" "sig-require-nocosign" "1"
+            Assert-True $r.Threw "OQ_REQUIRE_SIGNATURE without cosign was accepted"
+            Assert-True ($r.Message -like "*cosign is not installed*") "wrong message: $($r.Message)"
+        }
+
+        Run-Case "an unsigned release warns but installs" {
+            New-Fixture "v0.24.0" "UNSIGNED" "good"
+            $env:OQ_COSIGN = New-CosignStub "pass" "pass"
+            $r = Invoke-FixtureInstall "v0.24.0" "sig-unsigned"
+            Assert-True (-not $r.Threw) "an unsigned release was refused: $($r.Message)"
+            Assert-True ((Get-Content -Raw -LiteralPath (Join-Path $r.Dir "oq.jar")) -eq "UNSIGNED") "wrong jar"
+        }
+
+        Run-Case "OQ_REQUIRE_SIGNATURE refuses an unsigned release" {
+            New-Fixture "v0.25.0" "UNSIGNED REQUIRED" "good"
+            $r = Invoke-FixtureInstall "v0.25.0" "sig-require-unsigned" "1"
+            Assert-True $r.Threw "OQ_REQUIRE_SIGNATURE accepted an unsigned release"
+            Assert-True ($r.Message -like "*publishes no signature*") "wrong message: $($r.Message)"
+        }
+
     } else {
         Write-Host "not ok $($script:Index + 1) - fixture server did not start"
         $script:Index++
