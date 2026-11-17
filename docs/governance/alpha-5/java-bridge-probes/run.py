@@ -209,9 +209,9 @@ def codepath_failure(name, build_output):
     """Return why this probe's build is not the path A6.3 requires, or None if it is.
 
     Split out of `main` so the decision can be tested without a jar: the three outcomes are
-    "compiled", "the one declared fallback", and "anything else is a failure", and the last
-    one has to include silence. A build that stops printing the line would otherwise read as
-    a pass because the substring check never ran.
+    "compiled", "a declared fallback", and "anything else is a failure", and the last one has
+    to include silence. A build that stops printing the line would otherwise read as a pass
+    because the substring check never ran.
     """
     found = CODEPATH.search(build_output)
     if found is None:

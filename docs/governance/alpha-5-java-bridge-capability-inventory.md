@@ -364,10 +364,10 @@ scope at will; each item is a capability this inventory classified as absent or 
 - It does not treat a passing suite as proof a row holds. Each row cites the executed output.
 - It does not claim the `Class` boundary is a defect. Reading declared members is refused on
   purpose; the security rationale and the JVM counter-example are in D2.
-- It does not claim the compiled backend exercises `Class` dispatch. It claims 17 of the 18
+- It does not claim the compiled backend exercises `Class` dispatch. It claims all 19
   probes *run compiled bytecode*, of which exactly two touch `Class` behaviour —
-  `d2_class_instance` and `d2_reflection_refused` — and that `d1_sort_by` is the one declared
-  fallback. Running compiled and exercising `Class` dispatch are different claims, and the
+  `d2_class_instance` and `d2_reflection_refused` — and that no probe is a declared
+  fallback any more. Running compiled and exercising `Class` dispatch are different claims, and the
   earlier wording here ran them together. What the runner enforces is the first, so it can no
   longer report a fallback as a pass. The statement that `use` in a compiled program falls back
   to the interpreter was true before A6.1 and is now false; A6.3 closed it and the runner

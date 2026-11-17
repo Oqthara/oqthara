@@ -58,7 +58,7 @@ document that promises is a document that cannot be checked.
 | Callable **registrations** | **216** | 9 names are overloaded, adding 11 extra registrations (`range` and `csv_parse` have three each): `assert`, `await`, `csv_parse`, `csv_write`, `exit`, `input`, `random`, `range`, `round` |
 | Method **families** | **9** | `MethodResolverImpl.java`, one method per family |
 | Documented method names | **205** | `docs/stdlib/reference.md` L190–L226 |
-| Host-dependent builtins | **36** | `oq-stdlib/.../Builtins.java:45` (`HOST_DEPENDENT`), the compiled-code bridge |
+| Host-dependent builtins | **33** | `oq-stdlib/.../Builtins.java:52` (`HOST_DEPENDENT`), the compiled-code bridge. `map`, `filter` and `sort_by` were removed in Alpha 6 once the premise that a compiled class cannot create a callable was shown false |
 | Builtins exercised by `examples/` | **67 of 205** | 42 `.oq` files, checked by name |
 
 The matrix carried "89 global functions and eight method families" when this document was

@@ -12,8 +12,9 @@ human, and this document does not claim human review.
 ## 1. The measurement
 
 ```
-$ for f in conformance/*.oq; do ... build "$f" | grep '^codepath:'; done
-checked=222
+$ cd conformance && for f in *.oq; do b=${f%.oq}; [ -f "$b.err" ] && continue; \
+    java -jar ../oq-cli/build/libs/oq.jar build "$f" 2>&1 | grep '^codepath:'; done
+checked=223
 ```
 
 `python3 scripts/verify-conformance.py` on the same jar:
@@ -23,7 +24,7 @@ ok: 214 compiled, 9 fallback (223 of 223 executable), 0 divergences across 256 p
 ```
 
 223 executable cases, 214 compile to bytecode, 9 fall back to the interpreter. Zero
-divergences: every one of the 222 produces byte-identical output on both backends. The nine
+divergences: every one of the 223 produces byte-identical output on both backends. The nine
 fallbacks are counted individually below. Nothing is reclassified as a pass; a fallback is a
 program the bytecode backend does not accept, and the fallback is what makes it correct.
 
@@ -84,7 +85,7 @@ a defect.**
 
 ### (b) Host-dependent builtins — 1 case
 
-`read` and its 35 siblings in `Builtins.HOST_DEPENDENT` read or mutate state outside the
+`read` and its 32 siblings in `Builtins.HOST_DEPENDENT` read or mutate state outside the
 program: files, clock, randomness, network, process, environment, `args`, `input`, `exit`.
 `209-relative-read` resolves a path relative to the source file, which a self-contained jar
 does not have. A compiled jar that resolved it differently from `oq run` would be a silent
@@ -100,8 +101,9 @@ A compiled call site passes arguments to a `NativeFunction`; `spawn`, `await`, `
 `map`, `filter` and `sort_by`, and its javadoc justified them by saying "a compiled class
 cannot create callable values yet". That is untrue: a compiled lambda is a
 `runtime.CompiledFunction`, which `implements OqCallable` (`CompiledFunction.java:16`), and
-`conformance/255-oqthara-callable-into-java.oq` already passes compiled lambdas into Java and
-has Java call them back. None of the three reads or mutates state outside the program, which is
+`conformance/255-oqthara-callable-into-java.oq` already passed compiled lambdas into Java and
+had Java call them back before this change; `conformance/256-callable-builtins-compile.oq` is
+added here to pin the three builtins themselves. None of the three reads or mutates state outside the program, which is
 the actual definition in `HOST_DEPENDENT`'s own javadoc. Removing the three names was measured,
 not assumed:
 
@@ -141,12 +143,18 @@ change, so the practical gap was one spelling. And it does not claim `sort_by` i
 its per-comparison key evaluation is a separately pinned defect (`ListSortTest`), pre-existing
 and unchanged here.
 
-**Concurrency remains refused, and for a different reason.** `spawn`, `await`, `done` and
-`par_map` need a scheduler. A compiled jar has none of its own, so emitting a call would mean
-borrowing the interpreter's, letting a compiled program observe scheduling it does not control.
-That is a real host dependency and the four cases stay fallbacks. **Verdict: the concurrency
-half is intentional and justified; the `map`/`filter`/`sort_by` half was a misclassification
-and is fixed, not tolerated.**
+**Concurrency remains refused, and for a reason this document got wrong first.** The original
+claim here was that a compiled jar has no scheduler. That is false: the helpers resolve against
+`Stdlib.TaskRunner.EXECUTOR` (`Stdlib.java:96`), a static executor every jar links, so removing
+the four names did make all four cases compile. What actually breaks is output. The interpreter's
+`print` issues one `PrintStream.println` (`Stdlib.java:159`), holding the stream lock across the
+whole line; the compiled path calls `Arithmetic.print` (`Arithmetic.java:48-56`), which issues
+`out().print(text)` and then `out().print(newline)` — two separate lock acquisitions, so two
+threads interleave and lines fuse. Measured on a two-thread probe: 18 of 40 compiled runs
+printed `from taskfrom main`; 0 of 40 interpreter runs did. The lowering was reverted rather
+than shipped, and making compiled printing atomic is not Alpha 6 work. **Verdict: the
+`map`/`filter`/`sort_by` half was a misclassification and is fixed; the concurrency half is a
+real defect in the compiled `print`, documented in `Builtins`' javadoc, not a pass.**
 
 ### (d) Contracts — 1 case
 
@@ -166,8 +174,9 @@ contract is checked, what a violation reports), and refusing is honest until tha
   `compiled + fallback <= executable` and pins `compiled` against a regression, so a fallback
   cannot silently become a divergence.
 - The 19 Java Bridge decision probes are a separate population with their own declaration in
-  `docs/governance/alpha-5/java-bridge-probes/run.py`; one of them (`d1_sort_by`) is a declared
-  fallback and is accounted for there, not here.
+  `docs/governance/alpha-5/java-bridge-probes/run.py`; none of them is a declared fallback any
+  more — `d1_sort_by` was the last, and it stopped falling back when the misclassification above
+  was corrected, so `FALLBACK` is empty.
 
 ## 5. Reproducing this document
 
