@@ -17,14 +17,14 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@v6
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
       - name: Build and test
         run: ./gradlew build :oq-cli:standaloneJar --no-daemon --console=plain
       - name: Verify documentation matches this release
@@ -87,7 +87,7 @@ jobs:
       # certificate identity is the workflow itself, which is what verify-signature.sh
       # checks by default (ADR-0052).
       - name: Install cosign
-        uses: sigstore/cosign-installer@v4.1.3
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         with:
           cosign-release: "v2.6.5"
       - name: Sign the jar
@@ -137,7 +137,7 @@ jobs:
           java -jar oq.jar hello.oq | grep -q "Hello from a released Oqthara!"
           java -jar oq.jar --version
       - name: Publish release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             oq-cli/build/libs/oq.jar
@@ -149,7 +149,7 @@ jobs:
       # Notify the website directly with the PAT scoped to the destination repository.
       - name: Set up Node for website notification
         if: contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc')
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Announce the published Alpha release to the website

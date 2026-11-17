@@ -159,6 +159,35 @@ class TheBucketsMustPartitionTheThreats(unittest.TestCase):
         problems = checker.check(broken)
         self.assertTrue(any(dropped in p and "in no summary bucket" in p for p in problems), problems)
 
+    def test_an_id_listed_under_the_wrong_status_is_rejected(self):
+        """Swap a threat between two buckets, leaving every count unchanged.
+
+        This is the failure the gate missed on the real document. Changing
+        TH-45's row status to `Mitigated` and forgetting the summary left the
+        row saying one thing and the bucket saying another.
+
+        The swap is deliberate: moving one id instead would change that row's
+        stated count, and the count check would reject it for the wrong reason.
+        Swapping one id for another keeps both counts, the partition and the
+        total intact, so only a check that compares the bucket against the row
+        can notice. Without that check the gate prints "summary and buckets
+        agree" about a document that disagrees with itself.
+        """
+        text = MODEL.read_text(encoding="utf-8")
+        open_row = bucket_line(text, "Not mitigated")
+        mit_row = bucket_line(text, "Mitigated")
+        open_id = re.search(r"TH-\d+", open_row).group(0)
+        mit_id = re.search(r"TH-\d+", mit_row).group(0)
+        broken = text.replace(open_row, open_row.replace(open_id, mit_id, 1), 1)
+        broken = broken.replace(mit_row, mit_row.replace(mit_id, open_id, 1), 1)
+        self.assertNotEqual(text, broken)
+        problems = checker.check(broken)
+        self.assertTrue(
+            any(moved in p and "its row says" in p for moved in (open_id, mit_id)
+                for p in problems),
+            problems,
+        )
+
     def test_a_total_that_disagrees_with_the_rows_is_rejected(self):
         text = MODEL.read_text(encoding="utf-8")
         broken = text.replace("Fifty-five threats.", "Fifty-four threats.", 1)

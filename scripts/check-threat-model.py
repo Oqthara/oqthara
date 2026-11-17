@@ -291,6 +291,27 @@ def check(text: str) -> list[str]:
             f"{', '.join(sorted(extra))} is in a summary bucket but has no threat row"
         )
 
+    # A threat's row status and the bucket that lists it must be the same status.
+    # Without this, the row could say `Mitigated` while the summary still counted
+    # it as `Not mitigated`, and every other check here would pass: the counts
+    # internally agree, the buckets partition, and every row is in some bucket.
+    # The gate would print "summary and buckets agree" while the document said two
+    # different things about the same threat -- which is what happened to TH-45
+    # when A7.5 changed the row and the summary was not updated with it.
+    bucket_of: dict[str, str] = {}
+    for status, ids in listed.items():
+        for threat_id in ids:
+            bucket_of[threat_id] = status
+    for threat in threats:
+        status = bucket_of.get(threat["id"])
+        if status is None:
+            continue  # already reported as "has a threat row but is in no summary bucket"
+        if status != threat["status"]:
+            problems.append(
+                f"{threat['id']} is listed under '{status}' in the summary but its row"
+                f" says '{threat['status']}'; the two must be the same status"
+            )
+
     if total is not None and total != len(row_ids):
         problems.append(
             f"the summary states {total} threats but {len(row_ids)} rows exist"

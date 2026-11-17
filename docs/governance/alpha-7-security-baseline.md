@@ -193,7 +193,7 @@ are in `scripts/tests/test_check_dependency_verification.py`.
 
 ### A7.5 — SHA-pin the actions that hold write scope
 
-**Closes:** TH-45, partially. **Status today:** `Not mitigated`, nine moving tags.
+**Closes:** TH-45. **State:** done. **Status today:** `Mitigated`.
 
 **Acceptance:** every `uses:` in `release.yml` and `site-content-dispatch.yml` — the two workflows
 holding `contents: write`, `id-token: write` or a repository secret — pins a commit SHA with a
@@ -201,8 +201,42 @@ comment naming the version, and a script test fails on a `@v`-style tag in those
 Read-only workflows may keep major-version tags, and saying so is part of the acceptance, because
 an all-or-nothing rule here is not going to survive the first exception.
 
+**What was done.** The scope was derived from what the workflows declare rather than from the list
+above, and the derivation found one more file than the acceptance anticipated. `codeql.yml`
+declares `security-events: write` — it uploads analysis results — so it is a write-scope workflow
+and is pinned too. A literal reading of the acceptance would have left five mutable tags in a
+workflow that writes. That is the reason `scripts/check-action-pins.py` computes scope from
+declarations instead of naming files: a workflow added later with a write scope is covered without
+anyone remembering this paragraph.
+
+Three workflows are in scope, for three different declared reasons, and all thirteen `uses:` in them
+now pin a full 40-character commit with a version comment:
+
+| Workflow | Why it is in scope | Pins |
+| --- | --- | --- |
+| `release.yml` | `contents: write`, `id-token: write` | 6 |
+| `site-content-dispatch.yml` | references `secrets.SITE_DISPATCH_TOKEN` | 2 |
+| `codeql.yml` | `security-events: write` | 5 |
+
+Every resolved SHA was checked against the tag's own commit before being committed, and annotated
+tags were dereferenced rather than pinned to the tag object — `softprops/action-gh-release@v3` and
+`github/codeql-action@v4` and `gradle/actions@v6` are annotated, so pinning the tag object's SHA
+would have pinned something that is not a commit and would not resolve as a step.
+
+`ci.yml`, `docker.yml` and `nightly.yml` are read-only and keep their major-version tags, as the
+acceptance permits. The gate asserts that too: `test_the_read_only_workflows_are_out_of_scope`
+fails if one of them starts declaring write scope, so the exemption cannot drift into silently
+covering a workflow that has gained permissions.
+
 **Why fifth:** it is the largest diff on the list and Dependabot cannot bump a SHA pin without a
 config change, so it is the item most likely to need follow-up work.
+
+**Follow-up this creates.** Dependabot will not update these pins by default. A `dependabot.yml`
+entry of the form `groups: {patterns: ["*"]}` with `insecure-external-code-execution` does not help;
+the supported mechanism is Dependabot's own SHA-pinning support, which rewrites a pinned `uses:` and
+its version comment together. Until it is configured, these pins age. That is written down here
+rather than left as a surprise, and it is the honest cost of the item — the alternative, moving
+tags, is what TH-45 is about.
 
 ### A7.6 — `install.ps1` parity with `install.sh`
 
