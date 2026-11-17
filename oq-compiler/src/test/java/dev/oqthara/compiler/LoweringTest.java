@@ -408,22 +408,24 @@ class LoweringTest {
     }
 
     @Test
-    void useBindsTheClassAsAConstant() {
-        // The class is recorded at the statement and materialised where it is read, so a
-        // program that names nothing pays for no constant.
+    void useRegistersTheClassAtTheStatement() {
+        // The registration is an instruction, not a constant baked into the reader: a program
+        // that names nothing pays for no lookup, and the entry exists only once the statement ran.
         String declaration = Ir.disassemble(lower("use java.time.LocalDate"));
         assertFalse(declaration.contains("refuse"), declaration);
-        assertFalse(declaration.contains("const class"), declaration);
+        assertFalse(declaration.contains("load-used"), declaration);
+        assertTrue(declaration.contains("use java.time.LocalDate"), declaration);
 
         String reference = Ir.disassemble(lower("use java.time.LocalDate\nprint LocalDate"));
         assertFalse(reference.contains("refuse"), reference);
-        assertTrue(reference.contains("const class java.time.LocalDate"), reference);
+        assertTrue(reference.contains("load-used LocalDate"), reference);
     }
 
     @Test
-    void useInsideANestedBlockIsRefusedByTheStatement() {
+    void useInsideANestedBlockRegistersThereInsteadOfBeingRefused() {
         String disassembly = Ir.disassemble(lower("if true\n  use java.time.LocalDate\nend"));
-        assertTrue(disassembly.contains("'use' only compiles at the top level"), disassembly);
+        assertFalse(disassembly.contains("refuse"), disassembly);
+        assertTrue(disassembly.contains("use java.time.LocalDate"), disassembly);
     }
 
     @Test
@@ -432,8 +434,19 @@ class LoweringTest {
         // the interpreter's environment is consulted before its class registry.
         Ir.Program program = lower("use java.lang.Math\nprint Math\nMath = 5\nprint Math");
         String disassembly = Ir.disassemble(program);
-        assertTrue(disassembly.contains("const class java.lang.Math"), disassembly);
+        assertTrue(disassembly.contains("load-used Math"), disassembly);
         assertTrue(disassembly.contains("load Math"), disassembly);
+    }
+
+    /**
+     * The pre-scan is what lets a read before the statement compile. The read has to reach the
+     * run-time table, because at that point the entry does not exist yet and the interpreter
+     * reports `'Math' is not defined`.
+     */
+    @Test
+    void aReadBeforeTheUseStillLowersToATableLookup() {
+        String disassembly = Ir.disassemble(lower("print Math\nuse java.lang.Math"));
+        assertTrue(disassembly.contains("load-used Math"), disassembly);
     }
 
     @Test

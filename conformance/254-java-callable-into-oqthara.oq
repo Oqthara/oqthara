@@ -1,0 +1,24 @@
+# §2.2 direction 1: a functional-interface instance Java hands back is an Oqthara callable.
+# The bare call and the explicit method must agree, because the interpreter reaches the same
+# implemented method either way.
+use java.util.Comparator
+use java.util.function.Function
+use java.util.function.IntUnaryOperator
+
+c = Comparator.naturalOrder()
+print c(1, 2)
+print c(2, 1)
+print c.compare(2, 1)
+
+desc = Comparator.reverseOrder()
+print desc(1, 2)
+
+f = Function.identity()
+print f("hi")
+
+g = IntUnaryOperator.identity()
+print g(7)
+
+# Composition returns another functional instance, so the result of a call is callable too.
+twice = g.andThen(g)
+print twice(5)

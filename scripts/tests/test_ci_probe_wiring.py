@@ -196,26 +196,49 @@ class CodepathIsCheckedNotAssumed(unittest.TestCase):
         self.assertIsNotNone(refused)
         self.assertIn("expected 'codepath: compiled bytecode'", refused)
 
+    def with_fallback(self, name, reason):
+        """Run `body` with one synthetic `FALLBACK` entry installed, then restore the map.
+
+        `FALLBACK` is empty now that the last gap has closed, so a test that loops over it
+        asserts nothing and reports green. Each of the tests below therefore needs an entry to
+        exist, and this is how it gets one. Deleting the restore would leak between tests.
+        """
+        self.runner.FALLBACK[name] = reason
+        self.addCleanup(self.runner.FALLBACK.pop, name)
+        return reason
+
     def test_a_recorded_fallback_passes_verbatim(self):
-        for name, line in self.runner.FALLBACK.items():
-            self.assertIsNone(self.check(name, line.split("codepath: ", 1)[1]))
+        reason = "codepath: interpreter launcher (recorded verbatim)"
+        name = self.runner.PROBES[0][0]
+        self.with_fallback(name, reason)
+        self.assertIsNone(self.check(name, reason.split("codepath: ", 1)[1]))
 
     def test_a_recorded_fallback_that_closed_fails(self):
         # Fixing the gap must fail too, so the entry cannot outlive it.
-        for name in self.runner.FALLBACK:
-            refused = self.check(name, "compiled bytecode")
-            self.assertIsNotNone(refused, name)
-            self.assertIn("recorded fallback is gone", refused)
+        name = self.runner.PROBES[0][0]
+        self.with_fallback(name, "codepath: interpreter launcher (recorded)")
+        refused = self.check(name, "compiled bytecode")
+        self.assertIsNotNone(refused, name)
+        self.assertIn("recorded fallback is gone", refused)
 
     def test_a_changed_fallback_reason_fails_as_a_changed_reason(self):
         # The entry is an exact line, not a prefix: a different reason is a different state.
         # The message must say the reason changed, not that the gap closed -- only compiling
         # again closes the gap, and conflating the two sends a reader to delete a live entry.
-        for name in self.runner.FALLBACK:
-            refused = self.check(name, "interpreter launcher (something else entirely)")
-            self.assertIsNotNone(refused, name)
-            self.assertIn("recorded fallback reason changed", refused)
-            self.assertNotIn("gap it recorded has closed", refused)
+        name = self.runner.PROBES[0][0]
+        self.with_fallback(name, "codepath: interpreter launcher (the recorded reason)")
+        refused = self.check(name, "interpreter launcher (something else entirely)")
+        self.assertIsNotNone(refused, name)
+        self.assertIn("recorded fallback reason changed", refused)
+        self.assertNotIn("gap it recorded has closed", refused)
+
+    def test_the_fallback_tests_are_not_vacuous(self):
+        # A loop over an empty FALLBACK passes without asserting anything, which is how three
+        # of these tests silently stopped testing. This pins that each one runs a body.
+        self.assertEqual(self.runner.FALLBACK, {}, "expected no live fallback; see run.py")
+        name = self.runner.PROBES[0][0]
+        self.with_fallback(name, "codepath: interpreter launcher (guard)")
+        self.assertEqual(len(self.runner.FALLBACK), 1)
 
     def test_a_build_with_no_codepath_line_fails(self):
         # `oq build` could stop reporting the path. Silence must not read as "compiled".
@@ -306,6 +329,21 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
         """The codepath this probe should report: compiled, unless it is a declared fallback."""
         return self.runner.FALLBACK.get(name, "codepath: compiled bytecode")
 
+    def synthetically_declare(self, reason=None):
+        """Temporarily declare a real probe as a fallback, returning its name.
+
+        `FALLBACK` is empty by design now that the last gap has closed, but both directions of
+        the gate still need covering. Injecting a synthetic entry exercises the same code path
+        the real entry used to, without depending on a gap existing.
+        """
+        name = self.runner.PROBES[0][0]
+        reason = reason or "codepath: interpreter launcher (synthetic, for the gate test)"
+        original = dict(self.runner.FALLBACK)
+        self.runner.FALLBACK[name] = reason
+        self.addCleanup(lambda: (self.runner.FALLBACK.clear(),
+                                 self.runner.FALLBACK.update(original)))
+        return name
+
     def test_a_compiled_run_passes_and_says_what_it_compared(self):
         code, out = self.drive(self.declare)
         self.assertEqual(code, 0, out)
@@ -317,7 +355,7 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
     def test_a_declared_fallback_that_now_compiles_fails_the_run(self):
         # Through `main`, not just through the decision function: closing the gap has to fail
         # the build so the entry is deleted rather than left describing a fixed bug.
-        closed = next(iter(self.runner.FALLBACK))
+        closed = self.synthetically_declare()
         code, out = self.drive(
             lambda name: ("codepath: compiled bytecode" if name == closed else self.declare(name))
         )
@@ -341,6 +379,7 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
     def test_the_fallback_note_is_printed_when_a_probe_does_not_compile(self):
         # Declaring the fallback keeps the run green, but the summary must not then claim the
         # probe's output was compared across two backends.
+        self.synthetically_declare()
         code, out = self.drive(self.declare)
         self.assertEqual(code, 0, out)
         self.assertIn("not across two backends", out)

@@ -84,6 +84,14 @@ public final class BytecodeCompiler {
      */
     private static final String BUILTINS = "dev/oqthara/stdlib/Builtins";
     /**
+     * The process-wide table a {@code use} statement registers into and a read from it looks up.
+     *
+     * <p>The interpreter keeps one map filled as each {@code use} runs, so a name can be
+     * conditional, can leak out of a block and can be rebound by a later {@code use}. Generated
+     * code shares one table for the same reason (ADR-0066).
+     */
+    private static final String USED_CLASSES = "dev/oqthara/runtime/UsedClasses";
+    /**
      * The jar entry point. Generated {@code main} ends by delegating an escaping error to it,
      * so a compiled jar renders the same diagnostic {@code oq run} does instead of a Java
      * stack trace.
@@ -488,6 +496,12 @@ public final class BytecodeCompiler {
                     // the name reported that the name was undefined -- a cascade, not the
                     // reason the program cannot be compiled (ADR-0062).
                     case Ir.Refuse refuse -> throw new NotSupportedException(refuse.reason());
+                    // Both touch only the run-time table: `use` pops its arguments inside the
+                    // called helper, and a lookup leaves one value, so neither needs a slot.
+                    case Ir.Use ignored -> {
+                    }
+                    case Ir.LoadUsed ignored -> {
+                    }
                     case Ir.Declare declare ->
                             resolved[i] = declare(declare.name(), declare.fixed(), next++);
                     case Ir.Store store -> resolved[i] = assign(store.name(), next++);
@@ -833,6 +847,27 @@ public final class BytecodeCompiler {
                         } else {
                             load(slot);
                         }
+                    }
+                }
+                // Registers the class the statement names, once this point is reached. A
+                // statement that never runs never registers, which is what makes a nested
+                // `use` observable only after its block executed (ADR-0066).
+                case Ir.Use use -> {
+                    if (reachable) {
+                        emitMark(use.span());
+                        emitConstant(use.path());
+                        emitConstant(use.simpleName());
+                        call(USED_CLASSES, "register",
+                                "(Ljava/lang/Object;Ljava/lang/Object;)V");
+                    }
+                }
+                // Reads the table at the moment the name is evaluated, so a read before the
+                // `use` ran reports the interpreter's "not defined" instead of resolving.
+                case Ir.LoadUsed used -> {
+                    if (reachable) {
+                        emitMark(used.span());
+                        emitConstant(used.simpleName());
+                        call(USED_CLASSES, "lookup", "(Ljava/lang/Object;)Ljava/lang/Object;");
                     }
                 }
                 case Ir.Store ignored -> {

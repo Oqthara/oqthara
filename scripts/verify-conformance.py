@@ -37,7 +37,7 @@ JAR = ROOT / "oq-cli" / "build" / "libs" / "oq.jar"
 # cases the bytecode backend handles, matching BytecodeCompilerTest. A regressing number means
 # a real capability was lost; a growing number means the corpus changed and the pin is stale.
 # Update both only from a fresh measurement, and say so in the commit message.
-BASELINE = {"executable": 219, "compiled": 210}
+BASELINE = {"executable": 223, "compiled": 214}
 
 FIXTURES = ["readme-fixture.txt"]
 

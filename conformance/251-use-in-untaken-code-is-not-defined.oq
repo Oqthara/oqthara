@@ -1,0 +1,6 @@
+# The registration is conditional on the statement running, so a name whose only `use` is in
+# code that did not run is undefined -- exactly as the interpreter reports it.
+if false
+  use java.lang.Math
+end
+print Math.abs(-3)

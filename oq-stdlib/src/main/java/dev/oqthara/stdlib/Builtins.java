@@ -38,9 +38,25 @@ import java.util.Set;
  */
 public final class Builtins {
     /**
-     * Builtins that read or mutate state outside the program. {@code spawn}, {@code await},
-     * {@code par_map}, {@code sort_by}, {@code map} and {@code filter} also need callable
-     * values, which a compiled class cannot create yet.
+     * Builtins that read or mutate state outside the program: files, clock, randomness,
+     * network, process, environment, program arguments and the concurrency helpers.
+     *
+     * <p>The concurrency helpers are here because generated output would not be correct if they
+     * were not. They do run: the shared scheduler lives in {@code Stdlib.TaskRunner.EXECUTOR},
+     * which every jar links, so removing {@code spawn}, {@code await}, {@code done} and
+     * {@code par_map} from this set makes all four compile and, for {@code conformance/138},
+     * {@code 139}, {@code 140} and {@code 141}, print the interpreter's output. What breaks is a
+     * program that prints from more than one thread. The interpreter emits a line with one
+     * {@code PrintStream.println}, so it holds the stream lock across the whole line; the
+     * compiled path calls {@code Arithmetic.print}, which writes the text and the newline as two
+     * {@code print} calls, so two threads can interleave and produce one fused line. Measured on
+     * a two-thread program: 18 of 40 compiled runs printed {@code from taskfrom main}, none of 40
+     * interpreter runs did. That is a real divergence, so the four stay refused until concurrent
+     * output is correct rather than merely usually correct.
+     *
+     * <p>The callable-taking collection builtins ({@code map}, {@code filter}, {@code sort_by})
+     * are <em>not</em> here: a compiled lambda is a {@code runtime.CompiledFunction}, which
+     * implements {@code OqCallable}, so those calls compile and are exercised by conformance.
      */
     private static final Set<String> HOST_DEPENDENT = Set.of(
             "args", "input", "exit",
@@ -50,8 +66,7 @@ public final class Builtins {
             "random", "random_item",
             "http_get", "http_post",
             "env", "run_command", "cpu_count", "memory_mb",
-            "spawn", "await", "done", "par_map",
-            "sort_by", "map", "filter");
+            "spawn", "await", "done", "par_map");
 
     /** Most arguments a generated call site passes; keep in step with the emitter. */
     private static final int MAX_ARGS = 4;

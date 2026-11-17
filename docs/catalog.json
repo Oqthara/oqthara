@@ -398,6 +398,12 @@
       "slug": "docs/adr/0065-reflection-stays-unexposed-by-name"
     },
     {
+      "path": "docs/adr/0066-use-registers-at-runtime.md",
+      "title": "ADR-0066 — `use` registers at run time, so it compiles below the top level",
+      "section": "adr",
+      "slug": "docs/adr/0066-use-registers-at-runtime"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
@@ -456,6 +462,12 @@
       "title": "Alpha 5 — Java Bridge Capability Inventory",
       "section": "governance",
       "slug": "docs/governance/alpha-5-java-bridge-capability-inventory"
+    },
+    {
+      "path": "docs/governance/alpha-6-conformance-fallback-accounting.md",
+      "title": "Alpha 6 — conformance fallback accounting",
+      "section": "governance",
+      "slug": "docs/governance/alpha-6-conformance-fallback-accounting"
     },
     {
       "path": "docs/governance/alpha-6-requirement-matrix.md",

@@ -1,0 +1,33 @@
+# §2.2 direction 2: an Oqthara `fun` or lambda is passed to Java where a functional interface
+# is wanted. The three shapes Java asks for are exercised: a Comparator, a Consumer and the
+# unary functions the stdlib methods take.
+use java.util.ArrayList
+use java.util.Collections
+use java.util.Comparator
+
+xs = ArrayList()
+xs.add(3)
+xs.add(1)
+xs.add(2)
+Collections.sort(xs, Comparator.naturalOrder())
+print xs
+
+# A lambda given to a Java method that wants a Comparator.
+ys = ArrayList()
+ys.add(3)
+ys.add(1)
+ys.add(2)
+Collections.sort(ys, (a, b) -> b - a)
+print ys
+
+# A `fun` given to a Java method that wants a Consumer.
+seen = []
+ys.forEach(fun(v)
+  seen.push(v * 10)
+end)
+print seen
+
+# A lambda given to the stdlib's own callable-taking methods, which call back into the
+# program the same way a Java method does.
+print ys.map(x -> x + 1)
+print ys.filter(x -> x > 1)

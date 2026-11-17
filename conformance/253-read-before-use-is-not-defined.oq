@@ -1,0 +1,4 @@
+# The name is registered by the statement, so reading it earlier does not resolve. The program
+# must compile and then fail at run time, rather than the compiler resolving the class early.
+print Math
+use java.lang.Math

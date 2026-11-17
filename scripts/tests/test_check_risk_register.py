@@ -62,18 +62,35 @@ class DefectsAreCaught(unittest.TestCase):
     def test_a_count_that_disagrees_with_its_rows_is_caught(self):
         # Editing the count alone leaves the ID list intact, so only an explicit
         # count comparison notices. This is the defect the summary had.
-        broken = self.text.replace(
-            "| Medium | 11 | R-004", "| Medium | 12 | R-004", 1)
+        # The stated count is read from the register rather than hard-coded: it
+        # moved from 11 to 12 when R-029 was added, and a test that pins the
+        # number turns every legitimate row addition into a test failure that
+        # says nothing about the checker.
+        match = re.search(r"^\| Medium \| (\d+) \| R-004", self.text, re.MULTILINE)
+        self.assertIsNotNone(match, "the Medium summary row was not found")
+        stated = int(match.group(1))
+        broken = self.text.replace(match.group(0), f"| Medium | {stated + 1} | R-004", 1)
         self.assertNotEqual(self.text, broken)
         problems = checker.check(broken)
-        self.assertTrue(any("states 12 but 11 rows" in p for p in problems), problems)
+        self.assertTrue(
+            any(f"states {stated + 1} but {stated} rows" in p for p in problems), problems
+        )
 
     def test_a_total_that_disagrees_with_the_row_count_is_caught(self):
-        broken = re.sub(r"^\| \*\*Total\*\* \| \*\*\d+\*\*", "| **Total** | **27**", self.text,
-                        count=1, flags=re.MULTILINE)
+        rows = len(checker.parse_rows(self.text))
+        wrong = rows + 1
+        broken = re.sub(
+            r"^\| \*\*Total\*\* \| \*\*\d+\*\*",
+            f"| **Total** | **{wrong}**",
+            self.text,
+            count=1,
+            flags=re.MULTILINE,
+        )
         self.assertNotEqual(self.text, broken)
         problems = checker.check(broken)
-        self.assertTrue(any("total is 27 but there are 28 rows" in p for p in problems), problems)
+        self.assertTrue(
+            any(f"total is {wrong} but there are {rows} rows" in p for p in problems), problems
+        )
 
     def test_a_duplicate_id_is_caught(self):
         broken = re.sub(r"^\| R-028 \|", "| R-027 |", self.text, count=1, flags=re.MULTILINE)

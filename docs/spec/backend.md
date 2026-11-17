@@ -89,10 +89,10 @@ is safe: a program either compiles to equivalent bytecode or runs exactly as `oq
 
 ## The compiled subset, measured
 
-As of Alpha 6, **210 of the 219 executable conformance programs** compile to real bytecode
+As of Alpha 6, **214 of the 223 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`
-(`assertEquals(210, compiled, ...)`), so it cannot silently go down. 219 is the number of
+(`assertEquals(214, compiled, ...)`), so it cannot silently go down. 223 is the number of
 executable programs in `conformance/`: every `*.oq` without a sibling `*.err`. Every refusal
 is reported by name in the `oq build` output.
 
@@ -101,10 +101,10 @@ is reported by name in the `oq build` output.
 | integer, decimal, text and boolean constants | functions that read or write a top-level variable |
 | variables: assignment, reassignment, scoping, shadowing | lambdas that capture an enclosing variable |
 | top-level `fun` with parameters, `return`, recursion, mutual recursion | modules |
-| a top-level `use`, and the class value and static members it binds (ADR-0064) | `use` nested in a block or a `try` expression, or a second `use` of the same simple name |
+| `use` anywhere, whether top level or nested: it registers when the statement runs, so the class value and its static members are reached exactly as the interpreter reaches them (ADR-0066) | |
 | `+ - * / % **` and unary `-`, unary `+` | |
 | `try` / `catch`, nested, with rethrow | `try` with an empty body |
-| comparisons `== != < <= > >=` | `spawn`, `await`, `done`, `par_map`, `sort_by`, `map`, `filter` and other callable-taking builtins |
+| comparisons `== != < <= > >=` | `spawn`, `await`, `done`, `par_map` — the concurrency helpers |
 | `and`, `or`, `not` with short-circuiting | `args()`, `input()`, `exit()` |
 | `if` / `else`, including `else if` chains | the filesystem, clock, randomness, network and process builtins |
 | `while`, `for ... to`, `for ... until`, descending ranges | |
@@ -162,9 +162,18 @@ or a host-dependent builtin is still refused by name instead of failing inside a
 `list_files`, `delete`, `make_dir`, `file_size`, `path_join`, `path_name`, `path_parent`,
 `cwd`), time (`now`, `today`, `datetime`, `timestamp`, `sleep`), randomness (`random`,
 `random_item`), HTTP (`http_get`, `http_post`), process state (`env`, `run_command`,
-`cpu_count`, `memory_mb`) and the concurrency helpers (`spawn`, `await`, `done`, `par_map`,
-`sort_by`, `map`, `filter`). Those stay on the interpreter, because a generated class would
-either block on a stream it does not own or produce output that `oq run` cannot reproduce.
+`cpu_count`, `memory_mb`) and the concurrency helpers (`spawn`, `await`, `done`, `par_map`).
+Those stay on the interpreter, because a generated class would either block on a stream it does
+not own or produce output that `oq run` cannot reproduce.
+
+The callable-taking collection builtins, `map`, `filter` and `sort_by`, are **not** refused. A
+compiled lambda is a `runtime.CompiledFunction`, which implements `OqCallable`, so passing one
+to a builtin is the same value a Java method receives. `map(xs, x -> x * x)`,
+`filter(xs, x -> x > 1)` and `sort_by(xs, x -> -x)` all compile, as do a named `fun`, a Java
+functional value such as `Function.identity()`, and a nested `map` inside another `map`. Their
+errors agree with the interpreter too: `map([1, 0], x -> 10 / x)` reports `division by zero` at
+the same `file:line:column` on both backends, and so does `map(xs, 5)` with
+`this value is not a function`.
 Measured refusal:
 
 ```
@@ -272,13 +281,13 @@ smaller than the language. Today's boundary, in the order it would be widened:
 1. **Capturing closures.** Non-capturing lambdas already compile. A lambda that reads an
    enclosing variable, and a function that touches a top-level variable, are refused because
    capture would copy at creation time while the interpreter reads at call time.
-2. **Java interop.** A top-level `use` compiles: the name is bound to the class as a
-   constant, so a static call (`Math.max(3, 7)`), a static field (`Math.PI`), a constructor
-   (`ArrayList()`) and a class value used as a value (`print Math`) all compile. A `use`
-   below the top level is refused by the statement, because whether the name exists depends
-   on whether that block ran (ADR-0064). Method calls on Java objects that arrive from a
-   compiled call still work, because they go through `Methods` -> `JavaBridge`, exactly as
-   under the interpreter.
+2. **Java interop.** `use` compiles wherever it appears: the statement registers the class
+   in `dev.oqthara.runtime.UsedClasses` when it runs, so a static call (`Math.max(3, 7)`), a
+   static field (`Math.PI`), a constructor (`ArrayList()`) and a class value used as a value
+   (`print Math`) all compile, and a nested or repeated `use` behaves as it does under the
+   interpreter (ADR-0066). Method calls on Java objects that arrive from a compiled call
+   still work, because they go through `Methods` -> `JavaBridge`, exactly as under the
+   interpreter.
 3. **Modules as separate artifacts.** Module sources are flattened into one program.
 4. **Host-dependent builtins.** Files, time, randomness, HTTP, process state, `args`,
    `input`, `exit` and the concurrency helpers stay on the interpreter, for the reasons
@@ -383,7 +392,7 @@ java -jar examples/hello.jar
 
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` compiles every
 compilable conformance program, runs it, and asserts that stdout equals `oq run`'s, then
-asserts the compiled count is 210 of the 219 executable programs. `BuildJarTest` builds a
+asserts the compiled count is 214 of the 223 executable programs. `BuildJarTest` builds a
 jar for every deterministic example, runs it, and asserts that stdout and exit code equal
 the interpreter's; any divergence fails the build. `parallel.oq` is excluded because it
 prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they are interactive or need

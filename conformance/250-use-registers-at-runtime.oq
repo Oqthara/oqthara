@@ -1,0 +1,36 @@
+# A `use` registers when the statement runs, not when the program is read. The name therefore
+# survives the block it was written in, and a statement that never ran leaves nothing behind.
+if true
+  use java.lang.Math
+end
+print Math.abs(-3)
+
+fun register()
+  use java.util.ArrayList
+end
+register()
+xs = ArrayList()
+xs.add(1)
+print xs.size()
+
+for i in [1, 2]
+  use java.lang.Integer
+end
+print Integer.MAX_VALUE
+
+# A `use` inside a `try` body registers when that body runs, and the name outlives the frame.
+value = try
+  use java.util.HashMap
+  7
+catch e
+  8
+end
+print value
+m = HashMap()
+m.put("a", 1)
+print m.get("a")
+
+# Registering the same simple name twice rebinds it: the last statement to run wins.
+use java.util.Date
+use java.sql.Date
+print Date(0).getTime()
