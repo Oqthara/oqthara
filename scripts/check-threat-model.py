@@ -111,11 +111,48 @@ def parse_threats(text: str) -> list[dict[str, str]]:
     return threats
 
 
-def parse_summary(text: str) -> tuple[dict[str, set[str]], dict[str, int], int | None]:
-    """The summary buckets: listed IDs, stated counts, and the stated total."""
+def rows_without_a_known_status(text: str) -> list[str]:
+    """Every `TH-` row whose status cell names no status in the legend.
+
+    `parse_threats` skips these, which was the third hole: an invented status
+    made the row vanish from the model, and the only complaint afterwards was
+    the downstream "is in a summary bucket but has no threat row". That message
+    points at the summary, not at the row that is actually wrong, and the
+    distinction matters — on the one occasion this mattered, the row was
+    correct and the *status word* was not. Reading it as a missing row would
+    have sent a maintainer to edit the wrong table.
+    """
+    offenders: list[str] = []
+    for line in text.splitlines():
+        match = ROW.match(line)
+        if match is None:
+            continue
+        if not any(status in match.group(4) for status in STATUSES):
+            offenders.append(
+                f"{match.group(1)} has status {match.group(4)!r}, which is not one of"
+                f" {', '.join(repr(s) for s in STATUSES)}; the summary counts key on"
+                " those exact strings"
+            )
+    return offenders
+
+
+def parse_summary(
+    text: str,
+) -> tuple[dict[str, set[str]], dict[str, int], int | None, str | None]:
+    """The summary buckets: listed IDs, stated counts, the total, and a parse error.
+
+    The fourth element exists because the obvious implementation is unsafe. An
+    earlier version returned `None` for a total it could not read, and the caller
+    skipped the comparison when the total was `None` — so rewording "Fifty-five
+    threats." to "Ninety-five threats." or "fifty-five threats." silently
+    disabled the arithmetic check altogether. A gate that treats "I do not
+    understand this" as "nothing to report" is worse than no gate, because the
+    green tick is believed. Anything sentence-shaped that cannot be read is now
+    reported as an error.
+    """
     section = re.search(r"^## Threat summary$(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
     if section is None:
-        return {}, {}, None
+        return {}, {}, None, "the '## Threat summary' section was not found"
     listed: dict[str, set[str]] = {}
     stated: dict[str, int] = {}
     for line in section.group(1).splitlines():
@@ -129,6 +166,12 @@ def parse_summary(text: str) -> tuple[dict[str, set[str]], dict[str, int], int |
         stated[status] = int(match.group(2))
     total_match = re.search(r"(\w+)-(\w+) threats\.", section.group(1))
     total = None
+    error = None
+    if total_match is None:
+        error = (
+            "no '<Number>-<unit> threats.' sentence was found in the summary, so the"
+            " stated total cannot be checked against the rows"
+        )
     if total_match is not None:
         words = {
             "Fifty": 50, "Forty": 40, "Thirty": 30, "Twenty": 20, "Ten": 10,
@@ -140,9 +183,16 @@ def parse_summary(text: str) -> tuple[dict[str, set[str]], dict[str, int], int |
         }
         tens = total_match.group(1)
         units = total_match.group(2).lower()
-        if tens in words:
-            total = words[tens] + digits.get(units, 0)
-    return listed, stated, total
+        if tens in words and units in digits:
+            total = words[tens] + digits[units]
+        elif tens in words and units == "":
+            total = words[tens]
+        else:
+            error = (
+                f"the summary's stated total {total_match.group(0)!r} could not be read;"
+                f" write it as 'Fifty-five threats.' so it can be checked"
+            )
+    return listed, stated, total, error
 
 
 def check_citations(text: str) -> list[str]:
@@ -187,6 +237,7 @@ def check_citations(text: str) -> list[str]:
 
 def check(text: str) -> list[str]:
     problems: list[str] = check_citations(text)
+    problems.extend(rows_without_a_known_status(text))
     threats = parse_threats(text)
     if not threats:
         return problems + ["no threat rows were parsed; the row format may have changed"]
@@ -203,7 +254,9 @@ def check(text: str) -> list[str]:
                 " the summary counts depend on"
             )
 
-    listed, stated, total = parse_summary(text)
+    listed, stated, total, total_error = parse_summary(text)
+    if total_error is not None:
+        problems.append(total_error)
     if not listed:
         return problems + ["the threat summary table could not be parsed"]
 

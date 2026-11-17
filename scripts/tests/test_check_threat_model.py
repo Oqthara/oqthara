@@ -63,10 +63,11 @@ class TheRealDocumentIsReadCorrectly(unittest.TestCase):
 
     def test_the_summary_section_is_found_by_its_real_heading(self):
         text = MODEL.read_text(encoding="utf-8")
-        listed, stated, total = checker.parse_summary(text)
+        listed, stated, total, error = checker.parse_summary(text)
         self.assertTrue(listed, "the summary table was not found in the real document")
         self.assertEqual(len(checker.STATUSES), len(listed))
         self.assertIsNotNone(total, "the 'Fifty-five threats.' sentence was not parsed")
+        self.assertIsNone(error, error)
 
     def test_the_exemption_table_is_found_in_the_real_document(self):
         text = MODEL.read_text(encoding="utf-8")
@@ -124,6 +125,50 @@ class TheBucketsMustPartitionTheThreats(unittest.TestCase):
         self.assertNotEqual(text, broken)
         problems = checker.check(broken)
         self.assertTrue(any("states 54 threats" in p for p in problems), problems)
+
+
+class AnUnreadableFactIsAnError(unittest.TestCase):
+    """The gate must not treat "I cannot parse this" as "nothing to report".
+
+    These three cases share one root cause, found by reading the gate back rather
+    than by running it. Each made a real check silently stop checking while every
+    gate stayed green -- the same shape as the `EXEMPT_HEADING` bug that the
+    register's gate shipped with, and the same shape as return `None`.
+    """
+
+    def test_an_unreadable_total_is_rejected_rather_than_skipped(self):
+        text = MODEL.read_text(encoding="utf-8")
+        for wrong in ("Ninety-five threats.", "Fifty threats.", "fifty-five threats."):
+            with self.subTest(stated=wrong):
+                broken = text.replace("Fifty-five threats.", wrong, 1)
+                self.assertNotEqual(text, broken)
+                problems = checker.check(broken)
+                self.assertTrue(problems, f"{wrong!r} disabled the total check silently")
+
+    def test_a_missing_total_sentence_is_rejected(self):
+        text = MODEL.read_text(encoding="utf-8")
+        broken = text.replace("Fifty-five threats.", "Some threats.", 1)
+        self.assertNotEqual(text, broken)
+        problems = checker.check(broken)
+        self.assertTrue(any("stated total" in p for p in problems), problems)
+
+    def test_an_invented_status_is_named_as_the_status_problem(self):
+        text = MODEL.read_text(encoding="utf-8")
+        broken = text.replace(
+            "| TH-17 | An unbound placeholder silently writes `NULL` | Tampering | **Mitigated** |",
+            "| TH-17 | An unbound placeholder silently writes `NULL` | Tampering | **Basically fine** |",
+            1,
+        )
+        self.assertNotEqual(text, broken, "the fixture no longer contains the TH-17 row")
+        problems = checker.check(broken)
+        self.assertTrue(
+            any("TH-17 has status '**Basically fine**'" in p for p in problems),
+            f"the row was dropped without naming the bad status: {problems}",
+        )
+
+    def test_the_real_document_has_no_row_with_an_unknown_status(self):
+        text = MODEL.read_text(encoding="utf-8")
+        self.assertEqual([], checker.rows_without_a_known_status(text))
 
 
 class ACitationMustResolve(unittest.TestCase):
