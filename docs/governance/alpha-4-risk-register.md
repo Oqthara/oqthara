@@ -65,7 +65,7 @@ states both failure modes explicitly, and choosing the honest one is the mitigat
 | R-002 | Bytecode backend and interpreter diverge | Medium | High | High | 4 | Mitigated |
 | R-003 | Module errors in a compiled jar report spliced line numbers | High | Low | Low | 4 | Accepted |
 | R-004 | Compiled bytecode has no step budget, so only the heap bounds it | Medium | Medium | Medium | 4 | Accepted |
-| R-029 | A compiled program's `print` is not atomic, so concurrent writes fuse lines | Medium | Medium | Medium | 4 | Open |
+| R-029 | A compiled program's `print` is not atomic, so concurrent writes fuse lines | Medium | Medium | Medium | 4 | Mitigated |
 | R-005 | Compiler slot and constant-pool ceilings refuse large functions | Low | Low | Low | 4 | Accepted |
 
 **R-002 — Bytecode backend and interpreter diverge.**
@@ -140,36 +140,42 @@ not a sandbox.
 **R-029 — A compiled program's `print` is not atomic, so concurrent writes fuse lines.**
 The interpreter emits one line with a single `PrintStream.println`, holding the stream lock across
 the text and the newline together. The compiled backend lowers `print` to `Arithmetic.print`, which
-issues `out().print(text)` and then `out().print(newline)` — two lock acquisitions — so a second
-thread can write between them. This is not confined to the concurrency helpers: `use java.lang.Thread`
-is enough. Measured on a program with two 400-line threads, built with `oq build`:
+issued `out().print(text)` and then `out().print(newline)` — two lock acquisitions — so a second
+thread could write between them. This was never confined to the concurrency helpers:
+`use java.lang.Thread` was enough. Measured on a program with two 400-line threads, built with
+`oq build`:
 
 ```
-interpreter  0 of 40 runs fused a line        (`java -jar oq.jar run t.oq`)
-compiled    41 fused lines per run, 5 of 5 runs   (`java -jar t.jar`)
+                            before the fix              after the fix
+interpreter  0 of 40 runs fused a line      0 of 40 runs fused a line
+compiled     40 of 40 runs fused, 406 lines total      0 of 40 runs fused, 800 lines each
 ```
 
-Both backends printed all 800 lines, so the threads run on both paths; only the interleaving
-differs. A fused line is `AAAA…BBBB…`, which no program wrote.
+Both backends printed all 800 lines before the fix too, so the threads ran on both paths; only the
+interleaving differed. A fused line is `AAAA…BBBB…`, which no program wrote.
 
-*Mitigation.* None for compiled output. The four concurrency builtins — `spawn`, `await`, `done`,
-`par_map` — stay in `Builtins.HOST_DEPENDENT`, so a program that reaches them falls back to the
-interpreter and keeps atomic lines. Alpha 6 tried to lower them and reverted when this measurement
-appeared, rather than shipping fused output to close a conformance counter
-(`alpha-6-conformance-fallback-accounting.md`). The javadoc in `Builtins` states the reason with the
-measurement, so the next attempt starts from evidence.
+*Mitigation.* `Arithmetic.print` now writes one line per call — `out().println(text)` followed by
+an explicit `flush()` — which is the same single lock acquisition the interpreter's builtin uses,
+and it preserves the `System.lineSeparator()` charge accounting. The measurement above is the
+mitigation's evidence; `BytecodeCompilerTest.compiledPrintKeepsEachLineAtomicAcrossThreads` is the
+control that keeps it, building a real jar and running it three times through a separate JVM. The
+test was mutation-verified: reverting `print` to the two-call form makes it fail with a fused line
+(`expected: <[]> but was: <[BBBB…AAAA, …]>`), and restoring the fix makes it pass.
 
-*Why open rather than accepted.* Making compiled `print` atomic is a small change — one
-`out().println(text)`, or one lock held across both writes — but it alters the emitted code for
-every program, so it ships with its own regression test and a re-measured conformance baseline.
-That is a task, not a paragraph in a documentation pull request. Recorded here so it is not lost:
-the workaround is to reach for `oq run`, and nothing in the specification currently promises atomic
-lines on either path.
+*Why this is `Mitigated` rather than `Accepted` or `Open`.* The control exists in the source, is
+cited by path, and is exercised by a test that fails without it — the conditions this register's
+review cadence sets for `Mitigated`. The four concurrency builtins stay in
+`Builtins.HOST_DEPENDENT`, but the reason is no longer this defect: with them removed, all of
+`conformance/138`, `139`, `140` and `141` compile and print the interpreter's output, measured at
+218 of 223 compiled with 0 divergences. Enabling concurrency in compiled output is a capability
+change with its own review, so it is carried as an Alpha 7 item rather than taken here.
 
 *Evidence.* `oq-runtime/src/main/java/dev/oqthara/runtime/Arithmetic.java` `print` ·
-`oq-core/src/main/java/dev/oqthara/stdlib/Stdlib.java` `print` ·
-`docs/governance/alpha-6-conformance-fallback-accounting.md` "Concurrency remains refused, and for
-a reason this document got wrong first".
+`oq-stdlib/src/main/java/dev/oqthara/stdlib/Stdlib.java` `print` ·
+`oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java`
+`compiledPrintKeepsEachLineAtomicAcrossThreads` ·
+`oq-stdlib/src/main/java/dev/oqthara/stdlib/Builtins.java` `HOST_DEPENDENT` Javadoc ·
+`docs/governance/alpha-6-conformance-fallback-accounting.md` "Concurrency".
 
 **R-005 — Compiler slot and constant-pool ceilings refuse large functions.**
 `BytecodeCompiler.checkSlotLimit` throws `NotSupportedException("too many variables for one
@@ -818,12 +824,13 @@ admitted. Closing an entry to `Mitigated` requires a control that exists in the 
 path. Moving an entry to `Accepted` requires an ADR that records the refusal, because "accepted" is
 a decision and decisions in this repository have identifiers.
 
-**Last verified:** `6954a86` (merge of PR #138), 2026-11-12, for the register as a whole. Two
-entries were revisited since, and only those two: R-002's baseline was re-measured from 213/203 to
-223/214 after Alpha 6 widened the compiled subset, and R-029 was added when the compiled `print`
-line-fusion defect was measured. Cadence rule 2 asks for all 29 to be re-read at an Alpha boundary;
-that re-read has not been done, and is the first item of the Alpha 7 handoff rather than a claim
-made here.
+**Last verified:** `6954a86` (merge of PR #138), 2026-11-12, for the register as a whole. Three
+entries were revisited since, and only those three: R-002's baseline was re-measured from 213/203 to
+223/214 after Alpha 6 widened the compiled subset, R-029 was added when the compiled `print`
+line-fusion defect was measured and moved to `Mitigated` when that defect was fixed, and R-029's
+concurrency exposure was re-derived against the widened compiled subset (218 of 223, 0
+divergences). Cadence rule 2 asks for all 29 to be re-read at an Alpha boundary; that re-read has
+not been done, and is the first item of the Alpha 7 handoff rather than a claim made here.
 
 ## Corrections
 

@@ -1,6 +1,7 @@
 # Alpha 6 — conformance fallback accounting
 
-**Measured:** 2026-11-21, against `oq-cli/build/libs/oq.jar` built from this branch.
+**Measured:** 2026-11-17, against `oq-cli/build/libs/oq.jar` built from this branch, and
+re-measured 2026-11-17 after the `print` and `sort_by` fixes (same 214/9/0).
 **Method:** for every executable case in `conformance/`, `java -jar oq-cli/build/libs/oq.jar
 build <case>.oq` was run and its `codepath:` line recorded. A case is a fallback when that line
 says `interpreter launcher` instead of `compiled bytecode`. The count is then cross-checked
@@ -143,18 +144,28 @@ change, so the practical gap was one spelling. And it does not claim `sort_by` i
 its per-comparison key evaluation is a separately pinned defect (`ListSortTest`), pre-existing
 and unchanged here.
 
-**Concurrency remains refused, and for a reason this document got wrong first.** The original
-claim here was that a compiled jar has no scheduler. That is false: the helpers resolve against
-`Stdlib.TaskRunner.EXECUTOR` (`Stdlib.java:96`), a static executor every jar links, so removing
-the four names did make all four cases compile. What actually breaks is output. The interpreter's
-`print` issues one `PrintStream.println` (`Stdlib.java:159`), holding the stream lock across the
-whole line; the compiled path calls `Arithmetic.print` (`Arithmetic.java:48-56`), which issues
-`out().print(text)` and then `out().print(newline)` — two separate lock acquisitions, so two
-threads interleave and lines fuse. Measured on a two-thread probe: 18 of 40 compiled runs
-printed `from taskfrom main`; 0 of 40 interpreter runs did. The lowering was reverted rather
-than shipped, and making compiled printing atomic is not Alpha 6 work. **Verdict: the
-`map`/`filter`/`sort_by` half was a misclassification and is fixed; the concurrency half is a
-real defect in the compiled `print`, documented in `Builtins`' javadoc, not a pass.**
+**Concurrency stays refused, and the reason has changed.** The original claim here was that a
+compiled jar has no scheduler. That was false: the helpers resolve against
+`Stdlib.TaskRunner.EXECUTOR`, a static executor every jar links, so removing the four names does
+make all four cases compile.
+
+The second claim was that output breaks. That was also true at the time, and it was a real
+defect: the interpreter's `print` issues one `PrintStream.println` (`Stdlib.java`), holding the
+stream lock across the whole line, while the compiled path called `Arithmetic.print`, which issued
+`out().print(text)` and then `out().print(newline)` — two lock acquisitions, so two threads could
+interleave and fuse lines. Measured on a two-thread probe, 40 of 40 compiled runs fused lines and
+0 of 40 interpreter runs did.
+
+That defect is fixed (R-029, `Mitigated`): `Arithmetic.print` now issues one `out().println(text)`.
+Re-measured, 0 of 40 compiled runs fuse a line and all 800 lines are produced. With the fix in
+place, removing the four names from `Builtins.HOST_DEPENDENT` compiles all four cases and prints
+the interpreter's output — 218 of 223 compiled, 0 divergences.
+
+**Verdict: the `map`/`filter`/`sort_by` half was a misclassification and is fixed, including the
+`sort_by` key-evaluation defect this document called separately pinned (ADR-0067). The concurrency
+half was a real defect, and it is now fixed too. The four cases still fall back, because enabling
+concurrency in compiled output is a capability change that ships with its own review rather than
+riding along with a print fix. That is a scope decision, recorded, not a defect being hidden.**
 
 ### (d) Contracts — 1 case
 
@@ -167,7 +178,8 @@ contract is checked, what a violation reports), and refusing is honest until tha
 ## 4. What this accounting does not claim
 
 - It does not claim the backend is complete. Nine programs do not compile, and §3 says why for
-  each.
+  each. That number is unchanged by the `sort_by` and `print` fixes: both corrected what a compiled
+  program computes, neither widened what the compiler accepts.
 - It does not claim the refusals are permanent. (a), (c) and (d) are each closable by real
   feature work; none is closable by a flag.
 - It does not count a fallback as a pass. `verify-conformance.py` requires

@@ -1,7 +1,7 @@
 # ADR-0066 — `use` registers at run time, so it compiles below the top level
 
 **Status:** Accepted
-**Date:** 2026-11-21
+**Date:** 2026-11-17
 **Related:** ADR-0064 (use binds a class value, which this refines),
 [`language.md`](../spec/language.md) §use,
 [`backend.md`](../spec/backend.md) §What the compiled path does not do,
