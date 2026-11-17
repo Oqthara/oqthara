@@ -2639,6 +2639,27 @@ called with the same dot syntax used for Oqthara values. Common Java types are
 converted automatically: `int`, `long`, `double`, `boolean`, `char`, `String`,
 `List`, `Map`, `Path` and enums.
 
+A `use` binds its class when the statement runs, not when the program is read. It is
+therefore legal anywhere a statement is: inside a function, a loop or a branch. Three
+consequences follow, and they are the same on both backends (ADR-0066).
+
+```
+if true
+  use java.lang.Math
+end
+print Math.abs(-3)      # 3: the binding outlives the block
+```
+
+- The binding is conditional. The same program with `if false` reports `'Math' is not
+  defined`, because the statement never ran.
+- The binding is not scoped to its block. It is visible everywhere afterwards, including
+  outside the block that produced it.
+- A later `use` of the same simple name replaces the earlier one, so `Date` is whichever
+  class the last `use` to run named.
+
+A variable still wins over the class of the same name in the frame that declares it, which
+is why `Math = 5` inside a block shadows the class there.
+
 The collection families need no conversion at all, because they are already Java
 collections: a `tuple` extends `AbstractList`, a `frozenset` extends `AbstractSet`, a
 `map` extends `AbstractMap`, and a `list` is an `ArrayList`. Passing one to a Java method

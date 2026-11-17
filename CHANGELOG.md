@@ -81,12 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the four ways a class value is used all compile: a static call, a static field, a
   constructor, and the value itself. `examples/interop.oq` went from
   `codepath: interpreter launcher` to `codepath: compiled bytecode` with byte-identical
-  output. A `use` below the top level is still refused by the statement
-  (`'use' only compiles at the top level`), because whether the name exists depends on
-  whether that block ran: `if true` / `use java.lang.Math` / `end` makes `Math` visible
-  afterwards, and the same program with `if false` does not. Modelling that in generated code
-  would need a registry shared across methods initialised on whichever path ran first, which
-  is a second mechanism for a statement no program in the corpus uses (ADR-0064).
+  output. A `use` below the top level was refused by the statement at first, because whether
+  the name exists depends on whether that block ran: `if true` / `use java.lang.Math` /
+  `end` makes `Math` visible afterwards, and the same program with `if false` does not.
+  ADR-0066 removes that refusal: `use` now lowers to a run-time registration into
+  `dev.oqthara.runtime.UsedClasses`, a process-wide table keyed by simple name, and a read of
+  the name becomes `Ir.LoadUsed`, which looks the entry up when the read executes. Both
+  backends therefore agree on the conditional registration, the leak out of a block and the
+  last-registration-wins rebinding, and `conformance/250-use-registers-at-runtime.oq` pins
+  all three.
 
   Three paths had to agree with the interpreter before this worked end to end, and each was
   found by a probe rather than by reading. `Callables.call` did not fall through to

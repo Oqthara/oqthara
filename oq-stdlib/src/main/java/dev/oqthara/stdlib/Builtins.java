@@ -38,9 +38,16 @@ import java.util.Set;
  */
 public final class Builtins {
     /**
-     * Builtins that read or mutate state outside the program. {@code spawn}, {@code await},
-     * {@code par_map}, {@code sort_by}, {@code map} and {@code filter} also need callable
-     * values, which a compiled class cannot create yet.
+     * Builtins that read or mutate state outside the program: files, clock, randomness,
+     * network, process, environment, program arguments and the concurrency helpers.
+     *
+     * <p>The concurrency helpers are here for two reasons, and the first is the one that
+     * matters: a compiled jar shares this JVM with no scheduler the compiler emits, so
+     * {@code spawn} would have to reuse the interpreter's, letting a compiled program observe
+     * scheduling it does not control. The callable-taking collection builtins ({@code map},
+     * {@code filter}, {@code sort_by}) are <em>not</em> here — a compiled lambda is a
+     * {@code runtime.CompiledFunction}, which implements {@code OqCallable}, so those calls
+     * compile and are exercised by conformance.
      */
     private static final Set<String> HOST_DEPENDENT = Set.of(
             "args", "input", "exit",
@@ -50,8 +57,7 @@ public final class Builtins {
             "random", "random_item",
             "http_get", "http_post",
             "env", "run_command", "cpu_count", "memory_mb",
-            "spawn", "await", "done", "par_map",
-            "sort_by", "map", "filter");
+            "spawn", "await", "done", "par_map");
 
     /** Most arguments a generated call site passes; keep in step with the emitter. */
     private static final int MAX_ARGS = 4;

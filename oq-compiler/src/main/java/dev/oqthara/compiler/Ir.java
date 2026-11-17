@@ -14,7 +14,7 @@ public final class Ir {
             SetIndex, IterNew, IterHasNext, IterNext, Text, Contains, MethodCall, MakeData,
             GetField, SetField, Range, CounterRange, TryStart, TryEnd, HandlerLabel, CatchValue, Halt, Label,
             JumpLabel, Break, Continue, ScopeEnter, ScopeExit, ToBool, At, Refuse, Lambda,
-            DestructureParts {
+            DestructureParts, Use, LoadUsed {
     }
 
     public record Program(Ir.Function main, List<Ir.Function> functions) {
@@ -232,6 +232,25 @@ public final class Ir {
     public record At(Span span) implements Instr {
     }
 
+    /**
+     * Resolves a {@code use} path as the statement executes and binds the class to its simple
+     * name in the program-wide registry (ADR-0066).
+     *
+     * <p>Registration is conditional on reaching the statement, which is why this is an
+     * instruction and not a build-time constant: a {@code use} in an untaken branch registers
+     * nothing, and the name stays undefined rather than resolving to a class the interpreter
+     * would not have bound.
+     */
+    public record Use(String path, String simpleName, Span span) implements Instr {
+    }
+
+    /**
+     * Pushes the class registered under {@code simpleName}, raising the interpreter's
+     * {@code '<name>' is not defined} when no {@code use} for it has executed.
+     */
+    public record LoadUsed(String simpleName, Span span) implements Instr {
+    }
+
     /** Converts any value to an Oqthara boolean, exactly like the interpreter's truthiness. */
     public record ToBool() implements Instr {
     }
@@ -326,6 +345,8 @@ public final class Ir {
             case ScopeEnter ignored -> "scope_enter";
             case ScopeExit ignored -> "scope_exit";
             case At at -> "at " + at.span().line() + ":" + at.span().column();
+            case Use use -> "use " + use.path();
+            case LoadUsed used -> "load-used " + used.simpleName();
             case Refuse r -> "refuse " + r.reason();
         };
     }

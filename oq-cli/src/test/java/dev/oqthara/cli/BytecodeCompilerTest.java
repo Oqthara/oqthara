@@ -1196,10 +1196,46 @@ class BytecodeCompilerTest {
                 compileAndRun(source, dir));
     }
 
+    /**
+     * A `use` inside a block registers when the block runs, exactly as the interpreter's does,
+     * and the name stays bound after the block exits because the table outlives the frame.
+     */
     @Test
-    void useInsideANestedBlockFallsBackWithTheTrueReason() {
-        String reason = BytecodeCompiler.whyNot(ir("if true\n  use java.lang.Math\nend\nprint Math.abs(-3)"));
-        assertEquals("'use' only compiles at the top level", reason);
+    void useInsideANestedBlockCompilesAndRegistersWhenItRuns(@TempDir Path dir) throws Exception {
+        String source = "if true\n  use java.lang.Math\nend\nprint Math.abs(-3)";
+        assertEquals("3\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("3\n", compileAndRun(source, dir));
+    }
+
+    /**
+     * The register-when-it-runs rule means an untaken block registers nothing, so the read must
+     * fail with the interpreter's own "not defined" rather than resolving the class anyway.
+     */
+    @Test
+    void aUseInAnUntakenBlockRegistersNothing(@TempDir Path dir) throws Exception {
+        String source = "if false\n  use java.lang.Math\nend\nprint Math.abs(-3)";
+        String interpreted = OqRunner.run("<t>", source, List.of(), "", dir).stderr();
+        String compiled = compileAndRunError(source, dir);
+        assertTrue(interpreted.contains("'Math' is not defined"), interpreted);
+        assertTrue(compiled.contains("'Math' is not defined"), compiled);
+    }
+
+    /**
+     * A `use` in a function body reaches the table only when the function is called, and then
+     * leaks out of it. Both halves are asserted here because each one alone would pass on a
+     * compiler that registered eagerly.
+     */
+    @Test
+    void aUseInAFunctionBodyRegistersOnlyWhenTheFunctionRuns(@TempDir Path dir) throws Exception {
+        String called = "fun reg()\n  use java.lang.Math\nend\nreg()\nprint Math.abs(-3)";
+        assertEquals("3\n", OqRunner.run("<t>", called, List.of(), "", dir).stdout());
+        assertEquals("3\n", compileAndRun(called, dir));
+
+        String uncalled = "fun reg()\n  use java.lang.Math\nend\nprint Math.abs(-3)";
+        String interpreted = OqRunner.run("<t>", uncalled, List.of(), "", dir).stderr();
+        String compiled = compileAndRunError(uncalled, dir);
+        assertTrue(interpreted.contains("'Math' is not defined"), interpreted);
+        assertTrue(compiled.contains("'Math' is not defined"), compiled);
     }
 
     /**
@@ -1251,36 +1287,61 @@ class BytecodeCompilerTest {
     }
 
     /**
-     * A `use` inside a `try` expression is conditional, so it is refused; the refusal must name
-     * the construct and the program must still run through the interpreter, which honours the
-     * registration only when the body reaches it.
+     * A `use` inside a `try` expression is as conditional as one inside any other block: the
+     * hander runs instead of the body, so nothing is registered and the program still completes.
      */
     @Test
-    void useInsideATryExpressionIsRefusedAndRunsThroughTheInterpreter(@TempDir Path dir) throws Exception {
+    void useInsideATryExpressionCompilesAndRegistersOnlyWhenTheBodyRuns(@TempDir Path dir) throws Exception {
         String source = "x = try\n  error(\"no\")\n  use java.lang.Math\n  1\ncatch e\n  2\nend\nprint x";
-        String reason = BytecodeCompiler.whyNot(
-                Lowering.lower(Parser.parse("<t>", source)));
-        assertEquals("'use' only compiles at the top level", reason);
         assertEquals("2\n", OqRunner.run("<t>", source, List.of(), "", dir).stdout());
+        assertEquals("2\n", compileAndRun(source, dir));
+
+        String reached = "x = try\n  use java.lang.Math\n  1\ncatch e\n  2\nend\nprint x\nprint Math.abs(-3)";
+        assertEquals("1\n3\n", OqRunner.run("<t>", reached, List.of(), "", dir).stdout());
+        assertEquals("1\n3\n", compileAndRun(reached, dir));
     }
 
     /**
-     * Registering the same simple name twice would leave whichever class the compiler saw last
-     * while the interpreter rebinds as each statement runs, so the second `use` is refused
-     * instead of silently choosing one.
+     * A later `use` of the same simple name rebinds it, because the table is keyed by simple name
+     * and each statement overwrites the entry. The second class must therefore win on both
+     * backends.
      */
     @Test
-    void aSecondUseOfTheSameNameIsRefused(@TempDir Path dir) throws Exception {
+    void aSecondUseOfTheSameNameRebindsIt(@TempDir Path dir) throws Exception {
         String source = "use java.util.Date\nuse java.sql.Date\nprint Date(0)";
-        assertEquals("'Date' is already the name of a used class",
-                BytecodeCompiler.whyNot(Lowering.lower(Parser.parse("<t>", source))));
-        // The refusal only chooses the backend; the program itself still runs. Because the
-        // interpreter rebinds the name as each statement runs, the output must match a program
-        // that used the second class alone -- asserted against that program rather than a
-        // literal, since a date renders in the machine's time zone.
+        assertEquals(OqRunner.run("<t>", source, List.of(), "", dir).stdout(), compileAndRun(source, dir));
+        // Asserted against a program that uses the second class alone rather than a literal,
+        // since a date renders in the machine's time zone.
         String secondOnly = "use java.sql.Date\nprint Date(0)\nprint Date(0).getTime()";
         assertEquals(OqRunner.run("<t>", secondOnly, List.of(), "", dir).stdout(),
-                OqRunner.run("<t>", source + "\nprint Date(0).getTime()", List.of(), "", dir).stdout());
+                compileAndRun(source + "\nprint Date(0).getTime()", dir));
+    }
+
+    /**
+     * A read that happens before its `use` ran must fail with the interpreter's wording, not
+     * silently resolve. A compiler that bound the class anywhere in the program would print the
+     * class here.
+     */
+    @Test
+    void readingAUsedNameBeforeItsUseFailsLikeTheInterpreter(@TempDir Path dir) throws Exception {
+        String source = "print Math\nuse java.lang.Math";
+        String interpreted = OqRunner.run("<t>", source, List.of(), "", dir).stderr();
+        String compiled = compileAndRunError(source, dir);
+        assertTrue(interpreted.contains("'Math' is not defined"), interpreted);
+        assertTrue(compiled.contains("'Math' is not defined"), compiled);
+        assertTrue(compiled.contains("<t>:1:7"), compiled);
+    }
+
+    /** A misspelled path inside a nested `use` fails at the statement, when it runs. */
+    @Test
+    void aMisspelledNestedUseFailsOnlyWhenItRuns(@TempDir Path dir) throws Exception {
+        String taken = "if true\n  use java.lang.NoSuchThing\nend\nprint 1";
+        String compiled = compileAndRunError(taken, dir);
+        assertTrue(compiled.contains("cannot find Java class 'java.lang.NoSuchThing'"), compiled);
+        assertTrue(compiled.contains("<t>:2:3"), compiled);
+
+        String untaken = "if false\n  use java.lang.NoSuchThing\nend\nprint 1";
+        assertEquals("1\n", compileAndRun(untaken, dir));
     }
 
 
@@ -1452,11 +1513,25 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(210, compiled,
+        assertEquals(214, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-16: 210 compiled / 9 fallback / 0 divergences over 249 programs
-        // (219 executable). 248-java-interop-by-use was the first program to exercise `use`
-        // at all, handled because a top-level `use` lowers to a class constant (ADR-0064).
+        // Measured 2026-11-21: 214 compiled / 9 fallback / 0 divergences over 256 programs
+        // (223 executable). 256-callable-builtins-compile pins that `map`, `filter` and
+        // `sort_by` accept a compiled lambda: `Builtins.HOST_DEPENDENT` had listed the three
+        // on the false premise that a compiled class cannot create a callable, but a compiled
+        // lambda is a runtime.CompiledFunction implementing OqCallable. Removing them closed
+        // the last declared probe fallback, so `map`/`filter`/`sort_by` in free-function form
+        // now compile; only the concurrency helpers still need the interpreter's scheduler.
+        //
+        // Previous measurement, also 2026-11-21: 213 compiled / 9 fallback / 0 divergences
+        // over 255 programs (222 executable). `use` now lowers to a run-time registration
+        // (ADR-0066), so 250-use-registers-at-runtime compiles and the three new .err cases
+        // join the comparison without joining the executable set. 254 and 255 pin the two
+        // directions of Java callable interop; both compile, so the fallback count stays at 9.
+        //
+        // Previous measurement, 2026-11-16: 210 compiled / 9 fallback / 0 divergences over 249
+        // programs (219 executable). 248-java-interop-by-use was the first program to exercise
+        // `use` at all, handled because a top-level `use` lowered to a class constant (ADR-0064).
         // 249-use-name-shadowing-scopes pins which scope a `use` name still denotes the class
         // in, the half of ADR-0064 that a value-only test cannot see.
         //

@@ -1,0 +1,21 @@
+# `map`, `filter` and `sort_by` take a callable. A compiled lambda is a runtime.CompiledFunction
+# that implements OqCallable, so these calls compile instead of falling back. This pins the
+# value crossing in both directions: an Oqthara lambda, a named fun and a Java functional value.
+
+xs = [1, 2, 3]
+
+print map(xs, x -> x * x)
+print filter(xs, x -> x > 1)
+print sort_by(xs, x -> -x)
+
+fun double(n)
+  return n * 2
+end
+print map(xs, double)
+
+# Nested: the inner lambda is created inside the outer one's body.
+print map([1, 2], x -> map([10, 20], y -> x + y))
+
+# A Java functional value is the same kind of value, so it passes the same way.
+use java.util.function.Function
+print map(xs, Function.identity())

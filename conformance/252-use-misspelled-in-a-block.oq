@@ -1,0 +1,6 @@
+# A misspelled path is only detected when the statement runs. A nested `use` therefore fails
+# at the statement, with the same message a top-level one gives at build time.
+if true
+  use java.lang.NoSuchThing
+end
+print 1

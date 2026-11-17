@@ -25,13 +25,16 @@ which is what A6.3 claims. Without that second check `--both` is satisfied by an
 launcher, so every probe could regress to the fallback and the run would stay green; the
 compiled output would match because it was produced by the interpreter.
 
-`COMPILED` is what every probe must report. One does not, and says so in `FALLBACK` with the
-reason its own build printed: `d1_sort_by` calls `sort_by`, which the backend has never
-lowered, so `oq build` writes an interpreter launcher for it. Naming it keeps the fallback a
-stated fact rather than something the runner quietly tolerates, and because the check is
-"compiled unless declared", a second probe falling back fails the run — it cannot become a
-general licence. Fixing `sort_by` fails the run too, the same way a fixed defect does, so the
-entry cannot outlive the gap.
+`COMPILED` is what every probe must report, and `FALLBACK` records any exception with the
+reason its own build printed. It is empty today: `d1_sort_by` used to call `sort_by`, which
+the backend had never lowered, so `oq build` wrote an interpreter launcher for it. Once the
+callable-taking builtins were lowered the entry became false, and the runner failed with
+"recorded fallback is gone, so the gap it recorded has closed" rather than quietly changing
+its verdict. The entry was removed because the gap closed, not because the check was relaxed.
+
+Keeping the map as "compiled unless declared" is what makes that work: a second probe falling
+back fails the run, so it cannot become a general licence, and a gap that closes fails the run
+too. An entry can therefore not outlive the gap it records.
 
 A declared fallback is counted apart from the probes that actually compiled, and its jar is not
 counted as a two-backend comparison: that jar *is* the interpreter, so its output matching is the
@@ -84,12 +87,7 @@ COMPILED = "codepath: compiled bytecode"
 
 # Probes whose build reports something other than COMPILED, mapped to the exact line the build
 # printed. Not a wildcard: a probe absent from here must report COMPILED.
-FALLBACK = {
-    "d1_sort_by": (
-        "codepath: interpreter launcher "
-        "(call to 'sort_by' with 2 argument(s) is not compiled yet)"
-    ),
-}
+FALLBACK = {}
 
 # The `codepath:` line is the only field of the build output this runner reads, and it is
 # printed on stdout, so a probe's own program output can never be mistaken for it.

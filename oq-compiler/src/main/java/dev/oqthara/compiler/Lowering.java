@@ -87,22 +87,24 @@ public final class Lowering {
      */
     private Set<String> reassigned = Set.of();
     /**
-     * Simple names bound by a {@code use} statement lowered so far, mapped to the class they
-     * name.
+     * Every simple name any {@code use} statement in the program binds, wherever it appears.
      *
-     * <p>Sequential, not hoisted: the interpreter registers a class as the statement runs, so a
-     * name used before its {@code use} is undefined there and must be here too. This is
-     * deliberately a different registry from {@code localScopes}, which does hoist, because
-     * {@code fun} declarations are visible before their line and {@code use} statements are not.
+     * <p>This is a pre-scan, not a record of what has run. The interpreter registers a class
+     * only when the statement executes, so a read before the {@code use} is undefined there and
+     * must stay undefined here; the set is what lets the read still lower to a run-time lookup
+     * instead of failing to compile. Which of the two outcomes happens is decided at run time by
+     * whether the {@code use} ran, which is exactly the interpreter's rule. See ADR-0066.
      */
-    private final Map<String, Class<?>> useTypes = new LinkedHashMap<>();
+    private final Set<String> usedNames = new LinkedHashSet<>();
     /**
      * How many function bodies enclose the statement being lowered.
      *
-     * <p>A {@code use} below the top level is refused (ADR-0064): the interpreter leaks the
-     * binding out of the function, and a generated method has no way to publish a name back to
-     * {@code main}. Both {@link #function} and {@link #block} increment this, because a function
-     * body is lowered by {@code function} without going through {@code block}.
+     * <p>A {@code use} below the top level is no longer refused (ADR-0066 overturns ADR-0064):
+     * it registers into a process-wide table at run time, so a function body can publish a name
+     * the interpreter would leak out of the same block. This counter still distinguishes code
+     * that runs inside a generated method from code that runs in {@code main}, where a
+     * {@code use} keeps its build-time class literal so a misspelled top-level path stays a
+     * build failure.
      */
     private int depth = 0;
 
@@ -116,6 +118,7 @@ public final class Lowering {
     public static Result lowerWithReport(Ast.Program program) {
         Lowering lowering = new Lowering();
         lowering.code = Ir.list();
+        lowering.collectUsedNames(program.statements());
         String collision = lowering.nameCollision(program.statements());
         if (collision != null) {
             lowering.code.add(new Ir.Refuse(collision));
@@ -328,24 +331,25 @@ public final class Lowering {
      * of a misspelled path reports the construct that is unsupported instead of blaming the
      * spelling, which is what ADR-0062 asks of a diagnostic.
      */
+    /**
+     * Lowers a {@code use} statement into a run-time registration.
+     *
+     * <p>{@code Interpreter} keeps one program-wide map and fills it as the statement runs, so a
+     * {@code use} inside a function, an {@code if} or a {@code for} leaves the name defined
+     * afterwards exactly when that code ran, and the last {@code use} of a name wins. A
+     * build-time binding cannot reproduce any of that; emitting the registration lets the
+     * generated jar keep the interpreter's table verbatim (ADR-0066).
+     *
+     * <p>A top-level {@code use} also resolves its class while building, so a misspelled path
+     * fails {@code oq build} with the interpreter's own diagnostic. That is the one difference
+     * left, and it is deliberate: the statement is unconditional and first, so it is guaranteed
+     * to run and the failure is certain (ADR-0066, {@code BuildCommandTest}).
+     */
     private void useStatement(Ast.UseStmt use) {
-        if (depth > 0) {
-            code.add(new Ir.Refuse("'use' only compiles at the top level"));
-            return;
-        }
         String name = simpleName(use.path());
-        // Two `use` statements naming the same simple name would leave the last class
-        // registered here, while the interpreter rebinds the name as each statement runs, so a
-        // `fun` declared between them would resolve a different class on each backend. Refused
-        // rather than silently picking one.
-        if (useTypes.containsKey(name)) {
-            code.add(new Ir.Refuse("'" + name + "' is already the name of a used class"));
-            return;
-        }
-        // Registered only once the class resolves, so a misspelled top-level `use` fails the
-        // build with the interpreter's own diagnostic instead of becoming a run-time failure in
-        // a program that built successfully.
-        useTypes.put(name, resolveClass(use.path(), use.span()));
+        if (depth == 0) resolveClass(use.path(), use.span());
+        mark(use.span());
+        code.add(new Ir.Use(use.path(), name, use.span()));
     }
 
     private void statement(Ast.Stmt stmt) {
@@ -487,8 +491,7 @@ public final class Lowering {
      * <p>The scope is pure analysis: {@code tryExpression} already emitted the
      * {@code ScopeEnter} that owns it. It exists so a {@code use} or a {@code fun} inside a
      * {@code try} expression is analysed like one inside any other block, instead of being
-     * lowered with the enclosing scope's registries and escaping the refusal in
-     * {@link #statement} for {@code use}.
+     * lowered with the enclosing scope's binding registries.
      */
     private void branchValue(List<Ast.Stmt> statements, String target, String seed) {
         pushTypes(statements);
@@ -526,6 +529,26 @@ public final class Lowering {
         List<Ast.TryExpr> found = new ArrayList<>();
         collectTryExprs(expr, found);
         return found;
+    }
+
+    /**
+     * Records every simple name a {@code use} statement anywhere in the program binds.
+     *
+     * <p>Run before lowering so a read of such a name compiles to a lookup instead of failing
+     * to resolve. The statement may never execute, and the read may precede it, so this only
+     * decides which operations to emit -- the run-time table decides what each read yields.
+     */
+    private void collectUsedNames(List<Ast.Stmt> statements) {
+        for (Ast.Stmt stmt : statements) {
+            if (stmt instanceof Ast.UseStmt use) usedNames.add(simpleName(use.path()));
+            for (Ast.Expr expr : exprsOf(stmt)) collectUsedNamesIn(expr);
+            for (List<Ast.Stmt> block : blocksOf(stmt)) collectUsedNames(block);
+        }
+    }
+
+    private void collectUsedNamesIn(Ast.Expr expr) {
+        for (Ast.Expr child : childrenOf(expr)) collectUsedNamesIn(child);
+        for (List<Ast.Stmt> block : blocksOf(expr)) collectUsedNames(block);
     }
 
     private static void collectTryExprs(Ast.Expr expr, List<Ast.TryExpr> found) {
@@ -1315,12 +1338,13 @@ public final class Lowering {
             case Ast.NothingLit ignored -> code.add(new Ir.Const(null));
             case Ast.StringLit text -> stringLiteral(text);
             case Ast.Var var -> {
-                Class<?> used = useTypes.get(var.name());
-                if (used != null && !inCurrentScope(var.name())) {
-                    // A `use` name is a class value, not a slot. The interpreter checks locals
-                    // first and the class table second, so a binding of the same name wins and
-                    // is lowered as an ordinary load below.
-                    code.add(new Ir.Const(used));
+                if (usedNames.contains(var.name()) && !inCurrentScope(var.name())) {
+                    // The name belongs to a `use` somewhere in the program, but a binding of
+                    // the same name in the current frame still wins, exactly as `Env.hasLocal`
+                    // beats `javaTypes` in the interpreter. Whether the class is defined here
+                    // is a run-time question: the `use` may not have run yet, or at all.
+                    mark(var.span());
+                    code.add(new Ir.LoadUsed(var.name(), var.span()));
                 } else {
                     code.add(new Ir.Load(var.name()));
                 }
@@ -1399,10 +1423,11 @@ public final class Lowering {
                     DataType type = lookupType(var.name());
                     if (type != null) {
                         constructor(call, type);
-                    } else if (useTypes.containsKey(var.name()) && !inCurrentScope(var.name())) {
+                    } else if (usedNames.contains(var.name()) && !inCurrentScope(var.name())) {
                         // `ArrayList()` constructs a Java object in the interpreter, which a
                         // class value reaching Callables.call reproduces exactly.
-                        code.add(new Ir.Const(useTypes.get(var.name())));
+                        mark(var.span());
+                        code.add(new Ir.LoadUsed(var.name(), var.span()));
                         emitCallArguments(call.args());
                         mark(call.span());
                         code.add(new Ir.CallValue(call.args().size(), var.name()));

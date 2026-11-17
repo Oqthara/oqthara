@@ -1,7 +1,12 @@
 # ADR-0064 — `use` binds a class value, resolved when compiling
 
-**Status:** Accepted
+**Status:** Accepted, partly superseded by [ADR-0066](0066-use-registers-at-runtime.md)
 **Date:** 2026-11-16
+
+> **Superseded in part (2026-11-21).** ADR-0066 removes the two refusals recorded under
+> §A `use` below the top level is refused and replaces them with a run-time registry, so the
+> decision below that a `use` names a class value, and that a variable of the same name
+> shadows it, still stands. Everything about refusing a nested or repeated `use` does not.
 **Related:** ADR-0062 (a diagnostic names the construct, which the old fallback reason
 violated), [`backend.md`](../spec/backend.md) §The current boundary (item 2, which this record
 closes), [`alpha-5-java-bridge-capability-inventory.md`](../governance/alpha-5-java-bridge-capability-inventory.md)
@@ -94,6 +99,11 @@ Any variable binding of the same name shadows the class, matching the interprete
 `env.hasLocal` → `javaTypes` order.
 
 ### A `use` below the top level is refused
+
+> **Superseded by ADR-0066.** The analysis in this section is correct and was the evidence
+> ADR-0066 acted on; only the conclusion changed. `use` now lowers to a run-time
+> registration, which reproduces the conditional binding, the leak and the rebinding instead
+> of refusing them.
 
 The interpreter registers a class as the statement executes, and `javaTypes` is
 interpreter-wide, so a `use` that runs inside a block is visible afterwards at top level. The
@@ -206,9 +216,8 @@ does not claim an assignment the writer never wrote.
 ## Consequences
 
 Compiled programs call Java. `Math.abs`, `Integer.MAX_VALUE`, `ArrayList()` and `print Math`
-produce byte-identical output under `oq run` and `oq build`, and `docs/spec/backend.md`
-boundary item 2 is narrowed to `modules` and the conditional `use` forms. It is not closed:
-a nested `use` still falls back, so interop is compiled exactly when every `use` is top level.
+produce byte-identical output under `oq run` and `oq build`. The narrowing to "every `use` is
+top level" that this record described was lifted by ADR-0066, which compiles every `use`.
 
 Overload selection, argument conversion, and error hints are the interpreter's, reached
 reflectively, so the two backends cannot drift.
@@ -216,9 +225,8 @@ reflectively, so the two backends cannot drift.
 A `use` statement still costs nothing at run time beyond one `LDC`, and the class it names is
 never copied into the jar.
 
-`use` inside a function body, a block or a `try` expression is refused by name, so a program
-that does it keeps working through the fallback while the reason on the `codepath:` line says
-what is actually unsupported.
+`use` inside a function body, a block or a `try` expression is compiled by ADR-0066, not
+refused, so the fallback this record relied on no longer applies to it.
 
 The scope rule above is pinned by `conformance/249-use-name-shadowing-scopes.oq`, which covers
 a loop variable, a destructured name, a caught error name, and the outer-assignment case that

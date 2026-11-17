@@ -306,6 +306,21 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
         """The codepath this probe should report: compiled, unless it is a declared fallback."""
         return self.runner.FALLBACK.get(name, "codepath: compiled bytecode")
 
+    def synthetically_declare(self, reason=None):
+        """Temporarily declare a real probe as a fallback, returning its name.
+
+        `FALLBACK` is empty by design now that the last gap has closed, but both directions of
+        the gate still need covering. Injecting a synthetic entry exercises the same code path
+        the real entry used to, without depending on a gap existing.
+        """
+        name = self.runner.PROBES[0][0]
+        reason = reason or "codepath: interpreter launcher (synthetic, for the gate test)"
+        original = dict(self.runner.FALLBACK)
+        self.runner.FALLBACK[name] = reason
+        self.addCleanup(lambda: (self.runner.FALLBACK.clear(),
+                                 self.runner.FALLBACK.update(original)))
+        return name
+
     def test_a_compiled_run_passes_and_says_what_it_compared(self):
         code, out = self.drive(self.declare)
         self.assertEqual(code, 0, out)
@@ -317,7 +332,7 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
     def test_a_declared_fallback_that_now_compiles_fails_the_run(self):
         # Through `main`, not just through the decision function: closing the gap has to fail
         # the build so the entry is deleted rather than left describing a fixed bug.
-        closed = next(iter(self.runner.FALLBACK))
+        closed = self.synthetically_declare()
         code, out = self.drive(
             lambda name: ("codepath: compiled bytecode" if name == closed else self.declare(name))
         )
@@ -341,6 +356,7 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
     def test_the_fallback_note_is_printed_when_a_probe_does_not_compile(self):
         # Declaring the fallback keeps the run green, but the summary must not then claim the
         # probe's output was compared across two backends.
+        self.synthetically_declare()
         code, out = self.drive(self.declare)
         self.assertEqual(code, 0, out)
         self.assertIn("not across two backends", out)
