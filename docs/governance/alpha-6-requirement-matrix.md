@@ -73,9 +73,9 @@ squash-merge discards branch SHAs and a pin to one of them stops resolving.
 
 The four criteria are defined in
 [alpha-5-java-bridge-capability-inventory.md](alpha-5-java-bridge-capability-inventory.md), which is
-where their wording is authoritative. A6.1, A6.3 and A6.4 are listed because each now meets
-this file's executed-probe method: A6.1 is pinned by conformance programs that run on both
-backends, A6.2 by a probe that reaches reflection and one that is refused it, A6.3 by the probe
+where their wording is authoritative. All four are listed because each now meets this file's
+executed-probe method: A6.1 is pinned by conformance programs that run on both backends, A6.2 by a
+probe that reaches a refused reflection entry point and one that is refused it, A6.3 by the probe
 harness asserting the codepath of every probe, and A6.4 is the gate itself.
 
 | Requirement | State | Evidence | Gaps |
