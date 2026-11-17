@@ -55,10 +55,19 @@ jobs:
       - name: The runner cannot replace the jar it runs
         # The point of the non-root user is that this write fails. Asserting the
         # failure, not the uid, is what ties the mitigation to the threat.
+        #
+        # Asserting only "the write did not succeed" is not enough: that is also
+        # what a missing jar, a broken image or a typo in the path produce. The
+        # message is checked for a permission denial specifically, and the jar is
+        # checked to exist, so the step cannot pass by failing to find the file.
         run: |
           set -euo pipefail
-          if docker run --rm --entrypoint sh oqthara/oq:ci -c 'echo x >> /app/oq.jar'; then
-            echo "::error::/app/oq.jar is writable by the container user; TH-46 is open"
+          docker run --rm --entrypoint test oqthara/oq:ci -s /app/oq.jar
+          output=$(docker run --rm --entrypoint sh oqthara/oq:ci \
+                     -c 'echo x >> /app/oq.jar' 2>&1 || true)
+          echo "write attempt: $output"
+          if ! grep -qi "permission denied" <<<"$output"; then
+            echo "::error::expected a permission denial writing /app/oq.jar, got: $output"
             exit 1
           fi
           echo "/app/oq.jar is not writable, as intended"
