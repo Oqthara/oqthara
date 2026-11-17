@@ -25,27 +25,41 @@ Two facts decided it.
 **The refusal is a narrowing of what a name reaches, not a sandbox.** The spec already says so,
 and it is worth testing rather than repeating. `MethodHandles` is an ordinary class, so `use`
 reaches it; `MethodHandles.lookup()` resolves against the bridge's own class, which is on the
-classpath, not against JDK internals. From there a program can name a member the allowlist
-refuses by name:
+classpath, not against JDK internals. From there a program can reach an entry point the allowlist
+refuses *by name* and invoke it:
 
 ```
 $ cat d2_reflection_reachable.oq
+use java.lang.Class
 use java.lang.invoke.MethodHandles
 use java.lang.invoke.MethodType
 use java.lang.String
 c = String("x").getClass()
-lookup = MethodHandles.lookup()
-kind = MethodType.methodType(c)
-handle = lookup.findVirtual(c, "trim", kind)
-print handle
+kind = MethodType.methodType(Class)
+handle = MethodHandles.lookup().findVirtual(Class, "getEnclosingClass", kind)
+print handle.invokeWithArguments(c)
 
 $ java -jar oq.jar run d2_reflection_reachable.oq
-MethodHandle(String)String
+nothing
 ```
 
-`getDeclaredMethod` on the same class object is refused, and `findVirtual` on the same class
-object resolves. So granting the allowlist entry would not add a capability to the language. It
-would add a shorter spelling to a capability the language already has.
+`getEnclosingClass` is in `CLASS_REFLECTION`, so writing `c.getEnclosingClass()` fails. The
+probe deliberately names a refused entry point rather than a friendly member: reaching something
+the allowlist already permits would demonstrate only that `findVirtual` works, which is not the
+claim. `nothing` is the answer here because a JDK class declared at the top level has no enclosing
+class, and it is the same answer the refused spelling would give. So granting the allowlist entry
+would not add a capability to the language. It would add a shorter spelling to a capability the
+language already has.
+
+The route has rough edges, and they are worth stating so the record is not read as "reflection is
+as easy as any other call". `handle.invoke(...)` is refused — `MethodHandle.invoke` is
+signature-polymorphic, so the bridge resolves it as an ordinary method and reports `cannot change
+an unchangeable collection: MethodHandle.invoke cannot be invoked reflectively` — and
+`invokeWithArguments` is what works. `MethodHandles.privateLookupIn` on a JDK class fails with
+`module java.base does not open java.util to unnamed module`, which is the module system doing its
+job. None of that reopens the decision: the entry points the allowlist names are reachable and
+invocable, which is the whole claim, and the awkwardness of the route argues against granting a
+convenient short spelling rather than for it.
 
 **The JVM cannot supply the sandbox that granting it would imply.** `setAccessible` succeeds for
 application classes and is blocked only for JDK internals. An in-process sandbox strong enough to

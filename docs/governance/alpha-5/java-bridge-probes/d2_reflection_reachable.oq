@@ -1,6 +1,8 @@
+use java.lang.Class
 use java.lang.invoke.MethodHandles
 use java.lang.invoke.MethodType
 use java.lang.String
 c = String("x").getClass()
-kind = MethodType.methodType(c)
-print MethodHandles.lookup().findVirtual(c, "trim", kind)
+kind = MethodType.methodType(Class)
+handle = MethodHandles.lookup().findVirtual(Class, "getEnclosingClass", kind)
+print handle.invokeWithArguments(c)
