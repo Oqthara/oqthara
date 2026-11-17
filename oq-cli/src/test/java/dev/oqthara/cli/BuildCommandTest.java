@@ -143,6 +143,7 @@ class BuildCommandTest {
                 print read("/etc/hosts")
                 """);
         Run launcher = build(throughBuiltin.toString());
+        assertEquals(0, launcher.exit(), launcher.err());
         assertTrue(launcher.out().contains("codepath: interpreter launcher"), launcher.out());
         assertTrue(launcher.out().contains("is not compiled yet"), launcher.out());
     }
