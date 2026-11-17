@@ -139,6 +139,10 @@ PROBES = [
         "help: 'getDeclaredMethod' is reflection, which is not exposed",
         None,
     ),
+    # The refusal is a narrowing of what a name reaches, not a sandbox (ADR-0065). The same
+    # class object that refuses getDeclaredMethod resolves a member through MethodHandles, so
+    # this pins the reachability the spec claims instead of leaving it as a comment.
+    ("d2_reflection_reachable", ["MethodHandle(String)String"], None),
     # D3: Oqthara's method wins a name it shares with Java's List. The behaviour is the
     # documented precedence; the diagnostic is the one the spec quotes verbatim.
     ("d3_shadowing", "error: remove takes an index, not text", None),

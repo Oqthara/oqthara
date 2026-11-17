@@ -1,0 +1,8 @@
+use java.lang.invoke.MethodHandles
+use java.lang.invoke.MethodType
+use java.lang.String
+c = String("x").getClass()
+lookup = MethodHandles.lookup()
+kind = MethodType.methodType(c)
+handle = lookup.findVirtual(c, "trim", kind)
+print handle
