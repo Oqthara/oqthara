@@ -691,17 +691,18 @@ public final class Lowering {
         return slot;
     }
 
+    /** Lowers a single operand through {@link #operands(List)}. */
+    private void operand(Ast.Expr expr) {
+        operands(List.of(expr));
+    }
+
     /**
-     * Lowers one operand, honouring a {@code try} expression inside it.
+     * Lowers operands left to right, honouring a {@code try} expression inside any of them.
      *
      * <p>A composite expression that mentions a {@code try} anywhere spools its operands
      * instead of leaving the earlier ones on the stack, so the nested {@code try} starts from
      * an empty stack. See {@link #spool(Ast.Expr)}.
      */
-    private void operand(Ast.Expr expr) {
-        operands(List.of(expr));
-    }
-
     private void operands(List<Ast.Expr> operands) {
         if (operands.stream().noneMatch(Lowering::mentionsTry)) {
             for (Ast.Expr operand : operands) {

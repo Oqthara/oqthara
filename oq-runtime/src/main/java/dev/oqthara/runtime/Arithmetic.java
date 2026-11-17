@@ -128,11 +128,24 @@ public final class Arithmetic {
     }
 
     private static java.io.PrintStream out() {
-        if (UTF8_OUT == null) {
-            UTF8_OUT = new java.io.PrintStream(System.out, true, java.nio.charset.StandardCharsets.UTF_8);
+        java.io.PrintStream stream = UTF8_OUT;
+        if (stream == null) {
+            synchronized (Arithmetic.class) {
+                stream = UTF8_OUT;
+                if (stream == null) {
+                    stream = new java.io.PrintStream(
+                            System.out, true, java.nio.charset.StandardCharsets.UTF_8);
+                    UTF8_OUT = stream;
+                }
+            }
         }
-        return UTF8_OUT;
+        return stream;
     }
 
+    /**
+     * Shared so that every compiled {@code print} takes the same lock. Two streams would wrap the
+     * same {@code System.out} but hold separate locks, which would silently undo the atomicity of
+     * {@link #print(Object)} under contention.
+     */
     private static volatile java.io.PrintStream UTF8_OUT;
 }

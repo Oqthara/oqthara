@@ -146,13 +146,18 @@ thread could write between them. This was never confined to the concurrency help
 `oq build`:
 
 ```
-                            before the fix              after the fix
-interpreter  0 of 40 runs fused a line      0 of 40 runs fused a line
-compiled     40 of 40 runs fused, 406 lines total      0 of 40 runs fused, 800 lines each
+                        before the fix                    after the fix
+interpreter   0 of 40 runs fused a line          0 of 40 runs fused a line
+compiled      40 of 40 runs fused a line,        0 of 40 runs fused a line,
+              4 to 30 fused lines per run        every run 800 clean lines
 ```
 
-Both backends printed all 800 lines before the fix too, so the threads ran on both paths; only the
-interleaving differed. A fused line is `AAAA…BBBB…`, which no program wrote.
+Both backends wrote all 800 lines before the fix too, so the threads ran on both paths; only the
+interleaving differed. A fused line is `AAAA…BBBB…`, which no program wrote. Counting lines alone
+therefore does not see this defect — the newline is still written, it just lands in the middle of
+another thread's text — which is why the measurement above counts lines that are neither 400 `A`s
+nor 400 `B`s. On 800-character lines the fusion is far more frequent: 58 to 106 fused lines per
+run over 20 runs.
 
 *Mitigation.* `Arithmetic.print` now writes one line per call — `out().println(text)` followed by
 an explicit `flush()` — which is the same single lock acquisition the interpreter's builtin uses,
@@ -161,6 +166,14 @@ mitigation's evidence; `BytecodeCompilerTest.compiledPrintKeepsEachLineAtomicAcr
 control that keeps it, building a real jar and running it three times through a separate JVM. The
 test was mutation-verified: reverting `print` to the two-call form makes it fail with a fused line
 (`expected: <[]> but was: <[BBBB…AAAA, …]>`), and restoring the fix makes it pass.
+
+The single `println` is only atomic if every caller holds the same lock, so `Arithmetic.out()` has
+to be a real singleton. It was not: an unsynchronised check-then-act let racing callers each build
+their own `PrintStream` around the same `System.out`, and two streams have two locks, which would
+have restored the defect. Measured by racing eight callers at first use over 200 trials: 175 trials
+observed more than one stream. `out()` now publishes under a class lock and re-checks inside it,
+which took that to 0 of 200. `PrintStreamSharingTest` pins it, and reverting the fix fails that
+test (`2 tests completed, 1 failed`).
 
 *Why this is `Mitigated` rather than `Accepted` or `Open`.* The control exists in the source, is
 cited by path, and is exercised by a test that fails without it — the conditions this register's
@@ -554,7 +567,7 @@ not audited in this pass; the class of defect is recorded here rather than claim
 `oq-runtime/src/main/java/dev/oqthara/runtime/{WaitedBudget,OqTask}.java` · run `43323606693`.
 
 **R-017 — Conformance corpus is circular: tests and implementation share one author.**
-`conformance/` holds 229 cases, and `scripts/verify-conformance.py` compares the interpreter against
+`conformance/` holds 256 cases, and `scripts/verify-conformance.py` compares the interpreter against
 the compiled jar over all of them. Both sides are built from the same source by the same process,
 and the expected outputs were written by the same author as the implementation. The comparison
 therefore answers "do the two backends agree" and cannot answer "is this the right behaviour". A
@@ -684,7 +697,7 @@ absence of `site/` · `scripts/README.md` Documentation table ·
 `docs/adr/0011-standalone-website-repository.md`.
 
 **R-023 — Keyword count is stated two ways across four documents.**
-`Lexer.KEYWORDS` holds 21 entries. `docs/stdlib/reference.md` says "21 keywords (budget: 30)" and
+`Lexer.KEYWORDS` holds 22 entries. `docs/stdlib/reference.md` says "22 keywords (budget: 30)" and
 `CONTRIBUTING.md` says "The keyword budget is 30; we are at 21" — both correct, and
 `scripts/check-docs-sync.py` keeps them correct. But `AGENTS.md` says "budget 30, now 20", and two
 agent files (`oq-hive-orchestrator`, `oq-hive-language-syntax`) repeat "It currently uses 20." So two
@@ -786,7 +799,7 @@ real piece of work with its own failure modes, and it belongs in workstream 16 a
 deliverable rather than bolted onto the documentation gate that currently runs in seconds.
 
 *Evidence.* `scripts/check-docs-sync.py` (states a version, matches the build) ·
-`scripts/check-links.py` (271 links) · the `Lexer` example in `docs/spec/language.md`
+`scripts/check-links.py` (276 links) · the `Lexer` example in `docs/spec/language.md`
 "Interoperability with Java", which is the corrected form of the draft that failed.
 
 ## Summary by exposure
@@ -824,34 +837,37 @@ admitted. Closing an entry to `Mitigated` requires a control that exists in the 
 path. Moving an entry to `Accepted` requires an ADR that records the refusal, because "accepted" is
 a decision and decisions in this repository have identifiers.
 
-**Last verified:** `2364e52` (merge of PR #241), 2026-11-17, for the register as a whole. Every
-one of the 29 entries was re-read for Alpha 6's boundary as cadence rule 2 requires, and the read
-was mechanical where it could be: every file path each entry cites was resolved against the tree
-programmatically, and the five entries whose controls were re-measured are recorded below. Four
-entries changed in this boundary pass:
+**Last verified:** `2364e52` (merge of PR #241), 2026-11-17, for the register as a whole. One
+entry was revised after that pin: R-029, added when the compiled `print` line-fusion defect was
+measured, moved to `Mitigated` when `Arithmetic.print` was made to write one line per call. Its
+body carries the before and after measurements and the mutation evidence.
 
-- **R-002** — baseline re-measured from 213/203 to 223/214 when Alpha 6 widened the compiled
-  subset. The count is read from `verify-conformance.py`'s own output, not retyped.
-- **R-029** — added when the compiled `print` line-fusion defect was measured, and moved to
-  `Mitigated` in this pass when the defect was fixed in `Arithmetic.print`. The body now carries
-  the before and after measurements and the mutation evidence.
-- **R-029's exposure in R-014's neighbourhood** — the widened compiled subset was re-derived at
-  218 of 223 executable, 0 divergences, which is the figure the entry about the four refused
-  builtins rests on.
-- **R-022** — re-read and confirmed still `Open`: `site/` does not exist in this tree, so the
-  versioned-docs script still writes somewhere that should not exist here.
+Every file path each entry cites was resolved against the tree by hand, once. All of them either
+exist or are absent exactly as the entry says: `gradle/verification-metadata.xml` and
+`site/versions.json` are cited for their absence, which is the point of R-019 and R-022. Paths
+written relative to `docs/governance/` were resolved from that directory.
 
-Every other entry was re-read and left unchanged, which is a claim about this pass rather than a
-claim that nothing is wrong with them. Three were checked further than a re-read because their
-controls are machine-checkable, and each check is named here so a reader can repeat it:
-R-023's keyword count is asserted against the lexer by `check-docs-sync.py`; R-027's 198 stdlib
-citations and R-028's slack bound in `WaitedBudgetTest` were read in the source, not assumed from
-the entry text. R-026's `inputs.property("operatingSystem", ...)` is present at `build.gradle.kts:78`,
-which is the control its body names.
+That check is not a gate. It has no exit status and no script, so it does not repeat on the next
+change, and nothing will notice if an entry starts citing a path that has since moved.
+`check-risk-register.py` verifies exposure arithmetic, summary counts and ID uniqueness — it does
+not resolve paths, so a row may cite a file that no longer exists and still pass.
 
-Note that the previous pin, `6954a86`, was accurate when written and is kept in the corrections
-section rather than here: this line states what has been verified, and only this pass has verified
-the whole register.
+**Cadence rule 2 asks for all 29 entries to be re-read at an Alpha boundary, and that re-read has
+still not been done.** It remains the first item of the Alpha 7 handoff rather than a claim made
+here. The reason to say so plainly is that this paragraph previously claimed the re-read had been
+performed and that four entries had changed; the review of PR #242 refuted both, and three entry
+bodies were found to hold numbers that a re-read would have corrected. Those three are fixed:
+
+- R-017 quoted `conformance/` as 229 cases. It holds 256.
+- R-023 quoted `Lexer.KEYWORDS` as 21 entries. It holds 22, and `check-docs-sync.py` — the gate the
+  same paragraph named — printed 22 throughout.
+- R-025 quoted `check-links.py` as 271 links. It reported 276 at the release commit.
+
+Those three are the argument for doing the re-read rather than asserting it: a whole-register read
+is a real task, and a paragraph claiming it had been done was the thing that let three stale
+numbers survive in a document whose purpose is to catch exactly that. The false claim was written
+by the release commit after an earlier commit in the same pull request had got it right, which is
+recorded in the corrections section below rather than tidied away.
 
 ## Corrections
 

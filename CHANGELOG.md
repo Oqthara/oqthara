@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiled path called `print(text)` and then `print(newline)`, two acquisitions, so two threads
   could interleave inside a single line. Reachable with nothing more than
   `use java.lang.Thread` and two threads that print: measured over 40 runs of 400-character lines,
-  the interpreter fused 0 of 40 and the compiled jar fused 40 of 40, producing 406 lines that were
-  not in the program. `Arithmetic.print` now issues one `println` and flushes, so both backends
-  fuse 0 of 40 and both print all 800 lines. `write` stays non-atomic, which is what it means.
+  the interpreter fused 0 of 40 and the compiled jar fused 40 of 40, at 4 to 30 fused lines per
+  run. `Arithmetic.print` now issues one `println` and flushes, so both backends fuse 0 of 40.
+  That one call is only atomic if it takes one lock, and `Arithmetic.out()` was a lazy singleton
+  that racing callers could each create: 175 of 200 trials saw more than one stream, now 0 of 200.
+  `write` stays non-atomic, which is what it means.
   Risk register R-029, moved to `Mitigated`.
 - **`sort_by` evaluated its key once per comparison instead of once per item.** For three items
   that was four calls, and a key with side effects ran an unbounded number of times:
@@ -1077,7 +1079,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 130 conformance cases plus unit tests for the lexer, parser, values and interpreter.
 - GitHub Actions CI across Linux, macOS and Windows on JDK 21 and 25.
 
-[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.4...HEAD
+[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.6...HEAD
+[0.1.0-alpha.6]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.6
+[0.1.0-alpha.5]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.2
