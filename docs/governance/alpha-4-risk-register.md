@@ -983,6 +983,18 @@ output budget (R-004), `eclipse-temurin` tags and the six workflow files (R-007,
 blocks in the specification (R-025), and `gradle/actions/setup-gradle@v6` (R-026). All nine cited
 `*Test` classes exist; all ten cited ADR paths exist; every `§` reference exists in the matrix.
 
+**One claim was challenged and survived.** R-029 and the concurrency accounting both assert a
+measurement that nothing in CI re-runs: that removing `spawn`, `await`, `done` and `par_map` from
+`Builtins.HOST_DEPENDENT` raises compiled conformance from 214 to 218 of 223 with 0 divergences.
+The first attempt to reproduce it here returned 214 compiled and 9 fallback — apparently a false
+claim in two documents. It was not. That run measured a jar built before the edit, so it was
+answering a question about the previous tree. Rebuilding after removing the four names returns
+`ok: 218 compiled, 5 fallback (223 of 223 executable), 0 divergences across 256 programs`, and
+`oq build` on a `spawn` program reports `codepath: compiled bytecode` rather than the interpreter
+launcher. The claim holds, and the lesson is recorded rather than the near-miss: a measurement
+that a document asks you to trust is worth re-running, and a stale build is the easiest way to
+manufacture a defect that is not there.
+
 That is the useful result and it is the harder one to report honestly: a re-read that finds six
 errors is not the same as a register that was half-wrong, and it is not the same as a register that
 is clean. It is a register whose remaining 29 entries survived an attempt to break them.
