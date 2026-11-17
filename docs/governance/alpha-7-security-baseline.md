@@ -65,6 +65,7 @@ evidence that it is closed, and the reason it is not first.
 
 ### A7.1 — Bound the compiled backend's reachability story, in the spec
 
+**State:** done, at the commit that carries this paragraph.
 **Closes:** nothing. **Prevents:** TH-15 recurring in a new document.
 
 `docs/spec/backend.md` and `docs/spec/language.md` both describe the backend boundary and both are
@@ -82,9 +83,20 @@ a test rather than drifting again.
 **Why first:** it is a paragraph and a test, it closes the highest-consequence finding of the
 re-read, and every other item is larger.
 
+**What was done.** `backend.md`'s boundary list now carries the paragraph, phrased as what
+compiling is *not*: "Compiling is a performance decision, not a containment one." It names the
+three measured escapes (`Files.readString`, `Runtime.exec`, `Class.forName`), states that a
+compiled jar has no step budget or host-call deadline, and states the asymmetry that a builtin is
+refused by name and `use` is not. `BuildCommandTest.useEscapesTheRefusalThatABuiltinTriggers`
+asserts both halves — `use java.lang.Class` with `Class.forName` builds `compiled bytecode`, and
+`print read("/etc/hosts")` builds an interpreter launcher reporting `is not compiled yet`. The
+test was mutation-checked by inverting its first assertion, which fails it, so it is not a test
+that would pass either way.
+
 ### A7.2 — Verify the threat model the way the risk register is verified
 
-**Closes:** the structural gap that let six facts go stale. **Prevents:** the same drift.
+**State:** done, in PR #244. **Closes:** the structural gap that let six facts go stale.
+**Prevents:** the same drift.
 
 `scripts/check-risk-register.py` exists because that register was found making claims nothing
 checked. The threat model has the identical blind spot and no gate at all: nothing in `scripts/`
@@ -100,6 +112,16 @@ register check. Its tests include a mutation that breaks the arithmetic and one 
 **Why second:** the mechanism is already built and proven once. The marginal cost is the parser,
 and the payoff is that this document stops being able to drift. It is second rather than first
 only because A7.1 is smaller.
+
+**What was done, and what it cost.** `scripts/check-threat-model.py` checks the four things above
+and runs at `ci.yml` beside the register check. 18 tests, mutation-tested seven ways. Building it
+turned up a finding worth recording here because it bears on the other items: reading the gate
+back found **three ways for a real check to stop checking while the build stayed green** — a
+total the parser could not read was silently skipped, an invented status word made a row vanish
+and blamed the summary instead of the status cell, and one of my own edits installed a check that
+did not exist. None was caught by a test, because every test mutated the *document* rather than
+the *checker*. Absence of a check is the failure mode this class of gate has, and it is invisible
+to the gate itself.
 
 ### A7.3 — `USER` in the Dockerfile, and a test that would fail without it
 

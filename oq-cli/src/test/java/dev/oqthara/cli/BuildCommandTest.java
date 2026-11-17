@@ -114,4 +114,36 @@ class BuildCommandTest {
         assertEquals(1, run.out().lines().filter(line -> line.startsWith("codepath:")).count(),
                 run.out());
     }
+
+    /**
+     * Pins the asymmetry {@code backend.md} now states instead of implying the opposite.
+     *
+     * The threat model's TH-15 recorded that "the compiler refuses {@code use}" was the reason
+     * a Java-interop program kept its budgets. ADR-0066 made {@code use} compile, so that reason
+     * stopped being true three releases before anyone noticed, and nothing failed. This test is
+     * what makes the reversal visible: the same capability reached through a builtin is refused
+     * by name, and reached through {@code use} is not.
+     *
+     * It asserts the documented behaviour, not the desired behaviour. If a future Alpha closes
+     * the gap, this test should be inverted deliberately rather than quietly deleted.
+     */
+    @Test
+    void useEscapesTheRefusalThatABuiltinTriggers(@TempDir Path dir) throws Exception {
+        Path throughUse = dir.resolve("through-use.oq");
+        Files.writeString(throughUse, """
+                use java.lang.Class
+                print Class.forName("java.lang.Runtime")
+                """);
+        Run compiled = build(throughUse.toString());
+        assertEquals(0, compiled.exit(), compiled.err());
+        assertTrue(compiled.out().contains("codepath: compiled bytecode"), compiled.out());
+
+        Path throughBuiltin = dir.resolve("through-builtin.oq");
+        Files.writeString(throughBuiltin, """
+                print read("/etc/hosts")
+                """);
+        Run launcher = build(throughBuiltin.toString());
+        assertTrue(launcher.out().contains("codepath: interpreter launcher"), launcher.out());
+        assertTrue(launcher.out().contains("is not compiled yet"), launcher.out());
+    }
 }
