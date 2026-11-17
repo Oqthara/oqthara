@@ -319,19 +319,6 @@ public final class Lowering {
     }
 
     /**
-     * Records the class a {@code use} statement binds, or refuses the statement with the reason
-     * it is not compiled.
-     *
-     * <p>A nested {@code use} is refused before its path is resolved. The interpreter registers
-     * the class in one program-wide map only when the statement runs, so {@code if flag} /
-     * {@code use java.lang.Math} / {@code end} leaves Math defined afterwards exactly when the
-     * branch was taken. A compiled name is resolved before the program starts and cannot be
-     * conditional, so the statement is refused rather than compiled into something that works
-     * with the branch taken and fails without it. Refusing first also means a nested {@code use}
-     * of a misspelled path reports the construct that is unsupported instead of blaming the
-     * spelling, which is what ADR-0062 asks of a diagnostic.
-     */
-    /**
      * Lowers a {@code use} statement into a run-time registration.
      *
      * <p>{@code Interpreter} keeps one program-wide map and fills it as the statement runs, so a

@@ -100,6 +100,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   name produced a Java stack trace where `oq run` produced a diagnostic.
 
 ### Changed
+- **`map`, `filter` and `sort_by` now compile.** They were listed in
+  `Builtins.HOST_DEPENDENT`, and the javadoc beside that list justified them by saying a
+  compiled class cannot create callable values yet. That is false: a compiled lambda is a
+  `runtime.CompiledFunction`, which `implements OqCallable`, and
+  `conformance/255-oqthara-callable-into-java.oq` already passed compiled lambdas into Java
+  and had Java call them back. None of the three reads or mutates state outside the program,
+  which is what the list is defined to mean, so the three names are removed and the calls
+  compile. `conformance/256-callable-builtins-compile.oq` pins an Oqthara lambda, a named
+  `fun`, a Java `Function.identity()` and a nested `map`; the conformance baseline moved from
+  219/210 to 223/214 with zero divergences. The four concurrency helpers stay refused, but
+  the reason first written down for that was also wrong and is corrected in
+  `docs/governance/alpha-6-conformance-fallback-accounting.md`: they run, and what breaks is
+  that compiled `print` acquires the output lock twice per line.
 - **`oq build` now reports a lowering error as a diagnostic instead of a stack trace.** A `use`
   naming a class that does not exist is resolved while lowering, inside `oq build`; the error
   reached the top level unhandled and printed a stack trace, where the same program under
