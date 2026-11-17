@@ -65,6 +65,7 @@ states both failure modes explicitly, and choosing the honest one is the mitigat
 | R-002 | Bytecode backend and interpreter diverge | Medium | High | High | 4 | Mitigated |
 | R-003 | Module errors in a compiled jar report spliced line numbers | High | Low | Low | 4 | Accepted |
 | R-004 | Compiled bytecode has no step budget, so only the heap bounds it | Medium | Medium | Medium | 4 | Accepted |
+| R-029 | A compiled program's `print` is not atomic, so concurrent writes fuse lines | Medium | Medium | Medium | 4 | Open |
 | R-005 | Compiler slot and constant-pool ceilings refuse large functions | Low | Low | Low | 4 | Accepted |
 
 **R-002 — Bytecode backend and interpreter diverge.**
@@ -75,11 +76,15 @@ difference is not, and the refusal list is large enough that a widening change c
 something that used to be interpreted differently.
 
 *Mitigation.* The interpreter is normative and the bytecode backend must either agree or refuse —
-rule 2 of `oq-hive-development`. The measured subset is pinned: `204 of 213` executable
+rule 2 of `oq-hive-development`. The measured subset is pinned: `214 of 223` executable
 conformance programs compile and produce byte-identical output, asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`, so the number cannot
 slide down silently. `scripts/verify-conformance.py` independently runs `oq run` and the built jar
-over the whole corpus with `BASELINE = {"executable": 213, "compiled": 203}` and fails on mismatch.
+over the whole corpus with `BASELINE = {"executable": 223, "compiled": 214}` and fails on mismatch.
+The figures were `204 of 213` with `{"executable": 213, "compiled": 203}` until Alpha 6 lowered
+`map`, `filter`, `sort_by` and a nested `use`, which moved nine cases from refused to compiled;
+they are re-measured from a failing run rather than typed, as `alpha-6-requirement-matrix.md`
+records.
 `JarBuilder`-produced jars are compared against the interpreter by `BuildJarTest`. The boundary is
 documented as an ordered list in `docs/spec/backend.md` "The current boundary", so widening it is a
 deliberate act with a paper trail.
@@ -131,6 +136,40 @@ not a sandbox.
 `oq-runtime/src/main/java/dev/oqthara/runtime/Arithmetic.java` `chargeWritten` ·
 `oq-runtime/src/main/java/dev/oqthara/runtime/OutputBudget.java` `MAX_BYTES = 16 MiB` ·
 `docs/spec/backend.md` "Two jar modes, chosen automatically".
+
+**R-029 — A compiled program's `print` is not atomic, so concurrent writes fuse lines.**
+The interpreter emits one line with a single `PrintStream.println`, holding the stream lock across
+the text and the newline together. The compiled backend lowers `print` to `Arithmetic.print`, which
+issues `out().print(text)` and then `out().print(newline)` — two lock acquisitions — so a second
+thread can write between them. This is not confined to the concurrency helpers: `use java.lang.Thread`
+is enough. Measured on a program with two 400-line threads, built with `oq build`:
+
+```
+interpreter  0 of 40 runs fused a line        (`java -jar oq.jar run t.oq`)
+compiled    41 fused lines per run, 5 of 5 runs   (`java -jar t.jar`)
+```
+
+Both backends printed all 800 lines, so the threads run on both paths; only the interleaving
+differs. A fused line is `AAAA…BBBB…`, which no program wrote.
+
+*Mitigation.* None for compiled output. The four concurrency builtins — `spawn`, `await`, `done`,
+`par_map` — stay in `Builtins.HOST_DEPENDENT`, so a program that reaches them falls back to the
+interpreter and keeps atomic lines. Alpha 6 tried to lower them and reverted when this measurement
+appeared, rather than shipping fused output to close a conformance counter
+(`alpha-6-conformance-fallback-accounting.md`). The javadoc in `Builtins` states the reason with the
+measurement, so the next attempt starts from evidence.
+
+*Why open rather than accepted.* Making compiled `print` atomic is a small change — one
+`out().println(text)`, or one lock held across both writes — but it alters the emitted code for
+every program, so it ships with its own regression test and a re-measured conformance baseline.
+That is a task, not a paragraph in a documentation pull request. Recorded here so it is not lost:
+the workaround is to reach for `oq run`, and nothing in the specification currently promises atomic
+lines on either path.
+
+*Evidence.* `oq-runtime/src/main/java/dev/oqthara/runtime/Arithmetic.java` `print` ·
+`oq-core/src/main/java/dev/oqthara/stdlib/Stdlib.java` `print` ·
+`docs/governance/alpha-6-conformance-fallback-accounting.md` "Concurrency remains refused, and for
+a reason this document got wrong first".
 
 **R-005 — Compiler slot and constant-pool ceilings refuse large functions.**
 `BytecodeCompiler.checkSlotLimit` throws `NotSupportedException("too many variables for one
@@ -750,9 +789,9 @@ deliverable rather than bolted onto the documentation gate that currently runs i
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 3 | R-002, R-008, R-024 |
-| Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-018, R-020, R-026, R-028 |
+| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-018, R-020, R-026, R-028, R-029 |
 | Low | 13 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-019, R-021, R-022, R-023, R-025, R-027 |
-| **Total** | **28** | |
+| **Total** | **29** | |
 
 ## Review cadence
 
@@ -762,7 +801,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 28 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 29 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to
@@ -779,7 +818,12 @@ admitted. Closing an entry to `Mitigated` requires a control that exists in the 
 path. Moving an entry to `Accepted` requires an ADR that records the refusal, because "accepted" is
 a decision and decisions in this repository have identifiers.
 
-**Last verified:** `6954a86` (merge of PR #138), 2026-11-12.
+**Last verified:** `6954a86` (merge of PR #138), 2026-11-12, for the register as a whole. Two
+entries were revisited since, and only those two: R-002's baseline was re-measured from 213/203 to
+223/214 after Alpha 6 widened the compiled subset, and R-029 was added when the compiled `print`
+line-fusion defect was measured. Cadence rule 2 asks for all 29 to be re-read at an Alpha boundary;
+that re-read has not been done, and is the first item of the Alpha 7 handoff rather than a claim
+made here.
 
 ## Corrections
 
