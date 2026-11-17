@@ -1033,8 +1033,16 @@ class BytecodeCompilerTest {
         // it fused in 40 of 40 runs, and a single run is cheap, but repetition keeps the test
         // honest if scheduling ever changes.
         for (int run = 1; run <= 3; run++) {
-            String out = runJar(jar, dir);
+            ProcessResult result = runJarProcess(jar, dir);
+            String out = result.stdout();
             List<String> lines = out.lines().toList();
+            // An uncaught exception in a worker thread still lets main exit 0 with no output, so
+            // the failure message has to carry the exit code and both streams or a failing run
+            // reports only "0 lines" and hides its cause.
+            String context = "run " + run + " exit=" + result.exit()
+                    + " stdout=" + lines.size() + " lines"
+                    + " stderr=" + (result.stderr().isBlank() ? "<empty>"
+                            : result.stderr().strip());
             List<String> fused = lines.stream()
                     .filter(line -> !line.chars().allMatch(c -> c == 'A')
                             && !line.chars().allMatch(c -> c == 'B'))
@@ -1044,11 +1052,11 @@ class BytecodeCompilerTest {
                     .toList());
             // Nothing may be lost or duplicated either: a fix that dropped lines would also
             // stop fusion while breaking the output contract.
-            assertEquals(800, lines.size(), "run " + run + " line count");
+            assertEquals(800, lines.size(), context + " -- line count");
             assertEquals(400, lines.stream().filter(l -> l.equals("A".repeat(400))).count(),
-                    "run " + run + " A lines");
+                    context + " -- A lines");
             assertEquals(400, lines.stream().filter(l -> l.equals("B".repeat(400))).count(),
-                    "run " + run + " B lines");
+                    context + " -- B lines");
         }
     }
 

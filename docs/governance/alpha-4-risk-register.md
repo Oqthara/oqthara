@@ -66,6 +66,7 @@ states both failure modes explicitly, and choosing the honest one is the mitigat
 | R-003 | Module errors in a compiled jar report spliced line numbers | High | Low | Low | 4 | Accepted |
 | R-004 | Compiled bytecode has no step budget, so only the heap bounds it | Medium | Medium | Medium | 4 | Accepted |
 | R-029 | A compiled program's `print` is not atomic, so concurrent writes fuse lines | Medium | Medium | Medium | 4 | Mitigated |
+| R-030 | A function argument can bind to an overload that cannot take code, so a callback silently never runs | Medium | High | High | 4 | Mitigated |
 | R-005 | Compiler slot and constant-pool ceilings refuse large functions | Low | Low | Low | 4 | Accepted |
 
 **R-002 — Bytecode backend and interpreter diverge.**
@@ -802,15 +803,45 @@ deliverable rather than bolted onto the documentation gate that currently runs i
 `scripts/check-links.py` (276 links) · the `Lexer` example in `docs/spec/language.md`
 "Interoperability with Java", which is the corrected form of the draft that failed.
 
+**R-030 — A function argument can bind to an overload that cannot take code, so a callback silently never runs.**
+The bridge converts any value to text, so `String` is a candidate destination for every argument.
+Overloads were scored such that a `String` parameter and a functional-interface parameter tied for a
+function argument, and the tie was broken by the order `getConstructors()` returned — an order no
+specification fixes and that the JDK has changed between releases. `Thread(() -> work())` therefore
+bound to `Thread(String)` on JDK 25: the function became the thread's *name*, `start()` and
+`join()` both succeeded, and the body never ran. The program exited 0 with no output and nothing on
+stderr, so every signal a user would check said the program was fine. The interpreter and the
+compiled backend agreed, because both go through the same bridge.
+
+*Why this is High impact rather than Medium.* The failure is silent and total. A missing or wrong
+callback result is a wrong answer; this is no answer at all, on a path the language presents as
+ordinary Java interop, with no exception and no diagnostic. It was found only because a test added
+for R-029 happened to run on a second JDK.
+
+*Mitigation.* A function argument now scores above `String` by 10 when the parameter is a
+functional interface, so the choice follows the arguments rather than reflection order.
+`JavaBridgeOverloadTest` pins it with a class that declares the text constructor first, which makes
+the test fail on the old scoring on *every* JDK instead of only JDK 25; removing the new branch
+fails it with `the function bound to Widget(String) instead of Widget(Runnable)`.
+
+*Evidence.* `./gradlew build --rerun-tasks` passes under Corretto 21.0.12.1 and Temurin 25.0.5,
+92.3% `oq-core` line coverage. A two-thread program prints 800 lines with 0 fused under both JDKs,
+in both backends.
+
+*What is still not covered.* This fixes the tie. It does not make overload resolution a match for
+the Java compiler's rules, and ambiguity is still resolved by list order when two non-`String`
+overloads score equally. Widening the compiler's ruleset is a larger change and is not attempted
+here; the specific silent-misbinding class is closed, the general ordering question is not.
+
 ## Summary by exposure
 
 | Exposure | Count | IDs |
 |---|---|---|
 | **Critical** | 1 | R-001 |
-| High | 3 | R-002, R-008, R-024 |
+| High | 4 | R-002, R-008, R-024, R-030 |
 | Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-018, R-020, R-026, R-028, R-029 |
 | Low | 13 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-019, R-021, R-022, R-023, R-025, R-027 |
-| **Total** | **29** | |
+| **Total** | **30** | |
 
 ## Review cadence
 
@@ -820,7 +851,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 29 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 30 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to
@@ -852,7 +883,7 @@ change, and nothing will notice if an entry starts citing a path that has since 
 `check-risk-register.py` verifies exposure arithmetic, summary counts and ID uniqueness — it does
 not resolve paths, so a row may cite a file that no longer exists and still pass.
 
-**Cadence rule 2 asks for all 29 entries to be re-read at an Alpha boundary, and that re-read has
+**Cadence rule 2 asks for all 30 entries to be re-read at an Alpha boundary, and that re-read has
 still not been done.** It remains the first item of the Alpha 7 handoff rather than a claim made
 here. The reason to say so plainly is that this paragraph previously claimed the re-read had been
 performed and that four entries had changed; the review of PR #242 refuted both, and three entry

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0-alpha.6] - 2026-11-17
 
 ### Fixed
+- **A function passed to `Thread` could become the thread's name instead of its body, so the
+  thread ran nothing.** `String` is a universal destination in the bridge because every value
+  renders as text, so `Thread(() -> work())` fitted both `Thread(Runnable)` and `Thread(String)`
+  and the two scored the same. Whichever `getConstructors()` listed first won, and no
+  specification fixes that order: JDK 21 lists `Runnable` first and JDK 25 lists `String` first.
+  On JDK 25 the thread started, ran nothing, and the program exited 0 with no output and nothing
+  on stderr. A function argument now outscores `String` when the parameter is a functional
+  interface. Both backends were affected; both are fixed and covered by `JavaBridgeOverloadTest`,
+  which fails on the old scoring on every JDK rather than only on JDK 25.
 - **A compiled multi-threaded program could emit lines no program wrote.** The interpreter writes
   a line with one `println`, holding the output lock across text and newline together; the
   compiled path called `print(text)` and then `print(newline)`, two acquisitions, so two threads
