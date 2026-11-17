@@ -115,6 +115,107 @@ class DefectsAreCaught(unittest.TestCase):
         self.assertTrue(any("no longer matches the checker" in p for p in problems), problems)
 
 
+class ACitedPathMustResolve(unittest.TestCase):
+    """The register's own stated blind spot: nothing resolved its citations.
+
+    It said its paths were checked "by hand, once" and that "nothing will notice
+    if an entry starts citing a path that has since moved". Three stale numbers
+    survived there. These tests are the notice.
+    """
+
+    def setUp(self):
+        self.text = REGISTER.read_text(encoding="utf-8")
+
+    def test_the_real_register_cites_only_paths_that_resolve(self):
+        self.assertEqual([], checker.check_citations(self.text))
+
+    def test_a_citation_that_resolves_nowhere_is_caught(self):
+        broken = self.text + "\nSee `oq-core/src/main/java/dev/oqthara/core/Ghost.java`.\n"
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("Ghost.java" in p for p in problems), problems)
+
+    def test_a_citation_that_resolves_nowhere_at_the_end_of_the_file_is_caught(self):
+        # The exemption table is a table, so only its two columns may be skipped.
+        # Slicing the document at its heading would let a late entry slide past,
+        # and a late entry is where an unchecked citation actually lands.
+        broken = self.text + "\n\n" + "x " * 200 + "`scripts/gone-script.py`\n"
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("gone-script.py" in p for p in problems), problems)
+
+    def test_a_renamed_citation_is_caught(self):
+        broken = self.text.replace(
+            "`oq-runtime/src/main/java/dev/oqthara/runtime/WaitedBudget.java`",
+            "`oq-runtime/src/main/java/dev/oqthara/runtime/OldBudget.java`", 1)
+        self.assertNotEqual(self.text, broken)
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("OldBudget.java" in p for p in problems), problems)
+
+    def test_an_exempted_path_that_starts_to_exist_is_caught(self):
+        # R-008 and R-022 are true only while their paths are absent, so a
+        # created file must fail the gate rather than quietly validate them.
+        # The document is built from the real heading, found by search, so this
+        # cannot pass against a heading the checker fails to recognise.
+        with tempfile.TemporaryDirectory() as workspace:
+            root = pathlib.Path(workspace)
+            (root / "no" / "such").mkdir(parents=True)
+            (root / "no" / "such" / "file.txt").write_text("", encoding="utf-8")
+            original = checker.ROOT
+            checker.ROOT = root
+            try:
+                problems = checker.check_citations(
+                    self.text.split("### Citations", 1)[0]
+                    + "\n" + self.heading(self.text) + "\n"
+                    + "\n| Path | Why |\n| --- | --- |\n"
+                    + "| `no/such/file.txt` | absent on purpose |\n"
+                    + "\n`no/such/file.txt` is cited.\n"
+                )
+            finally:
+                checker.ROOT = original
+        self.assertTrue(any("no/such/file.txt" in p and "now exists" in p for p in problems),
+                        problems)
+
+    def test_an_exemption_without_a_reason_is_caught(self):
+        broken = (self.text.split("### Citations", 1)[0]
+                  + "\n" + self.heading(self.text) + "\n"
+                  + "\n| Path | Why |\n| --- | --- |\n| `gone.txt` |   |\n")
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("without a stated reason" in p for p in problems), problems)
+
+    @staticmethod
+    def heading(text):
+        """The exemption heading as the document actually writes it."""
+        match = checker.EXEMPT_HEADING.search(text)
+        assert match is not None, "the real register has no exemption heading"
+        return match.group(0)
+
+    def test_the_exemption_heading_is_read_from_the_real_document(self):
+        # The register moved this section under a new subsection, from `##` to
+        # `###`. The checker matched a literal `## ` prefix, so it recognised
+        # nothing; both the skip and the reverse check went dead. Every test still
+        # passed because each one rebuilt the document from the same wrong
+        # constant. This test reads the document, not the constant.
+        match = checker.EXEMPT_HEADING.search(self.text)
+        self.assertIsNotNone(match, "the exemption section heading was not recognised")
+        self.assertTrue(match.group(0).endswith(checker.EXEMPT_TITLE), match.group(0))
+        self.assertEqual(3, len(match.group(0)) - len(match.group(0).lstrip("#")),
+                         f"expected the document's `###` heading, got {match.group(0)!r}")
+
+    def test_the_exemption_table_is_found_in_the_real_document(self):
+        exemptions = checker.parse_exemptions(self.text)
+        self.assertIn("gradle/verification-metadata.xml", exemptions)
+        self.assertIn("site/versions.json", exemptions)
+        self.assertIn("conformance/", exemptions)
+        for path, reason in exemptions.items():
+            self.assertTrue(reason.strip(), f"{path} has no stated reason")
+
+    def test_a_citation_after_the_exemption_table_is_still_checked(self):
+        # The skip must end at the table, not at the next `##` heading. This is
+        # the mutation that found the original off-by-one-level bug.
+        broken = self.text + "\n`scripts/deleted-elsewhere.py`\n"
+        problems = checker.check_citations(broken)
+        self.assertTrue(any("deleted-elsewhere.py" in p for p in problems), problems)
+
+
 class TheCommandLineBehaves(unittest.TestCase):
     def test_it_exits_zero_on_the_real_register(self):
         import subprocess

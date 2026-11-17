@@ -95,7 +95,7 @@ divergence between the two backends but cannot detect a shared misreading of the
 See R-008.
 
 *Evidence.* `docs/spec/backend.md` "The compiled subset, measured" · `scripts/verify-conformance.py`
-line 31 · `oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java` ·
+line 40 (`BASELINE`) · `oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java` ·
 `oq-cli/src/test/java/dev/oqthara/cli/BuildJarTest.java`.
 
 **R-003 — Module errors in a compiled jar report spliced line numbers.**
@@ -204,8 +204,14 @@ by name in the `oq build` output.
 *Why accepted.* The limit is the class-file format's, not the project's. Widening it means
 splitting methods, which changes debugging fidelity for a case no conformance program reaches.
 
-*Evidence.* `oq-compiler/src/main/java/dev/oqthara/compiler/BytecodeCompiler.java` line 553
-(`checkSlotLimit`), line 594.
+*Evidence.* `oq-compiler/src/main/java/dev/oqthara/compiler/BytecodeCompiler.java` line 588 and
+line 627 (both `throw new NotSupportedException("too many variables for one method")`), line 586
+(`checkSlotLimit`), line 1584 (the 65535 constant-pool refusal).
+
+The line numbers here were wrong until the Alpha 7 boundary re-read. They read "line 553
+(`checkSlotLimit`), line 594", which by then pointed at `needsScratchList` and a comment. That is
+exactly the failure mode R-027 describes: the citation still resolved to real code, so it read as
+verified while supporting nothing.
 
 ### Dependencies and portability
 
@@ -217,10 +223,17 @@ splitting methods, which changes debugging fidelity for a case no conformance pr
 
 **R-006 — SQLite is the first external runtime dependency and multiplies the artifact size.**
 `org.xerial:sqlite-jdbc:3.45.3.0` plus `org.slf4j:slf4j-nop:2.0.13` are the only external runtime
-dependencies in the project, and they take the standalone jar from 435 KB to 13.5 MB. Every built
-program that carries the driver now costs the same 13.5 MB, because `JarBuilder` copies both
+dependencies in the project, and they take the standalone jar from 435 KB to 12,821,046 bytes
+(12.82 MB / 12.23 MiB), measured at `b5e758f`. Every built
+program that carries the driver now costs the same size, because `JarBuilder` copies both
 `dev.oqthara` and `org.sqlite`/`org.slf4j` prefixes. A build that previously produced a small jar
 now produces a large one, and the size is invisible until someone looks.
+
+The figure was written as 13.5 MB and restated that way in ADR-0040 five times. The Alpha 7
+boundary re-read measured the jar and found 12.82 MB, so the number was 5% high in every place it
+appeared. It is given in bytes above because MB and MiB are both plausible readings of "13.5 MB"
+and neither matches: 12.82 MB is 12.23 MiB, and the claim was wrong in both units. The original
+435 KB baseline is left as ADR-0040 recorded it and was not independently re-measured.
 
 *Mitigation.* Recorded as a decision with its cost stated, not absorbed silently: ADR-0040 D1.
 The dependency is one driver and one no-op logging binding, not a JDBC stack — general JDBC,
@@ -231,7 +244,8 @@ output with the interpreter's, so the packaging change is pinned by a test rathe
 which is a larger liability than a maintained driver.
 
 *Evidence.* `docs/adr/0040-database-support.md` D1 · `oq-stdlib/build.gradle.kts` ·
-`docs/governance/alpha-4-requirement-matrix.md` `§17` (435 KB → 13.5 MB).
+`oq-cli/build/libs/oq.jar` (12,821,046 bytes at `b5e758f`) ·
+`docs/governance/alpha-4-requirement-matrix.md` `§17`.
 
 **R-007 — The JNI driver makes Alpine/musl unsupported.**
 The first JNI dependency in the project means the driver's native library must match the platform.
@@ -326,7 +340,7 @@ not an implementation detail, and ADR-0039 D4 records the refusal with reasons.
 `read`, `save`, `delete`, `run_command`, `env`, `http_get` and the rest resolve paths against the
 working directory and then permit anything: absolute paths pass through `Stdlib.resolve`, which
 applies `.normalize()` and no root confinement. `OqHost` — the entire host boundary — declares
-seven methods and no permission hook, no allow-list, and no sandbox. `run_command` takes one
+six methods and no permission hook, no allow-list, and no sandbox. `run_command` takes one
 executable path and never goes through a shell, which removes shell-injection as a class, but the
 executable itself is arbitrary.
 
@@ -359,11 +373,18 @@ table · `SECURITY.md` "Scope" · `oq-runtime/src/main/java/dev/oqthara/runtime/
 **R-012 — Standard-library breadth has no denominator.**
 "Broad standard library" is a requirement that cannot currently be measured, because nothing states
 how many functions the reference language has. The matrix is explicit: "Still unmeasured against the
-Python reference, so 'breadth' has no denominator." What is measured is the count on this side — 89
-global functions and eight method families — which answers "how much is there" and not "how much is
+Python reference, so 'breadth' has no denominator." What is measured is the count on this side — 205
+global functions and nine method families — which answers "how much is there" and not "how much is
 missing". Three whole domains were recently found absent (encoding, hashing, and a filesystem group)
 after the library had been described as broad, which is the failure mode the missing denominator
 produces.
+
+This entry carried "89 global functions and eight method families" until the Alpha 7 boundary
+re-read. Both numbers were stale, and `alpha-4-stdlib-inventory.md` had already corrected them and
+said so in its own text, which is the argument this entry makes: the register was quoting a figure
+the companion document had retracted. The 89 was never the generated count — the reference produced
+when it was written already listed 98 — and the method families have been nine since
+`numberMethod` was added.
 
 *Mitigation.* None beyond the honesty. The count is regenerated and checked:
 `scripts/check-docs-sync.py` verifies the generated reference against the implementation, and `oq
@@ -635,33 +656,50 @@ existing gate.
 
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
 |---|---|---|---|---|---|---|
-| R-020 | Installer verifies integrity but not authenticity | Low | High | Medium | 9 | Accepted |
+| R-020 | The POSIX installer verifies authenticity but the PowerShell one verifies only integrity | Low | High | Medium | 9 | Open |
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
-| R-023 | Keyword count is stated two ways across four documents | High | Low | Low | 1 | Open |
+| R-023 | Keyword count is stated two ways across five documents | High | Low | Low | 1 | Open |
 | R-027 | Line-number citations in the stdlib inventory drift silently | High | Low | Low | 16 | Open |
 | R-025 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
 
-**R-020 — Installer verifies integrity but not authenticity.**
-`scripts/install.sh` downloads `oq.jar` and `oq.jar.sha256` from the *same* GitHub release, checks the
-digest, then runs `java -jar … --version` as a smoke test. `scripts/install.ps1` does the same with
-`Get-FileHash -Algorithm SHA256`. The digest proves the bytes arrived unaltered; it does not prove who
-produced them, because an attacker who can replace the jar can replace the checksum beside it. There
-is no signature, no pinned public key, no Sigstore attestation and no Authenticode signature on the
-Windows path.
+**R-020 — The installers differ: POSIX verifies authenticity, PowerShell verifies only integrity.**
+`scripts/install.sh` downloads three release assets — the jar, its `.sha256` checksum and its Sigstore
+bundle, via `sha_url` and `sig_url` — checks the
+digest, and then — if `cosign` is on `PATH` — runs `cosign verify-blob --bundle` against the Sigstore
+bundle, reporting "Signature verified (cosign, keyless signer)". If `cosign` is absent it prints an
+explicit warning that the SHA-256 "detects corruption and NOT tampering", and
+`OQ_REQUIRE_SIGNATURE=1` turns that into a hard failure. `OQ_REQUIRE_SIGNATURE` is the only path that
+makes authenticity mandatory, and it is off by default.
 
-*Mitigation.* The window is narrow: the assets live on GitHub's release infrastructure, the release
-workflow regenerates the checksum from the built jar in a fresh directory and verifies it with
-`sha256sum -c`, and the artifact is smoke-tested on a clean runner path before publication. The
-checksum catches transport corruption and a truncated download, which is the common case and is
-covered by `scripts/tests/run-installer-tests.sh` including a deliberately truncated response.
+`scripts/install.ps1` does not do this. It fetches `oq.jar` and `oq.jar.sha256` and checks
+`Get-FileHash -Algorithm SHA256`; it never fetches the bundle, never invokes `cosign`, and has no
+`OQ_REQUIRE_SIGNATURE` equivalent. So on Windows the digest proves the bytes arrived unaltered and
+nothing proves who produced them, because an attacker who can replace the jar can replace the
+checksum beside it. There is also no Authenticode signature on `install.ps1` itself.
 
-*Why accepted.* Signing needs a key with a custody story, and a self-issued key in a public
-repository proves very little. Recorded rather than claimed as solved.
+The release side is no longer the gap this entry originally described. `.github/workflows/release.yml`
+holds `id-token: write`, signs with `cosign sign-blob --bundle` into a Sigstore bundle beside the jar,
+and publishes three assets; `scripts/verify-signature.sh` is exercised by a step that tampers with the
+jar and asserts verification then fails. `v0.1.0-alpha.6` shipped all three assets. The gap moved from
+"nothing is signed" to "one of the two installers does not check the signature that now exists".
 
-*Evidence.* `scripts/install.sh` (checksum fetch, `sha256_of`, smoke test) · `scripts/install.ps1` ·
-`scripts/tests/run-installer-tests.sh` · `.github/workflows/release.yml` Checksums and
-"Gate - verify the checksum in a fresh directory" steps.
+*Mitigation.* The window is narrow on both platforms: the assets live on GitHub's release
+infrastructure, the release workflow regenerates the checksum from the built jar in a fresh directory
+and verifies it with `sha256sum -c`, and the artifact is smoke-tested on a clean runner path before
+publication. The checksum catches transport corruption and a truncated download, which is the common
+case and is covered by `scripts/tests/run-installer-tests.sh` including a deliberately truncated
+response. On the POSIX path, Sigstore signing closes authenticity whenever `cosign` is present.
+
+*Why open.* Closing it means porting the bundle fetch and the `cosign verify-blob` call to
+`scripts/install.ps1`, which cannot be verified from macOS: `cosign` and PowerShell are both needed,
+and the repository has no Windows machine that runs the installer tests. Recording it as open is
+honest about that; recording it as accepted would imply the asymmetry is deliberate.
+
+*Evidence.* `scripts/install.sh` (`sig_url`, `cosign verify-blob`, `OQ_REQUIRE_SIGNATURE`) ·
+`scripts/install.ps1` (`Get-FileHash` only, no `sigstore` reference) · `scripts/verify-signature.sh` ·
+`scripts/tests/run-installer-tests.sh` · `.github/workflows/release.yml` (`id-token: write`, Install
+cosign, `cosign sign-blob`, the tamper step, asset list).
 
 **R-021 — No update or rollback path; re-running the installer is the only upgrade.**
 There is no `oq update`, no version manager, no rollback to a previous release, and no bundled JDK —
@@ -697,13 +735,19 @@ README corrected. Both are one-line decisions that have not been taken.
 absence of `site/` · `scripts/README.md` Documentation table ·
 `docs/adr/0011-standalone-website-repository.md`.
 
-**R-023 — Keyword count is stated two ways across four documents.**
+**R-023 — Keyword count is stated two ways across five documents.**
 `Lexer.KEYWORDS` holds 22 entries. `docs/stdlib/reference.md` says "22 keywords (budget: 30)" and
-`CONTRIBUTING.md` says "The keyword budget is 30; we are at 21" — both correct, and
+`CONTRIBUTING.md` says "The keyword budget is 30; we are at 22" — both correct, and
 `scripts/check-docs-sync.py` keeps them correct. But `AGENTS.md` says "budget 30, now 20", and two
 agent files (`oq-hive-orchestrator`, `oq-hive-language-syntax`) repeat "It currently uses 20." So two
-of the four statements are correct and two are stale, and the ones checked by CI are not the ones an
+of the five statements are correct and three are stale, and the ones checked by CI are not the ones an
 agent reads first.
+
+This entry was itself one of the stale statements until the Alpha 7 boundary re-read: it quoted
+`CONTRIBUTING.md` as saying "we are at 21" and counted four statements in four documents, when there
+are five statements in five documents and the contributing file already said 22. That is the whole
+risk occurring inside the document that records it, and it is the second consecutive re-read to find
+this entry describing a document it had not re-opened.
 
 *Mitigation.* `scripts/check-docs-sync.py` cross-checks the reference against `Lexer.KEYWORDS` and
 against `CONTRIBUTING.md`, so the machine-readable pair cannot drift. The agent-facing statements have
@@ -873,32 +917,91 @@ entry was revised after that pin: R-029, added when the compiled `print` line-fu
 measured, moved to `Mitigated` when `Arithmetic.print` was made to write one line per call. Its
 body carries the before and after measurements and the mutation evidence.
 
-Every file path each entry cites was resolved against the tree by hand, once. All of them either
-exist or are absent exactly as the entry says: `gradle/verification-metadata.xml` and
-`site/versions.json` are cited for their absence, which is the point of R-019 and R-022. Paths
-written relative to `docs/governance/` were resolved from that directory.
+Every file path each entry cites now resolves, and every path an entry cites for its absence is
+absent. This is checked by `scripts/check-risk-register.py`, which runs in CI, so it repeats on every
+change instead of once by hand. Paths written relative to `docs/governance/` are resolved from that
+directory, and a bare file name such as R-003's `Stdlib.java` is resolved against the well-known
+source directories. A path that resolves nowhere fails the gate unless the table below exempts it.
 
-That check is not a gate. It has no exit status and no script, so it does not repeat on the next
-change, and nothing will notice if an entry starts citing a path that has since moved.
-`check-risk-register.py` verifies exposure arithmetic, summary counts and ID uniqueness — it does
-not resolve paths, so a row may cite a file that no longer exists and still pass.
+The two paths that are cited *because* they do not exist are listed here rather than special-cased
+in the script, so the exemption is a visible edit a reviewer reads, and so it is checked in both
+directions: an exempted path that starts to exist fails the gate too, because R-019 and R-022 are
+only true while their paths are absent.
 
-**Cadence rule 2 asks for all 30 entries to be re-read at an Alpha boundary, and that re-read has
-still not been done.** It remains the first item of the Alpha 7 handoff rather than a claim made
-here. The reason to say so plainly is that this paragraph previously claimed the re-read had been
-performed and that four entries had changed; the review of PR #242 refuted both, and three entry
-bodies were found to hold numbers that a re-read would have corrected. Those three are fixed:
+### Citations that intentionally do not resolve
 
-- R-017 quoted `conformance/` as 229 cases. It holds 256.
-- R-023 quoted `Lexer.KEYWORDS` as 21 entries. It holds 22, and `check-docs-sync.py` — the gate the
-  same paragraph named — printed 22 throughout.
-- R-025 quoted `check-links.py` as 271 links. It reported 276 at the release commit.
+| Path | Why it is cited anyway |
+| --- | --- |
+| `gradle/verification-metadata.xml` | Its absence is R-008: there is no dependency-verification manifest, so Gradle resolves dependencies by coordinate with no checksums. Creating it resolves the entry and must retire the row, not just the citation. |
+| `site/versions.json` | Its absence is R-022: `scripts/build-versioned-docs.py` writes a versioned bundle into a `site/` tree that this repository does not have, because the website was extracted by ADR-0011. Creating it makes the entry false. |
+| `conformance/` | A directory, cited by R-017 for the number of cases it holds rather than for its own existence. |
 
-Those three are the argument for doing the re-read rather than asserting it: a whole-register read
-is a real task, and a paragraph claiming it had been done was the thing that let three stale
-numbers survive in a document whose purpose is to catch exactly that. The false claim was written
-by the release commit after an earlier commit in the same pull request had got it right, which is
-recorded in the corrections section below rather than tidied away.
+### The Alpha 7 boundary re-read
+
+Cadence rule 2 asks for all 30 entries to be re-read at an Alpha boundary. It was done, on
+2026-11-17, at `b5e758f` (`v0.1.0-alpha.6`), and this subsection is its record rather than a claim
+that it will happen.
+
+The method was to re-derive each entry's numbers from the tree instead of reading the entry and
+agreeing with it. That distinction is the whole point: this paragraph previously said the re-read
+had been performed and that four entries had changed, the review of PR #242 refuted both, and three
+bodies were then found to hold numbers a re-read would have corrected. Re-reading a stale number
+and recognising it confirms nothing; only re-running the count does.
+
+**Six facts were wrong and are now fixed.** Each repaired entry carries its own paragraph naming
+what changed and why, so the correction is auditable rather than silent:
+
+| Entry | Was | Now | How it was re-derived |
+| --- | --- | --- | --- |
+| R-002 | `verify-conformance.py` line 31 | line 40 (`BASELINE`) | Read the file; line 31 is `ROOT = …`. |
+| R-005 | "line 553 (`checkSlotLimit`), line 594" | lines 588 and 627 (the throws), 586, 1584 | Read the file; 553 is `needsScratchList` and 594 a comment. |
+| R-006 | "435 KB to 13.5 MB" | 12,821,046 bytes (12.82 MB / 12.23 MiB) | `ls -l` on the jar built at `b5e758f`. |
+| R-011 | "declares seven methods" | six methods | Counted the methods in `OqHost`. |
+| R-012 | "89 global functions and eight method families" | 205 and nine | Generated `docs/stdlib/reference.md`; counted families in the inventory. |
+| R-023 | "four documents", quoting CONTRIBUTING as "21" | five documents, quoting "22" | Read `CONTRIBUTING.md`; it already said 22. |
+
+R-023 is the sharpest of the six. Its own body quotes `CONTRIBUTING.md` and got the quoted number
+wrong, so the entry about a keyword count stated two ways was itself a third statement of it.
+
+**One status changed.** R-020 moved `Accepted` → `Open`. This was not a likelihood or impact
+revision: the exposure stays Low × High = Medium, and the matrix arithmetic is unaffected. What
+changed is that the entry's premise became false. It read "installer verifies integrity but not
+authenticity", and the Alpha 6 release added Sigstore signing plus `cosign verify-blob` to
+`scripts/install.sh`. Authenticity is now checked on the POSIX path, so the risk is no longer the
+one that was accepted; what remains is that `scripts/install.ps1` does not check the signature that
+now exists. Calling that `Accepted` would imply the asymmetry is deliberate. It is not.
+
+**Twenty-nine entries were re-derived and held.** Every remaining rating, count and citation was
+checked against the tree and found accurate, so no rating was changed for the sake of appearing
+thorough. Specifically re-measured rather than taken on trust: all 18 agent files — 12 under
+`.kilo/agents/` and the six Hive roles — pin one model, and the count of 8 refers to `@FuzzTest`
+methods across 5 classes rather than to files (R-001); the CodeQL cron (R-001, R-018); the
+50,000,000-step budget and 16 MiB
+output budget (R-004), `eclipse-temurin` tags and the six workflow files (R-007, R-008),
+`MAX_SLEEP_MILLIS = 10_000` and `WaitedBudget.MAX_MILLIS = 60_000` (R-010), 256 conformance cases
+(R-017), the 80% coverage gate and its scope (R-019), the 12 required contexts (R-024), 146 fenced
+blocks in the specification (R-025), and `gradle/actions/setup-gradle@v6` (R-026). All nine cited
+`*Test` classes exist; all ten cited ADR paths exist; every `§` reference exists in the matrix.
+
+**One claim was challenged and survived.** R-029 and the concurrency accounting both assert a
+measurement that nothing in CI re-runs: that removing `spawn`, `await`, `done` and `par_map` from
+`Builtins.HOST_DEPENDENT` raises compiled conformance from 214 to 218 of 223 with 0 divergences.
+The first attempt to reproduce it here returned 214 compiled and 9 fallback — apparently a false
+claim in two documents. It was not. That run measured a jar built before the edit, so it was
+answering a question about the previous tree. Rebuilding after removing the four names returns
+`ok: 218 compiled, 5 fallback (223 of 223 executable), 0 divergences across 256 programs`, and
+`oq build` on a `spawn` program reports `codepath: compiled bytecode` rather than the interpreter
+launcher. The claim holds, and the lesson is recorded rather than the near-miss: a measurement
+that a document asks you to trust is worth re-running, and a stale build is the easiest way to
+manufacture a defect that is not there.
+
+That is the useful result and it is the harder one to report honestly: a re-read that finds six
+errors is not the same as a register that was half-wrong, and it is not the same as a register that
+is clean. It is a register whose remaining 29 entries survived an attempt to break them.
+
+The false claim that started this — a paragraph asserting the re-read had been done — is recorded in
+the corrections section below rather than tidied away, because the document's purpose is to catch
+exactly that kind of assertion and it failed to catch its own.
 
 ## Corrections
 
