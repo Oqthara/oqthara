@@ -3,7 +3,7 @@
 **Status:** Accepted, partly superseded by [ADR-0066](0066-use-registers-at-runtime.md)
 **Date:** 2026-11-16
 
-> **Superseded in part (2026-11-21).** ADR-0066 removes the two refusals recorded under
+> **Superseded in part (2026-11-17).** ADR-0066 removes the two refusals recorded under
 > §A `use` below the top level is refused and replaces them with a run-time registry, so the
 > decision below that a `use` names a class value, and that a variable of the same name
 > shadows it, still stands. Everything about refusing a nested or repeated `use` does not.

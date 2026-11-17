@@ -22,14 +22,17 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@code list_sort} from ADR-0049.
+ * Keyed sorting: {@code sort_by} and {@code list_sort}, from ADR-0060 and ADR-0067.
  *
- * <p>The reason this builtin exists is stated as a test rather than a comment: {@code sort_by}
- * evaluates its key once per comparison, so a key with side effects consumes a different value
- * at every comparison and the sort can return an order unrelated to the input.
- * {@link #sortByStillEvaluatesItsKeyPerComparison()} pins that wrong answer, and
- * {@link #aStatefulKeyGetsTheSameOrderItWouldHaveGotFromOneCallPerItem()} pins the right one
- * from the same key, so the difference between the two builtins is reproducible from a test.
+ * <p>The reason {@code list_sort} exists was once stated as a test rather than a comment:
+ * {@code sort_by} evaluated its key once per comparison, so a key with side effects consumed a
+ * different value at every comparison and the sort could return an order unrelated to the input.
+ * ADR-0067 moved {@code sort_by} onto the same decorate path, so both builtins now cache one key
+ * per item and the old contrast is gone.
+ *
+ * <p>{@link #sortByCallsItsKeyOncePerItem()} and {@link #theKeyIsCalledOncePerItem()} assert the
+ * same contract for the two names; they are kept separate because the two builtins have
+ * separate argument rules and a regression in one must not be masked by the other.
  *
  * <p>{@link #theKeyIsCalledOncePerItem()} counts the calls rather than asserting a symptom,
  * because the count is the contract. Ten items must cost ten calls whatever the input order is;
@@ -159,21 +162,22 @@ class ListSortTest {
     }
 
     /**
-     * The same stateful key through {@code sort_by}, pinned to today's wrong answer.
+     * The defect this test used to pin, now asserted as fixed (ADR-0067).
      *
-     * <p>This is not an endorsement: it records that {@code sort_by} still evaluates its key per
-     * comparison, so the reason for {@code list_sort} is reproducible from a test rather than
-     * only from a comment. If {@code sort_by} is later moved onto the same decorate path, this
-     * test must be updated with it, because the two rows would finally agree.
+     * <p>Before ADR-0067 the key was called on every comparison, so a counter key on
+     * {@code [10, 20, 30]} returned {@code [30, 20, 10]} — the reverse of the input, decided by
+     * evaluation order. The assertion is the same one, so the test still bites if the key is
+     * moved back onto the comparison path. It is kept separate from
+     * {@link #aStatefulKeyGetsTheSameOrderItWouldHaveGotFromOneCallPerItem()} because the two
+     * builtins have separate argument rules, and a regression in one must not be masked by the
+     * other.
      */
     @Test
-    void sortByStillEvaluatesItsKeyPerComparison() {
+    void sortByCallsItsKeyOncePerItem() {
         AtomicInteger calls = new AtomicInteger();
         List<Object> result = asList(call("sort_by", list(10L, 20L, 30L), countingKey(calls)));
-        assertEquals(list(30L, 20L, 10L), result);
-        assertTrue(calls.get() > 3, "sort_by now caches keys, which is the fix this pin records; "
-                + "delete or update this test together with that change. It called the key "
-                + calls.get() + " times.");
+        assertEquals(list(10L, 20L, 30L), result);
+        assertEquals(3, calls.get(), "the key must be called once per item, in input order");
     }
 
     @Test
@@ -181,6 +185,27 @@ class ListSortTest {
         List<Object> result = asList(call("list_sort", list("bbb", "a", "cc"),
                 key((callHost, args, span) -> (long) ((String) args.get(0)).length())));
         assertEquals(list("a", "cc", "bbb"), result);
+    }
+
+    /** The same edge cases through {@code sort_by}, which shares the decorate path since ADR-0067. */
+    @Test
+    void sortByKeepsEmptyAndSingleItemLists() {
+        AtomicInteger calls = new AtomicInteger();
+        assertEquals(list(), asList(call("sort_by", list(), countingKey(calls))));
+        assertEquals(0, calls.get(), "an empty list needs no key calls");
+        assertEquals(list(7L), asList(call("sort_by", list(7L), countingKey(calls))));
+        assertEquals(1, calls.get(), "a single item needs exactly one key call");
+    }
+
+    @Test
+    void sortByKeepsDuplicatesAndEqualKeyOrder() {
+        assertEquals(list(1L, 2L, 2L),
+                asList(call("sort_by", list(2L, 1L, 2L), key((h, a, s) -> a.get(0)))));
+        List<Object> first = list("first");
+        List<Object> second = list("second");
+        List<Object> third = list("third");
+        assertEquals(list(first, second, third),
+                asList(call("sort_by", list(first, second, third), key((h, a, s) -> 0L))));
     }
 
     @Test

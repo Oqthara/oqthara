@@ -1,7 +1,7 @@
 # ADR-0065 — Reflection stays unexposed by name
 
 **Status:** Accepted
-**Date:** 2026-11-21
+**Date:** 2026-11-16
 **Related:** ADR-0027 (classes and contracts, which first narrowed `Class`),
 [`language.md`](../spec/language.md) §What the boundary does not restrict,
 [`alpha-5-java-bridge-capability-inventory.md`](../governance/alpha-5-java-bridge-capability-inventory.md)

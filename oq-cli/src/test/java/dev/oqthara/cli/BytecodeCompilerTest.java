@@ -990,6 +990,77 @@ class BytecodeCompilerTest {
     }
 
     @Test
+    void compiledPrintKeepsEachLineAtomicAcrossThreads(@TempDir Path dir) throws Exception {
+        // R-029: `Arithmetic.print` used to issue `print(text)` and then `print(newline)`, two
+        // lock acquisitions, so a second thread could write between them and fuse two threads'
+        // lines into one no program printed. The interpreter issues one `println` and never
+        // fused. This pins the fix the only way that proves it: two real threads in a real
+        // compiled jar. A unit-level mock of the stream would pass against the broken form,
+        // because the defect only appears when two threads actually contend.
+        String source = """
+                use java.lang.Thread
+                fun pad(ch, n)
+                  s = ""
+                  i = 0
+                  while i < n
+                    s = s + ch
+                    i = i + 1
+                  end
+                  return s
+                end
+                a = pad("A", 400)
+                b = pad("B", 400)
+                fun emit(mark)
+                  i = 0
+                  while i < 400
+                    print mark
+                    i = i + 1
+                  end
+                end
+                t1 = Thread(() -> emit(a))
+                t2 = Thread(() -> emit(b))
+                t1.start()
+                t2.start()
+                t1.join()
+                t2.join()
+                """;
+        String reason = BytecodeCompiler.whyNot(ir(source));
+        assertNull(reason, "expected the two-thread program to compile, refused because: " + reason);
+        byte[] compiled = BytecodeCompiler.compile(ir(source), "oq.generated.Program");
+        Path jar = dir.resolve("threads.jar");
+        JarBuilder.build(jar, "oq.generated.Program", source, "threads.oq", compiled);
+        // Several runs: the defect is a race, so one clean run is not evidence. Before the fix
+        // it fused in 40 of 40 runs, and a single run is cheap, but repetition keeps the test
+        // honest if scheduling ever changes.
+        for (int run = 1; run <= 3; run++) {
+            ProcessResult result = runJarProcess(jar, dir);
+            String out = result.stdout();
+            List<String> lines = out.lines().toList();
+            // An uncaught exception in a worker thread still lets main exit 0 with no output, so
+            // the failure message has to carry the exit code and both streams or a failing run
+            // reports only "0 lines" and hides its cause.
+            String context = "run " + run + " exit=" + result.exit()
+                    + " stdout=" + lines.size() + " lines"
+                    + " stderr=" + (result.stderr().isBlank() ? "<empty>"
+                            : result.stderr().strip());
+            List<String> fused = lines.stream()
+                    .filter(line -> !line.chars().allMatch(c -> c == 'A')
+                            && !line.chars().allMatch(c -> c == 'B'))
+                    .toList();
+            assertEquals(List.of(), fused, "run " + run + " fused lines: " + fused.stream()
+                    .map(l -> l.length() <= 24 ? l : l.substring(0, 12) + "..." + l.substring(l.length() - 12))
+                    .toList());
+            // Nothing may be lost or duplicated either: a fix that dropped lines would also
+            // stop fusion while breaking the output contract.
+            assertEquals(800, lines.size(), context + " -- line count");
+            assertEquals(400, lines.stream().filter(l -> l.equals("A".repeat(400))).count(),
+                    context + " -- A lines");
+            assertEquals(400, lines.stream().filter(l -> l.equals("B".repeat(400))).count(),
+                    context + " -- B lines");
+        }
+    }
+
+    @Test
     void compilesPrintAndWriteInExpressionPosition(@TempDir Path dir) throws Exception {
         // A print call is an ordinary expression whose value is `nothing`: the compiled call
         // must leave that value on the stack even though the helper itself is void.
@@ -1515,7 +1586,7 @@ class BytecodeCompilerTest {
         }
         assertEquals(214, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-21: 214 compiled / 9 fallback / 0 divergences over 256 programs
+        // Measured 2026-11-17: 214 compiled / 9 fallback / 0 divergences over 256 programs
         // (223 executable). 256-callable-builtins-compile pins that `map`, `filter` and
         // `sort_by` accept a compiled lambda: `Builtins.HOST_DEPENDENT` had listed the three
         // on the false premise that a compiled class cannot create a callable, but a compiled
@@ -1523,7 +1594,7 @@ class BytecodeCompilerTest {
         // the last declared probe fallback, so `map`/`filter`/`sort_by` in free-function form
         // now compile; only the concurrency helpers still need the interpreter's scheduler.
         //
-        // Previous measurement, also 2026-11-21: 213 compiled / 9 fallback / 0 divergences
+        // Previous measurement, also 2026-11-17: 213 compiled / 9 fallback / 0 divergences
         // over 255 programs (222 executable). `use` now lowers to a run-time registration
         // (ADR-0066), so 250-use-registers-at-runtime compiles and the three new .err cases
         // join the comparison without joining the executable set. 254 and 255 pin the two

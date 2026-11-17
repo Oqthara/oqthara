@@ -667,6 +667,16 @@ public final class JavaBridge {
      * argument, except a varargs one, whose trailing array stands for zero or more. Those
      * arguments are scored against the array's component type, so a varargs call is ranked by
      * the same rules as a fixed one instead of reading past the argument list.
+     *
+     * <p>A function argument outranks {@code String}, because {@code String} accepts everything
+     * and must not be able to win a tie. {@code convert} turns any value into text, so
+     * {@code Thread(() -> work())} fitted both {@code Thread(Runnable)} and
+     * {@code Thread(String)} and the two scored the same; which one won came down to the order
+     * {@code getConstructors()} happened to return, which the specification does not fix and
+     * the JDK has changed. On JDK 25 that order put {@code Thread(String)} first, so the
+     * function became the thread's *name* and the thread body never ran: the program exited 0
+     * with no output and no error. An argument that a functional interface can take as code is
+     * now strictly better than one that can only stringify it.
      */
     private static int score(Class<?>[] types, List<Object> args, boolean varargs) {
         int score = 0;
@@ -702,6 +712,9 @@ public final class JavaBridge {
                 }
             } else if (type.isInstance(value)) {
                 score += 50;
+            } else if (value instanceof OqCallable && type.isInterface()
+                    && functionalArity(type) >= 0) {
+                score += 60;
             } else {
                 score += 2;
             }

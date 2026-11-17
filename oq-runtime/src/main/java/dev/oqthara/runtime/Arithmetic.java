@@ -44,14 +44,23 @@ public final class Arithmetic {
     /**
      * Prints one value followed by a newline, using the same rendering as the interpreter and
      * UTF-8 regardless of the platform default charset.
+     *
+     * <p>The text and the newline go out in one {@code PrintStream.println}, which is the same
+     * call the interpreter's {@code print} makes. That is not a stylistic preference: {@code
+     * println} holds the stream's monitor across both writes, so a line is atomic with respect to
+     * another thread. Issuing {@code print(text)} and then {@code print(newline)} takes the lock
+     * twice and lets a second thread write between them, fusing two threads' lines into one that
+     * no program printed. Measured on a two-thread program through {@code use java.lang.Thread},
+     * the two-call form fused lines in 40 of 40 runs while the interpreter fused none of 40; the
+     * two-thread case is reachable without the concurrency builtins, so this is the ordinary
+     * output path rather than an edge case. See R-029 in the risk register.
      */
     public static void print(Object value) {
         String text = Values.display(value);
         String newline = System.lineSeparator();
         chargeWritten(text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
                 + newline.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
-        out().print(text);
-        out().print(newline);
+        out().println(text);
         out().flush();
     }
 
@@ -119,11 +128,24 @@ public final class Arithmetic {
     }
 
     private static java.io.PrintStream out() {
-        if (UTF8_OUT == null) {
-            UTF8_OUT = new java.io.PrintStream(System.out, true, java.nio.charset.StandardCharsets.UTF_8);
+        java.io.PrintStream stream = UTF8_OUT;
+        if (stream == null) {
+            synchronized (Arithmetic.class) {
+                stream = UTF8_OUT;
+                if (stream == null) {
+                    stream = new java.io.PrintStream(
+                            System.out, true, java.nio.charset.StandardCharsets.UTF_8);
+                    UTF8_OUT = stream;
+                }
+            }
         }
-        return UTF8_OUT;
+        return stream;
     }
 
+    /**
+     * Shared so that every compiled {@code print} takes the same lock. Two streams would wrap the
+     * same {@code System.out} but hold separate locks, which would silently undo the atomicity of
+     * {@link #print(Object)} under contention.
+     */
     private static volatile java.io.PrintStream UTF8_OUT;
 }

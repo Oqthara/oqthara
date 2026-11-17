@@ -404,6 +404,12 @@
       "slug": "docs/adr/0066-use-registers-at-runtime"
     },
     {
+      "path": "docs/adr/0067-sort-by-shares-the-decorate-path.md",
+      "title": "ADR-0067 — `sort_by` moves onto the decorate path",
+      "section": "adr",
+      "slug": "docs/adr/0067-sort-by-shares-the-decorate-path"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

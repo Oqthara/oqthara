@@ -5,9 +5,46 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0-alpha.6] - 2026-11-17
 
 ### Fixed
+- **A function passed to `Thread` could become the thread's name instead of its body, so the
+  thread ran nothing.** `String` is a universal destination in the bridge because every value
+  renders as text, so `Thread(() -> work())` fitted both `Thread(Runnable)` and `Thread(String)`
+  and the two scored the same. Whichever `getConstructors()` listed first won, and no
+  specification fixes that order: JDK 21 lists `Runnable` first and JDK 25 lists `String` first.
+  On JDK 25 the thread started, ran nothing, and the program exited 0 with no output and nothing
+  on stderr. A function argument now outscores `String` when the parameter is a functional
+  interface. Both backends were affected; both are fixed and covered by `JavaBridgeOverloadTest`,
+  which fails on the old scoring on every JDK rather than only on JDK 25.
+- **A compiled multi-threaded program could emit lines no program wrote.** The interpreter writes
+  a line with one `println`, holding the output lock across text and newline together; the
+  compiled path called `print(text)` and then `print(newline)`, two acquisitions, so two threads
+  could interleave inside a single line. Reachable with nothing more than
+  `use java.lang.Thread` and two threads that print: measured over 40 runs of 400-character lines,
+  the interpreter fused 0 of 40 and the compiled jar fused 40 of 40, at 4 to 30 fused lines per
+  run. `Arithmetic.print` now issues one `println` and flushes, so both backends fuse 0 of 40.
+  That one call is only atomic if it takes one lock, and `Arithmetic.out()` was a lazy singleton
+  that racing callers could each create: 175 of 200 trials saw more than one stream, now 0 of 200.
+  `write` stays non-atomic, which is what it means.
+  Risk register R-029, moved to `Mitigated`.
+- **`sort_by` evaluated its key once per comparison instead of once per item.** For three items
+  that was four calls, and a key with side effects ran an unbounded number of times:
+  `sort_by([10, 20, 30], counterKey)` returned `[30, 20, 10]` while `list_sort` on the same input
+  returned `[10, 20, 30]`. Both now share one decorate-sort-undecorate path and call the key
+  exactly once per item. The old path also made zero key calls for a one-item list, which no test
+  asserted; the empty, single-item, duplicate and equal-key orders are all pinned now. ADR-0067.
+- **Three Javadocs sat on the wrong method.** `BytecodeCompiler.internalName` carried a block
+  describing `emitClassConstant`, `Lowering.operand` restated a rule `spool` already explains, and
+  `Lowering.lambda` carried `freeVariables`' block — so the method that lowers a lambda was
+  documented as computing free variables, and the description of the generated static method and
+  the refused capture-assignment case appeared on no method at all.
+- **`Builtins.HOST_DEPENDENT` justified four refusals with a false premise.** Its javadoc said
+  `spawn`, `await`, `done` and `par_map` stay refused because a compiled jar has no scheduler. The
+  scheduler is a static executor every jar links, and removing the four from the set compiles all
+  four conformance cases and matches the interpreter. The javadoc now records the real reason and
+  the measurement: un-refusing them fixes 218 of 223 rather than 214, which widens the compiler,
+  and that is a capability change rather than part of this release. Recorded for Alpha 7.
 - **`finally` was absorbed into the preceding block instead of being rejected.** The word was
   not a keyword, so it lexed as an identifier and a `finally` line at the end of a `try` or
   `catch` body parsed as a variable read. When the branch never ran, the program was accepted
@@ -1051,7 +1088,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 130 conformance cases plus unit tests for the lexer, parser, values and interpreter.
 - GitHub Actions CI across Linux, macOS and Windows on JDK 21 and 25.
 
-[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.4...HEAD
+[Unreleased]: https://github.com/Oqthara/oqthara/compare/v0.1.0-alpha.6...HEAD
+[0.1.0-alpha.6]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.6
+[0.1.0-alpha.5]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.3
 [0.1.0-alpha.2]: https://github.com/Oqthara/oqthara/releases/tag/v0.1.0-alpha.2

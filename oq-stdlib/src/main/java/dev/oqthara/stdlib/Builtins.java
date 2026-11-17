@@ -41,18 +41,18 @@ public final class Builtins {
      * Builtins that read or mutate state outside the program: files, clock, randomness,
      * network, process, environment, program arguments and the concurrency helpers.
      *
-     * <p>The concurrency helpers are here because generated output would not be correct if they
-     * were not. They do run: the shared scheduler lives in {@code Stdlib.TaskRunner.EXECUTOR},
-     * which every jar links, so removing {@code spawn}, {@code await}, {@code done} and
-     * {@code par_map} from this set makes all four compile and, for {@code conformance/138},
-     * {@code 139}, {@code 140} and {@code 141}, print the interpreter's output. What breaks is a
-     * program that prints from more than one thread. The interpreter emits a line with one
-     * {@code PrintStream.println}, so it holds the stream lock across the whole line; the
-     * compiled path calls {@code Arithmetic.print}, which writes the text and the newline as two
-     * {@code print} calls, so two threads can interleave and produce one fused line. Measured on
-     * a two-thread program: 18 of 40 compiled runs printed {@code from taskfrom main}, none of 40
-     * interpreter runs did. That is a real divergence, so the four stay refused until concurrent
-     * output is correct rather than merely usually correct.
+     * <p>The concurrency helpers are here by decision, not because their compiled form is known
+     * to be wrong. They do run compiled: the scheduler is {@code Stdlib.TaskRunner.EXECUTOR}, a
+     * static executor every jar links. Removing these four from the set makes
+     * {@code conformance/138} to {@code 141} compile and match the interpreter, measured at 218
+     * of 223 compiled with 0 divergences, up from 214. Turning concurrency on in compiled output
+     * is a capability change that needs its own review, so it is an Alpha 7 item.
+     *
+     * <p>What held them back was a real defect, since fixed: the compiled path wrote a line as
+     * two {@code print} calls, so two threads could interleave inside one line.
+     * {@code Arithmetic.print} now issues one {@code println}; after the fix, 0 of 20 compiled
+     * runs of a two-thread program fused a line and each printed its 800 lines. R-029 records the
+     * before and after.
      *
      * <p>The callable-taking collection builtins ({@code map}, {@code filter}, {@code sort_by})
      * are <em>not</em> here: a compiled lambda is a {@code runtime.CompiledFunction}, which

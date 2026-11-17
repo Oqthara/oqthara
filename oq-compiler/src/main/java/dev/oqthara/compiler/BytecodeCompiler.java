@@ -1122,7 +1122,6 @@ public final class BytecodeCompiler {
             push();
         }
 
-        /** Pushes the {@code Class} object for an internal name such as {@code oq/generated/Program}. */
         /**
          * The JVM internal name of a class: dots become slashes, and arrays keep their
          * descriptor form because {@code CONSTANT_Class} encodes an array that way.
@@ -1131,6 +1130,7 @@ public final class BytecodeCompiler {
             return type.getName().replace('.', '/');
         }
 
+        /** Pushes the {@code Class} object for an internal name such as {@code oq/generated/Program}. */
         private void emitClassConstant(String internalName) {
             int index = pool.classRef(internalName);
             bytes.write(LDC_W);
