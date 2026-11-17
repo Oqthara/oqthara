@@ -286,9 +286,8 @@ workflow, selects those that declare a `write` permission or reference a `secret
 requires a pinned commit and a version comment in each. This is deliberate: the acceptance named
 the release and site-dispatch workflows, and the script's first run found a third —
 `.github/workflows/codeql.yml` holds `security-events: write` — which was pinned rather than
-exempted. A gate with a
-hardcoded file list would have certified two files and left the third open, and the risk itself
-(accumulating mutable pins) is the kind that grows one addition at a time.
+exempted. A gate with a hardcoded file list would have certified two files and left the third open,
+and the risk itself (accumulating mutable pins) is the kind that grows one addition at a time.
 `scripts/tests/test_check_action_pins.py` names the three files explicitly on purpose: deriving the
 expected set from the same helper the gate uses would let the test agree with a gate that checked
 nothing.
@@ -298,9 +297,8 @@ these will drift behind their actions, and a stale pin is a stale dependency. Th
 recorded here: "a third party can repoint the tag" is exchanged for "we do not pick up fixes
 automatically", and the second is visible in this repository while the first was not.
 `.github/workflows/ci.yml`, `.github/workflows/docker.yml` and `.github/workflows/nightly.yml` are
-read-only
-and keep major-version tags; a test fails if one of them gains write scope, so the exemption is
-enforced from the moment it would matter rather than by inspection. A brand-new read-only workflow
+read-only and keep major-version tags; a test fails if one of them gains write scope, so the
+exemption is enforced from the moment it would matter rather than by inspection. A brand-new read-only workflow
 that later gains a secret is covered from that change, not from its creation.
 
 *Evidence.* `.github/workflows/release.yml`, `.github/workflows/site-content-dispatch.yml`,
