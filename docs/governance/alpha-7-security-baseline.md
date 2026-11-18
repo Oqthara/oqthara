@@ -320,6 +320,43 @@ measured. A residual that was not executed is the most likely place for a false 
 control proves the rule still accepts a real version, so it cannot be tightened into rejecting
 everything and still pass. The real workflows pass unchanged.
 
+### A7.8 — R-018's fuzzing reach, and the ReDoS it found
+**Closes:** R-018, downgraded to `Mitigated`. **State:** done.
+
+Two targets were added, `fuzzStdlibFormats` and `fuzzGlobPatterns`, covering the four stdlib areas
+R-018 named as unreached that a target could actually reach without an `OqHost`: CSV, text
+wrapping, INI/properties, and glob patterns. Between them they account for **three** defects and
+**one** security finding.
+
+**`text_wrap` dropped its indent** when the remaining text contained no word, so `wrap("  ", 10)`
+returned a line of two spaces instead of no lines. **It also re-indented after a hard line break**
+already inside the input, because the indent accumulator never reset. Both are ordinary bugs with
+permanent tests.
+
+**`fnmatch` was a ReDoS.** The sanitizer's report was treated as a true positive until proven
+otherwise, and it was one: a 26-character pattern took 1564 ms against a 30-character name, with
+the time doubling for every two stars added. The pattern built a backtracking regex, each `*`
+becoming its own `[^/]*` quantifier over the same characters. The regex engine was removed and
+replaced with a linear dynamic program (ADR-0068); the same case now takes 4 ms and the cost is
+flat in the number of stars. **The sanitizer is not suppressed anywhere in the build**, and
+`fuzzGlobPatterns` ran `2,557,015` executions in `181 s` with it enabled.
+
+**An emoji pattern could never match itself.** The same target's cross-path invariant — a literal
+pattern must match its own text — caught that the translator walked `char` and quoted each
+surrogate half separately, so `fnmatch("😀", "😀")` answered `false`. Code-point matching removes
+the split for good.
+
+**Why it matters that the sanitizer was enabled.** Jazzer can be told to skip a hook through
+`JAVA_TOOL_OPTIONS='-Djazzer.disabled_hooks=...'`, which does reach the forked test JVM where a
+plain `-D` on the Gradle command line does not. That escape hatch was found, verified to work, and
+then deliberately not used: a suppressed finding in a security Alpha is the same defect as a gate
+that accepts a placeholder, which is what A7.7 had just finished removing.
+
+**Acceptance.** Every one of the four has a permanent test that fails without its fix. Three
+mutations of the new matcher — `**/` modelled as "anything at any depth", `*` allowed to cross a
+separator, and classes expanded char-by-char — are each caught by a named `GlobTest` case, so the
+matcher is not merely different but pinned.
+
 ## What Alpha 7 will not do
 
 - **No capability hook on `OqHost`.** The threat model names it as the gap an embedding

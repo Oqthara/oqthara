@@ -33,6 +33,10 @@ val allFuzzTargets = listOf(
         "deeplyNestedJsonDoesNotOverflow"),
     FuzzTarget("StdlibBuiltins", "dev.oqthara.stdlib.StdlibFuzzTest",
         "pureBuiltinsNeverThrowUnexpectedExceptions"),
+    FuzzTarget("StdlibFormats", "dev.oqthara.stdlib.StdlibFormatsFuzzTest",
+        "formatBuiltinsNeverThrowUnexpectedExceptions"),
+    FuzzTarget("GlobPatterns", "dev.oqthara.stdlib.StdlibFormatsFuzzTest",
+        "globPatternsNeverThrowUnexpectedExceptions"),
 )
 
 tasks.register("printFuzzTargets") {

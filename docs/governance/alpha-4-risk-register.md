@@ -507,7 +507,7 @@ defend.
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
 |---|---|---|---|---|---|---|
 | R-017 | Conformance corpus is circular: tests and implementation share one author | High | Medium | Medium | 11 | Accepted |
-| R-018 | Fuzzing does not reach text, path resolution, CSV or semantic analysis | Medium | Medium | Medium | 11 | Open |
+| R-018 | Fuzzing does not reach path resolution, directory traversal or semantic analysis | Low | Medium | Low | 11 | Mitigated |
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
@@ -636,13 +636,14 @@ best-anchored part of the library.
 *Evidence.* `conformance/` · `scripts/verify-conformance.py` · `docs/governance/README.md`
 OQ-DEC-2026-008 · `docs/governance/alpha-4-requirement-matrix.md` `§17` (published vectors).
 
-**R-018 — Fuzzing does not reach text, path resolution, CSV or semantic analysis.**
-Eight targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON
-(two shapes) and the pure stdlib builtins. `docs/spec/fuzzing.md` "What is not covered yet" names the
-rest of the stdlib — text operations, path resolution, CSV — plus semantic analysis, which has no
-separate pass. Generated class files are checked for magic only; full verification happens when the
-JVM loads them in `BytecodeCompilerTest`. So the fuzzer can reach the parser and not the resolver,
-which is where a path joins an untrusted string to a base directory.
+**R-018 — Fuzzing does not reach path resolution, directory traversal or semantic analysis.**
+Ten targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
+shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties and glob patterns.
+`docs/spec/fuzzing.md` "What is not covered yet" names what is left: path resolution still needs an
+`OqHost`, so every entry point that resolves a path against the working directory is unreachable;
+`Patterns.glob`'s directory walk is exercised only by `GlobTest`, because the target calls
+`matchesText`; and semantic analysis still has no separate pass. Generated class files are checked
+for magic only; full verification happens when the JVM loads them in `BytecodeCompilerTest`.
 
 *Mitigation.* `fuzzTest` is not part of `check`, so ordinary builds stay fast, but it does run in the
 `jazzer-fuzz` CircleCI job on every push and pull request and in `.github/workflows/nightly.yml` every
@@ -651,11 +652,18 @@ in `oq-core/src/fuzz/resources/dev/oqthara/core/curated-cases.txt` is replayed b
 `CuratedCorpusTest` on every build, and `docs/spec/fuzzing.md` requires that a finding is never
 closed by deleting the input.
 
-*Why open.* Each gap is a target that has not been written. The eight that exist found seven real
-defects, which is an argument for writing more rather than for trusting the current set.
+*Why mitigated rather than closed.* The two targets added in A7.8 found three defects outright and
+led to a fourth through Jazzer's regex-injection sanitizer: `fnmatch` was building a backtracking
+regex from user input, and a 26-character pattern took 1564 ms against a 30-character name with the
+time doubling per two characters added. That is a true positive, so the sanitizer is **not**
+suppressed anywhere in the build; the regex engine was removed instead (ADR-0068), and the target
+now runs clean for 181 s with the hook enabled. Each of the four has a permanent test. The risk drops
+to `Low` because the largest remaining gap is a traversal the unit suite covers directly, not because
+the reach is complete.
 
-*Evidence.* `docs/spec/fuzzing.md` · `oq-core/src/fuzz/`, `oq-stdlib/src/fuzz/`,
-`oq-compiler/src/fuzz/` · `.github/workflows/nightly.yml` · `.circleci/config.yml`.
+*Evidence.* `docs/spec/fuzzing.md` · `docs/adr/0068-glob-matching-is-a-linear-dynamic-program.md` ·
+`oq-core/src/fuzz/`, `oq-stdlib/src/fuzz/`, `oq-compiler/src/fuzz/` ·
+`.github/workflows/nightly.yml` · `.circleci/config.yml`.
 
 **R-019 — A defect can survive in the one path `scripts/verify-conformance.py` does not compare.**
 The verifier measures the corpus, not the tool. A behaviour reachable only through a CLI subcommand
@@ -930,8 +938,8 @@ here; the specific silent-misbinding class is closed, the general ordering quest
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 4 | R-002, R-008, R-024, R-030 |
-| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-018, R-020, R-026, R-028, R-029 |
-| Low | 13 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-019, R-021, R-022, R-023, R-025, R-027 |
+| Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029 |
+| Low | 14 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-018, R-019, R-021, R-022, R-023, R-025, R-027 |
 | **Total** | **30** | |
 
 ## Review cadence

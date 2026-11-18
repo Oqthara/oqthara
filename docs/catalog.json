@@ -410,6 +410,12 @@
       "slug": "docs/adr/0067-sort-by-shares-the-decorate-path"
     },
     {
+      "path": "docs/adr/0068-glob-matching-is-a-linear-dynamic-program.md",
+      "title": "ADR-0068 — Glob matching is a linear dynamic program, not a regular expression",
+      "section": "adr",
+      "slug": "docs/adr/0068-glob-matching-is-a-linear-dynamic-program"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
