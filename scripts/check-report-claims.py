@@ -117,6 +117,10 @@ NOUNS = [
     ("directions", "directions"),
     ("keywords", "keywords"),
     ("ADRs", "adrs"),
+    # The risk total is stated bare as well as in the Item 2 table. Without this
+    # a sentence saying "the register holds 30 risks" passed unread, and the
+    # register holds 31.
+    ("risks", "risk_total"),
 ]
 NOUN_KEY = dict(NOUNS)
 FIGURE = re.compile(
@@ -163,11 +167,17 @@ PAIRED = re.compile(
     re.IGNORECASE,
 )
 
-# A count beside a governance noun that no rule above can read.
+# A count beside a governance noun that no rule above can read. Both orders are
+# matched: "41 capability rows" is the usual prose form, but a table, a summary
+# line or a heading may write "capability rows: 41", and reading only the first
+# order let that shape through unclassified.
 CLAIM_SHAPE = re.compile(
     rf"\b(?:{NUMBER})\b[^.;]{{0,12}}?\b(?:"
     + "|".join(re.escape(noun) for noun, _ in NOUNS)
-    + r"|probes|defects)\b",
+    + r"|probes|defects)\b"
+    + r"|\b(?:"
+    + "|".join(re.escape(noun) for noun, _ in NOUNS)
+    + rf"|probes|defects)\b\s*:\s*\*{{0,2}}(?:{NUMBER})\b",
     re.IGNORECASE,
 )
 

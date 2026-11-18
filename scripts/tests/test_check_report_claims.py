@@ -131,6 +131,29 @@ class DriftIsCaught(unittest.TestCase):
         problems = problems_after("the five `d1_*` probes", "the four `d1_*` probes")
         self.assertTrue(problems)
 
+    def test_a_bare_risk_total_is_caught(self):
+        # The risk total appears in the Item 2 table, so it looked covered. It
+        # is also written bare in prose, and "risks" was absent from NOUNS, so
+        # a sentence stating the wrong total passed unread. Found in review of
+        # this gate, not of the report.
+        problems = problems_after(
+            "**Item 8 held up completely.**",
+            "**Item 8 held up completely.** The register holds 30 risks.",
+        )
+        self.assertTrue(problems)
+        self.assertIn("30 risks", problems[0])
+
+    def test_a_noun_before_the_number_is_caught(self):
+        # The mirror shape. Every rule above reads "41 capability rows"; a
+        # heading or summary line writing "capability rows: 41" matched nothing
+        # and was silently skipped, which is the failure mode the next test
+        # guards against in general.
+        problems = problems_after(
+            "**Item 8 held up completely.**",
+            "**Item 8 held up completely.** Capability rows: 41.",
+        )
+        self.assertTrue(problems)
+
     def test_an_unclassifiable_claim_is_caught(self):
         # The failure this gate exists to prevent in itself: silently skipping
         # what it cannot parse and reporting success.
