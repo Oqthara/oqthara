@@ -113,7 +113,9 @@ public final class Errors {
         String name = error.getClass().getSimpleName();
         return new OqError(name + (message == null || message.isBlank() ? "" : ": " + message), span,
                 error instanceof UnsupportedOperationException
-                        ? "The JDK refused this operation; the message above is its own."
+                        ? "This is one of the JDK's own refusals that shares a type with the"
+                                + " collection case but is not one. The class name above is what to"
+                                + " search for."
                         : null);
     }
 

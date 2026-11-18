@@ -68,6 +68,8 @@ class ImmutableRefusalTest {
         assertEquals("ReadOnlyBufferException", error.getMessage());
         assertFalse(error.getMessage().contains("unchangeable collection"),
                 "a read-only buffer is not a collection");
+        assertTrue(error.hint() != null && error.hint().contains("search for"),
+                "the hint has to give the reader something to do, got: " + error.hint());
     }
 
     @Test
