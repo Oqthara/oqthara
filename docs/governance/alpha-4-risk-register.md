@@ -527,8 +527,23 @@ reported". Three pull requests (#127, #131, #132) were unmergeable for two sessi
 `scripts/check-circleci.py` accepts either provider at release time while failing on a red result
 from either. `scripts/tests/test_check_ci_gate.py` pins the anti-masking rule.
 
+**A second mechanism, found on PR #264.** A pull request whose branch conflicts with its base gets
+**no CI at all** from any `on: pull_request` workflow. GitHub cannot construct `refs/pull/N/merge`
+without a merge base it can build, so the workflows do not dispatch, and nothing is reported as an
+error. On #264 the symptom was `gh api .../commits/<sha>/check-runs` returning `total_count: 0` while
+`gh run list` showed only older commits, and the last run was four commits behind. The pull request
+sat unmergeable with no red check anywhere, and the diagnosis took reading `mergeable` — a field
+nobody looks at while waiting for CI.
+
+This is the same class as the CircleCI stop above and worse in one respect: the outage was visible
+as an *absence of one context* against a PR that otherwise had checks, while a conflicted PR has no
+checks to be compared against. `mergeStateStatus` reads `BLOCKED` in both cases, so branch
+protection does prevent a merge — the loss is diagnosis, and the cost is however long nobody
+notices, which on #264 was four commits.
+
 *Residual.* The failure mode itself is unavoidable: a required context is identified by name alone,
-and GitHub cannot distinguish "not dispatched" from "still queued". The same silent stop could
+and GitHub cannot distinguish "not dispatched" from "still queued". A conflicted branch is a third
+case with the same read, and there is no signal that separates them. The same silent stop could
 happen on GitHub Actions, and the recovery is the mirror image — dispatch the CircleCI workflow by
 hand and let the release gate accept that evidence. `installers-macos` remains CircleCI-only and is
 not a required context, so a macOS installer regression would not block a merge.
