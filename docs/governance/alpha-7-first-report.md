@@ -198,13 +198,17 @@ not one migration." The decision was made because the maintainer was unavailable
 "reversible at zero cost". That reasoning is exactly what makes supersession cheap and legitimate —
 and exactly why it must be an ADR rather than an edit.
 
-**Next ADR number is 0068** (67 exist; highest is `0067-sort-by-shares-the-decorate-path.md`).
+**Next ADR number is 0070** (69 exist; highest are `0068-glob-matching-is-a-linear-dynamic-program.md`
+and `0069-oqthara-stays-dynamically-typed.md`).
 
 ## Item 8 — Java Bridge Full validation matrix
 
 The authoritative inventory is `docs/governance/alpha-5-java-bridge-capability-inventory.md`:
-twelve directions, 46 capability rows, and five confirmed defects **D1–D5**. §6 asks for "Full",
-and the inventory already defines what that would have to mean.
+twelve directions, 46 capability rows, and four confirmed defects **D1–D4**. §6 asks for "Full",
+and the inventory already defines what that would have to mean. (This report previously claimed
+five, **D1–D5**. The `d3_shadowed_names.oq` probe was then named `d5_unit_names.oq`, which made a
+fifth defect look real; it is a precedence regression probe for D3, and no D5 section was ever
+written.)
 
 §6 orders Swing first. The tree does not support that ordering yet:
 
@@ -222,15 +226,18 @@ required to execute rather than be read:
 | Swing construction and display | no inventory row; needs one |
 | Event dispatch and thread affinity | no row; `print` is already known non-atomic (R-029) |
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
-| Streams and `java.util.concurrent` | direction 7 for callbacks; `d1` defect blocks callback-typed builtins |
+| Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
 | Interpreter-versus-compiled parity | direction 10; `run.py --both` covers C1–C8 only, 19 probes |
 
-Two constraints from the tree must be honoured, not worked around: D1 (a callable Java object is
-refused at `sort`, `sort_by`, `reduce`, `list_sort` while accepted by `map`/`filter`) will be reached
-by any realistic Swing callback, so §6 depends on D1 being fixed rather than bypassed; and the
-probe harness covers C1–C8 only, so a GUI program's compiled-versus-interpreted parity would not be
-gated by anything that exists today.
+One constraint from the tree must be honoured, not worked around: the probe harness covers C1–C8
+only, so a GUI program's compiled-versus-interpreted parity would not be
+gated by anything that exists today. The other constraint this section used to name — D1, a
+callable Java object refused at `sort`, `sort_by`, `reduce` and `list_sort` — was fixed in PR #231
+(`39b6078`) on 2026-11-15, two days before this report. All four builtins now accept a Java
+functional value whose arity fits, and a wrong-arity value is refused by count rather than by
+denying callability. The five `d1_*` probes pass, so §6's callback-dependent surface is unblocked
+without further defect work.
 
 ## Item 9 — Dependencies and execution sequence
 
@@ -242,15 +249,33 @@ Ordered by what actually blocks what, not by what reads best.
    for trusting the agent that §4 hands language-core to.
 3. **A7.8 — R-018 fuzzing reach.** Seven pure targets are ready today; the path target needs the
    helper-extraction decision. Nothing else depends on it, which is why it ships first.
-4. **ADR-0068 superseding ADR-0015 and the type-system brief.** Blocks all of §5. No typing work
+4. **ADR-0069 superseding ADR-0015 and the type-system brief.** Blocks all of §5. No typing work
    before it.
-5. **Fix D1.** Blocks §6's callback-dependent surface, including anything Swing-shaped.
+5. **D1 — already done, does not block.** Fixed in PR #231 (`39b6078`) on 2026-11-15, before this
+   report. Verified: the five `d1_*` probes pass and `ListSortTest` covers the arity refusal, so
+   §6's callback-dependent surface is unblocked. Nothing to do here; recorded because the ordering
+   below previously gated §6 on it.
 6. **§4 language-core evolution**, after item 2 so the owner is reading a correct count.
-7. **§6 Java Bridge Full**, after items 5 and the inventory row creation.
+7. **§6 Java Bridge Full**, after the inventory row creation (item 5 is already done, so it gates
+   nothing).
 8. **Runtime and observability**, independent of 4–7.
 
-Items 1–3 are independent of 4–6 and could run in parallel worktrees; item 4 is the gate for the
-whole typing branch of the Alpha.
+Items 1–3 were independent of 4–6 and could have run in parallel worktrees; item 4 was the gate for
+the whole typing branch of the Alpha and is now closed (ADR-0069, PR #255). Item 5 needed no work at
+all: D1 was already fixed in PR #231 before this report was written.
+
+## Status after the first execution pass
+
+| Item | Sequence entry | State |
+| --- | --- | --- |
+| 1 | Repair the red required check on #251 | **Done** — `db01622` fixed the gate, Dependabot rebased, #251 merged as `9eb3561` after 17/17 checks |
+| 2 | Correct R-021 and the stale keyword counts | **Done** — PR #252 |
+| 3 | A7.8, R-018 fuzzing reach | **Done** — PR #253 |
+| 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
+| 5 | Fix D1 | **Already done** — PR #231, two days before this report |
+| 6 | §4 language-core evolution | Open |
+| 7 | §6 Java Bridge Full | Open — needs the Swing inventory row first |
+| 8 | Runtime and observability | Open, independent |
 
 ## Item 10 — Remaining blockers and risks
 
