@@ -156,6 +156,50 @@ PROBES = [
         ["3", "[10, 20]", "20", "set() expects 0 arguments, got 1", "nothing", "[]"],
         None,
     ),
+    # C9-C12, the four directions the harness did not cover. A6.4 records that gap and names
+    # these rows; adding them is what shrinks it. Each one was run under `oq run` and again as
+    # a built jar before its expectation was written down here.
+    #
+    # `d3_shadowing` already pins `remove("x")`, but its receiver is an Oq list literal, so it
+    # proves the builtin answers for an Oq list and says nothing about a Java receiver. C9.1 is
+    # the stronger claim -- that a real `java.util.ArrayList` is still claimed by the builtin --
+    # so this probe uses an ArrayList for both calls and adds the two-argument comparator, which
+    # `d3_shadowing` does not cover. The final `[3, 1, 2]` is what separates "the builtin
+    # answered" from "the builtin refused and Java ran anyway": a descending sort would reorder
+    # it, and `remove(Object)` would shorten it.
+    (
+        "c9_precedence",
+        [
+            "'sort' needs a function taking 1 argument as argument 1",
+            "remove takes an index, not text",
+            "[3, 1, 2]",
+        ],
+        None,
+    ),
+    # C10.1-C10.4 in one program, because the claim is that the two backends agree and `--both`
+    # compares this probe against itself. The nested `use` carries the weight: ADR-0066 made it
+    # a run-time registration, so a backend that hoisted it would print the date even when the
+    # branch did not run, and this probe would still pass. `if true` is therefore load-bearing
+    # only in that it keeps the statement below the top level, not as a condition.
+    ("c10_use_both_backends", ["7", "42", "b", "2026-01-01"], None),
+    # C11.2. C11.1 needs a `-cp` flag `run.py` cannot pass, which the probe's own header
+    # records; the inventory's A6.4 row is the other half of that admission.
+    ("c11_qualified_name", ["class dev.oqthara.core.Lexer"], None),
+    # C12.1. The second line is the diagnostic this build actually prints: `getClass` returns a
+    # `Class` value, so the refusal names the receiver and says "no static method". The
+    # inventory paraphrases it as "`Class.getDeclaredMethod` is unreachable", which is the
+    # outcome and not the wording — pinning the wording is what catches a reword.
+    (
+        "c12_public_only",
+        [
+            "cannot read field 'elementData' on list",
+            "Java class ArrayList has no static method 'getDeclaredMethod'",
+        ],
+        None,
+    ),
+    # C12.2 is a probe and not a defect: the row is "Unsafe by design — now documented", so the
+    # behaviour below is the documented one and a change to it is a change to the boundary.
+    ("c12_unrestricted", ["0", "true"], None),
 ]
 
 

@@ -1,0 +1,23 @@
+# C10.1-C10.4: `use` works under both backends, including below the top level,
+# and a method call on a Java value that arrived from a compiled call still
+# reaches Java.
+#
+# The nested `use` is the part that used to be refused: ADR-0064 made it a
+# compile error and ADR-0066 replaced that with a run-time registration into
+# `dev.oqthara.runtime.UsedClasses`. Writing it inside `if true` keeps the
+# registration conditional, so this probe fails if the backend ever hoists it to
+# compile time or drops it. `xs.get` is an ordinary virtual call on a Java
+# receiver, which is C10.3.
+use java.lang.Math
+use java.lang.String
+use java.util.ArrayList
+print Math.max(7, 2)
+print String.valueOf(42)
+xs = ArrayList()
+xs.add("b")
+xs.add("a")
+print xs.get(0)
+if true
+  use java.time.LocalDate
+  print LocalDate(2026, 1, 1).toString()
+end
