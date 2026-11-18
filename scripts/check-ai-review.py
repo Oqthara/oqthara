@@ -487,7 +487,15 @@ def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
 # Only the dependency updaters. `github-actions[bot]` is deliberately absent: it opens pull
 # requests from workflows, which is ordinary development and not a dependency bump, and
 # exempting it let any workflow-authored change merge with no review record.
-AUTOMATED_AUTHORS = {"dependabot[bot]", "renovate[bot]"}
+# GitHub reports an App-authored pull request as `app/<slug>`, not as `<name>[bot]`: Dependabot's
+# modernised app answers `app/dependabot`. Both spellings are kept because an older installation
+# still reports the bracketed login, and a missing spelling here does not degrade gently -- the
+# exemption silently never matches and the required check goes red on every dependency pull
+# request (PR #251, which is what R-024 describes).
+AUTOMATED_AUTHORS = {
+    "dependabot[bot]", "renovate[bot]",
+    "app/dependabot", "app/renovate",
+}
 
 # Models this repository has a record of. `pinned_models(root)` supplies the agents' actual pins;
 # this is the fallback list for a partial checkout, and `scripts/check-docs-sync.py` keeps the two
