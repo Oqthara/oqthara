@@ -27,6 +27,20 @@ final class Formatter {
             err.println("Missing file. Try: oq fmt hello.oq");
             return 2;
         }
+        if (args[0].equals("--help") || args[0].equals("-h")) {
+            out.println("""
+                    Usage: oq fmt <file.oq> [more files]
+
+                    Rewrites each file in place with standard formatting and reports which
+                    changed. The file extension is optional: `oq fmt hello` formats
+                    `hello.oq`.""");
+            return 0;
+        }
+        if (args[0].startsWith("-")) {
+            err.println("Unknown option: " + args[0]);
+            err.println("Try: oq fmt hello.oq");
+            return 2;
+        }
         int status = 0;
         for (String name : args) {
             String path = name.endsWith(".oq") ? name : name + ".oq";

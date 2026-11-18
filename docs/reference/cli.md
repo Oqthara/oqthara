@@ -26,22 +26,35 @@ errors.
 
 Starts the interactive read-eval-print loop.
 
+Every command below takes `--help` or `-h` as its first argument and prints usage instead of
+treating the flag as a file or directory name. Any other leading `-` is rejected by name and
+exits 2.
+
 ## `oq fmt`
 
-Formats a program.
+Formats a program in place and reports which files changed.
+
+`oq fmt --help` prints the usage and exits 0.
 
 ## `oq test`
 
-Runs the tests in a program.
+Runs the tests in a program. The path defaults to the current directory.
+
+`oq test --help` prints the usage and exits 0.
 
 ## `oq new`
 
-Creates a new project.
+Creates a new project directory with a `main.oq` and an `oq.json`.
+
+`oq new --help` prints the usage and exits 0, and creates nothing. It stops with exit 1 if the
+directory already exists.
 
 ## `oq doc`
 
 Prints the standard library reference as Markdown, generated from the registration calls in
 the standard library so the page cannot list a function that does not exist.
+
+`oq doc --help` prints the usage and exits 0.
 
 ### `oq doc --source <path>`
 

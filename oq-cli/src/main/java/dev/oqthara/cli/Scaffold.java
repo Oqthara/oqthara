@@ -15,6 +15,20 @@ final class Scaffold {
             err.println("Missing project name. Try: oq new hello");
             return 2;
         }
+        if (args[0].equals("--help") || args[0].equals("-h")) {
+            out.println("""
+                    Usage: oq new <name>
+
+                    Creates ./<name>/ with a main.oq program and an oq.json project file,
+                    then prints the command that runs it. It stops if the directory
+                    already exists.""");
+            return 0;
+        }
+        if (args[0].startsWith("-")) {
+            err.println("Unknown option: " + args[0]);
+            err.println("Try: oq new hello");
+            return 2;
+        }
         String name = args[0];
         Path dir = Path.of(name);
         if (Files.exists(dir)) {

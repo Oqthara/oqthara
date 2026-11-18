@@ -2,6 +2,8 @@ package dev.oqthara.cli;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -44,6 +46,16 @@ class RunCheckCommandTest {
         PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
         PrintStream err = new PrintStream(errBytes, true, StandardCharsets.UTF_8);
         int exit = new Main.Runner(out, err, null).check(args);
+        return new Run(exit, outBytes.toString(StandardCharsets.UTF_8),
+                errBytes.toString(StandardCharsets.UTF_8));
+    }
+
+    private static Run dispatch(String... args) {
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream errBytes = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(errBytes, true, StandardCharsets.UTF_8);
+        int exit = new Main.Runner(out, err, null).dispatch(args);
         return new Run(exit, outBytes.toString(StandardCharsets.UTF_8),
                 errBytes.toString(StandardCharsets.UTF_8));
     }
@@ -99,5 +111,69 @@ class RunCheckCommandTest {
 
         assertEquals(0, result.exit());
         assertTrue(result.out().startsWith("OK "), result.out());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"run", "check", "fmt", "format", "new", "doc", "test", "build"})
+    void everyFileTakingSubcommandAnswersHelp(String command) throws Exception {
+        String[] strays = {"--help", "-x"};
+        boolean[] existedBefore = new boolean[strays.length];
+        for (int i = 0; i < strays.length; i++) {
+            existedBefore[i] = Files.exists(Path.of(strays[i]));
+        }
+        try {
+            Run result = dispatch(command, "--help");
+
+            assertEquals(0, result.exit(), command + " --help should succeed: " + result.err());
+            assertTrue(result.out().startsWith("Usage: oq"), result.out());
+            assertFalse(result.err().contains(".oq'"), result.err());
+            assertFalse(result.err().contains("Cannot"), result.err());
+        } finally {
+            for (int i = 0; i < strays.length; i++) {
+                deleteIfCreated(Path.of(strays[i]), existedBefore[i]);
+            }
+        }
+    }
+
+    @Test
+    void newWithHelpDoesNotCreateADirectory() throws Exception {
+        Path stray = Path.of("--help");
+        boolean existedBefore = Files.exists(stray);
+        try {
+            Run result = dispatch("new", "--help");
+
+            assertEquals(0, result.exit());
+            // `oq new --help` used to scaffold a real project directory called "--help" in the
+            // working directory, which is why this checks the working directory, not the temp dir.
+            assertEquals(existedBefore, Files.exists(stray), "no directory should be created");
+        } finally {
+            deleteIfCreated(stray, existedBefore);
+        }
+    }
+
+    @Test
+    void anUnknownOptionIsRejectedByName() throws Exception {
+        Path stray = Path.of("-x");
+        boolean existedBefore = Files.exists(stray);
+        try {
+            Run result = dispatch("new", "-x");
+
+            assertEquals(2, result.exit());
+            assertTrue(result.err().contains("Unknown option: -x"), result.err());
+            assertEquals(existedBefore, Files.exists(stray), "no directory should be created");
+        } finally {
+            deleteIfCreated(stray, existedBefore);
+        }
+    }
+
+    private static void deleteIfCreated(Path stray, boolean existedBefore) throws Exception {
+        if (existedBefore || !Files.exists(stray)) {
+            return;
+        }
+        try (var paths = Files.walk(stray)) {
+            for (Path path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
     }
 }

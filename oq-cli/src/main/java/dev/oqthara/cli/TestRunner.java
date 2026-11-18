@@ -21,6 +21,14 @@ final class TestRunner {
     }
 
     static int run(PrintStream out, PrintStream err, String[] args) {
+        if (args.length > 0 && (args[0].equals("--help") || args[0].equals("-h"))) {
+            out.println("""
+                    Usage: oq test [path]
+
+                    Finds files named test_<name>.oq and files under tests/, then runs each.
+                    The path defaults to the current directory.""");
+            return 0;
+        }
         Path root = Path.of(args.length > 0 ? args[0] : ".");
         boolean color = System.console() != null && System.getenv("NO_COLOR") == null;
         List<Path> files;
