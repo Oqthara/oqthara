@@ -355,9 +355,11 @@ required to execute rather than be read:
 | Third-party classpath | direction 11 |
 | Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C12 in 24 as of the probe-coverage pass. C11.1 — a class on the user's own classpath — is still unprobed: it needs a `-cp` flag `run.py` cannot pass |
 
-One constraint from the tree must be honoured, not worked around: the probe harness covers C1–C8
-only, so a GUI program's compiled-versus-interpreted parity would not be
-gated by anything that exists today. The other constraint this section used to name — D1, a
+One constraint from the tree must be honoured, not worked around: the probe harness covered C1–C8
+when this section was written, and no direction was probed headlessly, so a GUI program's
+compiled-versus-interpreted parity would not be gated by anything that exists today. The C9–C12
+probes added since exercise non-GUI directions, so the conclusion is unchanged: parity for a
+program that needs a display still has no gate. The other constraint this section used to name — D1, a
 callable Java object refused at `sort`, `sort_by`, `reduce` and `list_sort` — was fixed in PR #231
 (`39b6078`) on 2026-11-15, two days before this report. All four builtins now accept a Java
 functional value whose arity fits, and a wrong-arity value is refused by count rather than by
