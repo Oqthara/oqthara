@@ -67,7 +67,14 @@ class TheRealWorkflowsArePinned(unittest.TestCase):
             for _, value, comment in checker.uses_lines(text):
                 ref = value.rsplit("@", 1)[-1]
                 self.assertTrue(checker.PINNED.match(ref), f"{name}: {value} is not a full SHA")
-                self.assertTrue(comment, f"{name}: {value} has no version comment")
+                # Deliberately not checker.VERSION_COMMENT: an assertion that
+                # reuses the gate's own pattern agrees with a gate that matches
+                # nothing. A version is a dotted number, optionally v-prefixed.
+                # Major-only comments (`# v4`) are legitimate: they name the
+                # release line the pin is on, which is what a reviewer needs.
+                self.assertRegex(
+                    comment or "", r"\bv\d+(?:\.\d+)*\b", f"{name}: {value}"
+                )
 
 
 class AMovingRefIsRejected(unittest.TestCase):
@@ -109,6 +116,30 @@ class AMovingRefIsRejected(unittest.TestCase):
         )
         self.assertEqual(len(problems), 1)
         self.assertIn("does not name the version", problems[0])
+
+    def test_a_pinned_action_whose_comment_names_no_version_is_rejected(self):
+        # A comment that exists but says nothing is worse than none: it looks
+        # reviewed. Before this was enforced, `# TODO` passed, so the pin could
+        # move under a comment that never described it.
+        for comment in ("TODO fix this later", "v", "not a version at all"):
+            with self.subTest(comment=comment):
+                problems = self.gate(
+                    f"permissions:\n  contents: write\njobs:\n  a:\n    steps:\n"
+                    f"      - uses: actions/checkout@{SHA} # {comment}\n"
+                )
+                self.assertEqual(len(problems), 1)
+                self.assertIn("does not name the version", problems[0])
+
+    def test_a_pinned_action_whose_comment_names_a_version_is_accepted(self):
+        # The positive control. Without it, the rule above could be tightened
+        # until it rejected everything and still pass its own tests.
+        for comment in ("v7.0.1", "v7", "7.0.1"):
+            with self.subTest(comment=comment):
+                problems = self.gate(
+                    f"permissions:\n  contents: write\njobs:\n  a:\n    steps:\n"
+                    f"      - uses: actions/checkout@{SHA} # {comment}\n"
+                )
+                self.assertEqual(problems, [])
 
     def test_a_short_sha_is_rejected(self):
         # A short SHA is a prefix, not a commit: it can be ambiguous, and a

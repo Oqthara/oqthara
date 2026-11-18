@@ -292,10 +292,15 @@ and the risk itself (accumulating mutable pins) is the kind that grows one addit
 expected set from the same helper the gate uses would let the test agree with a gate that checked
 nothing.
 
-*Residual.* The pins age. Dependabot does not rewrite `uses:` to a new SHA without configuration, so
-these will drift behind their actions, and a stale pin is a stale dependency. That is the trade
-recorded here: "a third party can repoint the tag" is exchanged for "we do not pick up fixes
-automatically", and the second is visible in this repository while the first was not.
+*Residual.* The pins age between updates, and a pin is only as current as the last weekly run —
+"pinned" never means "current on demand". Dependabot does bump a pinned `uses:` and rewrite the
+version comment beside it from the plain `github-actions` entry this repository already has, so the
+pins do not drift unattended; an earlier version of this paragraph said they would, and that claim
+was corrected in A7.7 after being checked against Dependabot's own pull requests. What remains is
+narrower: a comment naming no version is not rewritten when the pin moves, so the comment can go
+stale while the pin does not. That is the trade recorded here: "a third party can repoint the tag" is
+exchanged for "fixes arrive on a weekly schedule rather than immediately", and the second is visible
+in this repository while the first was not.
 `.github/workflows/ci.yml`, `.github/workflows/docker.yml` and `.github/workflows/nightly.yml` are
 read-only and keep major-version tags; a test fails if one of them gains write scope, so the
 exemption is enforced from the moment it would matter rather than by inspection. A brand-new read-only workflow
