@@ -15,6 +15,9 @@ fuzzing. Fuzzing is part of the permanent engineering lifecycle, not a one-off a
 | `JsonFuzzTest#jsonParseNeverThrowsUnexpectedExceptions` | `fuzzJsonParse` | JSON text, then round-trips through both writers | any exception other than `OqError` |
 | `JsonFuzzTest#deeplyNestedJsonDoesNotOverflow` | `fuzzJsonNesting` | arrays nested up to 2000 deep | `StackOverflowError` |
 | `StdlibFuzzTest#pureBuiltinsNeverThrowUnexpectedExceptions` | `fuzzStdlibBuiltins` | pure text, math, JSON and collection builtins with arbitrary arguments | any exception other than `OqError`; a result the JSON writer cannot express |
+| `StdlibFormatsFuzzTest#formatBuiltinsNeverThrowUnexpectedExceptions` | `fuzzStdlibFormats` | CSV, text wrapping, INI and properties with arbitrary separators, delimiters, widths and text | any exception other than `OqError`; a wrapped line containing a line break; a round trip whose rows or keys do not come back |
+| `StdlibFormatsFuzzTest#globPatternsNeverThrowUnexpectedExceptions` | `fuzzGlobPatterns` | arbitrary patterns through `fnmatch` and `glob`, plus a cross-path invariant: every literal pattern must match itself | any exception other than `OqError`; an internal regex failure; a literal pattern that does not match its own text |
+| `StdlibFormatsFuzzTest#globClassesMatchTheirOwnMembers` | `fuzzGlobClasses` | character classes built from a fuzzer-chosen code-point range, repeated a fuzzer-chosen number of times, against each range endpoint and its neighbours | an exception other than `OqError`; a member that does not match; a non-member that does; an `OutOfMemoryError` while a pattern is built (the shape that caused the A7.8 heap defect) |
 
 **A lexical or syntax error is a valid outcome.** The contract is that user input produces a
 diagnostic, never an internal crash.
@@ -33,7 +36,8 @@ Two invariants go beyond "no exception", because a wrong result is also a user-v
 Jazzer's JUnit integration runs **one `@FuzzTest` method per JVM**. Running a class with
 several targets would silently skip the rest. Each target therefore has its own Gradle task
 (`fuzzLexerText`, `fuzzParserText`, `fuzzParserNesting`, `fuzzParserBlockNesting`,
-`fuzzPipeline`, `fuzzJsonParse`, `fuzzJsonNesting`) and `fuzzTest` depends on all of them.
+`fuzzPipeline`, `fuzzJsonParse`, `fuzzJsonNesting`, `fuzzStdlibBuiltins`, `fuzzStdlibFormats`,
+`fuzzGlobPatterns`, `fuzzGlobClasses`) and `fuzzTest` depends on all of them.
 
 `fuzzTest` is **not** part of `check`, so ordinary builds stay fast. It runs in the dedicated
 `jazzer-fuzz` CircleCI job on every push and pull request, and in the **Nightly Fuzzing**
@@ -78,6 +82,20 @@ fuzzParserBlockNesting 64,498 runs in 61 s  cov: 337  ft: 2211  corp: 92/233b   
 Zero crashes across 348,701 executions. The task report for T-0021 records the matching
 ten-minute parser pass; the commands above reproduce both.
 
+### Results recorded for A7.8
+
+```
+JAZZER_FUZZ=1 JAZZER_MAX_DURATION=180s ./gradlew --no-daemon :oq-stdlib:fuzzGlobPatterns
+JAZZER_FUZZ=1 JAZZER_MAX_DURATION=150s ./gradlew --no-daemon :oq-stdlib:fuzzGlobClasses
+
+fuzzGlobPatterns    2,557,015 runs in 181 s   PASSED
+fuzzGlobClasses        63,011 runs in 151 s   PASSED
+```
+
+The glob target ran with the `RegexInjection` sanitizer **enabled**: the finding that started
+this work was a true positive, so the sanitizer is not suppressed anywhere in the build, and the
+run above is the evidence that the replacement matcher no longer trips it.
+
 ## Reproducing a finding
 
 Jazzer JUnit writes findings next to the module, not into `build/`:
@@ -121,9 +139,17 @@ build, so a regression is caught even when fuzzing is skipped.
 | 21 (T-0021) | `fuzzParserNesting` (manual probe) | `not` and unary `-` chains bypassed `MAX_NESTING`: 20k prefixes produced a raw `StackOverflowError` | the unary recursion now enters the same `nesting` counter; limits are 127 accepted, 128 rejected, with tests at 20k/50k |
 | 21 (T-0021) | `fuzzParserNesting` (manual probe) | `**` is right-recursive and bypassed `MAX_NESTING` in the same way | the right-hand `power()` recursion enters the counter; regression test at 50k |
 | 21 (T-0021) | `fuzzParserNesting` (manual probe) | nested text interpolation re-lexed and re-parsed the inner text at every level: 20 levels took ~0.4 s, 24 levels ~6 s, ~26 levels over 20 s, and a ~200-byte file could hang the CLI | `MAX_INTERPOLATION_NESTING = 16` carried across the lexer/parser pair; test asserts a diagnostic under 5 s plus a shallow-interpolation positive test |
+| A7.8 | `fuzzStdlibFormats` | `text_wrap` dropped the indent when the remaining text held no word, so `wrap("  ", 10)` returned `"  "` instead of no lines | the no-word branch now returns the empty remainder; regression tests for whitespace-only text |
+| A7.8 | `fuzzStdlibFormats` | `text_wrap` kept accumulating indent across a hard line break already inside the input, so an indent could be added twice | an `afterLineBreak` flag stops indentation at the first `\n`/`\r`; regression test asserts no wrapped line ever contains a line break |
+| A7.8 | `fuzzStdlibFormats` | an emoji in a glob pattern could never match itself: the translator walked `char` and quoted each surrogate half separately, so `fnmatch("😀", "😀")` answered `false` | the matcher works in code points, which removes the split structurally; `GlobTest` pins the literal and the class-member case |
+| A7.8 | review of the rewrite (initially no target) | the linear matcher's first draft expanded character-class ranges into their members, so a class spanning most of Unicode became 1.1M ints and a 360-character pattern exhausted a 256 MB heap -- a memory amplification the two free-form targets could not reach, because random text almost never spells a maximally wide range | ranges are kept as low/high endpoints, so a pattern's cost tracks its own length; `aClassSpanningMostOfUnicodeCostsOnlyItsOwnLength` pins it and reports the regression by name |
+| A7.8 | `fuzzGlobClasses` (added for this) | the first version of the target built a *single* class, so it passed against the expanding implementation: one wide class is a few megabytes, well inside a 2 GB heap, and only the product of pattern length and range width exhausts it | the class is repeated a fuzzer-chosen number of times; the expanding mutation now fails this target in `58 runs`, and the correct code passes `63,011 runs in 151 s` |
+| A7.8 | `fuzzGlobPatterns` (sanitizer) | **Regular Expression Injection**: `fnmatch` built a backtracking regex from user input, so `"*a"`×12 + `"*b"` against 30 `a`s took 1564 ms and doubled per two stars added -- a ReDoS a hostile pattern could aim at the CLI | the regex engine was removed and replaced by a linear dynamic-programming matcher; ADR-0068; a regression case pins the shape |
 
 This is the whole point of fuzzing: the defects were invisible to unit tests and would have
 been reported as "internal error: StackOverflowError" to a user.
+
+| A7.8 | self-review of the matcher rewrite | **Test that was not running**: inserting a new case immediately above `aPatternFullOfStarsIsMatchedInLinearTime` consumed that method's `@Test` annotation, so the ReDoS regression case sat in the file as a plain method that JUnit never invoked -- the suite reported 31 passing tests either way | the annotation was restored and the case sabotage-checked: changing the expected pattern back to the pre-fix shape makes it fail, so it is not vacuous. Files are now checked for a 1:1 count of `@Test` and `void` methods |
 
 ## Adding a target
 
@@ -139,7 +165,12 @@ been reported as "internal error: StackOverflowError" to a user.
 
 ## What is not covered yet
 
-- The rest of the stdlib: text operations, path resolution, CSV.
+- Path resolution still needs an `OqHost`, so it is the one stdlib area the targets cannot
+  reach: every entry point that resolves a path against the working directory is exercised
+  through `matchesText` and the format builtins instead.
+- `Patterns.glob`'s directory walk is only covered through `GlobTest`; the fuzz targets call
+  `matchesText`, so the filesystem traversal is not fuzzed.
+- Swing, which has no coverage at all yet.
 - Semantic analysis, which has no separate pass yet.
 - Expression and block limits are separate constants because the parser recurses through
   different call paths for each. Unary, power and interpolation now share the expression limit.

@@ -94,10 +94,20 @@ final class TextWrap {
         List<String> lines = new ArrayList<>();
         int i = 0;
         StringBuilder indent = new StringBuilder();
+        // An indent is what precedes the content on the same line, so it ends at the first line
+        // break. Carrying a '\n' into the first line would return a "line" that contains a line
+        // break, and fill_text joins these lines with '\n' -- the caller would get a blank line
+        // it never asked for.
+        boolean afterLineBreak = false;
         while (i < text.length() && Character.isWhitespace(text.charAt(i))) {
-            indent.append(text.charAt(i++));
+            char c = text.charAt(i++);
+            if (c == '\n' || c == '\r') afterLineBreak = true;
+            if (!afterLineBreak) indent.append(c);
         }
-        String current = indent.toString();
+        // Leading whitespace is kept only because it precedes a word. With no word it is all
+        // there is, and emitting it would produce a line of nothing but spaces -- the same
+        // outcome the no-room case below already refuses.
+        String current = i < text.length() ? indent.toString() : "";
         boolean carrying = false;
         while (i < text.length()) {
             int start = i;

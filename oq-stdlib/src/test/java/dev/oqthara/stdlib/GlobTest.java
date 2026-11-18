@@ -94,10 +94,96 @@ class GlobTest {
     }
 
     @Test
+    void aCharacterOutsideTheBasicPlaneIsOneCharacter() {
+        // Found by fuzzing the pattern translator directly: it walked `char`, so an emoji was
+        // quoted as two surrogate halves. The resulting regex matched neither half alone nor
+        // the pair together, so an emoji pattern never matched itself -- any name containing an
+        // emoji was unreachable, and `fnmatch("😀", "😀")` answered false. Every expected value
+        // matches Python's fnmatch.
+        String emoji = "\uD83D\uDE00";
+        assertEquals(Boolean.TRUE, call("fnmatch", emoji, emoji));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a" + emoji, "a" + emoji));
+        assertEquals(Boolean.TRUE, call("fnmatch", emoji, "*"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a" + emoji, "?" + emoji));
+        assertEquals(Boolean.FALSE, call("fnmatch", "a", emoji));
+    }
+
+    @Test
+    void anAstralMemberOfAClassIsOneMember() {
+        // The class body has the same `char` hazard as the literal path -- the two loops look
+        // alike -- but when the literal bug was found the regex engine still rejoined surrogate
+        // halves inside a class, so only the literal was broken. Pinned because the matcher now
+        // compares code points directly and expands ranges itself, which is exactly the kind of
+        // rewrite that can quietly lose this. Every value matches Python's fnmatch.
+        String emoji = "\uD83D\uDE00";
+        assertEquals(Boolean.TRUE, call("fnmatch", emoji, "[" + emoji + "]"));
+        assertEquals(Boolean.FALSE, call("fnmatch", "a", "[" + emoji + "]"));
+        assertEquals(Boolean.FALSE, call("fnmatch", emoji, "[!" + emoji + "]"));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a", "[!" + emoji + "]"));
+        assertEquals(Boolean.TRUE, call("fnmatch", emoji, "[" + emoji + "-" + emoji + "]"));
+    }
+
+    @Test
+    void aClassSpanningMostOfUnicodeCostsOnlyItsOwnLength() {
+        // Found while reviewing the rewrite, not by fuzzing: a first draft expanded every range
+        // into its members when the pattern was built. A single class covering most of Unicode
+        // then became 1.1 million ints, so a 360-character pattern exhausted a 256 MB heap before
+        // one name was looked at -- a pattern far shorter than the name it is matched against.
+        // Ranges are kept as endpoints now, so this builds and matches and the cost tracks the
+        // pattern's length. A wide class is legal and must keep matching its members.
+        String low = new String(Character.toChars(1));
+        String high = new String(Character.toChars(0x10FFFF));
+        String wide = "[" + low + "-" + high + "]";
+        String pattern = wide.repeat(200);
+        // A regression here is an OutOfMemoryError, which would otherwise take down the whole
+        // test JVM and report as an executor crash rather than as this test failing. Catching it
+        // keeps the regression attributable to the case that causes it.
+        Object matched;
+        try {
+            matched = call("fnmatch", "z".repeat(200), pattern);
+        } catch (OutOfMemoryError e) {
+            throw new AssertionError("a " + pattern.length() + "-character pattern exhausted the"
+                    + " heap; class ranges are being expanded into their members", e);
+        }
+        assertEquals(Boolean.TRUE, matched);
+        assertEquals(Boolean.FALSE, call("fnmatch", "z".repeat(199), pattern));
+        assertEquals(Boolean.TRUE, call("fnmatch", "az", "[" + low + "-" + high + "]z"));
+    }
+
+    @Test
+    void aPatternFullOfStarsIsMatchedInLinearTime() {
+        // Found by fuzzing: Jazzer's regex-injection sanitizer reported a user-built regex, and
+        // the shape that triggered it was a long run of `*a` against a name of `a`s. Under the
+        // old translator each `[^/]*` was a separate quantifier that could split the same run of
+        // `a`s, so the engine had exponentially many ways to fail and took 1564 ms at twelve
+        // stars, doubling with every two stars added. The matcher now advances one row per
+        // pattern element, so this case is a handful of passes over the name.
+        //
+        // The assertion is deliberately on the answer rather than on a clock: a timing threshold
+        // is flaky on a loaded machine, and the defect's signature under the old engine was that
+        // this call did not return within the fuzz target's whole budget. Matching the answer
+        // and returning at all is the regression.
+        String pattern = "*a".repeat(12) + "*b";
+        assertEquals(Boolean.FALSE, call("fnmatch", "a".repeat(30), pattern));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a".repeat(30) + "b", pattern));
+    }
+
+    @Test
+    void aGlobstarConsumesWholeSegmentsSoItCannotSwallowAHalfName() {
+        // A globstar is `(?:[^/]*/)*`, not `.*`. Modelling it as "anything at any depth" would
+        // still match every case in this file, because the following literal happened to start
+        // after a separator -- so it needs a case whose literal starts mid-name to be caught.
+        String name = "a";
+        assertEquals(Boolean.FALSE, call("fnmatch", "a/b" + name, "**/" + name));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a/" + name, "**/" + name));
+        assertEquals(Boolean.TRUE, call("fnmatch", name, "**/" + name));
+        assertEquals(Boolean.TRUE, call("fnmatch", "a/b/c/" + name, "**/" + name));
+    }
+
+    @Test
     void onlyALeadingBangNegatesSoACaretIsALiteral() {
         // `[^a]` is the spelling people reach for after `[!ab]`, but in this dialect -- as in
-        // Python and fnmatch(3) -- only `!` negates, so the caret is an ordinary member. The
-        // regex engine gives `^` meaning inside a class, so it has to be quoted in translate.
+        // Python and fnmatch(3) -- only `!` negates, so the caret is an ordinary member.
         assertEquals(Boolean.FALSE, call("fnmatch", "b", "[^a]"));
         assertEquals(Boolean.TRUE, call("fnmatch", "^", "[^a]"));
         assertEquals(Boolean.TRUE, call("fnmatch", "a", "[^a]"));
@@ -318,6 +404,30 @@ class GlobTest {
     void aNonRecursivePatternDoesNotListNestedFiles() throws IOException {
         touch("sub/d.oq");
         assertEquals(List.of(), call("glob", ".", "*.oq"));
+    }
+
+    @Test
+    void everyTestMethodInThisFileCarriesAnAnnotation() throws IOException {
+        // Inserting a case above an annotated method consumed that method's @Test while this
+        // suite still reported every visible test passing -- the ReDoS regression case had
+        // silently stopped running. A bare `void name()` in a test class is never a test, so the
+        // two counts must match; if they diverge, an annotation was lost or a method was added
+        // without one. Verified by removing this file's `@Test` from the linear-time case: the
+        // guard then fails with "32 annotated, 33 declared".
+        String source = Files.readString(Path.of("src/test/java/dev/oqthara/stdlib/GlobTest.java"));
+        int annotated = 0;
+        int methods = 0;
+        for (String line : source.split("\n", -1)) {
+            // Count annotation lines, not occurrences of the word: this method's own
+            // comment and message mention it, and a raw occurrence count would hide a real
+            // loss. `private void` helpers are not tests, so only package-private methods
+            // take part in the comparison.
+            if (line.strip().equals("@" + "Test")) annotated++;
+            if (line.startsWith("    void ")) methods++;
+        }
+        assertEquals(annotated, methods,
+                "every void method in a test class needs @Test; " + annotated + " annotated, "
+                        + methods + " declared");
     }
 
     @Test

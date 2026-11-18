@@ -17,6 +17,7 @@ import java.util.Random;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -110,6 +111,31 @@ class TextWrapTest {
     @Test
     void wrapOfEmptyTextIsNoLinesAtAll() {
         assertEquals(List.of(), wrap("", 20));
+    }
+
+    @Test
+    void wrapOfWhitespaceOnlyTextIsNoLinesAtAll() {
+        // ADR-0043 D2 keeps leading whitespace only because it precedes a word. With no word,
+        // the indent is all there is, and emitting it produces a line of nothing but spaces --
+        // the case wrapDropsAnIndentThatLeavesNoRoomForTheFirstWord already refuses. Python's
+        // textwrap.wrap("   ", 1) is [] for the same reason.
+        assertEquals(List.of(), wrap("   ", 1));
+        assertEquals(List.of(), wrap("   ", 20));
+        assertEquals(List.of(), wrap("\t\n ", 4));
+    }
+
+    @Test
+    void aLineNeverContainsALineBreak() {
+        // The indent is what precedes the content on the same line, so it stops at the first
+        // line break. Returning a "line" holding '\n' would also corrupt fill_text, which
+        // joins these lines with '\n' and so would emit a blank line the caller never wrote.
+        assertEquals(List.of("^]"), wrap("\n^]", 1374));
+        assertEquals(List.of("abc"), wrap("\n\nabc", 10));
+        assertEquals("abc", call("fill_text", "\n\nabc", 10.0));
+        for (String line : wrap(" a\nb ", 3)) {
+            assertFalse(line.contains("\n"), "line contains a newline: " + line);
+            assertFalse(line.contains("\r"), "line contains a carriage return: " + line);
+        }
     }
 
     @Test
