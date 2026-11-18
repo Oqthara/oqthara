@@ -1,0 +1,14 @@
+# C11.1: a class on the *user's* classpath is importable, under both backends.
+#
+# `Hello` lives in a jar built from `Hello.java` and nowhere else, so this probe can only pass
+# when that jar is reachable. `run.py` launches it as `java -cp "oq.jar:fixture.jar"` rather
+# than `java -jar`; `-jar` ignores both `CLASSPATH` and the working directory, which is why the
+# gap this closes was real. The jar is built on every run from committed source rather than kept
+# in the tree: a committed jar is invisible to review. A missing `javac` is a failure, never a
+# skip, because the harness already needs a JDK to build probes.
+#
+# The class is deliberately not on the CLI jar's own classpath and not in the default package
+# of anything this build produces, so a pass cannot be an accident of `oq.jar` already
+# containing a `Hello`.
+use Hello
+print Hello.greet()

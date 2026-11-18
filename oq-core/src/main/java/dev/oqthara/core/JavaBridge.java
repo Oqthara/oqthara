@@ -141,12 +141,34 @@ public final class JavaBridge {
      * different {@code Method} object that passes the check and dispatches to the same override.
      */
     private static Method accessible(Method method, Class<?> receiverType) {
-        if (Modifier.isPublic(method.getDeclaringClass().getModifiers())
-                && Modifier.isPublic(receiverType.getModifiers())) {
+        if (reachable(method.getDeclaringClass()) && reachable(receiverType)) {
             return method;
         }
         Method found = publicDeclaration(receiverType, method);
         return found != null ? found : method;
+    }
+
+    /**
+     * Whether this code can reach a type at all: public <em>and</em> exported to it.
+     *
+     * <p>{@code Modifier.isPublic} is not the whole check on a modular JDK. The compiler and
+     * {@code Method.invoke} both also require the type's package to be exported to the caller's
+     * module, so the JDK can declare a class public and still make it unreachable — every
+     * {@code sun.*} implementation class is exactly that. {@code
+     * BufferedImage.createGraphics()} answers a {@code sun.java2d.SunGraphics2D}: public, and in
+     * a package {@code java.desktop} does not export, so {@code setColor} failed with "cannot
+     * access class sun.java2d.SunGraphics2D ... because module java.desktop does not export
+     * sun.java2d" while the identical declaration on {@code java.awt.Graphics} invoked fine.
+     *
+     * <p>A class in an unnamed module is reachable when it is public, which the check below keeps:
+     * unnamed packages are open by definition, and application classes on the classpath are the
+     * ordinary case.
+     */
+    private static boolean reachable(Class<?> type) {
+        if (!Modifier.isPublic(type.getModifiers())) return false;
+        Module owner = type.getModule();
+        if (owner == null || !owner.isNamed()) return true;
+        return owner.isExported(type.getPackageName(), JavaBridge.class.getModule());
     }
 
     private static Method publicDeclaration(Class<?> type, Method method) {
@@ -154,12 +176,12 @@ public final class JavaBridge {
         if (type != null) pending.add(type);
         for (int i = 0; i < pending.size(); i++) {
             Class<?> candidate = pending.get(i);
-            if (Modifier.isPublic(candidate.getModifiers())) {
+            if (reachable(candidate)) {
                 try {
                     Method found = candidate.getMethod(method.getName(), method.getParameterTypes());
                     // getMethod answers the most specific declaration, which can still be one this
                     // package cannot reach, so the declaring class is what decides.
-                    if (Modifier.isPublic(found.getDeclaringClass().getModifiers())) return found;
+                    if (reachable(found.getDeclaringClass())) return found;
                 } catch (NoSuchMethodException e) {
                     // Keep walking: the public declaration may sit on a further supertype.
                 }

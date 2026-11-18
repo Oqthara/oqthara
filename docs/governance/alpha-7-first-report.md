@@ -74,7 +74,7 @@ current. The rows that still say "Still open" remain open against the present tr
 | --- | --- | --- |
 | R-012 | `docs/stdlib/reference.md` generated; the register's own correction table already revised 89 → 205 | Still open as a *breadth* question; the count itself is now stated |
 | R-014 | `docs/adr/0032-static-fields-and-varargs.md` D5; direction out of Java still closed | Still open, correctly described |
-| R-018 | 8 targets in `allFuzzTargets` at the time; 10 named gap builtins had zero occurrences in the fuzz source | **Reproduced exactly then**, and superseded — now 11 targets; see item 4 |
+| R-018 | 8 targets in `allFuzzTargets` at the time; 10 named gap builtins had zero occurrences in the fuzz source | **Reproduced exactly then**, and superseded twice — 11 after PR #253, 14 after Item 9h; see item 4 |
 | R-021 | `grep -c "rollback\|--update" scripts/install.sh` → 0; no `oq update` | Still open. **But its stated reason is now false** |
 | R-022 | `ls -d site` → absent; `OUT = ROOT / "site" / "_site" / "versions"` still in the script | **Reproduced exactly** |
 | R-023 | `Lexer.KEYWORDS` has 22; three documents said 20 | **Reproduced exactly then**, and repaired — all six now say 22; see below |
@@ -259,7 +259,7 @@ All three adjustments are now discharged.
 | Adjustment | State |
 | --- | --- |
 | No language-syntax role in the operating instructions | **Fixed.** `AGENTS.md` now names both agent sets and says which one is loadable here and which one the governance documents assign owners to |
-| Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 |
+| Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 words |
 | Scope must not absorb the type system | **Fixed.** The agent file has a "Where your ownership stops" section: syntax owns the annotation grammar and the specification's account of it; `oq-hive-development` owns the value model, the semantic-analysis pass, and failed-check behaviour. A change needing both is two changes |
 
 The keyword count **is** read by CI, in the same commit that corrected it. PR #252 added an
@@ -318,7 +318,7 @@ and `0069-oqthara-stays-dynamically-typed.md`).
 ## Item 8 — Java Bridge Full validation matrix
 
 The authoritative inventory is `docs/governance/alpha-5-java-bridge-capability-inventory.md`:
-**thirteen** directions, **52** capability rows, and **five** confirmed defects **D1–D5**. §6 asks
+**thirteen** directions, **54** capability rows, and **six** confirmed defects **D1–D6**. §6 asks
 for "Full", and the inventory already defines what that would have to mean.
 
 That count has been wrong in both directions. This report once claimed five defects when the
@@ -334,32 +334,43 @@ list are gone; one stands:
 - ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — still true of the suite,
   but the probes below ran the toolkit, and Direction 13 records the results.
 - ~~The inventory has no Swing row~~ — Direction 13 now has six, C13.1–C13.6, all executed.
-- **Still open:** no test opens a *visible window*. Layout, painting, input dispatch and
-  look-and-feel are untested, because a headless runner cannot cover them.
+- **Was open, now half closed:** layout, painting, input dispatch and look-and-feel were untested
+  because this section assumed a headless runner cannot cover them. That assumption was wrong:
+  `c13_offscreen` now gates all four on both backends with no display. What remains open is
+  *displaying* a window — and with it the platform's own window manager — which a headless runner
+  genuinely cannot cover. The failure a program gets when there is no display *is* covered, by
+  `c13_window` (Item 9j), which pins `-Djava.awt.headless=true` so the answer does not depend on
+  the host.
 
 What the pass established: components construct and answer, a closure runs on the event dispatch
 thread, a closure is accepted as an `ActionListener` and receives the real `ActionEvent`, captures
 survive the toolkit calling from a thread the program did not create, and interpreter and compiled
 bytecode agree. What it also found: opening a `JFrame` without a display was reported as an
-unchangeable collection, which is D5.
+unchangeable collection, which is D5; and that drawing at all failed, because the bridge treated a
+public JDK class as reachable when its package is not exported, which is D6.
 
 A validation matrix for §6 has to be built, not consulted. The minimum it must cover, with each row
 required to execute rather than be read:
 
 | Area | Ceiling that already exists |
 | --- | --- |
-| Swing construction and display | direction 13, C13.1 and C13.2; display still untested |
+| Swing construction and display | direction 13, C13.1 and C13.2; display still untested. C13.7 gates the rest of the toolkit without a display |
 | Event dispatch and thread affinity | direction 13, C13.3–C13.5; `print` is still non-atomic (R-029) |
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
-| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C12 in 24 as of the probe-coverage pass. C11.1 — a class on the user's own classpath — is still unprobed: it needs a `-cp` flag `run.py` cannot pass |
+| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C13 in 27 as of the offscreen-Swing pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it. C13 was hand-executed until `c13_offscreen` made the parts of it that need no display a gated probe, and `c13_window` gates the one that does: it pins `-Djava.awt.headless=true` so the answer is the same on a desktop and on CI, which is what makes the display-dependent half testable where no display exists |
 
 One constraint from the tree must be honoured, not worked around: the probe harness covered C1–C8
-when this section was written, and no direction was probed headlessly, so a GUI program's
-compiled-versus-interpreted parity would not be gated by anything that exists today. The C9–C12
-probes added since exercise non-GUI directions, so the conclusion is unchanged: parity for a
-program that needs a display still has no gate. The other constraint this section used to name — D1, a
+when this section was written and no direction was probed headlessly, so a GUI program's
+compiled-versus-interpreted parity would not be gated by anything that exists today. That has
+narrowed but not closed. `c13_offscreen` now gates layout, painting, input dispatch and
+look-and-feel on both backends without a display — the earlier claim that a headless runner cannot
+cover them was wrong, and the probe is the counter-example — but *displaying* a window still
+needs one, so parity for a program that shows a real window still has no gate. Note that the call
+that fails is `new Frame(...)`, not `setVisible`: `Window`'s constructor runs `checkHeadless()`
+itself. `c13_window` gates that failure, so the boundary is tested even though the display is not.
+The other constraint this section used to name — D1, a
 callable Java object refused at `sort`, `sort_by`, `reduce` and `list_sort` — was fixed in PR #231
 (`39b6078`) on 2026-11-15, two days before this report. All four builtins now accept a Java
 functional value whose arity fits, and a wrong-arity value is refused by count rather than by
@@ -404,7 +415,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Blocked as written** — ownership, keyword count and the type-system scope split are all discharged (Item 6's Resolution), but §4's own text is not in this repository, so the work has no boundary. Two of three prerequisites met; the third is a definition, not an adjustment |
-| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.6); visible-window coverage still open |
+| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), and the no-display failure is gated by `c13_window` (Item 9j). Only displaying a window on a real screen is still open |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
 ## Item 9a — Runtime and observability: what the tree actually needed
@@ -540,14 +551,25 @@ $ ls docs/adr/ | wc -l
 ```
 
 The `19` is the one figure in that block that has since moved, and it moved because the gap it
-counted was closed rather than because the measurement was wrong: C9–C12 are now probed, so the
-command prints 24. Re-running it today gives `13`, `52`, `24`, `69`. That is the intended direction
-of change — the count grew because coverage grew — and it is why this paragraph now reads in the past
-tense instead of claiming a number that a reader would immediately contradict.
+counted was closed rather than because the measurement was wrong: every direction the inventory
+lists is now probed, C13 included, so the command counts 27 probe files where it counted 19. That
+is the intended direction of change — the count grew because coverage grew — and it is why this
+paragraph reads in the past tense instead of claiming a number that a reader would immediately
+contradict.
 
-That matters for the conclusion: the decay is not uniform. Item 8 cites a document that has not been
-edited since the report was written, so nothing could drift. The items that decayed are the ones
-whose subject the report's own sequencing then changed.
+The other three figures in that block need the same care, and the first draft of this paragraph did
+not give it. It said the block had one stale figure and quoted the rest as current. In fact the
+inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
+so by the time this paragraph was written the block held **two** figures that had moved, not one.
+Measured now: 13 directions, 54 capability rows, 27 probe files, 69 ADRs. Three of the four differ
+from the block above.
+
+That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites
+a document that has not been edited since the report was written, so nothing could drift. That was
+true when it was written and is false now: `66e68f8` and `ec8947a` both edit the capability
+inventory, and `ec8947a` edits `run.py` as well. Only the ADR count survived untouched, and only
+because nothing in this branch writes to `docs/adr/`. A figure stays true here for exactly as long as
+no commit touches its subject — which is a property of the branch, not of the figure.
 
 **Five more claims had decayed**, all corrected in place above:
 
@@ -555,7 +577,7 @@ whose subject the report's own sequencing then changed.
 | --- | --- | --- |
 | Item 2: Open 7 / Mitigated 10 / Accepted 13, total 30, Low 13 | `d306833` | PR #253 moved R-018 to Mitigated; PR #254 added R-031 |
 | Item 3: R-018 and R-023 "Reproduced exactly" | `d306833` | Both were repaired by PRs #252 and #253 |
-| Item 4: `allFuzzTargets` "declares exactly 8" | `d306833` | PR #253 took it to 11 |
+| Item 4: `allFuzzTargets` "declares exactly 8" | `d306833` | PR #253 took it to 11, and Item 9h to 14 |
 | Item 4: all ten named builtins have "zero occurrences" | `d306833` | PR #253 covered nine of the ten |
 | Item 7: §5 "requires superseding ADRs" for ADR-0015 and the brief | `d306833` | ADR-0069 did exactly that, and answered against §5 |
 
@@ -616,6 +638,509 @@ pattern — noticed, deferred, noticed again — is the same one that let Items 
 it is worth naming: a deferred finding decays faster than a recorded one, because nothing about it
 changes and so it keeps looking smaller.
 
+## Item 9e — A7.9: the mechanism the last four reviews asked for
+
+Items 9b, 9c and 9d each repaired claims by hand, and so did PR-260, PR-261, PR-262 and PR-263 before
+them. Four records in a row found the same defect and three of them wrote the same sentence: *nothing
+re-derives these figures, so the next pass will find new ones*. Nothing was added. This pass adds it.
+
+`scripts/check-report-claims.py` re-derives every quantitative claim it can and runs in the same CI
+step as the other six gates. It deliberately does not hold a table of expected totals — an extractor
+that compares against a hardcoded copy of the answer is a second copy that goes stale, which is the
+defect it exists to remove. It reads the number *out of the sentence* and the truth *out of the file
+that owns it*:
+
+| Claim | Owner |
+| --- | --- |
+| probes, probe-coverage range, per-group probe counts | `docs/governance/alpha-5/java-bridge-probes/run.py` and the `c*.oq`/`d*_*.oq` files |
+| capability rows, directions, confirmed defects | `docs/governance/alpha-5-java-bridge-capability-inventory.md` |
+| keywords | `Lexer.java` |
+| fuzz targets | `build.gradle.kts` |
+| ADRs | the ADR directory |
+| risk status counts and the Open ID list | the register, through `check-risk-register.py`'s own `parse_rows` |
+
+The last row is worth stating plainly. `check-risk-register.py` parses the `status` column at line 91
+and never reads the value, so the register's arithmetic is enforced while its *contents* were trusted
+by whoever quoted them. Rather than add a second parser that could diverge, this gate imports the
+existing one.
+
+**The gate is tested in both directions.** 30 tests in `scripts/tests/test_check_report_claims.py`:
+seventeen reintroduce a real class of drift and require rejection, eight assert the dated snapshots and
+unambiguous sentences the record depends on stay silent, and five guard the derivation and the
+exemption lists. The silence tests are not decoration. A gate that rejects §9c's deliberate quotation
+of a historical figure is a gate the first person to hit it deletes from CI.
+
+**What mutation testing found while building it.** Fifteen deliberate corruptions of the real report,
+against the first version: a mutated total, a mutated spelled-out total, a mutated coverage range, a
+mutated probe total written without the unit word, a mutated bare target count, three mutated status
+cells, a mutated table total, a wrong Open ID, a mutated defect range, and a mutated per-group subset.
+That harness reported seven misses on its first run, which was the useful result — the pairing rule
+treated any multi-figure sentence as a before/after pair. The current harness runs seventeen catching
+mutations and eight silence mutations, all correct:
+
+```
+$ python3 scripts/check-report-claims.py
+report claims: every figure agrees — 27 probes, 27 probe files, 54 capability rows,
+13 directions, 22 keywords, 14 fuzz targets, 69 ADRs, 6 defects, 31 risks (6 Open)
+exit=0
+```
+
+**The gate could not read the sentence that defeated it, and this section held the same defect.** The
+first version of the paragraph above stated the gate's own totals, and every one of them had moved:
+the probe total, the capability-row total, the fuzz-target total and the defect total were all
+smaller than the tree. They survived because they sit in a fenced block, and fenced blocks are exempt:
+a gate that compares a figure against the tree cannot also read the transcript of a command that
+produced it. The distinction is only honest if the transcript is labelled as a transcript. So this
+block is now the gate's *actual* output, re-derived when the sentence around it was last edited, and
+any figure in it that a reader wants to trust must be re-run rather than believed. That is the same
+rule the report asks of its own claims, applied to the evidence it shows for them.
+
+**It found a bug in itself, and the first review that missed it was mine.** `NOUN_KEY` was built from
+each noun as written and then read with the matched text lowercased, so the `("ADRs", "adrs")` entry
+was unreachable. Any live sentence stating an ADR count raised `KeyError` out of `classify` — not a
+wrong answer, a crash, which would have taken the CI step down with an unhandled traceback. It
+survived because the phrase appeared only inside fenced blocks, which are exempt, and none of the
+eighteen tests then in place injected an ADR sentence into live prose. The fix keys the map on
+`lower()` and two new tests pin both directions: the wrong count is rejected, and the correct count is
+silent. A crash is not a pass; this is the one defect of the set that a passing gate could not have
+told me about.
+
+**It found a real defect in this report, not only in the tests.** Line 664 read "It claims eight
+targets exist" in the present tense, true on `d306833` and false since `e43d384` added three. Every
+prior pass had checked the fuzz counts it was looking for and not this one. The sentence now reads
+"fourteen targets exist today, that the run at `d306833` covered eight of them", which is what was
+always meant. It read eleven from `e43d384` until Item 9h added the compression targets, so the same
+sentence has now gone stale twice, once per target batch.
+
+The gate also forced a decision it had been avoiding. Its first version treated any sentence with two
+figures as a before/after pair, which silenced almost everything; its second treated every figure as
+live, which fired on the dated halves. What settles it is a rule about *position*: a dating clause
+before the first figure or after the last governs the whole sentence, and one between figures governs
+only its own clause. Line 356's parity row dates its first half mid-sentence and must stay silent
+there while still checking the second half, and Item 8's dated list carries its predicate after the
+last figure and must go quiet entirely. Both are now tests.
+
+**What this does not cover.** Any claim-shaped sentence the rules cannot parse is a *failure*, not a
+skip — that is asserted by a test — but a sentence that is not claim-shaped at all still passes.
+Prose saying "most targets" or "several probes" is invisible here. The gate reduces the class of drift
+that started this sequence; it does not eliminate it, and a future pass that finds a number inside a
+sentence with no recognised noun will have found a limitation of this gate rather than a new
+exception to it.
+
+One asymmetry inside the pairing rule is deliberate rather than overlooked. In "the register held 30
+risks and now holds 31", the earlier figure carries a noun and the later one does not, so only the
+earlier figure is recognised and it is checked — the sentence is reported, correctly. In "the count
+was 22 keywords and now says 24", the earlier figure is recognised and the later one is not, so the
+pairing exemption applies to nothing and again only the earlier figure is checked. Both halves come
+out checked, which is the safe direction: the failure mode worth preventing is a stale figure passing
+quietly, not a stale figure being reported twice. Requiring both halves to carry a noun before the
+exemption applies would be tidier, and it would also have re-silenced the bare-total shapes closed
+above.
+
+## Item 9f — A7.10: the one capability row the harness could not reach
+
+§3.1 named C11.1 — a class on the user's own classpath — as the remaining gap in the probe
+matrix. The inventory classified it `Complete` and its evidence was real: someone had run
+`use Hello` by hand with and without `-cp` and written down both outcomes. What was missing was
+a gate, and the reason was mechanical rather than editorial. `run.py` launched every probe as
+`java -jar`, and `-jar` ignores both `CLASSPATH` and the working directory, so a probe written
+that way cannot reach a class that is not inside `oq.jar` no matter what is on the disk.
+
+**The gap was closed by changing the launch form for one probe, not for all of them.** A
+`Hello` class was checked in as `Hello.java` beside the probes and is compiled into a jar of its
+own on every run. `EXTRA_CLASSPATH` names the probes that need a second jar alongside `oq.jar`;
+`launch()` emits `java -cp "<oq.jar><sep><fixture>" …` only for those, and every other probe
+keeps the `-jar` form its recorded output was produced under. Changing all of them would have
+moved evidence that has nothing to do with this gap.
+
+The jar is built rather than committed, and that is not a preference. `*.jar` is in `.gitignore`,
+so a fixture jar cannot be checked in at all — `d2_reflection_reachable.jar` sits on disk in the
+same directory and is **not tracked**, which the first draft of this item got wrong by citing it
+as precedent. The PR-263 review record made the same mistake from the other side: it offered "a
+committed fixture jar" as one of the two ways to close this gap, and that option never existed.
+Building from committed source is the only shape available, and it is also the better one: the
+class is reviewable, and it cannot drift from the jar because the build regenerates it.
+
+Both halves were run before the expectation was written down, and both failed the old way and
+passed the new one:
+
+```
+$ java -jar oq-cli/build/libs/oq.jar run c11_user_classpath.oq
+error: cannot find Java class 'Hello'
+$ java -cp "oq-cli/build/libs/oq.jar:hello_fixture.jar" \
+    dev.oqthara.cli.Main run c11_user_classpath.oq
+hi world
+```
+
+The compiled half needed the same treatment. `oq build` writes `Main-Class: oq.generated.Program`
+into the manifest, and `java -jar` on that jar cannot see the fixture either, so `compiled_launch()`
+spells the class out under `-cp` when a probe needs one. Both backends now print `hi world`.
+
+**Five things are gated, not asserted.** `scripts/tests/test_probe_extra_classpath.py` runs
+twelve tests over the launch decision and the fixture path: the classpath probe gets `-cp` and the
+others do not, the compiled half can see the fixture and keeps `-jar` without one, the separator is
+the platform one, the fixture is built from source rather than committed, and both a broken fixture
+and a missing `javac` are failures rather than skips.
+
+Three of those only became real after a mutation survived. The separator test originally compared
+against `os.pathsep`, which *is* `:` on the machine running it, so a hard-coded `:` passed — it now
+substitutes a separator that appears in neither path. A mutation that made a missing fixture source
+`return` quietly also survived, because the tests only exercised the paths that worked; that case
+now has its own test. Each of the four mutations is caught. The harness itself fails both ways when
+the mechanism breaks: with `launch` forced back to `-jar` the probe reports the real `cannot find
+Java class 'Hello'`, and with `Hello.java` removed it reports the missing source. A probe that
+skipped itself when a fixture was absent would report a pass for a check that never ran.
+
+Before the probe was added, this gate caught the drift the change introduced:
+
+```
+$ python3 scripts/check-report-claims.py
+report claims: 1 problem(s)
+  - line 356: says 24 probes but the harness runs 25
+```
+
+That is the A7.9 mechanism doing its job on the first figure this pass changed. The count is
+derived from `run.py`'s own `PROBES` table, so it followed the probe automatically once the line
+was corrected, and the inventory's four stale "24 probes" figures were repaired in the same pass.
+
+## Item 9g — A7.11: a blocker that was resolved the day it was written
+
+Item 10 carried this sentence through every revision of this report: "nothing generates a review
+record on the automated path, so the next dependabot pull request will be red for the same reason."
+It is a prediction, and predictions are the easiest kind of claim to leave standing, because nothing
+tests them until the predicted event happens.
+
+The predicted event did not happen, and the entry should have known. `db01622` — merged 2026-11-18
+02:28, before #251 merged at 03:00 — added `app/dependabot` to `AUTOMATED_AUTHORS`. The gate no
+longer asks a bot for a review record, so a dependency pull request cannot go red for that reason.
+This report's own Item 9 status table already recorded the fix as **Done** at line 401. The report
+therefore said, in two places, that the gate was repaired and that it was not.
+
+### The evidence, run rather than read
+
+```
+$ python3 scripts/check-ai-review.py --pr 251
+  - docs/governance/reviews/PR-251.md is absent, and PR #251 was opened by app/dependabot, an
+    automated author that cannot review its own change; every other required context still applies
+AI review gate passed for PR #251.                                         [exit 0]
+$ ls docs/governance/reviews/PR-251.md
+ls: docs/governance/reviews/PR-251.md: No such file or directory
+```
+
+The record is absent and the gate passes anyway. That is the exemption working, on the live API, on
+the exact pull request the old entry named as evidence that it did not work. `gh pr view 251 --json
+author` reports `app/dependabot` with `is_bot: true`, which is the spelling `db01622` added.
+
+### Why the wrong version survived
+
+Because it was never in scope to check. Item 10 is a list of blockers; a blocker is a claim that
+something *will* go wrong, so its truth value is settled in the future and no gate that reads the
+current tree can settle it. The A7.9 claim gate from Item 9e reads figures back from files. This
+sentence contains no figure, no governance noun and no number, so it was invisible to that gate by
+design rather than by oversight — Item 9e's "Not verified" section already says so.
+
+The failure mode is worth naming precisely, because it recurs. A cross-reference made the report
+self-contradictory: line 401 said the red check was repaired, line 784 said the gap was unowned.
+Nothing compared them. Every review record on this branch read one or the other.
+
+### What changed
+
+- Item 10's entry now states what is true: the gate exempts the bot, nothing generates a record on
+  the automated path, and nothing needs to. The residual risk is R-031 rather than a certain future
+  failure.
+- The correction is dated and cites the commands above rather than asserting the outcome.
+- `.oqthara-ai/RESUME.md` repeated the same false prediction and is corrected with it.
+
+### What this does not claim
+
+- It does not claim no automated pull request can be red. `github-actions[bot]` is deliberately
+  *not* exempt, and a workflow-authored change still needs a record or it fails; PR-254 finding 1
+  records why that asymmetry exists.
+- It does not claim the exemption is robust. It matches a login against a hard-coded list, and the
+  first version of that list matched nothing. R-031 is that class of defect, and `db01622`'s own
+  message says the test that should have caught it stubbed the same wrong spelling as the code.
+- It does not claim any gate now catches a failed prediction. None does, and none can without
+  something that re-runs the prediction. This was found by reading a cross-reference and then
+  running one command.
+## Item 9h — The compression gap, closed and then made to fail on purpose
+
+Item 4 named two genuinely unreached builtins, `zip` and `compress`, and stopped there because the
+remaining work was "write targets", not "decide". This item writes them. The reason to write them
+first is that `oq-stdlib/.../Compression.java` is the most security-relevant unreached surface in
+the library: it parses gzip and zip framing by hand rather than delegating the whole container to
+the JDK, and it enforces a 16 MiB amplification cap *inside* the inflate loop, because a length
+field in the input can be lied to and only counted output cannot.
+
+**The gap, re-measured rather than remembered.** Before writing anything, the ten builtins Item 4
+names were counted again across `oq-stdlib/src/fuzz/java/`:
+
+```
+$ for b in csv_parse csv_write wrap_text fill_text fnmatch glob ini_parse \
+    properties_parse zip compress zlib_compress gzip_compress zip_decompress \
+    zlib_decompress gzip_decompress; do
+    printf '%s=%s ' "$b" "$(grep -rl "$b" oq-stdlib/src/fuzz/java/ | wc -l | tr -d ' ')"
+  done
+csv_parse=1 csv_write=1 wrap_text=1 fill_text=1 fnmatch=1 glob=1 ini_parse=1
+properties_parse=1 zip=1 compress=1 zlib_compress=1 gzip_compress=1 zip_decompress=1
+zlib_decompress=1 gzip_decompress=1
+```
+
+Every one is now non-zero. The measurement is a grep, and a grep counts a mention in a comment the
+same as a call, which is why the counts below are not the evidence — the executed runs are.
+
+**Each new target asserts a property rather than the absence of an exception.**
+
+- `decompressorsNeverThrowUnexpectedExceptions` feeds arbitrary hex to `zlib_decompress`,
+  `gzip_decompress` and `zip_decompress`. `OqError` is a normal outcome; anything else, including
+  `StackOverflowError` and `OutOfMemoryError`, is a defect. Every result must be lowercase hex,
+  which is the shape all three document.
+- `compressionRoundTripsItsOwnOutput` compresses then decompresses and requires the original bytes.
+  `gzip_compress` takes text and `zlib_compress` takes hex, so the two are driven separately: for
+  gzip the identity is the text's UTF-8 bytes, not the raw fuzzer bytes, because the writer
+  re-encodes.
+- `zipRoundTripsOneEntry` writes a one-entry archive and reads it back. Entry names are filtered to
+  what the format can carry without the name becoming a claim about the filesystem: the reader
+  refuses absolute names, backslashes and `..` segments by policy, so generating one and asserting a
+  round trip would be asserting that a deliberate security decision is a bug.
+
+All three are registered in `allFuzzTargets` as separate `FuzzTarget` entries, one JVM per target,
+because Jazzer's JUnit integration runs exactly one `@FuzzTest` per invocation and silently skips
+the rest.
+
+```
+$ ./gradlew -q printFuzzTargets | cat -n | tail -3
+    12	CompressionDecode
+    13	CompressionRoundTrip
+    14	ZipRoundTrip
+
+$ JAZZER_FUZZ=1 ./gradlew --no-daemon :oq-stdlib:fuzzCompressionDecode \
+    :oq-stdlib:fuzzCompressionRoundTrip :oq-stdlib:fuzzZipRoundTrip
+Done 893846 runs in 31 second(s)
+CompressionFuzzTest > zipRoundTripsOneEntry(FuzzedDataProvider) > Fuzzing... PASSED
+BUILD SUCCESSFUL in 2m 1s
+```
+
+**A passing run is not evidence the target can fail.** A target that asserts nothing, or whose fix
+generator never reaches the assertion, passes forever. So the target was made to fail against a
+deliberately broken implementation, in two separate mutations, each reverted afterwards:
+
+```
+# Mutation 1: gzip_decompress raises on any 0x78 second byte (i.e. on real zlib input)
+$ JAZZER_FUZZ=1 ./gradlew --no-daemon :oq-stdlib:fuzzCompressionDecode
+> Task :oq-stdlib:fuzzCompressionDecode FAILED
+CompressionFuzzTest > decompressorsNeverThrowUnexpectedExceptions(FuzzedDataProvider) > Fuzzing... FAILED
+    java.lang.AssertionError: gzip_decompress() crashed on 1f8b0800000000006500ab000300000000299e12:
+    java.lang.IllegalStateException: deliberate positive control
+
+# Mutation 2: zlib_compress drops its last byte
+$ JAZZER_FUZZ=1 ./gradlew --no-daemon :oq-stdlib:fuzzCompressionRoundTrip
+CompressionFuzzTest > compressionRoundTripsItsOwnOutput(FuzzedDataProvider) > 004c85dc... FAILED
+    java.lang.AssertionError: zlib_compress/decompress did not round-trip 000029000000012931ff003e...
+```
+
+Both mutations were reverted and `git diff` on `Compression.java` is empty. This is A7.8's
+acceptance criterion 6, executed rather than asserted.
+
+**What the runs do not prove.** They ran for 31 seconds per target at 2 GiB of heap. They did not
+reach the amplification cap, because generating input that expands past 16 MiB inside a 30-second
+budget spends the budget on allocation; the cap is covered by `CompressionTest` and remains a place
+where a fuzz run would only ever agree with itself. `docs/spec/fuzzing.md` now says so, and R-018's
+target count moved from eleven to fourteen with `printFuzzTargets` still named as the authority.
+
+**The count was stale in four places, and the gate flagged two.** Registering the targets made
+`check-report-claims.py` fail on two lines — the R-018 row in the re-check table (line 77) and Item
+9g's "does not claim" bullet (line 899). Two other places carried the same obsolete figure and were
+not flagged: the `Was true at` claims table's `d306833` row, which is legitimately dated, and Item
+9g's quotation of the half-sentence it was describing, which the gate treats as a quotation and not
+as a live claim. All four were corrected together.
+
+The two it missed are the two where being missed is most defensible, and that is the point rather
+than a defect: the gate resolves *figures*, and a figure embedded in a quotation of a broken claim
+looks, to a parser, exactly like the broken claim. The reason the count is now right everywhere is
+that four places were edited by hand after two were pointed at — not that the gate found them.
+
+It also cannot tell a total from a delta. Writing "three targets, each asserting a property" about
+the batch just added failed the gate on the first draft of this item, because a bare figure before
+the word "targets" is a total as far as the rule can see. The sentence was rewritten to name no
+figure. That is the right trade — a false positive that costs one rephrasing is cheaper than a
+checker that guesses which figures are deltas — but it means the gate's green is evidence that the
+totals agree, and nothing more.
+
+## Item 9i — §6: the GUI gap was two gaps, and only one of them was the display
+
+Item 8 recorded three obstacles under §6 and closed two of them. The third read:
+
+> **Still open:** no test opens a *visible window*. Layout, painting, input dispatch and
+> look-and-feel are untested, because a headless runner cannot cover them.
+
+The premise is false for four of the five things it lists. Only *realising* a window needs a
+display. Constructing components, laying them out, painting them into an offscreen image,
+dispatching an input event and asking the look-and-feel for a colour all run under
+`-Djava.awt.headless=true`:
+
+```
+$ java -Djava.awt.headless=true -cp /tmp/oqcls Off
+headless=true
+count=2 lbl=java.awt.Rectangle[x=10,y=10,width=100,height=20]
+painted=true px=19922
+laf=Metal
+```
+
+So the gap was never "the runner has no screen". It was two separate things, and separating them
+is what made the second one findable.
+
+### What was actually blocking painting
+
+Trying the same thing through the bridge found it immediately:
+
+```
+$ java -jar oq.jar run t2.oq
+sun.java2d.SunGraphics2D
+
+error: cannot call dispose: class dev.oqthara.core.JavaBridge cannot access class sun.java2d.SunGraphics2D
+       (in module java.desktop) because module java.desktop does not export sun.java2d to unnamed
+       module @150c158
+```
+
+`BufferedImage.createGraphics()` answers a `sun.java2d.SunGraphics2D`. That class is *public*, and
+`Modifier.isPublic` said yes, so the bridge handed the `Method` straight to `invoke` — but a
+modular JDK requires the class's package to be **exported** as well, and `java.desktop` exports no
+`sun.*` at all. The identical declaration on `java.awt.Graphics` invoked fine, which is what made
+it a bug in the bridge rather than a limit of the JDK. This is **D6**.
+
+The repair is one predicate, `reachable`, used wherever `accessible` and `publicDeclaration` used
+to ask `Modifier.isPublic`:
+
+```java
+if (!Modifier.isPublic(type.getModifiers())) return false;
+Module owner = type.getModule();
+if (owner == null || !owner.isNamed()) return true;
+return owner.isExported(type.getPackageName(), JavaBridge.class.getModule());
+```
+
+A class on the classpath lives in an unnamed module, which is open by definition, so nothing about
+application classes changed. Two tests in `JavaBridgeAccessibilityTest` pin it, and both fail when
+the predicate is reverted:
+
+```
+$ ./gradlew :oq-core:test --tests '*JavaBridgeAccessibilityTest*'     # fixed
+5 tests completed
+
+$ # reachable() cut back to "return Modifier.isPublic(...)"
+$ ./gradlew :oq-core:test --tests '*JavaBridgeAccessibilityTest*'
+5 tests completed, 2 failed
+```
+
+### The probe, and the assertion it deliberately does not make
+
+C13.7 is now gated rather than hand-run. `c13_offscreen` lays a `JButton` out inside a `JPanel`,
+paints the panel into a `BufferedImage`, counts the pixels the paint changed, clicks the button on
+the event dispatch thread and checks the closure received `["go"]`:
+
+```
+$ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
+ok: 27 probes match their expectation
+ok: 27 probes compared compiled bytecode against the interpreter
+```
+
+Two details in that program are there to stop it from measuring the wrong thing. It prints
+`painted > 0` **and** the count, because a boolean alone passes if a single stray pixel is painted;
+the count `20000` is the exact number a correct `fillRect`-plus-`paint` produces. And it prints
+`getLookAndFeel() != nothing` rather than the look-and-feel's *name*, because the name is
+`Mac OS X` on this machine and `Metal` on a bare Linux JVM — naming it would make the probe pass or
+fail on the machine instead of on the bridge, which is the same mistake D5's missing conformance
+case avoids.
+
+The probe was mutation-tested before it was trusted, because a passing probe is evidence of
+nothing until it can be shown to fail:
+
+```
+$ # c13_offscreen with `print painted > 0` changed to `print false`
+$ python3 .../run.py oq-cli/build/libs/oq.jar; echo $?
+FAILED
+  c13_offscreen: expected ['true', '20000', '["go"]', 'true', 'true'], got ['false', ...]
+1
+```
+
+### What this closes and what it does not
+
+Closed: layout, painting, input dispatch and look-and-feel are gated on both backends, in CI, with
+no display required. Direction 13 is no longer supported only by runs somebody did by hand.
+
+Not closed: opening a *visible* window still has no gate that exercises a real display. The
+matrix row in Item 8 says exactly that instead of claiming the whole toolkit is untestable.
+
+### The second half, and where the boundary actually is
+
+The paragraph above first said this would need a virtual framebuffer on the CI runner. That was
+another unexamined premise, and checking it moved the boundary. A Java program was run under
+`-Djava.awt.headless=true`:
+
+```
+$ java -Djava.awt.headless=true -cp . H
+headless=true
+Exception in thread "main" java.awt.HeadlessException
+	at java.desktop/java.awt.GraphicsEnvironment.checkHeadless(GraphicsEnvironment.java:164)
+	at java.desktop/java.awt.Window.<init>(Window.java:553)
+	at java.desktop/java.awt.Frame.<init>(Frame.java:428)
+```
+
+The heading said "`setVisible` needs a display". The call that fails is `new Frame(...)`:
+`Window`'s constructor runs `checkHeadless()` itself, so `setVisible` is never reached. This
+matters for the same reason D5 did — a note that names the wrong call cannot be turned into a
+test, because the test would call the working method and pass.
+
+The last open part is therefore *displaying* a window, not constructing one, and the construction
+failure is testable exactly where no display exists. `c13_window.oq` gates it. It prints whether
+the JVM reported itself headless, then constructs a frame inside a `try`, and asserts four things:
+that the headless flag is set, that the construction was caught, that the caught error carries a
+message, and that a second attempt fails the same way rather than returning a half-built window.
+
+```
+$ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
+ok: 27 probes match their expectation
+ok: 27 probes compared compiled bytecode against the interpreter
+```
+
+The probe asserts no exception class and no message text. The class is `HeadlessException` on this
+JDK, but that is `java.desktop`'s choice rather than the bridge's, and pinning it would test the
+JDK version. This is the same distinction the offscreen probe draws when it refuses to print the
+look-and-feel name.
+
+One thing had to change in the runner for this to be honest. Ungated, the probe prints
+`false` / `visible` on a machine with a display and `true` / `caught` on a CI runner, so it would
+pass or fail on the host rather than on the bridge — the failure mode this whole item is about.
+`run.py` now holds a `HEADLESS` set and launches only those probes with `-Djava.awt.headless=true`,
+which makes the recorded expectation the same one in both places. The flags are passed to the
+`oq build` command as well as to the run, because `oq build` executes the program to decide the
+codepath; a build launched without them would record an output that never matched the run it is
+compared against.
+
+The pin was mutation-tested, because a conditional that silently never fires looks identical to
+one that works. Replacing `HEADLESS = {"c13_window"}` with `HEADLESS = set()` made the harness
+report
+
+```
+c13_window: expected ['true', 'caught', 'true', 'caught-again'], got ['false', 'visible', 'constructed-again'] (exit 0)
+```
+
+and exit **1** — which also demonstrates that this machine has a display, and that without the pin
+the probe would have been testing the machine. Restored, the run returns to 27/27 and exit 0.
+Five tests in `test_ci_probe_wiring.py` pin the flags onto the jar, classpath and compiled launch
+forms and assert that an unlisted probe gets none.
+
+The Swing path is now gated twice, and the two gates answer different questions. The probes harness
+asks what the bridge did on the day it was measured; `conformance/257-swing-runs-with-no-display`
+asks whether it still does, on both backends, in the ordinary suite. It compiles, so the corpus
+moves to 215 of 224 executable programs, measured rather than assumed.
+
+What remains genuinely open is narrower than it was, and it is worth stating precisely: no test in
+this repository displays a window on a real screen, so painting *as composited by a window manager*
+is unexercised. Everything up to that point — layout, painting into an image, input dispatch,
+look-and-feel, and the failure a program sees when there is no display — is gated. Reaching the
+last step would need a virtual framebuffer such as Xvfb on the Linux runner. Nothing in this pass
+installed one, and this item does not claim otherwise.
+
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
@@ -626,10 +1151,15 @@ changes and so it keeps looking smaller.
   work needs a further ADR superseding ADR-0069 — not merely one superseding ADR-0015. The two
   conformance cases keep saying what they say, and now they say it on a decided question rather
   than a pending one.
-- **#251 was red on a required check** from the moment dependabot opened it, because ADR-0059
-  requires an AI review record per pull request and no one wrote one. It is merged now (`9eb3561`),
-  but the gap it exposed is unowned: nothing generates a review record on the automated path, so
-  the next dependabot pull request will be red for the same reason.
+- **#251 was red on a required check**, and this entry used to say the next dependabot pull request
+  would be red for the same reason. That prediction was already false when it was written and is
+  now demonstrated false. `db01622` exempts `app/dependabot` by login, and
+  `python3 scripts/check-ai-review.py --pr 251` exits 0 on the live API, naming `app/dependabot` as
+  an automated author that cannot review its own change. Nothing *generates* a review record on the
+  automated path — that part is still true — but nothing needs to, because the gate no longer asks
+  a bot for one. The residual risk is narrower and is recorded: R-031, an allow-list that matches an
+  external identifier can stop matching silently when the identifier changes, which is exactly how
+  this gate failed the first time. See Item 9g.
 - **The path-resolution fuzz target has no agreed design.** Private, host-dependent; either a stub
   `OqHost` or a production-code extraction. The second is better and is a change to production code
   justified by a test, which needs saying out loud.
@@ -648,12 +1178,37 @@ changes and so it keeps looking smaller.
   and not what it authorizes. The ownership fixes were necessary and are not sufficient, and the
   difference has been deferred twice. Status is now **Blocked as written**, and the unblocking step is
   to obtain §4's text, not to make another adjustment.
-- **Swing has partial coverage and no test** — direction 13 records six executed capabilities, but
-  no example and no conformance case exist, and nothing in CI would notice a regression. What
-  cannot be covered headlessly (layout, painting, input, look-and-feel) is still unmeasured, so
-  §6's "Swing first" is now half a measurement.
+- **Swing has no example and no conformance case.** This entry used to add two claims that were
+  wrong when written and are now demonstrated wrong. "Nothing in CI would notice a regression" was
+  false: the probes runner is a CI step on the Ubuntu leg, and deleting either direction 13
+  probe makes it exit non-zero on both backends. Deleting `c13_offscreen.oq` and re-running the
+  harness gives `FAILED / c13_offscreen: missing probe file` and exit 1; restoring it gives
+  `ok: 27 probes match their expectation` and exit 0. "What cannot be covered headlessly
+  is still unmeasured" was the premise Item 9i overturned — only *realising* a window needs a
+  display, and layout, painting, input dispatch and look-and-feel all run under
+  `-Djava.awt.headless=true` and are gated by C13.7. What is genuinely absent is smaller than
+  either claim: no `examples/*.oq` and no `conformance/*.oq` exercises Swing, so the bridge's Swing
+  path is gated by a governance harness rather than by the ordinary test suite, and a reader
+  looking for how to use it has nothing to read. The remaining unmeasurable is one thing: painting
+  as composited by a real window manager, which needs a virtual framebuffer on the Linux runner.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
+- **The security baseline's "measured starting point" table has drifted, and the new gate already
+  shows it.** `docs/governance/alpha-7-security-baseline.md` said its figures "were re-derived from
+  the tree on the commit that carries this file, none is carried forward". Run against today's tree,
+  three of the eight are stale: threats mitigated 14→18, partially mitigated 12→11, and risk-register
+  entries 30→31 (R-031, "a gate's allow-list silently stops matching", was added by `db01622` when
+  the Dependabot login was exempted). The `18 + 11 + 14 + 12 = 55` arithmetic and the 33
+  host-dependent names still hold.
+  The measurement was never wrong. It was taken at `e43d384` and the sentence around it claimed to be
+  current, so every later merge made the claim false while leaving the numbers as accurate history.
+  The baseline now names `e43d384`, states which three figures have moved since, and points a reader
+  who needs today's numbers at the gates named in the Source column. The table itself is unchanged,
+  because rewriting it with figures measured on a different tree would repeat the mistake it was
+  accused of.
+  This is the fifth document found carrying a figure that decayed silently. Unlike the first four it
+  was not repaired by editing a number: the defect was in a tense, and correcting the tense was
+  enough.
 - **No release, tag, deployment or version change is authorized** (§10), so none of the above may be
   validated by shipping.
 
@@ -661,8 +1216,11 @@ changes and so it keeps looking smaller.
 
 - It does not claim the risk register is wrong beyond the two corrections named; the other five Open
   entries were re-checked and hold.
-- It does not claim the fuzz suite is trustworthy because it passes. It claims eight targets exist,
-  found seven defects, and that eight more pure builtins are reachable and untested.
+- It does not claim the fuzz suite is trustworthy because it passes. It claims fourteen targets exist
+  today, that the run at `d306833` covered eight of them and found seven defects, and that the gaps
+  R-018 and `docs/spec/fuzzing.md` name by name are still gaps. It does not claim a count of "unreached
+  builtins": any such number depends on calling a builtin "pure", and this item measured reachability
+  by grep, which cannot make that judgement.
 - It does not claim §5 is illegal. It claims §5 contradicts a *decided* question and therefore needs
   a superseding record, which the brief's own "one decision, not one migration" makes affordable.
 - It does not claim `oq-hive-language-syntax` is unusable. It claimed it was not where `AGENTS.md`

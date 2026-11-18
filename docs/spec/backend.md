@@ -89,10 +89,10 @@ is safe: a program either compiles to equivalent bytecode or runs exactly as `oq
 
 ## The compiled subset, measured
 
-As of Alpha 6, **214 of the 223 executable conformance programs** compile to real bytecode
+As of Alpha 7, **215 of the 224 executable conformance programs** compile to real bytecode
 and produce byte-identical output to the interpreter. That number is asserted by
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter`
-(`assertEquals(214, compiled, ...)`), so it cannot silently go down. 223 is the number of
+(`assertEquals(215, compiled, ...)`), so it cannot silently go down. 224 is the number of
 executable programs in `conformance/`: every `*.oq` without a sibling `*.err`. Every refusal
 is reported by name in the `oq build` output.
 
@@ -405,7 +405,7 @@ java -jar examples/hello.jar
 
 `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` compiles every
 compilable conformance program, runs it, and asserts that stdout equals `oq run`'s, then
-asserts the compiled count is 214 of the 223 executable programs. `BuildJarTest` builds a
+asserts the compiled count is 215 of the 224 executable programs. `BuildJarTest` builds a
 jar for every deterministic example, runs it, and asserts that stdout and exit code equal
 the interpreter's; any divergence fails the build. `parallel.oq` is excluded because it
 prints elapsed milliseconds, and `guess.oq`/`grep.oq` because they are interactive or need

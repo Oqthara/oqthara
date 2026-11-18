@@ -46,6 +46,7 @@ Exit code is 0 when every probe matches its expectation and every recorded defec
 verbatim, 1 otherwise.
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -88,6 +89,35 @@ COMPILED = "codepath: compiled bytecode"
 # Probes whose build reports something other than COMPILED, mapped to the exact line the build
 # printed. Not a wildcard: a probe absent from here must report COMPILED.
 FALLBACK = {}
+
+# Probes that need a second jar on the JVM classpath, mapped to the source file that jar is
+# built from. `java -jar` ignores `CLASSPATH` and the working directory, so a probe resolving a
+# class from anywhere other than oq.jar cannot be reached that way at all. Rather than change the
+# launch form for every probe, only the probes named here are launched as `java -cp`; the rest
+# keep the `-jar` form the other probes' recorded output was produced under.
+#
+# The jar is built from committed source on every run rather than kept in the tree. A committed
+# jar is invisible to review and needs regenerating by hand whenever it changes. Building it needs
+# a JDK, which this harness already requires: it runs `oq build` and expects `codepath: compiled
+# bytecode`, and that needs a JDK too. A missing `javac` is therefore a failure, never a skip — a
+# probe that quietly skipped itself would report a pass for a check that never ran.
+EXTRA_CLASSPATH = {"c11_user_classpath": "Hello.java"}
+
+# Probes whose output depends on whether the JVM has a display. They are launched with
+# `-Djava.awt.headless=true` so the answer is the same on a developer's desktop and on a CI
+# runner.
+#
+# A probe must not pass or fail on the host. `c13_offscreen` already takes the other way out
+# for the same reason: it prints whether a look-and-feel was found rather than its name, because
+# the name is `Mac OS X` here and `Metal` on a bare Linux JVM. This probe cannot avoid the
+# question that way — its whole subject is what a program sees when there is no display — so the
+# condition is pinned instead of observed. Left unpinned it would print `false` / `visible` on a
+# developer's machine and `true` / `caught` on CI, and the recorded expectation would only ever
+# match one of them.
+HEADLESS = {"c13_window"}
+CLI_MAIN = "dev.oqthara.cli.Main"
+# What `oq build` writes into the manifest of every jar it produces.
+COMPILED_MAIN = "oq.generated.Program"
 
 # The `codepath:` line is the only field of the build output this runner reads, and it is
 # printed on stdout, so a probe's own program output can never be mistaken for it.
@@ -182,8 +212,13 @@ PROBES = [
     # branch did not run, and this probe would still pass. `if true` is therefore load-bearing
     # only in that it keeps the statement below the top level, not as a condition.
     ("c10_use_both_backends", ["7", "42", "b", "2026-01-01"], None),
-    # C11.2. C11.1 needs a `-cp` flag `run.py` cannot pass, which the probe's own header
-    # records; the inventory's A6.4 row is the other half of that admission.
+    # C11.1. This is the one probe `run.py` launches as `java -cp` instead of `java -jar`,
+    # because `-jar` ignores `CLASSPATH` and the working directory. `Hello` is only in the
+    # fixture jar, so the probe cannot pass by finding it somewhere else. It was run under both
+    # launch forms before its expectation was written down: `-jar` says "cannot find Java class
+    # 'Hello'", `-cp` prints the line below.
+    ("c11_user_classpath", ["hi world"], None),
+    # C11.2. A JDK class is importable by fully qualified name, under both backends.
     ("c11_qualified_name", ["class dev.oqthara.core.Lexer"], None),
     # C12.1. The second line is the diagnostic this build actually prints: `getClass` returns a
     # `Class` value, so the refusal names the receiver and says "no static method". The
@@ -200,6 +235,44 @@ PROBES = [
     # C12.2 is a probe and not a defect: the row is "Unsafe by design — now documented", so the
     # behaviour below is the documented one and a change to it is a change to the boundary.
     ("c12_unrestricted", ["0", "true"], None),
+    # C13.7. The direction 13 rows were executed by hand and opened no window, which left layout,
+    # painting, input dispatch and look-and-feel untested. Only *realising* a window needs a
+    # display; the rest of the toolkit runs headless, so all four are reachable here and none of
+    # them needs the machine to have a screen. That is why this is a probe and not a hand run:
+    # it is deterministic, and the runner compares it across both backends.
+    #
+    # `painted` counts non-white pixels rather than reading a pixel, so the expectation below is
+    # whitespace-independent and the line is a number that a broken paint cannot accidentally
+    # produce. `getLookAndFeel().getName()` is deliberately not printed: it is "Mac OS X" on this
+    # machine and "Metal" on a bare Linux JVM, so naming it would make the probe depend on where
+    # it runs instead of on the bridge.
+    (
+        "c13_offscreen",
+        ["true", "20000", '["go"]', "true", "true"],
+        None,
+    ),
+    # C13.7's other half. `c13_offscreen` proves the toolkit works with no display; this proves
+    # what a program gets when it asks for a window anyway.
+    #
+    # The boundary is the `Window` constructor, not `setVisible`. Java calls
+    # `GraphicsEnvironment.checkHeadless()` inside `Window.<init>`, so `new JFrame(...)` throws
+    # before `setVisible` is reached. A note claiming "only setVisible needs a display" would be
+    # wrong about which call fails, and the probe pins the one that does.
+    #
+    # The output names no exception class and no message text. The class is `HeadlessException`
+    # on this JDK, but that is java.desktop's choice rather than the bridge's; asserting it would
+    # test the JDK version. What is asserted is that the failure is a *catchable* error carrying
+    # a message, and that a second attempt fails the same way rather than returning a half-built
+    # window the first one left behind.
+    #
+    # This is a member of `HEADLESS`, so the runner launches it with
+    # `-Djava.awt.headless=true`: on a developer's machine with a real display the ungated probe
+    # would print `false` / `visible` and never reach the `catch` at all.
+    (
+        "c13_window",
+        ["true", "caught", "true", "caught-again"],
+        None,
+    ),
 ]
 
 
@@ -210,16 +283,65 @@ def matches(lines, expected) -> bool:
     return lines == expected
 
 
-def run(jar: Path, program: Path):
+def fixture_jar(source: Path, scratch: Path) -> Path:
+    """Compile `source` into a jar of its own and return its path.
+
+    The class must end up somewhere that is *not* `oq.jar`, or the probe would be measuring the
+    jar's own contents rather than the classpath it was launched with.
+    """
+    staged = scratch / source.stem
+    staged.mkdir(parents=True, exist_ok=True)
+    compiled = subprocess.run(
+        ["javac", "-d", str(staged), str(source)],
+        capture_output=True,
+        text=True,
+    )
+    if compiled.returncode != 0:
+        detail = (compiled.stdout + compiled.stderr).strip() or "no output"
+        raise RuntimeError(f"javac failed for {source.name}: {detail}")
+    target = scratch / f"{source.stem.lower()}_fixture.jar"
+    packed = subprocess.run(
+        ["jar", "--create", "--file", str(target), "-C", str(staged), "."],
+        capture_output=True,
+        text=True,
+    )
+    if packed.returncode != 0 or not target.is_file():
+        detail = (packed.stdout + packed.stderr).strip() or "no output"
+        raise RuntimeError(f"jar failed for {source.name}: {detail}")
+    return target
+
+
+def launch(jar: Path, *args, extra: Path | None = None, flags: tuple = ()):
+    """The command line for `jar`, with `extra` on the classpath when one is needed.
+
+    `java -jar` ignores both `CLASSPATH` and the working directory, so a probe that imports a
+    class from another jar has to be launched with `-cp` and the main class spelled out. Only
+    the probes listed in `EXTRA_CLASSPATH` take that form: every other probe's recorded output
+    was produced under `-jar`, and changing the launch form for all of them would move
+    evidence that has nothing to do with this.
+    """
+    if extra is None:
+        return [sys.executable and "java", *flags, "-jar", str(jar), *args]
+    return [
+        sys.executable and "java",
+        *flags,
+        "-cp",
+        f"{jar}{os.pathsep}{extra}",
+        CLI_MAIN,
+        *args,
+    ]
+
+
+def run(jar: Path, program: Path, extra: Path | None = None, flags: tuple = ()):
     result = subprocess.run(
-        [sys.executable and "java", "-jar", str(jar), "run", str(program)],
+        launch(jar, "run", str(program), extra=extra, flags=flags),
         capture_output=True,
         text=True,
     )
     return result.stdout + result.stderr, result.returncode
 
 
-def compile_program(jar: Path, program: Path):
+def compile_program(jar: Path, program: Path, extra: Path | None = None, flags: tuple = ()):
     """Compiles a probe in a scratch copy.
 
     `oq build` has no output flag: it writes `<name>.jar` beside the source. Copying the probe
@@ -232,16 +354,35 @@ def compile_program(jar: Path, program: Path):
     copied = scratch / program.name
     shutil.copy2(program, copied)
     result = subprocess.run(
-        [sys.executable and "java", "-jar", str(jar), "build", str(copied)],
+        launch(jar, "build", str(copied), extra=extra, flags=flags),
         capture_output=True,
         text=True,
     )
     return scratch / f"{program.stem}.jar", result.stdout + result.stderr, result.returncode
 
 
-def run_compiled(target: Path):
+def compiled_launch(target: Path, extra: Path | None = None, flags: tuple = ()):
+    """The command line that runs a built jar, mirroring `launch` for the compiler's output.
+
+    A compiled jar's own `Main-Class` is what `-jar` would use, so the `-cp` form names that
+    class explicitly instead of reading the manifest back.
+    """
+    if extra is None:
+        return [sys.executable and "java", *flags, "-jar", str(target)]
+    return [
+        sys.executable and "java",
+        *flags,
+        "-cp",
+        f"{target}{os.pathsep}{extra}",
+        COMPILED_MAIN,
+    ]
+
+
+def run_compiled(target: Path, extra: Path | None = None, flags: tuple = ()):
+    # `cwd` is set because the jar is written in a scratch directory and the program may resolve
+    # a relative path.
     result = subprocess.run(
-        [sys.executable and "java", "-jar", str(target)],
+        compiled_launch(target, extra=extra, flags=flags),
         capture_output=True,
         text=True,
         cwd=str(target.parent),
@@ -321,11 +462,26 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
     if not program.is_file():
         failures.append(f"{name}: missing probe file")
         return
-    output, code = run(jar, program)
+    extra = None
+    if name in EXTRA_CLASSPATH:
+        source = HERE / EXTRA_CLASSPATH[name]
+        if not source.is_file():
+            failures.append(f"{name}: needs {source.name} compiled onto the classpath and it is missing")
+            return
+        scratch = Path(tempfile.mkdtemp())
+        try:
+            extra = fixture_jar(source, scratch)
+        except (RuntimeError, FileNotFoundError) as error:
+            # A missing `javac` lands here as FileNotFoundError. Reported as a failure rather
+            # than skipped: this harness already needs a JDK to build probes.
+            failures.append(f"{name}: {error}")
+            return
+    flags = ("-Djava.awt.headless=true",) if name in HEADLESS else ()
+    output, code = run(jar, program, extra=extra, flags=flags)
     if both:
         # Compare the two backends on the same program. A refusal is compared as text, so a
         # backend that runs a program the interpreter rejects is caught.
-        target, build_output, build_code = compile_program(jar, program)
+        target, build_output, build_code = compile_program(jar, program, extra=extra, flags=flags)
         if build_code != 0 or not target.is_file():
             tail = build_output.strip().splitlines()[-1] if build_output.strip() else "no output"
             failures.append(f"{name}: oq build did not produce a jar (exit {build_code}): {tail}")
@@ -337,7 +493,7 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
         if refusal is not None:
             failures.append(refusal)
             return
-        compiled_output, compiled_code = run_compiled(target)
+        compiled_output, compiled_code = run_compiled(target, extra=extra, flags=flags)
         tally.ran += 1
         if CODEPATH.search(build_output).group(0).strip() == COMPILED:
             tally.compiled += 1

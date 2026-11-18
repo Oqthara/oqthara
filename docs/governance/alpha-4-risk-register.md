@@ -527,8 +527,44 @@ reported". Three pull requests (#127, #131, #132) were unmergeable for two sessi
 `scripts/check-circleci.py` accepts either provider at release time while failing on a red result
 from either. `scripts/tests/test_check_ci_gate.py` pins the anti-masking rule.
 
+**A second mechanism, found on PR #264.** A pull request whose branch conflicts with its base gets
+**no CI at all** from any `on: pull_request` workflow. GitHub cannot construct `refs/pull/N/merge`
+without a merge base it can build, so the workflows do not dispatch, and nothing is reported as an
+error. On #264 the symptom was `gh api .../commits/<sha>/check-runs` returning `total_count: 0` while
+`gh run list` showed only older commits, and the last run was four commits behind. The pull request
+sat unmergeable with no red check anywhere, and the diagnosis took reading `mergeable` — a field
+nobody looks at while waiting for CI.
+
+This is the same class as the CircleCI stop above and worse in one respect: the outage was visible
+as an *absence of one context* against a PR that otherwise had checks, while a conflicted PR has no
+checks to be compared against. `mergeStateStatus` reads `BLOCKED` in both cases, so branch
+protection does prevent a merge — the loss is diagnosis, and the cost is however long nobody
+notices, which on #264 was four commits.
+
+**A third mechanism, found on PR #264 as well.** A dependency resolution failure aborts the build
+before any of the repository's own code runs, and reads exactly like a code defect:
+
+```
+Could not resolve org.xerial:sqlite-jdbc:3.54.1.0.
+  > Could not GET 'https://repo.maven.apache.org/maven2/.../sqlite-jdbc-3.54.1.0.pom'.
+     > Received status code 429 from server: Too Many Requests
+```
+
+The job is called `Bytecode backend (JDK 25)` and it went red in 18 seconds, so the natural reading
+is that the commit broke the JDK 25 build. It did not: Maven Central rate-limited the runner during
+dependency resolution, the same commit had passed the same job twenty minutes earlier, and nothing
+in the diff touched the compiler. Re-running the identical SHA against identical content is the
+only thing that distinguishes the two causes, and a re-run is the one action a red check discourages.
+
+The cost is diagnostic rather than protective — branch protection behaves correctly — but a
+transient `429` is indistinguishable from a real regression without reading the log, and the log
+sentence that names the cause sits below a summary line that does not. This is the same shape as
+the two mechanisms above: the required context is absent or red for a reason that has nothing to do
+with the change being reviewed.
+
 *Residual.* The failure mode itself is unavoidable: a required context is identified by name alone,
-and GitHub cannot distinguish "not dispatched" from "still queued". The same silent stop could
+and GitHub cannot distinguish "not dispatched" from "still queued". A conflicted branch is a third
+case with the same read, and there is no signal that separates them. The same silent stop could
 happen on GitHub Actions, and the recovery is the mirror image — dispatch the CircleCI workflow by
 hand and let the release gate accept that evidence. `installers-macos` remains CircleCI-only and is
 not a required context, so a macOS installer regression would not block a merge.
@@ -663,8 +699,10 @@ best-anchored part of the library.
 OQ-DEC-2026-008 · `docs/governance/alpha-4-requirement-matrix.md` `§17` (published vectors).
 
 **R-018 — Fuzzing does not reach path resolution, directory traversal or semantic analysis.**
-Ten targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
-shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties and glob patterns.
+Fourteen targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
+shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties, three glob shapes and three
+compression shapes (decompress, zlib/gzip round trip, zip round trip). `./gradlew -q printFuzzTargets` prints
+them, and is the authority this sentence follows.
 `docs/spec/fuzzing.md` "What is not covered yet" names what is left: path resolution still needs an
 `OqHost`, so every entry point that resolves a path against the working directory is unreachable;
 `Patterns.glob`'s directory walk is exercised only by `GlobTest`, because the target calls

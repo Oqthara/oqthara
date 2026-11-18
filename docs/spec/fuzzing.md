@@ -171,6 +171,10 @@ been reported as "internal error: StackOverflowError" to a user.
 - `Patterns.glob`'s directory walk is only covered through `GlobTest`; the fuzz targets call
   `matchesText`, so the filesystem traversal is not fuzzed.
 - Swing, which has no coverage at all yet.
+- Compression framing beyond the three shapes in `CompressionFuzzTest`: gzip members past the
+  first are refused by policy rather than fuzzed, and the 16 MiB amplification cap is not
+  driven by a target that actually reaches it, because generating such input inside a 30s
+  budget would spend the whole budget on allocation.
 - Semantic analysis, which has no separate pass yet.
 - Expression and block limits are separate constants because the parser recurses through
   different call paths for each. Unary, power and interpolation now share the expression limit.

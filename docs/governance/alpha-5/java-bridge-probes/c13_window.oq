@@ -1,0 +1,45 @@
+use javax.swing.JFrame
+use java.awt.GraphicsEnvironment
+
+# C13.7's remaining half: constructing a window, which is the one GUI step that needs a
+# display. `c13_offscreen` proves layout, painting, input dispatch and look-and-feel work
+# without one; this proves what happens when a program *does* ask for a window on a machine
+# that has none.
+#
+# The boundary is the `Window` constructor, not `setVisible`. Java checks headlessness inside
+# `Window.<init>`, so `new JFrame(...)` already throws and `setVisible` is never reached. A
+# report claiming "only setVisible needs a display" would be wrong about which call fails, so
+# the probe pins the call that actually does.
+#
+# The output deliberately does not name the exception class. A headless JVM throws
+# HeadlessException, but that is java.desktop's choice: the claim under test is that the
+# failure is a *catchable* error with a message, and naming the class would test the JDK
+# rather than the bridge.
+
+print GraphicsEnvironment.isHeadless()
+
+headless = GraphicsEnvironment.isHeadless()
+
+try
+  frame = JFrame("c13")
+  frame.setSize(80, 60)
+  # Reached only on a machine with a display, where realising the window must work.
+  frame.setVisible(true)
+  print "visible"
+  frame.dispose()
+catch err
+  # The message is JDK-supplied prose, so only its presence and the throw itself are
+  # asserted. Printing the raw text would make this probe pass or fail on the JDK version.
+  print "caught"
+  print err.message.length() > 0
+end
+
+# A second construction must fail the same way. A bridge that cached a partially built
+# object, or that swallowed the first failure, would answer differently the second time.
+try
+  again = JFrame("c13-again")
+  again.dispose()
+  print "constructed-again"
+catch err
+  print "caught-again"
+end
