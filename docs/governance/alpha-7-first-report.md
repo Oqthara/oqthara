@@ -1129,6 +1129,11 @@ the probe would have been testing the machine. Restored, the run returns to 27/2
 Five tests in `test_ci_probe_wiring.py` pin the flags onto the jar, classpath and compiled launch
 forms and assert that an unlisted probe gets none.
 
+The Swing path is now gated twice, and the two gates answer different questions. The probes harness
+asks what the bridge did on the day it was measured; `conformance/257-swing-runs-with-no-display`
+asks whether it still does, on both backends, in the ordinary suite. It compiles, so the corpus
+moves to 215 of 224 executable programs, measured rather than assumed.
+
 What remains genuinely open is narrower than it was, and it is worth stating precisely: no test in
 this repository displays a window on a real screen, so painting *as composited by a window manager*
 is unexercised. Everything up to that point — layout, painting into an image, input dispatch,
