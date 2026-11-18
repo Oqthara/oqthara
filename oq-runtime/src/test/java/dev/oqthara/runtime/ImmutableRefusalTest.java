@@ -54,7 +54,10 @@ class ImmutableRefusalTest {
         OqError error = Errors.refusal(
                 new java.awt.HeadlessException("No X11 DISPLAY variable was set"), span);
 
-        assertEquals("HeadlessException: No X11 DISPLAY variable was set", error.getMessage());
+        // The JDK appends its own explanation of why the toolkit is headless, so the tail of this
+        // message differs between a Mac and a Linux runner. Only the lead is the contract.
+        assertTrue(error.getMessage().startsWith("HeadlessException: No X11 DISPLAY variable"),
+                "the class name identifies the condition, got: " + error.getMessage());
         assertFalse(error.getMessage().contains("unchangeable collection"),
                 "a GUI with no display has nothing to do with an unchangeable collection");
         assertFalse(error.hint() != null && error.hint().contains("List.of"),
