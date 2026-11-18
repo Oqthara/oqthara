@@ -56,7 +56,7 @@ public final class Methods {
             // A collection that refuses to change is a program-visible condition, never an
             // Oqthara defect, so a compiled jar reports it exactly as the interpreter does
             // instead of blaming Oqthara and exiting 70.
-            throw Errors.immutableRefusal(e, span);
+            throw Errors.refusal(e, span);
         }
     }
 

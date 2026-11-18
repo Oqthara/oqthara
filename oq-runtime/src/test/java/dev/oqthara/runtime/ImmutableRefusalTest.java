@@ -23,7 +23,7 @@ class ImmutableRefusalTest {
         UnsupportedOperationException refusal = assertThrows(UnsupportedOperationException.class,
                 () -> List.of(1L, 2L).add(3L));
 
-        OqError error = Errors.immutableRefusal(refusal, span);
+        OqError error = Errors.refusal(refusal, span);
 
         assertTrue(error.getMessage().startsWith("cannot change an unchangeable collection"),
                 "got: " + error.getMessage());
@@ -34,7 +34,7 @@ class ImmutableRefusalTest {
 
     @Test
     void aTupleKeepsItsOwnWording() {
-        OqError error = Errors.immutableRefusal(
+        OqError error = Errors.refusal(
                 new UnsupportedOperationException(OqTuple.IMMUTABLE), span);
 
         assertEquals(OqTuple.IMMUTABLE, error.getMessage());
@@ -43,10 +43,47 @@ class ImmutableRefusalTest {
 
     @Test
     void aRefusalWithNoMessageStillReadsAsASentence() {
-        OqError error = Errors.immutableRefusal(new UnsupportedOperationException(), span);
+        OqError error = Errors.refusal(new UnsupportedOperationException(), span);
 
         assertEquals("cannot change an unchangeable collection: the operation is not supported",
                 error.getMessage());
     }
 
+    @Test
+    void aHeadlessGuiIsNotReportedAsAnUnchangeableCollection() {
+        OqError error = Errors.refusal(
+                new java.awt.HeadlessException("No X11 DISPLAY variable was set"), span);
+
+        // The JDK appends its own explanation of why the toolkit is headless, so the tail of this
+        // message differs between a Mac and a Linux runner. Only the lead is the contract.
+        assertTrue(error.getMessage().startsWith("HeadlessException: No X11 DISPLAY variable"),
+                "the class name identifies the condition, got: " + error.getMessage());
+        assertFalse(error.getMessage().contains("unchangeable collection"),
+                "a GUI with no display has nothing to do with an unchangeable collection");
+        assertFalse(error.hint() != null && error.hint().contains("List.of"),
+                "the List.of hint would send a reader looking in the wrong place");
+    }
+
+    @Test
+    void aReadOnlyBufferIsNotReportedAsAnUnchangeableCollection() {
+        OqError error = Errors.refusal(new java.nio.ReadOnlyBufferException(), span);
+
+        assertEquals("ReadOnlyBufferException", error.getMessage());
+        assertFalse(error.getMessage().contains("unchangeable collection"),
+                "a read-only buffer is not a collection");
+        assertTrue(error.hint() != null && error.hint().contains("search for"),
+                "the hint has to give the reader something to do, got: " + error.hint());
+    }
+
+    @Test
+    void aBareRefusalStaysACollectionRefusal() {
+        OqError error = Errors.refusal(
+                new UnsupportedOperationException("the operation is not supported"), span);
+
+        assertEquals("cannot change an unchangeable collection: the operation is not supported",
+                error.getMessage());
+        assertTrue(error.hint() != null && error.hint().contains("List.of"),
+                "an UnsupportedOperationException that is not one of the known impostors stays a "
+                        + "collection refusal, hint included");
+    }
 }

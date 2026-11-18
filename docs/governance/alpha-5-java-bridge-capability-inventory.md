@@ -131,6 +131,26 @@ rationale. "It has not been implemented" is not an intentional limitation.
 | C12.1 | Only public members are reachable; no accessibility escalation | Complete | `setAccessible` appears nowhere in production sources. `Class.getDeclaredMethod` is unreachable (via C2.3). Private fields are refused. |
 | C12.2 | Java is reachable without restriction, including process execution | **Unsafe by design — now documented at the interop boundary** | `ProcessBuilder(["sh", "-c", "id"]).start().waitFor()` → `0`. `System.getenv("HOME")` → the real home. This is the same authority `run_command` and `env()` already grant and the project's "Oqthara is **not** a sandbox" statement (`language.md:1906`) already concedes, so it is not a new vulnerability or a regression. The interop section now says so directly in "What the boundary does not restrict", naming both doors. See D4 below. |
 
+## Direction 13 — Gui toolkits (Swing and AWT)
+
+Added by the Alpha 7 execution pass. §6 of the Alpha 7 report orders Swing first, and this
+document had no row for it, so "Swing works" had been neither verified nor refuted. Every row
+below was executed on JDK 21 with `java.awt.headless=true`, which is the setting CI uses.
+
+| ID | Capability | Class | Evidence |
+|---|---|---|---|
+| C13.1 | A Swing component can be constructed and queried | Complete | `JLabel("hello").getText()` → `hello`; `getHorizontalAlignment()` → `10`; `JPanel().getComponentCount()` → `0`; `Color.RED.getRed()` → `255`. Component construction needs no display. |
+| C13.2 | A Swing window cannot be realised without a display, and says so | **Complete after fix** | `JFrame("x")` under `-Djava.awt.headless=true` raised `HeadlessException`, but the boundary reported it as `cannot change an unchangeable collection` with a hint about `List.of(...)`. Fixed: it now reports `HeadlessException` and names no collection. See D5. |
+| C13.3 | A closure can be run on the event dispatch thread | Complete | `SwingUtilities.invokeAndWait(fun() ... end)` ran with `isEventDispatchThread()` → `true`. `invokeLater` plus a `CountDownLatch` also returned `true` inside the closure and `false` outside it. |
+| C13.4 | An Oqthara closure can be an AWT listener | Complete | `b.addActionListener(fun(e) fired.add(e.getActionCommand()) end)` then `b.doClick()` → `["go"]`. The callback receives the real `ActionEvent` and reads `getActionCommand()`. |
+| C13.5 | A closure keeps its captures when the toolkit calls it from another thread | Complete | A closure registered on the EDT appended to a list declared on the main thread; `["x", ["x"]]` came back intact. This is C7.4 holding across a thread the program did not create. |
+| C13.6 | Interpreter and compiled bytecode agree on a Swing program | Complete | `s2.oq` printed `[true]` then `["go"]` under `oq run` and, after `oq build`, the same two lines from `java -jar s2.jar`. the build reported `codepath: compiled bytecode` with nothing skipped. |
+
+What is **not** covered, and is not claimed: no test opens a visible window, so layout, painting,
+input dispatch and look-and-feel are untested; the EDT rows prove registration and callback, not
+rendering. A headless runner cannot cover them, so covering them needs a display, which CI does
+not have.
+
 ## Confirmed defects
 
 ### D1 — A callable Java object is refused at `sort`, `sort_by`, `reduce` and `list_sort`
@@ -272,6 +292,41 @@ states that `use` inherits the "not a sandbox" trust statement verbatim, names `
 `System.getenv` as the concrete doors, and records the reflection narrowing from D2. No behaviour
 changed, because none was wrong.
 
+### D5 — A headless GUI failure is reported as an unchangeable collection
+
+**Severity: functional correctness.** `UnsupportedOperationException` is not one condition, but
+the boundary classifier treated it as one. `java.awt.HeadlessException` and
+`java.nio.ReadOnlyBufferException` both extend it, so opening a `JFrame` with no display produced
+
+```
+error: cannot change an unchangeable collection: the operation is not supported
+  help: This value was built unchangeable, for example by List.of(...). Build a list when the
+        items must change.
+```
+
+Both the message and the hint are wrong for that program: nothing is a collection, nothing is
+immutable, and building a list cannot help. A GUI program that hits this on a CI machine — which
+is every GUI program, on every headless runner — is sent to look in the wrong place.
+
+**Status: fixed.** `Errors.immutableRefusal` became `Errors.refusal`, which keeps the collection
+wording only for a container that really refuses to change and reports any other subclass by its
+own class name with the JDK's message. The type test compares class names as text rather than
+using `instanceof`, because `HeadlessException` lives in `java.desktop` and linking it would make
+the classifier unloadable on a runtime without that module. Measured before and after:
+
+```
+$ java -Djava.awt.headless=true -jar oq.jar run s3.oq       # before
+error: cannot change an unchangeable collection: the operation is not supported
+
+$ java -Djava.awt.headless=true -jar oq.jar run s3.oq       # after
+error: HeadlessException
+  help: The JDK refused this operation; the message above is its own.
+```
+
+No conformance case covers this, deliberately: the trigger is a machine without a display, so a
+case would pass or fail depending on where it ran. `ImmutableRefusalTest` pins both impostors and
+the unchanged collection behaviour directly.
+
 ## Intentional limitations (verified, not defects)
 
 | Limitation | Evidence it is intentional |
@@ -354,7 +409,7 @@ scope at will; each item is a capability this inventory classified as absent or 
 | A6.1 | Compiled code calls Java directly, removing boundary item 2 in `backend.md` | **Done.** A program with `use java.lang.Math` builds with `codepath: compiled bytecode` and prints identical output to `oq run`: `use` lowers to a class constant, and a static call, a static field, a constructor and the class value all compile. `conformance/248-java-interop-by-use.oq` pins all four. A `use` below the top level compiles too, via the run-time registry ADR-0066 introduced, so boundary item 2 no longer narrows `use` at all. Evidence: `python3 scripts/verify-conformance.py` reports `214 compiled, 9 fallback (223 of 223 executable), 0 divergences across 256 programs`. |
 | A6.2 | `Class` reflection is available to Oqthara programs | **Retired, permanently no — [ADR-0065](../adr/0065-reflection-stays-unexposed-by-name.md).** `Class` stays a self-description surface and the member lookup entry points stay refused. The deciding fact is executed, not argued: `getEnclosingClass` is one of the entry points `CLASS_REFLECTION` refuses, yet `MethodHandles.lookup().findVirtual` resolves it and `invokeWithArguments` calls it, and `d2_reflection_reachable.oq` prints `nothing` on both backends against a build whose codepath is `compiled bytecode`. The probe names a refused entry point on purpose — reaching a member the allowlist already permits would prove only that `findVirtual` works. Granting the allowlist entry would therefore add a shorter spelling to a capability the language already has, not a capability, while implying a sandbox the JVM cannot provide in-process for application classes. `d2_reflection_refused.oq` pins the refusal and its wording. The row is closed rather than deferred: a later proposal has to overturn the record, not notice the row is open. |
 | A6.3 | Compiled code answers `Class` self-description without the interpreter fallback | **Done.** A6.1 removed the reason `use` forced a fallback, so `d2_class_instance` now builds with `codepath: compiled bytecode` and its jar prints `java.lang.String` / `String` / `false` / `false`, byte-identical to the interpreter. That was true but ungated: `run.py --both` compared output only, and an interpreter launcher produces identical output because the interpreter produced it, so every probe could have regressed to the fallback and the run would have stayed green. `--both` now requires `codepath: compiled bytecode` per probe and prints `ok: 19 probes compared compiled bytecode against the interpreter`. There is no exception: `d1_sort_by` used to be declared in `FALLBACK` because `sort_by` was listed as host-dependent, and it stopped falling back once that misclassification was corrected, so `FALLBACK` is now empty. An undeclared fallback fails the run, and so does a declared one that closes. |
-| A6.4 | Probe harness runs in CI | **Done, for the rows the harness covers.** The `Decision probes (A6.4)` step in `ci.yml` runs `docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both` and the three `scripts/probe-*.py --check` harnesses as a required check on the same jar the conformance step builds. `run.py` reports `ok: 19 probes match their expectation` and `ok: 19 probes compared compiled bytecode against the interpreter`; a one-day drift in a single expected date makes it report `FAILED`, name the probe, and exit 1. **Coverage is C1–C8 only.** The 19 programs are `c1`–`c8` (one per construct group) plus eleven defect probes for D1, D2 and D3. The ten rows of C9–C12 — builtin precedence, `use` under each backend, classpath imports, and reachability — have no probe, so this gate does not cover them and a regression there fails nothing. Adding those probes is not part of A6.4, which asks only that the existing harness run; it is recorded here so the gate is not read as broader than it is. |
+| A6.4 | Probe harness runs in CI | **Done, for the rows the harness covers.** The `Decision probes (A6.4)` step in `ci.yml` runs `docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both` and the three `scripts/probe-*.py --check` harnesses as a required check on the same jar the conformance step builds. `run.py` reports `ok: 19 probes match their expectation` and `ok: 19 probes compared compiled bytecode against the interpreter`; a one-day drift in a single expected date makes it report `FAILED`, name the probe, and exit 1. **Coverage is C1–C8 only.** The 19 programs are `c1`–`c8` (one per construct group) plus eleven defect probes for D1, D2 and D3. Direction 13 (C13.1–C13.6) is execution evidence gathered by hand, not harness probes, and D5 has no probe either: its trigger is a JVM with no display, so a probe would pass or fail depending on the machine rather than on the bridge. The ten rows of C9–C12 — builtin precedence, `use` under each backend, classpath imports, and reachability — have no probe, so this gate does not cover them and a regression there fails nothing. Adding those probes is not part of A6.4, which asks only that the existing harness run; it is recorded here so the gate is not read as broader than it is. |
 
 ## What this audit does not claim
 

@@ -746,16 +746,16 @@ public final class JavaBridge {
 
     /**
      * Delegates to the runtime's shared classifier, so a host-interop refusal and a compiled
-     * method call report the same thing. See {@link dev.oqthara.runtime.Errors#immutableRefusal}.
+     * method call report the same thing. See {@link dev.oqthara.runtime.Errors#refusal}.
      */
-    static OqError immutableRefusal(UnsupportedOperationException error, Span span) {
-        return dev.oqthara.runtime.Errors.immutableRefusal(error, span);
+    static OqError refusal(Throwable error, Span span) {
+        return dev.oqthara.runtime.Errors.refusal(error, span);
     }
 
     private static OqError wrap(Throwable error, Span span) {
         if (error instanceof OqError oq) return oq;
-        if (error instanceof UnsupportedOperationException refusal) {
-            return immutableRefusal(refusal, span);
+        if (error instanceof UnsupportedOperationException) {
+            return refusal(error, span);
         }
         return new OqError(error.getClass().getSimpleName() + ": " + error.getMessage(), span);
     }

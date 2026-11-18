@@ -102,7 +102,7 @@ class TupleMethodRefusalTest {
         // A compiled program calls methods through Methods.invoke1, not through the
         // interpreter, so this is the path a jar takes. It had no UnsupportedOperationException
         // handler: a JDK list reached through `use` would have exited 70 with `internal error`
-        // while `oq run` exited 1. Both now classify through Errors.immutableRefusal.
+        // while `oq run` exited 1. Both now classify through Errors.refusal.
         OqError error = assertThrows(OqError.class,
                 () -> Methods.invoke1(List.of(1L, 2L), 3L, "add"));
 

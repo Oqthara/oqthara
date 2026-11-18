@@ -218,27 +218,38 @@ and `0069-oqthara-stays-dynamically-typed.md`).
 ## Item 8 — Java Bridge Full validation matrix
 
 The authoritative inventory is `docs/governance/alpha-5-java-bridge-capability-inventory.md`:
-twelve directions, 46 capability rows, and four confirmed defects **D1–D4**. §6 asks for "Full",
-and the inventory already defines what that would have to mean. (This report previously claimed
-five, **D1–D5**. The `d3_shadowed_names.oq` probe was then named `d5_unit_names.oq`, which made a
-fifth defect look real; it is a precedence regression probe for D3, and no D5 section was ever
-written.)
+**thirteen** directions, **52** capability rows, and **five** confirmed defects **D1–D5**. §6 asks
+for "Full", and the inventory already defines what that would have to mean.
 
-§6 orders Swing first. The tree does not support that ordering yet:
+That count has been wrong in both directions. This report once claimed five defects when the
+inventory defined four: the `d3_shadowed_names.oq` probe was then named `d5_unit_names.oq`, which
+made a fifth defect look real, and it is in fact a precedence probe for D3. #256 corrected the
+count to four. There is now a real D5, found by running the Swing program §6 orders and adds this
+pass — so the number is five again, for a different reason, and this time it names a section that
+exists.
 
-- No Swing or AWT program exists in `examples/` or `conformance/` — zero occurrences of `JFrame` or
-  `javax.swing`.
-- The inventory mentions Swing, the EDT, or Event Dispatch **zero** times. There is no row for it,
-  so "Swing works" is currently an unverified claim in either direction.
-- Nothing in the bridge's 12 directions covers event dispatch, threading affinity, or GUI lifecycle.
+§6 orders Swing first, and this pass executed it. Two of the three obstacles the report used to
+list are gone; one stands:
+
+- ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — still true of the suite,
+  but the probes below ran the toolkit, and Direction 13 records the results.
+- ~~The inventory has no Swing row~~ — Direction 13 now has six, C13.1–C13.6, all executed.
+- **Still open:** no test opens a *visible window*. Layout, painting, input dispatch and
+  look-and-feel are untested, because a headless runner cannot cover them.
+
+What the pass established: components construct and answer, a closure runs on the event dispatch
+thread, a closure is accepted as an `ActionListener` and receives the real `ActionEvent`, captures
+survive the toolkit calling from a thread the program did not create, and interpreter and compiled
+bytecode agree. What it also found: opening a `JFrame` without a display was reported as an
+unchangeable collection, which is D5.
 
 A validation matrix for §6 has to be built, not consulted. The minimum it must cover, with each row
 required to execute rather than be read:
 
 | Area | Ceiling that already exists |
 | --- | --- |
-| Swing construction and display | no inventory row; needs one |
-| Event dispatch and thread affinity | no row; `print` is already known non-atomic (R-029) |
+| Swing construction and display | direction 13, C13.1 and C13.2; display still untested |
+| Event dispatch and thread affinity | direction 13, C13.3–C13.5; `print` is still non-atomic (R-029) |
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
@@ -288,23 +299,29 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split are all discharged; see Item 6's Resolution |
-| 7 | §6 Java Bridge Full | Open — needs the Swing inventory row first |
+| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.6); visible-window coverage still open |
 | 8 | Runtime and observability | Open, independent |
 
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is unresolved.** Until an ADR supersedes ADR-0015 and the brief, §5
   cannot start, and the two conformance cases must keep saying what they say.
-- **#251 is red on a required check** and has been since dependabot opened it, because ADR-0059
-  requires an AI review record per pull request and no one wrote one.
+- **#251 was red on a required check** from the moment dependabot opened it, because ADR-0059
+  requires an AI review record per pull request and no one wrote one. It is merged now (`9eb3561`),
+  but the gap it exposed is unowned: nothing generates a review record on the automated path, so
+  the next dependabot pull request will be red for the same reason.
 - **The path-resolution fuzz target has no agreed design.** Private, host-dependent; either a stub
   `OqHost` or a production-code extraction. The second is better and is a change to production code
   justified by a test, which needs saying out loud.
-- **`oq-hive-language-syntax` is not on the primary orchestration path**, and the copy of it that
-  exists carries a stale keyword count.
+- **`oq-hive-language-syntax` was not on the primary orchestration path** and its keyword count was
+  stale. Both are fixed: #252 corrected the count to 22, and #257 named both agent directories in
+  `AGENTS.md` and wrote down where syntax ownership stops. What is still unowned is that **no gate
+  reads the agent files**, so the count can drift again unobserved.
 - **Workstream 2 is `Under-covered`** and §5 lands entirely inside it.
-- **Swing has zero coverage** — no example, no conformance case, no inventory row. §6's "Swing
-  first" is a direction, not a measurement.
+- **Swing has partial coverage and no test** — direction 13 records six executed capabilities, but
+  no example and no conformance case exist, and nothing in CI would notice a regression. What
+  cannot be covered headlessly (layout, painting, input, look-and-feel) is still unmeasured, so
+  §6's "Swing first" is now half a measurement.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
 - **No release, tag, deployment or version change is authorized** (§10), so none of the above may be
@@ -318,7 +335,8 @@ all: D1 was already fixed in PR #231 before this report was written.
   found seven defects, and that eight more pure builtins are reachable and untested.
 - It does not claim §5 is illegal. It claims §5 contradicts a *decided* question and therefore needs
   a superseding record, which the brief's own "one decision, not one migration" makes affordable.
-- It does not claim `oq-hive-language-syntax` is unusable. It claims it is not where `AGENTS.md`
-  says agents live, and that its keyword count is stale.
-- It does not claim Swing fails. It claims nothing in the tree has ever tested it, in either
-  direction.
+- It does not claim `oq-hive-language-syntax` is unusable. It claimed it was not where `AGENTS.md`
+  said agents live and that its keyword count was stale; both were corrected in #252 and #257.
+- It does not claim Swing works. It claims six specific capabilities were executed under a headless
+  JVM and matched their expectation, and that nothing tests layout, painting, input dispatch or
+  look-and-feel.
