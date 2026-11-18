@@ -27,36 +27,57 @@ is carried into item 10.
 
 ## Item 2 — Full risk-register boundary review
 
-Re-derived from the status column, not copied:
+Re-derived from the status column, not copied. The table below is the current derivation; the
+counts this item originally published were correct on `d306833` and are preserved underneath it,
+because the reason they changed is the subject of this correction.
 
 | Status | Count |
 | --- | --- |
-| Open | 7 |
-| Mitigated | 10 |
+| Open | 6 |
+| Mitigated | 12 |
 | Accepted | 13 |
-| **Total** | **30** |
+| **Total** | **31** |
 
 Exposure buckets, which `scripts/check-risk-register.py` enforces arithmetically: Critical 1,
-High 4, Medium 12, Low 13. The arithmetic closes.
+High 4, Medium 12, Low 14. The arithmetic closes.
 
-The seven Open entries are **R-012, R-014, R-018, R-021, R-022, R-023, R-027**. Six of the seven
-are documentation-or-tooling defects, not language defects. That distribution is itself the
-finding: the risk register is mostly honest about what is unfinished, and what is unfinished is
-mostly *claims*, not code.
+The six Open entries are **R-012, R-014, R-021, R-022, R-023, R-027**. Five of the six are
+documentation-or-tooling defects, not language defects. That distribution is itself the finding:
+the risk register is mostly honest about what is unfinished, and what is unfinished is mostly
+*claims*, not code.
+
+**This item originally said Open 7 / Mitigated 10 / Accepted 13, total 30, Low 13.** That was a
+correct derivation of the register as it stood, and it went stale for a reason worth recording: the
+two entries that moved were R-018 and the total itself, and both moved because later work executed
+this report's own sequencing.
+
+| Change | Commit | Effect |
+| --- | --- | --- |
+| R-018 `Open`→`Mitigated`, exposure `Medium`→`Low` | `e43d384` (PR #253) | Item 9.3 (A7.8 fuzzing reach) executed; `Medium` 12→11, `Low` 13→14 |
+| R-031 added, `Medium`/`Mitigated` | `db01622` (PR #254) | A new risk filed while unblocking #251; total 30→31, `Medium` 11→12 |
+
+So the arithmetic in the original table closed when it was written; it does not close now against a
+register that has since been edited. The distinction matters for how this report should be read:
+Item 2 was not a guess, it was a snapshot with no mechanism to refresh it. Re-deriving it is
+cheap — the command is four `awk` fields over one file — and nothing runs it.
 
 ## Item 3 — Remaining verified versus obsolete risks
 
 Each Open entry was checked against the tree by executing or reading the artefact it names. None
 status was accepted on the strength of its own text.
 
+The verdicts below are as of `d306833`. Two of them — R-018 and R-023 — describe conditions that
+later commits repaired, so they are marked with what became of them rather than left reading as
+current. The rows that still say "Still open" remain open against the present tree.
+
 | Risk | Independently re-checked | Verdict |
 | --- | --- | --- |
 | R-012 | `docs/stdlib/reference.md` generated; the register's own correction table already revised 89 → 205 | Still open as a *breadth* question; the count itself is now stated |
 | R-014 | `docs/adr/0032-static-fields-and-varargs.md` D5; direction out of Java still closed | Still open, correctly described |
-| R-018 | 8 targets in `allFuzzTargets`; 10 named gap builtins have zero occurrences in the fuzz source | **Reproduced exactly** — see item 4 |
+| R-018 | 8 targets in `allFuzzTargets` at the time; 10 named gap builtins had zero occurrences in the fuzz source | **Reproduced exactly then**, and superseded — now 11 targets; see item 4 |
 | R-021 | `grep -c "rollback\|--update" scripts/install.sh` → 0; no `oq update` | Still open. **But its stated reason is now false** |
 | R-022 | `ls -d site` → absent; `OUT = ROOT / "site" / "_site" / "versions"` still in the script | **Reproduced exactly** |
-| R-023 | `Lexer.KEYWORDS` has 22; three documents say 20 | **Reproduced exactly** — see below |
+| R-023 | `Lexer.KEYWORDS` has 22; three documents said 20 | **Reproduced exactly then**, and repaired — all six now say 22; see below |
 | R-027 | Citation-drift risk; the register's own correction table demonstrates the class | Still open; no automated fix exists |
 
 Two substantive corrections follow from this pass.
@@ -86,13 +107,38 @@ the new check fails five of six regression tests in `scripts/tests/test_check_do
 
 ## Item 4 — R-018 reproduction and proposed A7.8 acceptance criteria
 
-Reproduced, not restated. `build.gradle.kts` `allFuzzTargets` declares exactly 8 `FuzzTarget`
-entries, matching the register's count. All ten builtins R-018 names as unreached have **zero**
-occurrences in `oq-stdlib/src/fuzz/java/`: `csv_parse`, `csv_write`, `wrap_text`, `fill_text`,
+Reproduced, not restated. `build.gradle.kts` `allFuzzTargets` declared exactly 8 `FuzzTarget`
+entries at `d306833`, matching the register's count. All ten builtins R-018 names as unreached had
+**zero** occurrences in `oq-stdlib/src/fuzz/java/`: `csv_parse`, `csv_write`, `wrap_text`, `fill_text`,
 `fnmatch`, `glob`, `ini_parse`, `properties_parse`, `zip`, `compress`. `docs/spec/fuzzing.md`'s own
 "What is not covered yet" section names the same gaps. R-018 is accurate as written, and its own
 justification stands: eight targets found seven real defects, which argues for writing more rather
 than for trusting the current set.
+
+**Superseded in part by A7.8.** PR #253 (`e43d384`) added three targets — `StdlibFormats`,
+`GlobPatterns`, `GlobClasses` — taking `allFuzzTargets` from 8 to 11. Eight of the ten named builtins
+now appear in `oq-stdlib/src/fuzz/java/`, and nine are fuzzed:
+
+```
+$ for b in csv_parse csv_write wrap_text fill_text fnmatch glob ini_parse \
+    properties_parse zip compress; do
+    printf '%s=%s ' "$b" "$(grep -rl "$b" oq-stdlib/src/fuzz/java/ | wc -l | tr -d ' ')"
+  done
+csv_parse=1 csv_write=1 wrap_text=1 fill_text=1 fnmatch=1 glob=1 ini_parse=1
+properties_parse=1 zip=0 compress=0
+```
+
+`fnmatch` is named only in a comment; the target fuzzes `Patterns.Glob`, the pattern engine behind
+it, and the comment says so. `zip` and `compress` are the two genuinely unreached builtins.
+
+`glob` gaining a target is worth noting against this item's own triage, which classified it as **not**
+directly fuzzable because it calls `resolve(host, …)`. The landed coverage fuzzes `Patterns.Glob`,
+the pure layer — a third option this item did not list, neither a stub host nor an extraction.
+Calling the pure layer directly is the better answer, and it was found by doing the work rather
+than by the decision this item proposed. The path-resolution target, whose code path really is
+private, still has no agreed design.
+
+So the residual gap is narrower than the item states: `zip`, `compress`, and path resolution.
 
 Purity triage, because a target that mutates the filesystem is not a valid target:
 
@@ -211,15 +257,31 @@ This is the report's most consequential finding, and it is why §5 cannot begin 
 | `conformance/247-typed-parameter-names-the-decision-error.oq` | `fun f(a: Int)` → `typed parameters are not supported` | — |
 
 The language does not merely lack typing; it *refuses* annotations with explicit diagnostics that
-cite the decision. Two conformance cases pin the refusal. §5 therefore requires superseding ADRs —
+cite the decision. Two conformance cases pin the refusal. §5 therefore required superseding ADRs —
 one for ADR-0015 and one for the brief — not additive work behind an existing feature. Editing the
 two conformance cases without that record would silently contradict a decided question, which the
 repository's own governance forbids.
 
+**Both supersessions have since happened, and they settled the question the other way.** ADR-0069
+(`0069-oqthara-stays-dynamically-typed.md`, Accepted 2026-11-18) supersedes ADR-0015's scope *and*
+the brief, and decides that Oqthara remains dynamically typed with untyped `data` fields. This item's
+requirement was therefore satisfied in form and inverted in substance: the record it asked for now
+exists and says §5's premise is wrong. Any typing work needs an ADR superseding **ADR-0069**.
+
+ADR-0069 keeps that door cheap on purpose, and the cost estimate this item made still holds: it says
+"Reversal costs one decision, not one migration … reopening this is a new ADR, not a corpus rewrite",
+because no program valid under it would become invalid under runtime-asserted field types. So the
+work is one record either way — what changed is *which* record has to be superseded, and that the
+target is now an Accepted entry in the ADR index rather than a governance remediation note.
+
+The two conformance cases are consequently *more* firmly grounded, not less: they refuse annotations
+on a decided question rather than a pending one. The sentence above about editing them "without that
+record" still holds — the record is just now ADR-0069.
+
 The lever is in the brief itself: "This does not close the door … Reversing it costs one decision,
-not one migration." The decision was made because the maintainer was unavailable and Option A was
-"reversible at zero cost". That reasoning is exactly what makes supersession cheap and legitimate —
-and exactly why it must be an ADR rather than an edit.
+not one migration." The decision was originally made because the maintainer was unavailable and
+Option A was "the only option reversible at zero cost". ADR-0069 re-affirmed that reasoning,
+reversal cost included.
 
 **Next ADR number is 0070** (69 exist; highest are `0068-glob-matching-is-a-linear-dynamic-program.md`
 and `0069-oqthara-stays-dynamically-typed.md`).
@@ -281,8 +343,9 @@ Ordered by what actually blocks what, not by what reads best.
    R-024 describes; every subsequent merge inherits it.
 2. **Correct R-021's stale justification and the three stale keyword counts.** Both are prerequisites
    for trusting the agent that §4 hands language-core to.
-3. **A7.8 — R-018 fuzzing reach.** Seven pure targets are ready today; the path target needs the
-   helper-extraction decision. Nothing else depends on it, which is why it ships first.
+3. **A7.8 — R-018 fuzzing reach.** Seven pure targets were ready on the day this was written, and
+   PR #253 landed coverage for nine of the ten named builtins; the path target still needs the
+   helper-extraction decision. Nothing else depends on it, which is why it shipped first.
 4. **ADR-0069 superseding ADR-0015 and the type-system brief.** Blocks all of §5. No typing work
    before it.
 5. **D1 — already done, does not block.** Fixed in PR #231 (`39b6078`) on 2026-11-15, before this
@@ -422,6 +485,57 @@ The pattern across all four is the one Item 10 of the original report names abou
 prose about the tree is not checked against the tree. Three of these four were true when written and
 became false when a later change landed. Nothing in CI could notice, because nothing compares a
 sentence in `docs/governance/` against the behaviour it describes.
+
+## Item 9c — Items 1–9 re-derived, and five more claims that had decayed
+
+Item 9b concluded that three of four sampled claims had gone stale and that the pattern was
+structural. The honest next step was to stop sampling. This pass re-derived every quantitative claim
+in Items 2, 3, 4, 7 and 8 against the tree rather than against the report's own text.
+
+**Item 8 held up completely.** Thirteen directions, 52 capability rows, D1–D5, `run.py` covering
+C1–C8 with 19 probes, and "next ADR is 0070" are all still true:
+
+```
+$ grep -cE '^### Direction|^## Direction' docs/governance/alpha-5-java-bridge-capability-inventory.md
+13
+$ grep -c '^| C[0-9]' docs/governance/alpha-5-java-bridge-capability-inventory.md
+52
+$ ls docs/governance/alpha-5/java-bridge-probes/*.oq | wc -l
+19
+$ ls docs/adr/ | wc -l
+69
+```
+
+That matters for the conclusion: the decay is not uniform. Item 8 cites a document that has not been
+edited since the report was written, so nothing could drift. The items that decayed are the ones
+whose subject the report's own sequencing then changed.
+
+**Five more claims had decayed**, all corrected in place above:
+
+| Claim | Was true at | Why it changed |
+| --- | --- | --- |
+| Item 2: Open 7 / Mitigated 10 / Accepted 13, total 30, Low 13 | `d306833` | PR #253 moved R-018 to Mitigated; PR #254 added R-031 |
+| Item 3: R-018 and R-023 "Reproduced exactly" | `d306833` | Both were repaired by PRs #252 and #253 |
+| Item 4: `allFuzzTargets` "declares exactly 8" | `d306833` | PR #253 took it to 11 |
+| Item 4: all ten named builtins have "zero occurrences" | `d306833` | PR #253 covered nine of the ten |
+| Item 7: §5 "requires superseding ADRs" for ADR-0015 and the brief | `d306833` | ADR-0069 did exactly that, and answered against §5 |
+
+Every one of the five was a correct derivation on `d306833`. None was wrong when written. That is
+the finding, and it is sharper than Item 9b's: **the report decayed because it worked.** Four of the
+five were invalidated by later commits executing the report's own Item 9 sequence — #252, #253 and
+#254 are entries 1, 2 and 3 of that sequence, and ADR-0069 is entry 4. A governance document that
+correctly orders its own remediation will be contradicted by that remediation, and nothing in CI
+distinguishes "this claim was always false" from "this claim was true and is now retired".
+
+Only one of the five is a genuine open blocker rather than bookkeeping: Item 7's. It read as though
+§5 needed two supersessions and was therefore close to unblocked. In fact §5 is further away than
+that, because the supersession happened in the opposite direction. That is the difference between a
+stale count and a stale conclusion, and it is why the audit was worth running past Item 8.
+
+Two things were deliberately not changed. The Items 1, 5, 6, 8, 9 and 10 prose that is narrative
+rather than quantitative was left alone; re-deriving "the register is mostly honest about what is
+unfinished" is not a command. And Item 2's original counts are preserved in the correction rather
+than deleted, because a report that silently rewrites its own history cannot be audited a third time.
 
 ## Item 10 — Remaining blockers and risks
 
