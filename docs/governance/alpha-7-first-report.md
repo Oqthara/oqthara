@@ -207,14 +207,29 @@ Resolution table at the end of this item records how.
 
 **But §4 itself is not defined anywhere in this repository,** and that is a different problem from
 the three above. Items 7 and 8 both state what their directive section asks for — §5 orders optional
-gradual typing with generics, §6 orders the Java Bridge to Full and Swing first. Item 6 never states
-what §4 orders. It names the section four times ("§4 hands language-core to", "Language-core
-evolution (§4)", "§4 language-core evolution") and paraphrases it zero times. Re-deriving the claim
-for this pass turned up no other text: `git grep -in 'language-core\|language core\|core language'`
-across `docs/`, `AGENTS.md`, `.github/` and `.kilo/` returns the report's own lines, one review record
-quoting them, and unrelated uses of the phrase in other documents. The directive is an external text
-that is not checked in, which is consistent — §10 and §11 are cited the same way — but it means a
-reader holding only this repository cannot tell what work §4 authorizes.
+gradual typing with generics, §6 orders the Java Bridge to Full and Swing first. This report never
+states what §4 orders. Before this pass it named the section six times and paraphrased it zero
+times: as an owner row (line 197), as a sequence entry and twice as a status cell (lines 355 and
+373), as the recipient of language-core (lines 100 and 345), and as the thing three adjustments had
+to precede (line 205). Every one of those is a reference. None is a statement of scope.
+
+Searching for the text rather than the label turned up nothing to quote:
+
+```
+$ git grep -ci 'language-core\|language core\|core language' -- docs/ AGENTS.md .github/ .kilo/
+docs/governance/alpha-4-workstream-assignment.md:1
+docs/governance/alpha-7-first-report.md:7
+docs/governance/remediation/alpha-4-execution-report.md:1
+docs/governance/reviews/PR-257.md:2
+```
+
+Run against `41191b7`, before this pass added text. Four files, and all four hits resolve to
+something other than a definition. The assignment failure is workstream 7's title "Core Language
+Features" in a different mapping. The execution report hit is `## 5. Language core — completed`, a
+closing heading for Alpha 4 work already done. The two review-record hits are PR #257 quoting this
+report back to itself. The remaining seven are this report's own lines. The directive is an external
+text that is not checked in, which is consistent — §10 and §11 are cited the same way — but it means
+a reader holding only this repository cannot tell what work §4 authorizes.
 
 The three adjustments below are therefore **necessary and not sufficient**. They clear the ownership
 obstacles; they do not bound the work.
@@ -566,19 +581,23 @@ Resolution table documents each with a command and a result. What the cell never
 what remains is *work*. Three cleared obstacles in front of an unbounded directive is not
 "Unblocked" — it is "nothing is known to be in the way, because nothing is known".
 
-Two prior passes noticed this and deferred it. Rather than defer again, the scope was looked for:
+Two prior passes noticed this and deferred it. Rather than defer again, the scope was looked for.
+The four files that mention the phrase at all are all accounted for, and none of them defines it.
+Run against `41191b7`, before this pass added text of its own:
 
 ```
-$ git grep -in 'language-core\|language core\|core language' -- docs/ AGENTS.md .github/ .kilo/
-docs/governance/reviews/PR-257.md:34: ... about to hand language-core work to ...
-docs/governance/remediation/alpha-4-execution-report.md:89:## 5. Language core — completed
-docs/governance/alpha-4-workstream-assignment.md:25: ... Core Language Features ...
+$ git grep -ci 'language-core\|language core\|core language' -- docs/ AGENTS.md .github/ .kilo/
+docs/governance/alpha-4-workstream-assignment.md:1
+docs/governance/alpha-7-first-report.md:7
+docs/governance/remediation/alpha-4-execution-report.md:1
+docs/governance/reviews/PR-257.md:2
 ```
 
-The first is a review record quoting this report. The second is Alpha 4's closing section heading,
-about work already completed. The third is a workstream name in a different mapping. **No document
-states what §4 orders.** Since Items 7 and 8 both paraphrase their section in one sentence each, the
-absence in Item 6 is an omission in the report, not a convention of the directive.
+The assignment hit is workstream 7's title in a mapping for Alpha 4. The execution report hit is
+`## 5. Language core — completed`, a closing heading. The two review-record hits are PR #257
+quoting this report. The seven are this report's own references. **No document states what §4
+orders.** Since Items 7 and 8 both paraphrase their section in one sentence each, the absence here is
+an omission in the report, not a convention of the directive.
 
 The status is now **Blocked as written**, and the unblocking step is to obtain §4's text. Recording
 it as blocked is more useful than recording it as unblocked, because "unblocked" invites someone to
