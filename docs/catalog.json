@@ -416,6 +416,12 @@
       "slug": "docs/adr/0068-glob-matching-is-a-linear-dynamic-program"
     },
     {
+      "path": "docs/adr/0069-oqthara-stays-dynamically-typed.md",
+      "title": "ADR-0069 — Oqthara stays dynamically typed, and `data` fields stay untyped",
+      "section": "adr",
+      "slug": "docs/adr/0069-oqthara-stays-dynamically-typed"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

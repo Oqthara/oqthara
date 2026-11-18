@@ -1,6 +1,8 @@
 # 0015 — Type families and the value model
 
-Status: accepted (2026-11-09, Alpha 4 Phase 0)
+Status: accepted (2026-11-09, Alpha 4 Phase 0). The inventory below stands. The question §4
+asked on top of it — whether the language should stay dynamically typed — is decided by
+[ADR-0069](0069-oqthara-stays-dynamically-typed.md).
 
 ## Context
 
