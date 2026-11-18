@@ -300,7 +300,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split are all discharged; see Item 6's Resolution |
 | 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.6); visible-window coverage still open |
-| 8 | Runtime and observability | Partly done — the CLI help and missing-file diagnostics for `oq run`/`oq check` are fixed (PR #259); no execution tracing exists |
+| 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
 ## Item 9a — Runtime and observability: what the tree actually needed
 
