@@ -20,8 +20,16 @@ the security backlog; neither supersedes the other's evidence.
 
 ## The measured starting point
 
-Every number below was re-derived from the tree on the commit that carries this file. None is
-carried forward from an earlier document.
+Every number below was re-derived from the tree at `e43d384`, the commit that last measured them. None
+is carried forward from an earlier document.
+
+They were re-derived **at that commit, not at whatever commit a reader is on**. Three have since
+moved, and the table is left as measured rather than updated, because it is evidence about a
+specific point in the Alpha rather than a live counter: threats mitigated 14 → 18, partially
+mitigated 12 → 11, risk-register entries 30 → 31 between `e43d384` and today. Each moved because a
+mitigation landed or an entry was added, which is the direction of change a reader wants to see. A
+reader who needs today's figures should run the gates named in the Source column instead of reading
+this table.
 
 | Quantity | Value | Source |
 | --- | --- | --- |

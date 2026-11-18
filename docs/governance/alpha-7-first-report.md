@@ -681,6 +681,16 @@ that started this sequence; it does not eliminate it, and a future pass that fin
 sentence with no recognised noun will have found a limitation of this gate rather than a new
 exception to it.
 
+One asymmetry inside the pairing rule is deliberate rather than overlooked. In "the register held 30
+risks and now holds 31", the earlier figure carries a noun and the later one does not, so only the
+earlier figure is recognised and it is checked — the sentence is reported, correctly. In "the count
+was 22 keywords and now says 24", the earlier figure is recognised and the later one is not, so the
+pairing exemption applies to nothing and again only the earlier figure is checked. Both halves come
+out checked, which is the safe direction: the failure mode worth preventing is a stale figure passing
+quietly, not a stale figure being reported twice. Requiring both halves to carry a noun before the
+exemption applies would be tidier, and it would also have re-silenced the bare-total shapes closed
+above.
+
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
@@ -720,18 +730,21 @@ exception to it.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
 - **The security baseline's "measured starting point" table has drifted, and the new gate already
-  shows it.** `docs/governance/alpha-7-security-baseline.md` says its figures "were re-derived from
+  shows it.** `docs/governance/alpha-7-security-baseline.md` said its figures "were re-derived from
   the tree on the commit that carries this file, none is carried forward". Run against today's tree,
   three of the eight are stale: threats mitigated 14→18, partially mitigated 12→11, and risk-register
   entries 30→31 (R-031, "a gate's allow-list silently stops matching", was added by `db01622` when
   the Dependabot login was exempted). The `18 + 11 + 14 + 12 = 55` arithmetic and the 33
   host-dependent names still hold.
-  This is the fifth document found carrying a figure that decayed silently, and it is deliberately
-  **not** repaired in this pass: the table is an honest dated snapshot of `b847ca2`, and rewriting it
-  with today's numbers would repeat the mistake of claiming a measurement that was not taken on this
-  tree. The fix is a decision — either mark the table as of `b847ca2` and add it to the gate's
-  coverage, or re-take all eight measurements and date them to a new commit. That decision belongs
-  to the A7.9 follow-up, not here.
+  The measurement was never wrong. It was taken at `e43d384` and the sentence around it claimed to be
+  current, so every later merge made the claim false while leaving the numbers as accurate history.
+  The baseline now names `e43d384`, states which three figures have moved since, and points a reader
+  who needs today's numbers at the gates named in the Source column. The table itself is unchanged,
+  because rewriting it with figures measured on a different tree would repeat the mistake it was
+  accused of.
+  This is the fifth document found carrying a figure that decayed silently. Unlike the first four it
+  was not repaired by editing a number: the defect was in a tense, and correcting the tense was
+  enough.
 - **No release, tag, deployment or version change is authorized** (§10), so none of the above may be
   validated by shipping.
 
