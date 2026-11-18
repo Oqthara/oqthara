@@ -154,6 +154,30 @@ class DriftIsCaught(unittest.TestCase):
         )
         self.assertTrue(problems)
 
+    def test_a_case_insensitive_noun_is_checked_not_crashed(self):
+        # `NOUN_KEY` was built from the noun as written and then read with
+        # `.lower()`, so "ADRs" was unreachable and any live "69 ADRs" raised
+        # KeyError out of classify. No test saw it because the only occurrences
+        # of that phrase were inside fenced blocks, which are exempt. A crash is
+        # not a pass, and a gate that dies takes the CI step with it.
+        problems = problems_after(
+            "**Item 8 held up completely.**",
+            "**Item 8 held up completely.** There are 68 ADRs in the tree.",
+        )
+        self.assertTrue(problems)
+        self.assertIn("68 ADRs", problems[0])
+
+    def test_the_correct_adr_total_is_silent(self):
+        # The positive control for the test above: it must reject the wrong
+        # number by comparing, not by raising on every number.
+        self.assertEqual(
+            [],
+            problems_after(
+                "**Item 8 held up completely.**",
+                f"**Item 8 held up completely.** There are {VALUES['adrs']} ADRs in the tree.",
+            ),
+        )
+
     def test_an_unclassifiable_claim_is_caught(self):
         # The failure this gate exists to prevent in itself: silently skipping
         # what it cannot parse and reporting success.

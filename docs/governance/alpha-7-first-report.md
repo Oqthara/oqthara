@@ -642,16 +642,20 @@ and never reads the value, so the register's arithmetic is enforced while its *c
 by whoever quoted them. Rather than add a second parser that could diverge, this gate imports the
 existing one.
 
-**The gate is tested in both directions.** 18 tests in `scripts/tests/test_check_report_claims.py`:
-eleven reintroduce a real class of drift and require rejection, three assert the dated snapshots the
-record depends on stay silent, and the rest guard the derivation itself. The silence tests are not
-decoration. A gate that rejects §9c's deliberate quotation of a historical figure is a gate the first
-person to hit it deletes from CI.
+**The gate is tested in both directions.** 22 tests in `scripts/tests/test_check_report_claims.py`:
+fourteen reintroduce a real class of drift and require rejection, one is the positive control for the
+ADR repair just below, three assert the dated snapshots the record depends on stay silent, and four
+guard the derivation and the exemption lists. The silence tests are not decoration. A gate that
+rejects §9c's deliberate quotation of a historical figure is a gate the first person to hit it
+deletes from CI.
 
-**What mutation testing found while building it.** Thirteen deliberate corruptions of the real report:
-a mutated total, a mutated spelled-out total, a mutated coverage range, a mutated probe total written
-without the unit word, a mutated bare target count, three mutated status cells, a mutated table total,
-a wrong Open ID, a mutated defect range, and a mutated per-group subset. All thirteen are caught:
+**What mutation testing found while building it.** Fifteen deliberate corruptions of the real report,
+against the first version: a mutated total, a mutated spelled-out total, a mutated coverage range, a
+mutated probe total written without the unit word, a mutated bare target count, three mutated status
+cells, a mutated table total, a wrong Open ID, a mutated defect range, and a mutated per-group subset.
+That harness reported seven misses on its first run, which was the useful result — the pairing rule
+treated any multi-figure sentence as a before/after pair. The current harness runs eleven catching
+mutations and four silence mutations, all correct:
 
 ```
 $ python3 scripts/check-report-claims.py
@@ -659,6 +663,16 @@ report claims: every figure agrees — 24 probes, 52 capability rows, 13 directi
 22 keywords, 11 fuzz targets, 69 ADRs, 5 defects, 31 risks (6 Open)
 exit=0
 ```
+
+**It found a bug in itself, and the first review that missed it was mine.** `NOUN_KEY` was built from
+each noun as written and then read with the matched text lowercased, so the `("ADRs", "adrs")` entry
+was unreachable. Any live sentence stating an ADR count raised `KeyError` out of `classify` — not a
+wrong answer, a crash, which would have taken the CI step down with an unhandled traceback. It
+survived because the phrase appeared only inside fenced blocks, which are exempt, and none of the
+eighteen tests then in place injected an ADR sentence into live prose. The fix keys the map on
+`lower()` and two new tests pin both directions: the wrong count is rejected, and the correct count is
+silent. A crash is not a pass; this is the one defect of the set that a passing gate could not have
+told me about.
 
 **It found a real defect in this report, not only in the tests.** Line 664 read "It claims eight
 targets exist" in the present tense, true on `d306833` and false since `e43d384` added three. Every

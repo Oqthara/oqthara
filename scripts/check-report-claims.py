@@ -122,7 +122,11 @@ NOUNS = [
     # register holds 31.
     ("risks", "risk_total"),
 ]
-NOUN_KEY = dict(NOUNS)
+# Keyed lowercase because the lookup lowercases the matched text. Keying this on
+# the noun as written made "ADRs" unreachable and turned any live "69 ADRs" into
+# a KeyError, which no test caught while that phrase only appeared inside a fenced
+# block.
+NOUN_KEY = {noun.lower(): key for noun, key in NOUNS}
 FIGURE = re.compile(
     rf"\b({NUMBER})\s+(?:(?:pure|real|confirmed|live)\s+)?"
     rf"({'|'.join(re.escape(noun) for noun, _ in NOUNS)})\b",
