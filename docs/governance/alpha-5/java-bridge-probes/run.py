@@ -152,7 +152,7 @@ PROBES = [
     # shadowed, `clear` is not, and `set` is the language's to_set. Each line of the spec's
     # precedence paragraph is checked here rather than trusted.
     (
-        "d5_unit_names",
+        "d3_shadowed_names",
         ["3", "[10, 20]", "20", "set() expects 0 arguments, got 1", "nothing", "[]"],
         None,
     ),
