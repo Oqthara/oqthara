@@ -2,11 +2,13 @@
 #
 # OQ_VERSION accepts "latest" (default), "0.1.0-alpha.2" or "v0.1.0-alpha.2".
 # OQ_INSTALL_DIR defaults to "$env:LOCALAPPDATA\oq".
+# OQ_REQUIRE_SIGNATURE=1 refuses a release whose signature is missing or unverifiable.
 #
 # Test seams (defaults are the real endpoints):
 #   OQ_RELEASE_API       default https://api.github.com/repos/Oqthara/oqthara/releases?per_page=30
 #   OQ_RELEASE_TAG_BASE  default https://github.com/Oqthara/oqthara/releases/download
 #   OQ_JAVA              default java
+#   OQ_COSIGN            default the cosign on PATH, if any
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
@@ -115,6 +117,28 @@ function Get-ExpectedSha([string]$ShaText) {
     return $match.Groups[1].Value.ToLowerInvariant()
 }
 
+# Returns the path to cosign, or $null when it is not on PATH. OQ_COSIGN overrides
+# the lookup so the installer tests can point at a stub.
+function Get-CosignCommand {
+    if ($env:OQ_COSIGN) {
+        if (Test-Path -LiteralPath $env:OQ_COSIGN) { return $env:OQ_COSIGN }
+        return $null
+    }
+    $found = Get-Command cosign -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $found) { return $null }
+    return $found.Source
+}
+
+function Test-Signature {
+    param(
+        [Parameter(Mandatory = $true)][string]$Cosign,
+        [Parameter(Mandatory = $true)][string]$Bundle,
+        [Parameter(Mandatory = $true)][string]$Jar
+    )
+    & $Cosign verify-blob --bundle $Bundle $Jar *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
 # Downloads a small text asset and returns its body as text.
 #
 # `Invoke-WebRequest ... .Content` is only a string when PowerShell guesses a text
@@ -163,6 +187,7 @@ function Install-Oq {
 
     $jarUrl = "$script:TagBase/$tag/oq.jar"
     $shaUrl = "$script:TagBase/$tag/oq.jar.sha256"
+    $sigUrl = "$script:TagBase/$tag/oq.jar.sigstore.json"
 
     Write-Info "Downloading oq $tag"
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -170,6 +195,7 @@ function Install-Oq {
     $jar = Join-Path $installDir "oq.jar"
     $launcher = Join-Path $installDir "oq.cmd"
     $tmp = Join-Path $installDir (".oq.jar.tmp.$PID")
+    $bundle = Join-Path $installDir (".oq.jar.sigstore.json.$PID")
     $launcherTmp = Join-Path $installDir (".oq.cmd.tmp.$PID")
 
     try {
@@ -192,6 +218,47 @@ function Install-Oq {
             Fail "Checksum mismatch for oq.jar (expected $expected, got $actual)."
         }
 
+        # A checksum proves the download is intact, not that it came from us: whoever
+        # can replace the jar can replace the checksum beside it. A signature closes
+        # that gap. Older releases predate signing, so a missing bundle is a reported
+        # state rather than a hard failure — but it is never called "verified", and
+        # OQ_REQUIRE_SIGNATURE=1 turns it into a failure. This mirrors install.sh.
+        $hasBundle = $false
+        try {
+            Save-RemoteFile $sigUrl $bundle
+            # -Force is required: the bundle is a dotfile, and Get-Item refuses hidden
+            # items without it. Without -Force the Length read threw, the catch below
+            # swallowed it, and every signed release was reported as unsigned — the
+            # verification silently never ran.
+            $hasBundle = ((Test-Path -LiteralPath $bundle) -and ((Get-Item -LiteralPath $bundle -Force).Length -gt 0))
+        } catch {
+            $hasBundle = $false
+        }
+
+        if ($hasBundle) {
+            $cosign = Get-CosignCommand
+            if ($cosign) {
+                if (-not (Test-Signature -Cosign $cosign -Bundle $bundle -Jar $tmp)) {
+                    Fail "Signature verification FAILED for $jarUrl. The jar does not match its signed bundle; do not run it."
+                }
+                Write-Info "Signature verified (cosign, keyless signer)."
+            } else {
+                Write-Host "warning: oq $tag is signed, but 'cosign' is not installed so the signature was not checked." -ForegroundColor Yellow
+                Write-Host "         The SHA-256 matched, which detects corruption and NOT tampering."
+                Write-Host "         Install cosign (https://docs.sigstore.dev/cosign/installation/) to check it."
+                if ($env:OQ_REQUIRE_SIGNATURE -eq "1") {
+                    Fail "OQ_REQUIRE_SIGNATURE=1 but cosign is not installed."
+                }
+            }
+        } else {
+            Write-Host "warning: oq $tag has no published signature, only a SHA-256." -ForegroundColor Yellow
+            Write-Host "         That detects corruption and NOT tampering: a replacement jar could ship with a"
+            Write-Host "         replacement checksum. Releases from the next tag onward are signed."
+            if ($env:OQ_REQUIRE_SIGNATURE -eq "1") {
+                Fail "OQ_REQUIRE_SIGNATURE=1 but $tag publishes no signature ($sigUrl)."
+            }
+        }
+
         $smoke = (& $script:JavaBin -jar $tmp --version 2>&1 | Out-String)
         if ($LASTEXITCODE -ne 0) {
             Fail "Downloaded oq.jar failed to run (java -jar ... --version)."
@@ -211,6 +278,9 @@ function Install-Oq {
     } finally {
         if ($tmp -and (Test-Path -LiteralPath $tmp)) {
             Remove-Item -Force -LiteralPath $tmp -ErrorAction SilentlyContinue
+        }
+        if ($bundle -and (Test-Path -LiteralPath $bundle)) {
+            Remove-Item -Force -LiteralPath $bundle -ErrorAction SilentlyContinue
         }
         if ($launcherTmp -and (Test-Path -LiteralPath $launcherTmp)) {
             Remove-Item -Force -LiteralPath $launcherTmp -ErrorAction SilentlyContinue

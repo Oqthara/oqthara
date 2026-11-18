@@ -676,7 +676,7 @@ existing gate.
 
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
 |---|---|---|---|---|---|---|
-| R-020 | The POSIX installer verifies authenticity but the PowerShell one verifies only integrity | Low | High | Medium | 9 | Open |
+| R-020 | The POSIX installer verifies authenticity but the PowerShell one verifies only integrity | Low | High | Medium | 9 | Mitigated |
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
 | R-023 | Keyword count is stated two ways across five documents | High | Low | Low | 1 | Open |
@@ -711,15 +711,31 @@ publication. The checksum catches transport corruption and a truncated download,
 case and is covered by `scripts/tests/run-installer-tests.sh` including a deliberately truncated
 response. On the POSIX path, Sigstore signing closes authenticity whenever `cosign` is present.
 
-*Why open.* Closing it means porting the bundle fetch and the `cosign verify-blob` call to
-`scripts/install.ps1`, which cannot be verified from macOS: `cosign` and PowerShell are both needed,
-and the repository has no Windows machine that runs the installer tests. Recording it as open is
-honest about that; recording it as accepted would imply the asymmetry is deliberate.
+*Mitigated at the Alpha 7 boundary.* `scripts/install.ps1` now downloads the release's Sigstore
+bundle, runs `cosign verify-blob --bundle` against the downloaded jar when `cosign` is found, and
+refuses the install when verification fails. When `cosign` is absent it prints the same warning the POSIX
+installer prints — that the SHA-256 "detects corruption and NOT tampering" — and
+`OQ_REQUIRE_SIGNATURE=1` turns a missing or unverifiable signature into a hard failure on both
+platforms. The bundle is removed on every exit path, so a failed run leaves no signature material
+behind beside an installed jar.
 
-*Evidence.* `scripts/install.sh` (`sig_url`, `cosign verify-blob`, `OQ_REQUIRE_SIGNATURE`) ·
-`scripts/install.ps1` (`Get-FileHash` only, no `sigstore` reference) · `scripts/verify-signature.sh` ·
-`scripts/tests/run-installer-tests.sh` · `.github/workflows/release.yml` (`id-token: write`, Install
-cosign, `cosign sign-blob`, the tamper step, asset list).
+The lookup honours `OQ_COSIGN` as a test seam, and the installer test suite now carries the Windows
+equivalents of the POSIX signature cases: signed-with-cosign verifies, tampered jar rejected,
+signed-without-cosign warns and installs, signed-without-cosign under `OQ_REQUIRE_SIGNATURE` fails,
+unsigned warns and installs, unsigned under `OQ_REQUIRE_SIGNATURE` fails, plus a positive control
+proving the hash-checking stub accepts an untampered jar.
+
+*Residual.* Authenticity is still opt-in by default. Without `cosign` and without
+`OQ_REQUIRE_SIGNATURE=1` both installers accept a jar on its checksum alone, which is the documented
+trade rather than an oversight. `install.ps1` itself still carries no Authenticode signature, so a
+tampered copy of the installer could remove these checks before they run; that part of the entry is
+untouched and is the reason it is not recorded as fully resolved.
+
+*Evidence.* `scripts/install.ps1` (`Get-CosignCommand`, `Test-Signature`, `sigUrl`,
+`OQ_REQUIRE_SIGNATURE`) · `scripts/tests/installer.tests.ps1` (six signature cases and a positive
+control) · `scripts/install.sh` (the POSIX behaviour this mirrors) · `.github/workflows/ci.yml`
+(the `windows-latest / installer tests` job that executes them) · the `ubuntu-latest` job, which
+runs the same suite because the end-to-end block no longer depends on a Windows-only switch.
 
 **R-021 — No update or rollback path; re-running the installer is the only upgrade.**
 There is no `oq update`, no version manager, no rollback to a previous release, and no bundled JDK —

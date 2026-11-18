@@ -879,14 +879,14 @@ image, and the Gradle build's dependency resolution.
 
 | ID | Threat | STRIDE | Status |
 |---|---|---|---|
-| TH-43 | A tampered `oq.jar` is installed because the checksum is fetched from the same place as the jar | Tampering | **Partially mitigated** |
+| TH-43 | A tampered `oq.jar` is installed because the checksum is fetched from the same place as the jar | Tampering | Mitigated |
 | TH-44 | A dependency is substituted because no verification metadata pins it | Tampering | **Mitigated** |
 | TH-45 | A compromised action tag runs with `contents: write` | Elevation of privilege | **Mitigated** |
 | TH-46 | The Docker image runs as root and a program writes outside `/work` | Elevation of privilege | **Mitigated** |
 | TH-47 | A release artefact is not traceable to a commit | Repudiation | **Partially mitigated** |
 | TH-48 | A malicious pull request reaches a workflow that holds `SITE_DISPATCH_TOKEN` | Elevation of privilege | **Mitigated** |
 
-**TH-43 — partially mitigated, and the gap is now only on Windows.**
+**TH-43 — mitigated at the Alpha 7 boundary.**
 This entry described "integrity but not authenticity" and cited a grep that "returns nothing" for
 `cosign`, `sigstore`, `gpg`, `minisign`, `attestation` and `authenticode`. That grep now returns
 `scripts/install.sh`, ADR-0052, the release workflow and the requirement matrix, because Alpha 6
@@ -908,12 +908,29 @@ verified against the real release rather than inferred: `v0.1.0-alpha.6` publish
 local check could exercise because `cosign` is not installed here — worked in CI on the first
 release that carried it.
 
-**The residual gap is Windows.** `scripts/install.ps1` has `Get-FileHash -Algorithm SHA256`
-(line 109) and nothing else: no signature fetch, no cosign check, no
-`OQ_REQUIRE_SIGNATURE` equivalent. So the POSIX installer verifies authenticity and the
-PowerShell installer verifies only integrity, for the same artefacts. That asymmetry is the
-threat that remains, and it is carried as R-020, whose status moved `Accepted` → `Open` for
-exactly this reason.
+**The Windows gap is closed.** This entry last recorded that `scripts/install.ps1` had
+`Get-FileHash -Algorithm SHA256` and nothing else: no signature fetch, no cosign check, no
+`OQ_REQUIRE_SIGNATURE` equivalent, so the POSIX installer verified authenticity while the PowerShell
+one verified only integrity for the same artefacts. It now mirrors the POSIX path. It downloads the
+release's Sigstore bundle, runs `cosign verify-blob --bundle` against the downloaded jar when
+`cosign` is found, and fails the install when verification fails. When `cosign` is absent it prints
+the same warning — that the SHA-256 "detects corruption and NOT tampering" — and
+`OQ_REQUIRE_SIGNATURE=1` turns a missing or unverifiable signature into a hard failure. The bundle is
+a dotfile and is removed on every exit path.
+
+Two things are still true and are why this is mitigated rather than eliminated. Authenticity is
+opt-in: without `cosign` and without `OQ_REQUIRE_SIGNATURE=1`, both installers accept a jar on its
+checksum alone. And neither installer is itself signed, so a tampered copy of the script could drop
+the checks before they run — that is the trust-on-first-use problem, and it is recorded rather than
+solved.
+
+Finding this required running the tests, not reading them. The first version of the PowerShell
+signature block read the bundle's size with `Get-Item`, which refuses dotfiles without `-Force`;
+the throw was caught and treated as "no signature published", so every signed release would have
+been reported unsigned and verified against nothing. On a platform with no `cosign` installed that
+path is silent. The suite now has six signature cases plus a positive control that proves the
+hash-checking stub accepts an untampered jar, and reverting `-Force` fails three of them — including
+the tampered-jar case, which accepts a tampered jar.
 
 **TH-44 — mitigated.** `gradle/verification-metadata.xml` now exists, generated with
 `./gradlew --write-verification-metadata sha256` and committed. It carries a SHA-256 for every
@@ -1016,12 +1033,12 @@ workflow only runs on `push` to `main` and on `release`.
 
 ### Residual risk
 
-The distribution path is honest about what it verifies and silent about what it does not. Three of
+The distribution path is honest about what it verifies and silent about what it does not. Four of
 this boundary's gaps were single-file gaps: TH-44 (no dependency pinning) was one metadata file and
-Alpha 7 spent it, TH-46 was one `USER` line and Alpha 7 spent that, and TH-45 (moving action tags)
-was one attribute per `uses:` and Alpha 7 spent that too. What is left is not a single-file fix:
-TH-43 is the Windows installer's authenticity gap and TH-47 the absence of a signed mapping from
-artefact to commit.
+Alpha 7 spent it, TH-46 was one `USER` line and Alpha 7 spent that, TH-45 (moving action tags) was
+one attribute per `uses:` and Alpha 7 spent that too, and TH-43 was the PowerShell installer's
+signature block and Alpha 7 spent that. What is left is not a single-file fix: TH-47 is the absence
+of a signed mapping from artefact to commit.
 
 ### Required tests
 
@@ -1148,8 +1165,8 @@ document stating the keyword count agrees with `Lexer.KEYWORDS`.
 
 | Status | Count | Threats |
 |---|---|---|
-| **Mitigated** | 17 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-44, TH-45, TH-46, TH-48, TH-49, TH-50, TH-54 |
-| **Partially mitigated** | 12 | TH-06, TH-08, TH-15, TH-21, TH-26, TH-33, TH-35, TH-37, TH-38, TH-43, TH-47, TH-52 |
+| **Mitigated** | 18 | TH-17, TH-18, TH-19, TH-23, TH-24, TH-27, TH-28, TH-29, TH-39, TH-42, TH-43, TH-44, TH-45, TH-46, TH-48, TH-49, TH-50, TH-54 |
+| **Partially mitigated** | 11 | TH-06, TH-08, TH-15, TH-21, TH-26, TH-33, TH-35, TH-37, TH-38, TH-47, TH-52 |
 | **Accepted** | 14 | TH-01, TH-02, TH-03, TH-04, TH-05, TH-07, TH-16, TH-22, TH-30, TH-34, TH-36, TH-40, TH-41, TH-55 |
 | **Not mitigated** | 12 | TH-09, TH-10, TH-11, TH-12, TH-13, TH-14, TH-20, TH-25, TH-31, TH-32, TH-51, TH-53 |
 
@@ -1258,7 +1275,7 @@ had stopped existing:
 | Entry | Was | Now |
 | --- | --- | --- |
 | `TH-15` | Mitigated by "the compiler refuses `use`", refusal #2 of four | Refusal #2 is gone (ADR-0066). `use` compiles; the escape is measured, not inferred |
-| `TH-43` | "integrity but not authenticity"; the sigstore grep "returns nothing" | POSIX installer verifies authenticity via `cosign verify-blob`; gap is Windows-only |
+| `TH-43` | "integrity but not authenticity"; the sigstore grep "returns nothing" | Both installers verify authenticity via `cosign verify-blob`; the Windows gap Alpha 7 found is closed |
 | `TH-47` | "no signature over the artefact" | `oq.jar.sigstore.json` is published and verified |
 | `TH-44` | `sqlite-jdbc:3.45.3.0`, `slf4j-nop:2.0.13` | `3.54.1.0`, `2.0.20`; verdict changed to `Mitigated` when A7.4 added verification metadata |
 | `TH-45` | six moving pins, no cosign action | thirteen `uses:` across three write-scope workflows, each pinned to a commit, including `cosign-installer` in the `id-token` workflow |
