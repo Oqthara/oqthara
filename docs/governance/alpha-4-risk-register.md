@@ -541,6 +541,27 @@ checks to be compared against. `mergeStateStatus` reads `BLOCKED` in both cases,
 protection does prevent a merge — the loss is diagnosis, and the cost is however long nobody
 notices, which on #264 was four commits.
 
+**A third mechanism, found on PR #264 as well.** A dependency resolution failure aborts the build
+before any of the repository's own code runs, and reads exactly like a code defect:
+
+```
+Could not resolve org.xerial:sqlite-jdbc:3.54.1.0.
+  > Could not GET 'https://repo.maven.apache.org/maven2/.../sqlite-jdbc-3.54.1.0.pom'.
+     > Received status code 429 from server: Too Many Requests
+```
+
+The job is called `Bytecode backend (JDK 25)` and it went red in 18 seconds, so the natural reading
+is that the commit broke the JDK 25 build. It did not: Maven Central rate-limited the runner during
+dependency resolution, the same commit had passed the same job twenty minutes earlier, and nothing
+in the diff touched the compiler. Re-running the identical SHA against identical content is the
+only thing that distinguishes the two causes, and a re-run is the one action a red check discourages.
+
+The cost is diagnostic rather than protective — branch protection behaves correctly — but a
+transient `429` is indistinguishable from a real regression without reading the log, and the log
+sentence that names the cause sits below a summary line that does not. This is the same shape as
+the two mechanisms above: the required context is absent or red for a reason that has nothing to do
+with the change being reviewed.
+
 *Residual.* The failure mode itself is unavoidable: a required context is identified by name alone,
 and GitHub cannot distinguish "not dispatched" from "still queued". A conflicted branch is a third
 case with the same read, and there is no signal that separates them. The same silent stop could
