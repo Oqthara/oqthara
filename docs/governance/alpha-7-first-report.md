@@ -325,8 +325,8 @@ This report does not claim an observability gap in those places, because measuri
 is not one — an earlier draft of this section asserted that `now()` returning text made elapsed time
 unmeasurable, which was wrong; `timestamp()` answers it.
 
-**What did not work.** Two of the three file-taking subcommands mishandled `--help`, and the
-diagnostic for a missing file was not a sentence:
+**What did not work.** Subcommands mishandled `--help`, and the diagnostic for a missing file was
+not a sentence:
 
 ```
 $ oq run --help
@@ -339,11 +339,36 @@ $ oq check absent
 Cannot read 'absent.oq': absent.oq
 ```
 
-`oq build` was fixed for exactly this in an earlier change and carries a comment saying so; its two
-siblings were left behind. The `oq check` line is worse than it looks: `NoSuchFileException`'s own
-message is the path, so passing it through printed the filename twice and gave no reason. Both
-subcommands now answer help with usage and exit 0, reject an unknown option by name, and `oq check`
-reports a missing file as `Cannot find file 'absent.oq'.`, matching `oq run`.
+`oq build` was fixed for exactly this in an earlier change and carries a comment saying so, and only
+its two siblings were checked at first. Auditing the rest found the same defect in `oq fmt`,
+`oq new`, `oq doc` and `oq test` — six of the seven file-taking commands in total:
+
+```
+$ oq fmt --help
+Cannot read '--help.oq': --help.oq
+
+$ oq doc --help
+Cannot find the standard library sources under .../--help
+
+$ oq test --help
+Cannot scan '--help': not a directory: --help
+
+$ oq new --help
+Created project --help/
+Run it with: oq --help/main.oq
+```
+
+The last is worse than a bad message: it created a directory. A user who types `oq new --help` to
+learn the syntax gets a stray project they did not ask for and are not told about. All four now
+answer `--help`/`-h` with usage and exit 0, `oq fmt` and `oq new` reject an unknown option by name
+with exit 2, and `oq check` reports a missing file as `Cannot find file 'absent.oq'.` instead of the
+filename twice — the latter because `NoSuchFileException`'s own message is only the path, so passing
+it through gave no reason at all.
+
+That six commands shared one defect is the finding worth more than the fix. A guard copied into one
+command is not a rule that binds its siblings, and nothing in the tree enumerates the subcommands, so
+nothing could assert that all of them behave alike. The parameterized test added with the fix is the
+closest substitute available, and it is a list a future author must remember to extend.
 
 **What remains open.** There is still no execution tracing: no flag reports which statements ran, how
 many steps were taken before a budget stop, or which host calls a program made. That is a real gap and
