@@ -318,7 +318,7 @@ and `0069-oqthara-stays-dynamically-typed.md`).
 ## Item 8 — Java Bridge Full validation matrix
 
 The authoritative inventory is `docs/governance/alpha-5-java-bridge-capability-inventory.md`:
-**thirteen** directions, **53** capability rows, and **six** confirmed defects **D1–D6**. §6 asks
+**thirteen** directions, **54** capability rows, and **six** confirmed defects **D1–D6**. §6 asks
 for "Full", and the inventory already defines what that would have to mean.
 
 That count has been wrong in both directions. This report once claimed five defects when the
@@ -337,8 +337,10 @@ list are gone; one stands:
 - **Was open, now half closed:** layout, painting, input dispatch and look-and-feel were untested
   because this section assumed a headless runner cannot cover them. That assumption was wrong:
   `c13_offscreen` now gates all four on both backends with no display. What remains open is
-  *realising* a window — `setVisible`, and with it the platform's own window manager — which a
-  headless runner genuinely cannot cover.
+  *displaying* a window — and with it the platform's own window manager — which a headless runner
+  genuinely cannot cover. The failure a program gets when there is no display *is* covered, by
+  `c13_window` (Item 9j), which pins `-Djava.awt.headless=true` so the answer does not depend on
+  the host.
 
 What the pass established: components construct and answer, a closure runs on the event dispatch
 thread, a closure is accepted as an `ActionListener` and receives the real `ActionEvent`, captures
@@ -357,15 +359,18 @@ required to execute rather than be read:
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
-| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C13 in 26 as of the offscreen-Swing pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it. C13 was hand-executed until `c13_offscreen` made the parts of it that need no display a gated probe |
+| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C13 in 27 as of the offscreen-Swing pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it. C13 was hand-executed until `c13_offscreen` made the parts of it that need no display a gated probe, and `c13_window` gates the one that does: it pins `-Djava.awt.headless=true` so the answer is the same on a desktop and on CI, which is what makes the display-dependent half testable where no display exists |
 
 One constraint from the tree must be honoured, not worked around: the probe harness covered C1–C8
 when this section was written and no direction was probed headlessly, so a GUI program's
 compiled-versus-interpreted parity would not be gated by anything that exists today. That has
 narrowed but not closed. `c13_offscreen` now gates layout, painting, input dispatch and
 look-and-feel on both backends without a display — the earlier claim that a headless runner cannot
-cover them was wrong, and the probe is the counter-example — but *realising* a window
-(`setVisible`) still needs one, so parity for a program that opens a real window still has no gate. The other constraint this section used to name — D1, a
+cover them was wrong, and the probe is the counter-example — but *displaying* a window still
+needs one, so parity for a program that shows a real window still has no gate. Note that the call
+that fails is `new Frame(...)`, not `setVisible`: `Window`'s constructor runs `checkHeadless()`
+itself. `c13_window` gates that failure, so the boundary is tested even though the display is not.
+The other constraint this section used to name — D1, a
 callable Java object refused at `sort`, `sort_by`, `reduce` and `list_sort` — was fixed in PR #231
 (`39b6078`) on 2026-11-15, two days before this report. All four builtins now accept a Java
 functional value whose arity fits, and a wrong-arity value is refused by count rather than by
@@ -410,7 +415,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Blocked as written** — ownership, keyword count and the type-system scope split are all discharged (Item 6's Resolution), but §4's own text is not in this repository, so the work has no boundary. Two of three prerequisites met; the third is a definition, not an adjustment |
-| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7); layout, painting, input dispatch and look-and-feel are now gated by `c13_offscreen` with no display (Item 9i). Only `setVisible` coverage is still open |
+| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), and the no-display failure is gated by `c13_window` (Item 9j). Only displaying a window on a real screen is still open |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
 ## Item 9a — Runtime and observability: what the tree actually needed
@@ -1016,8 +1021,8 @@ the event dispatch thread and checks the closure received `["go"]`:
 
 ```
 $ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
-ok: 26 probes match their expectation
-ok: 26 probes compared compiled bytecode against the interpreter
+ok: 27 probes match their expectation
+ok: 27 probes compared compiled bytecode against the interpreter
 ```
 
 Two details in that program are there to stop it from measuring the wrong thing. It prints
@@ -1044,10 +1049,74 @@ FAILED
 Closed: layout, painting, input dispatch and look-and-feel are gated on both backends, in CI, with
 no display required. Direction 13 is no longer supported only by runs somebody did by hand.
 
-Not closed: `setVisible` needs a display, so a program that opens a real window still has no
-compiled-versus-interpreted gate. The matrix row in Item 8 now says exactly that instead of
-claiming the whole toolkit is untestable. Reaching the last part would need a virtual framebuffer
-on the CI runner; nothing in this pass did that, and this item does not claim it did.
+Not closed: opening a *visible* window still has no gate that exercises a real display. The
+matrix row in Item 8 says exactly that instead of claiming the whole toolkit is untestable.
+
+### The second half, and where the boundary actually is
+
+The paragraph above first said this would need a virtual framebuffer on the CI runner. That was
+another unexamined premise, and checking it moved the boundary. A Java program was run under
+`-Djava.awt.headless=true`:
+
+```
+$ java -Djava.awt.headless=true -cp . H
+headless=true
+Exception in thread "main" java.awt.HeadlessException
+	at java.desktop/java.awt.GraphicsEnvironment.checkHeadless(GraphicsEnvironment.java:164)
+	at java.desktop/java.awt.Window.<init>(Window.java:553)
+	at java.desktop/java.awt.Frame.<init>(Frame.java:428)
+```
+
+The heading said "`setVisible` needs a display". The call that fails is `new Frame(...)`:
+`Window`'s constructor runs `checkHeadless()` itself, so `setVisible` is never reached. This
+matters for the same reason D5 did — a note that names the wrong call cannot be turned into a
+test, because the test would call the working method and pass.
+
+The last open part is therefore *displaying* a window, not constructing one, and the construction
+failure is testable exactly where no display exists. `c13_window.oq` gates it. It prints whether
+the JVM reported itself headless, then constructs a frame inside a `try`, and asserts four things:
+that the headless flag is set, that the construction was caught, that the caught error carries a
+message, and that a second attempt fails the same way rather than returning a half-built window.
+
+```
+$ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
+ok: 27 probes match their expectation
+ok: 27 probes compared compiled bytecode against the interpreter
+```
+
+The probe asserts no exception class and no message text. The class is `HeadlessException` on this
+JDK, but that is `java.desktop`'s choice rather than the bridge's, and pinning it would test the
+JDK version. This is the same distinction the offscreen probe draws when it refuses to print the
+look-and-feel name.
+
+One thing had to change in the runner for this to be honest. Ungated, the probe prints
+`false` / `visible` on a machine with a display and `true` / `caught` on a CI runner, so it would
+pass or fail on the host rather than on the bridge — the failure mode this whole item is about.
+`run.py` now holds a `HEADLESS` set and launches only those probes with `-Djava.awt.headless=true`,
+which makes the recorded expectation the same one in both places. The flags are passed to the
+`oq build` command as well as to the run, because `oq build` executes the program to decide the
+codepath; a build launched without them would record an output that never matched the run it is
+compared against.
+
+The pin was mutation-tested, because a conditional that silently never fires looks identical to
+one that works. Replacing `HEADLESS = {"c13_window"}` with `HEADLESS = set()` made the harness
+report
+
+```
+c13_window: expected ['true', 'caught', 'true', 'caught-again'], got ['false', 'visible', 'constructed-again'] (exit 0)
+```
+
+and exit **1** — which also demonstrates that this machine has a display, and that without the pin
+the probe would have been testing the machine. Restored, the run returns to 27/27 and exit 0.
+Five tests in `test_ci_probe_wiring.py` pin the flags onto the jar, classpath and compiled launch
+forms and assert that an unlisted probe gets none.
+
+What remains genuinely open is narrower than it was, and it is worth stating precisely: no test in
+this repository displays a window on a real screen, so painting *as composited by a window manager*
+is unexercised. Everything up to that point — layout, painting into an image, input dispatch,
+look-and-feel, and the failure a program sees when there is no display — is gated. Reaching the
+last step would need a virtual framebuffer such as Xvfb on the Linux runner. Nothing in this pass
+installed one, and this item does not claim otherwise.
 
 ## Item 10 — Remaining blockers and risks
 

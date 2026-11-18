@@ -102,6 +102,19 @@ FALLBACK = {}
 # bytecode`, and that needs a JDK too. A missing `javac` is therefore a failure, never a skip — a
 # probe that quietly skipped itself would report a pass for a check that never ran.
 EXTRA_CLASSPATH = {"c11_user_classpath": "Hello.java"}
+
+# Probes whose output depends on whether the JVM has a display. They are launched with
+# `-Djava.awt.headless=true` so the answer is the same on a developer's desktop and on a CI
+# runner.
+#
+# A probe must not pass or fail on the host. `c13_offscreen` already takes the other way out
+# for the same reason: it prints whether a look-and-feel was found rather than its name, because
+# the name is `Mac OS X` here and `Metal` on a bare Linux JVM. This probe cannot avoid the
+# question that way — its whole subject is what a program sees when there is no display — so the
+# condition is pinned instead of observed. Left unpinned it would print `false` / `visible` on a
+# developer's machine and `true` / `caught` on CI, and the recorded expectation would only ever
+# match one of them.
+HEADLESS = {"c13_window"}
 CLI_MAIN = "dev.oqthara.cli.Main"
 # What `oq build` writes into the manifest of every jar it produces.
 COMPILED_MAIN = "oq.generated.Program"
@@ -238,6 +251,28 @@ PROBES = [
         ["true", "20000", '["go"]', "true", "true"],
         None,
     ),
+    # C13.7's other half. `c13_offscreen` proves the toolkit works with no display; this proves
+    # what a program gets when it asks for a window anyway.
+    #
+    # The boundary is the `Window` constructor, not `setVisible`. Java calls
+    # `GraphicsEnvironment.checkHeadless()` inside `Window.<init>`, so `new JFrame(...)` throws
+    # before `setVisible` is reached. A note claiming "only setVisible needs a display" would be
+    # wrong about which call fails, and the probe pins the one that does.
+    #
+    # The output names no exception class and no message text. The class is `HeadlessException`
+    # on this JDK, but that is java.desktop's choice rather than the bridge's; asserting it would
+    # test the JDK version. What is asserted is that the failure is a *catchable* error carrying
+    # a message, and that a second attempt fails the same way rather than returning a half-built
+    # window the first one left behind.
+    #
+    # This is a member of `HEADLESS`, so the runner launches it with
+    # `-Djava.awt.headless=true`: on a developer's machine with a real display the ungated probe
+    # would print `false` / `visible` and never reach the `catch` at all.
+    (
+        "c13_window",
+        ["true", "caught", "true", "caught-again"],
+        None,
+    ),
 ]
 
 
@@ -276,7 +311,7 @@ def fixture_jar(source: Path, scratch: Path) -> Path:
     return target
 
 
-def launch(jar: Path, *args, extra: Path | None = None):
+def launch(jar: Path, *args, extra: Path | None = None, flags: tuple = ()):
     """The command line for `jar`, with `extra` on the classpath when one is needed.
 
     `java -jar` ignores both `CLASSPATH` and the working directory, so a probe that imports a
@@ -286,9 +321,10 @@ def launch(jar: Path, *args, extra: Path | None = None):
     evidence that has nothing to do with this.
     """
     if extra is None:
-        return [sys.executable and "java", "-jar", str(jar), *args]
+        return [sys.executable and "java", *flags, "-jar", str(jar), *args]
     return [
         sys.executable and "java",
+        *flags,
         "-cp",
         f"{jar}{os.pathsep}{extra}",
         CLI_MAIN,
@@ -296,16 +332,16 @@ def launch(jar: Path, *args, extra: Path | None = None):
     ]
 
 
-def run(jar: Path, program: Path, extra: Path | None = None):
+def run(jar: Path, program: Path, extra: Path | None = None, flags: tuple = ()):
     result = subprocess.run(
-        launch(jar, "run", str(program), extra=extra),
+        launch(jar, "run", str(program), extra=extra, flags=flags),
         capture_output=True,
         text=True,
     )
     return result.stdout + result.stderr, result.returncode
 
 
-def compile_program(jar: Path, program: Path, extra: Path | None = None):
+def compile_program(jar: Path, program: Path, extra: Path | None = None, flags: tuple = ()):
     """Compiles a probe in a scratch copy.
 
     `oq build` has no output flag: it writes `<name>.jar` beside the source. Copying the probe
@@ -318,34 +354,35 @@ def compile_program(jar: Path, program: Path, extra: Path | None = None):
     copied = scratch / program.name
     shutil.copy2(program, copied)
     result = subprocess.run(
-        launch(jar, "build", str(copied), extra=extra),
+        launch(jar, "build", str(copied), extra=extra, flags=flags),
         capture_output=True,
         text=True,
     )
     return scratch / f"{program.stem}.jar", result.stdout + result.stderr, result.returncode
 
 
-def compiled_launch(target: Path, extra: Path | None = None):
+def compiled_launch(target: Path, extra: Path | None = None, flags: tuple = ()):
     """The command line that runs a built jar, mirroring `launch` for the compiler's output.
 
     A compiled jar's own `Main-Class` is what `-jar` would use, so the `-cp` form names that
     class explicitly instead of reading the manifest back.
     """
     if extra is None:
-        return [sys.executable and "java", "-jar", str(target)]
+        return [sys.executable and "java", *flags, "-jar", str(target)]
     return [
         sys.executable and "java",
+        *flags,
         "-cp",
         f"{target}{os.pathsep}{extra}",
         COMPILED_MAIN,
     ]
 
 
-def run_compiled(target: Path, extra: Path | None = None):
+def run_compiled(target: Path, extra: Path | None = None, flags: tuple = ()):
     # `cwd` is set because the jar is written in a scratch directory and the program may resolve
     # a relative path.
     result = subprocess.run(
-        compiled_launch(target, extra=extra),
+        compiled_launch(target, extra=extra, flags=flags),
         capture_output=True,
         text=True,
         cwd=str(target.parent),
@@ -439,11 +476,12 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
             # than skipped: this harness already needs a JDK to build probes.
             failures.append(f"{name}: {error}")
             return
-    output, code = run(jar, program, extra=extra)
+    flags = ("-Djava.awt.headless=true",) if name in HEADLESS else ()
+    output, code = run(jar, program, extra=extra, flags=flags)
     if both:
         # Compare the two backends on the same program. A refusal is compared as text, so a
         # backend that runs a program the interpreter rejects is caught.
-        target, build_output, build_code = compile_program(jar, program, extra=extra)
+        target, build_output, build_code = compile_program(jar, program, extra=extra, flags=flags)
         if build_code != 0 or not target.is_file():
             tail = build_output.strip().splitlines()[-1] if build_output.strip() else "no output"
             failures.append(f"{name}: oq build did not produce a jar (exit {build_code}): {tail}")
@@ -455,7 +493,7 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
         if refusal is not None:
             failures.append(refusal)
             return
-        compiled_output, compiled_code = run_compiled(target, extra=extra)
+        compiled_output, compiled_code = run_compiled(target, extra=extra, flags=flags)
         tally.ran += 1
         if CODEPATH.search(build_output).group(0).strip() == COMPILED:
             tally.compiled += 1

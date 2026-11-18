@@ -22,6 +22,7 @@ step moved there would be skipped while still looking present.
 """
 import importlib.util
 import pathlib
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
@@ -293,18 +294,18 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
                 return [expected], 1
             return list(expected), 0
 
-        def fake_run(jar, program, extra=None):
+        def fake_run(jar, program, extra=None, flags=()):
             lines, code = output_for(program.stem)
             return "\n".join(lines) + "\n", code
 
-        def fake_build(jar, program, extra=None):
+        def fake_build(jar, program, extra=None, flags=()):
             target = jar.parent / f"{program.stem}.jar"
             target.write_bytes(b"")
             output = (f"compiled {program.name}\nbackend=classfile\n"
                       f"{codepath_for(program.stem)}\n")
             return target, output, 0
 
-        def fake_compiled(target, extra=None):
+        def fake_compiled(target, extra=None, flags=()):
             lines, code = output_for(target.stem)
             return "\n".join(lines) + "\n", code
 
@@ -383,6 +384,53 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
         code, out = self.drive(self.declare)
         self.assertEqual(code, 0, out)
         self.assertIn("not across two backends", out)
+
+
+class HeadlessPinTest(unittest.TestCase):
+    """A probe must not pass or fail on whether the machine running it has a display.
+
+    `c13_window` asks what a program sees when it constructs a window and there is no display.
+    Ungated it would print `false` / `visible` on a developer's desktop and `true` / `caught` on a
+    CI runner, so the recorded expectation could only ever match one of the two, and the other
+    would be reported as a broken bridge. The runner therefore pins the condition with
+    `-Djava.awt.headless=true` rather than observing it.
+
+    These tests check the flags reach every launch form, because the flag has to be on the
+    `oq build` command too: `oq build` runs the program to decide the codepath, so a build
+    launched without it would record a different output from the run it is compared against.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("probe_runner", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.runner = module
+        self.flags = ("-Djava.awt.headless=true",)
+
+    def test_the_display_dependent_probe_is_the_pinned_one(self):
+        self.assertEqual(self.runner.HEADLESS, {"c13_window"})
+
+    def test_the_flag_reaches_the_jar_launch(self):
+        command = self.runner.launch(Path("oq.jar"), "run", "p.oq", flags=self.flags)
+        self.assertIn("-Djava.awt.headless=true", command)
+        self.assertLess(command.index("-Djava.awt.headless=true"), command.index("-jar"))
+
+    def test_the_flag_reaches_the_classpath_launch(self):
+        command = self.runner.launch(Path("oq.jar"), "run", "p.oq",
+                                     extra=Path("extra.jar"), flags=self.flags)
+        self.assertIn("-Djava.awt.headless=true", command)
+        self.assertLess(command.index("-Djava.awt.headless=true"), command.index("-cp"))
+
+    def test_the_flag_reaches_the_compiled_launch(self):
+        command = self.runner.compiled_launch(Path("p.jar"), flags=self.flags)
+        self.assertIn("-Djava.awt.headless=true", command)
+
+    def test_a_probe_not_listed_gets_no_flag(self):
+        # The flag is scoped to the probes that need it: adding it everywhere would change how
+        # every other recorded probe runs, which is a different change from this one.
+        launch = self.runner.launch
+        self.assertEqual(launch(Path("oq.jar"), "run", "p.oq"),
+                         ["java", "-jar", "oq.jar", "run", "p.oq"])
 
 
 if __name__ == "__main__":
