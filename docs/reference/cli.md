@@ -7,6 +7,9 @@ lists.
 
 Runs a program.
 
+`oq run --help` prints the usage and exits 0. The extension is optional, so `oq hello`
+runs `hello.oq`.
+
 ## `oq check`
 
 Parses a program and reports syntax errors without running it.
@@ -15,6 +18,9 @@ Parses a program and reports syntax errors without running it.
 verify that a program can run. A file containing `break` outside any loop, or a reference
 to a name that is never defined, prints `OK` and exits 0. Use `oq run` to find those
 errors.
+
+`oq check --help` prints the usage and exits 0. A missing file reports
+`Cannot find file '<name>'.` and exits 2, the same way `oq run` does.
 
 ## `oq repl`
 

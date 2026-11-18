@@ -117,6 +117,22 @@ public final class Main {
                 err.println("Missing program file. Try: oq hello.oq");
                 return 2;
             }
+            if (args[0].equals("--help") || args[0].equals("-h")) {
+                out.println("""
+                        Usage: oq <file.oq>
+
+                        Runs a program and prints a diagnostic at the first problem.
+
+                        The file extension is optional: `oq hello` runs `hello.oq`. The exit
+                        status is 0 when the program finishes, 1 when it stops on a program
+                        error, and 2 when the command line itself is wrong.""");
+                return 0;
+            }
+            if (args[0].startsWith("-")) {
+                err.println("Unknown option: " + args[0]);
+                err.println("Try: oq <file.oq>");
+                return 2;
+            }
             String path = args[0];
             if (!path.endsWith(".oq")) {
                 path = path + ".oq";
@@ -184,8 +200,27 @@ public final class Main {
                 err.println("Missing program file. Try: oq check hello.oq");
                 return 2;
             }
+            if (args[0].equals("--help") || args[0].equals("-h")) {
+                out.println("""
+                        Usage: oq check <file.oq>
+
+                        Parses a program and reports the first syntax error without running it.
+
+                        Prints `OK <file>` and exits 0 when the file parses; exits 1 with a
+                        diagnostic when it does not.""");
+                return 0;
+            }
+            if (args[0].startsWith("-")) {
+                err.println("Unknown option: " + args[0]);
+                err.println("Try: oq check <file.oq>");
+                return 2;
+            }
             String path = args[0];
             if (!path.endsWith(".oq")) path = path + ".oq";
+            if (!Files.exists(Path.of(path))) {
+                err.println("Cannot find file '" + path + "'.");
+                return 2;
+            }
             try {
                 String source = Files.readString(Path.of(path), StandardCharsets.UTF_8);
                 Parser.parse(path, source);
