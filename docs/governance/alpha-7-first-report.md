@@ -616,6 +616,71 @@ pattern — noticed, deferred, noticed again — is the same one that let Items 
 it is worth naming: a deferred finding decays faster than a recorded one, because nothing about it
 changes and so it keeps looking smaller.
 
+## Item 9e — A7.9: the mechanism the last four reviews asked for
+
+Items 9b, 9c and 9d each repaired claims by hand, and so did PR-260, PR-261, PR-262 and PR-263 before
+them. Four records in a row found the same defect and three of them wrote the same sentence: *nothing
+re-derives these figures, so the next pass will find new ones*. Nothing was added. This pass adds it.
+
+`scripts/check-report-claims.py` re-derives every quantitative claim it can and runs in the same CI
+step as the other six gates. It deliberately does not hold a table of expected totals — an extractor
+that compares against a hardcoded copy of the answer is a second copy that goes stale, which is the
+defect it exists to remove. It reads the number *out of the sentence* and the truth *out of the file
+that owns it*:
+
+| Claim | Owner |
+| --- | --- |
+| probes, probe-coverage range, per-group probe counts | `docs/governance/alpha-5/java-bridge-probes/run.py` and the `c*.oq`/`d*_*.oq` files |
+| capability rows, directions, confirmed defects | `docs/governance/alpha-5-java-bridge-capability-inventory.md` |
+| keywords | `Lexer.java` |
+| fuzz targets | `build.gradle.kts` |
+| ADRs | the ADR directory |
+| risk status counts and the Open ID list | the register, through `check-risk-register.py`'s own `parse_rows` |
+
+The last row is worth stating plainly. `check-risk-register.py` parses the `status` column at line 91
+and never reads the value, so the register's arithmetic is enforced while its *contents* were trusted
+by whoever quoted them. Rather than add a second parser that could diverge, this gate imports the
+existing one.
+
+**The gate is tested in both directions.** 18 tests in `scripts/tests/test_check_report_claims.py`:
+eleven reintroduce a real class of drift and require rejection, three assert the dated snapshots the
+record depends on stay silent, and the rest guard the derivation itself. The silence tests are not
+decoration. A gate that rejects §9c's deliberate quotation of a historical figure is a gate the first
+person to hit it deletes from CI.
+
+**What mutation testing found while building it.** Thirteen deliberate corruptions of the real report:
+a mutated total, a mutated spelled-out total, a mutated coverage range, a mutated probe total written
+without the unit word, a mutated bare target count, three mutated status cells, a mutated table total,
+a wrong Open ID, a mutated defect range, and a mutated per-group subset. All thirteen are caught:
+
+```
+$ python3 scripts/check-report-claims.py
+report claims: every figure agrees — 24 probes, 52 capability rows, 13 directions,
+22 keywords, 11 fuzz targets, 69 ADRs, 5 defects, 31 risks (6 Open)
+exit=0
+```
+
+**It found a real defect in this report, not only in the tests.** Line 664 read "It claims eight
+targets exist" in the present tense, true on `d306833` and false since `e43d384` added three. Every
+prior pass had checked the fuzz counts it was looking for and not this one. The sentence now reads
+"eleven targets exist today, that the run at `d306833` covered eight of them", which is what was
+always meant.
+
+The gate also forced a decision it had been avoiding. Its first version treated any sentence with two
+figures as a before/after pair, which silenced almost everything; its second treated every figure as
+live, which fired on the dated halves. What settles it is a rule about *position*: a dating clause
+before the first figure or after the last governs the whole sentence, and one between figures governs
+only its own clause. Line 356's parity row dates its first half mid-sentence and must stay silent
+there while still checking the second half, and Item 8's dated list carries its predicate after the
+last figure and must go quiet entirely. Both are now tests.
+
+**What this does not cover.** Any claim-shaped sentence the rules cannot parse is a *failure*, not a
+skip — that is asserted by a test — but a sentence that is not claim-shaped at all still passes.
+Prose saying "most targets" or "several probes" is invisible here. The gate reduces the class of drift
+that started this sequence; it does not eliminate it, and a future pass that finds a number inside a
+sentence with no recognised noun will have found a limitation of this gate rather than a new
+exception to it.
+
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
@@ -654,6 +719,19 @@ changes and so it keeps looking smaller.
   §6's "Swing first" is now half a measurement.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
+- **The security baseline's "measured starting point" table has drifted, and the new gate already
+  shows it.** `docs/governance/alpha-7-security-baseline.md` says its figures "were re-derived from
+  the tree on the commit that carries this file, none is carried forward". Run against today's tree,
+  three of the eight are stale: threats mitigated 14→18, partially mitigated 12→11, and risk-register
+  entries 30→31 (R-031, "a gate's allow-list silently stops matching", was added by `db01622` when
+  the Dependabot login was exempted). The `18 + 11 + 14 + 12 = 55` arithmetic and the 33
+  host-dependent names still hold.
+  This is the fifth document found carrying a figure that decayed silently, and it is deliberately
+  **not** repaired in this pass: the table is an honest dated snapshot of `b847ca2`, and rewriting it
+  with today's numbers would repeat the mistake of claiming a measurement that was not taken on this
+  tree. The fix is a decision — either mark the table as of `b847ca2` and add it to the gate's
+  coverage, or re-take all eight measurements and date them to a new commit. That decision belongs
+  to the A7.9 follow-up, not here.
 - **No release, tag, deployment or version change is authorized** (§10), so none of the above may be
   validated by shipping.
 
@@ -661,8 +739,9 @@ changes and so it keeps looking smaller.
 
 - It does not claim the risk register is wrong beyond the two corrections named; the other five Open
   entries were re-checked and hold.
-- It does not claim the fuzz suite is trustworthy because it passes. It claims eight targets exist,
-  found seven defects, and that eight more pure builtins are reachable and untested.
+- It does not claim the fuzz suite is trustworthy because it passes. It claims eleven targets exist
+  today, that the run at `d306833` covered eight of them and found seven defects, and that eight more
+  pure builtins are reachable and untested.
 - It does not claim §5 is illegal. It claims §5 contradicts a *decided* question and therefore needs
   a superseding record, which the brief's own "one decision, not one migration" makes affordable.
 - It does not claim `oq-hive-language-syntax` is unusable. It claimed it was not where `AGENTS.md`
