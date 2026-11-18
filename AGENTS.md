@@ -59,7 +59,10 @@ Blocks close with `end`; statements end at a newline; `use` imports any Java cla
 ## Operation
 
 Read `.oqthara-ai/MASTER_PROMPT.md` and `RESUME.md`; pick the next task; checkpoint.
-Orchestration is chat-native (ADR-0009): no watchdog, launchd unit, or detached loop. Agents
-live in `.kilo/agents/` (`oq-orchestrator` primary); delegate via the real `task` tool, one
+Orchestration is chat-native (ADR-0009): no watchdog, launchd unit, or detached loop. Two agent
+sets exist and both are documented in `docs/governance/README.md`. `.kilo/agents/` holds twelve
+roles (`oq-orchestrator` primary) in the Kilo product's format; `.github/agents/` holds the six
+`oq-hive-*` roles that are the ones loadable here, and the governance documents that assign owners
+name those. Delegate via the real `task` tool, one
 git worktree per concurrent writer under `.worktrees/`. `.oqthara-ai/STOP` is an emergency
 halt; never remove it automatically.

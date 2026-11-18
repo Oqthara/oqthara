@@ -156,7 +156,8 @@ Alpha 7 therefore cannot assign §5 to an existing owner without first naming on
 
 ## Item 6 — Language-core ownership and agent-scope adjustments
 
-Three adjustments are needed before §4 can be executed.
+Three adjustments were needed before §4 could be executed. All three are now discharged; the
+Resolution table at the end of this item records how.
 
 **The agent set the repository designates has no language-syntax role.** `AGENTS.md` line 63 says
 agents "live in `.kilo/agents/` (`oq-orchestrator` primary)". That directory holds twelve agents:
@@ -175,6 +176,19 @@ parser, AST, keyword set and the normative specification. Optional typing touche
 is in scope) *and* the value model and a new semantic-analysis pass that does not exist (which are
 `oq-hive-development`'s and workstream 2's). If §5 proceeds, the split has to be written down, or a
 single role will be asked to do two roles' work under one name.
+
+### Resolution
+
+All three adjustments are now discharged.
+
+| Adjustment | State |
+| --- | --- |
+| No language-syntax role in the operating instructions | **Fixed.** `AGENTS.md` now names both agent sets and says which one is loadable here and which one the governance documents assign owners to |
+| Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 |
+| Scope must not absorb the type system | **Fixed.** The agent file has a "Where your ownership stops" section: syntax owns the annotation grammar and the specification's account of it; `oq-hive-development` owns the value model, the semantic-analysis pass, and failed-check behaviour. A change needing both is two changes |
+
+The keyword count is still not read by CI. That gap is unchanged and is R-031's shape — the
+operating instructions and the agent files are prose, and nothing compares them against the lexer.
 
 ## Item 7 — Type-system decisions requiring superseding ADRs
 
@@ -273,7 +287,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 3 | A7.8, R-018 fuzzing reach | **Done** — PR #253 |
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
-| 6 | §4 language-core evolution | Open |
+| 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split are all discharged; see Item 6's Resolution |
 | 7 | §6 Java Bridge Full | Open — needs the Swing inventory row first |
 | 8 | Runtime and observability | Open, independent |
 
