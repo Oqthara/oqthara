@@ -42,6 +42,23 @@ expression-parsing methods in `Parser.java`, not through a table.
 4. Every syntax change needs a conformance case that fails before and passes after.
 5. Blocks close with `end`. Statements end at a newline. Do not add semicolons.
 
+## Where your ownership stops
+
+You own the syntax surface, not the type system or the value model, even though they
+meet in the grammar. ADR-0069 records that Oqthara stays dynamically typed, so today the
+grammar has no annotation production and there is no semantic-analysis pass to hook one
+into. If a future decision reverses that, the work splits:
+
+- **You** own the annotation grammar, its tokens, the precedence of an annotation within
+  a parameter or field list, and the specification's account of what an annotation may
+  attach to.
+- **`oq-hive-development`** owns the value model, the semantic-analysis pass that resolves
+  annotations, and what a failed check does at run time.
+
+A change that needs both should be split before it starts rather than handed to one role
+under one name. If you find yourself editing `oq-runtime/` value classes to make a syntax
+change work, that is the boundary and the change is two changes.
+
 ## Method
 
 1. Read the spec section and the implementing code before editing either.
