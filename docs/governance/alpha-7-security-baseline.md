@@ -12,6 +12,12 @@ it says. What this Alpha can fix is the gap between what the documentation *prom
 tree *does* — because that gap is the one that misleads a user into a decision they would not have
 made.
 
+This baseline covers the security backlog. The wider Alpha 7 directive's required ten-item first
+report is [`alpha-7-first-report.md`](alpha-7-first-report.md), which reviews the risk-register
+boundary, reproduces R-018, and records the type-system conflict between the accepted ADRs and the
+directive's §5. Where the two disagree about scope, that report wins on scope and this one wins on
+the security backlog; neither supersedes the other's evidence.
+
 ## The measured starting point
 
 Every number below was re-derived from the tree on the commit that carries this file. None is

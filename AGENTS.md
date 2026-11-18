@@ -18,7 +18,7 @@ Repo: https://github.com/Oqthara/oqthara
 
 ## Simplicity test
 
-One sentence? Adds a keyword (budget 30, now 20)? Already solved? Exactly one obvious way?
+One sentence? Adds a keyword (budget 30, now 22)? Already solved? Exactly one obvious way?
 Looks like Rust? Hello world still one line?
 
 ## Never Rust

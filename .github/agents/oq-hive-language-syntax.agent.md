@@ -35,7 +35,7 @@ expression-parsing methods in `Parser.java`, not through a table.
 1. The specification is normative. If implementation and `docs/spec/` disagree, the
    specification is the bug — but only once you have proven the disagreement with
    citations on both sides.
-2. The keyword budget is 30. It currently uses 20. A new keyword must remove more
+2. The keyword budget is 30. It currently uses 22. A new keyword must remove more
    complexity than it adds.
 3. Rust is forbidden: `&`, `&mut`, `fn`, `->`, `::`, `impl`, `trait`, `#[...]`. Memory
    belongs to the JVM.
