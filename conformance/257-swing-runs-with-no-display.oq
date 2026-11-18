@@ -1,0 +1,53 @@
+# The only part of Swing that needs a display is *realising* a window. Everything else -- laying
+# components out, painting into an offscreen image, dispatching an input event and running a
+# closure on the event dispatch thread -- works under -Djava.awt.headless=true, which is how the
+# CI runner behaves. Before this case the Swing path was covered only by the Alpha 5 probes
+# harness; nothing in the ordinary suite ran it, so a bridge regression there would have been
+# caught by a governance script and by nothing else.
+#
+# Every value printed here is a value the program computed, not a value the platform chose. No
+# look-and-feel name is printed: it is `Mac OS X` on a developer's desktop and `Metal` on a bare
+# Linux JVM, so naming it would make this case pass or fail on the machine rather than on the
+# bridge. The same reasoning is why the Alpha 5 `c13_offscreen` probe prints a colour is present
+# rather than the colour's name.
+use javax.swing.JPanel
+use javax.swing.JButton
+use javax.swing.SwingUtilities
+use java.awt.image.BufferedImage
+
+fired = []
+panel = JPanel(nothing)
+panel.setSize(200, 100)
+button = JButton("go")
+button.setBounds(10, 40, 80, 30)
+button.addActionListener(fun(e)
+  fired.add(e.getActionCommand())
+end)
+panel.add(button)
+button.doLayout()
+
+img = BufferedImage(200, 100, BufferedImage.TYPE_INT_ARGB)
+g = img.createGraphics()
+g.fillRect(0, 0, 200, 100)
+panel.paint(g)
+g.dispose()
+
+painted = 0
+for y in 0 to 99
+  for x in 0 to 199
+    if (img.getRGB(x, y) and 16777215) != 16777215
+      painted = painted + 1
+    end
+  end
+end
+
+SwingUtilities.invokeAndWait(fun()
+  button.doClick()
+end)
+
+# The click ran on the event dispatch thread, so the closure's write is visible here.
+b = button.getBounds()
+print panel.getComponentCount()
+print b.x, b.y, b.width, b.height
+print painted > 0
+print fired

@@ -1584,8 +1584,13 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(214, compiled,
+        assertEquals(215, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
+        // Measured 2026-11-18: 215 compiled / 9 fallback / 0 divergences over 257 programs
+        // (224 executable). 257-swing-runs-with-no-display added the Swing path to the ordinary
+        // suite, and it compiles: the bridge calls it makes were already lowered, so this is a
+        // newly measured capability rather than a compiler change.
+        //
         // Measured 2026-11-17: 214 compiled / 9 fallback / 0 divergences over 256 programs
         // (223 executable). 256-callable-builtins-compile pins that `map`, `filter` and
         // `sort_by` accept a compiled lambda: `Builtins.HOST_DEPENDENT` had listed the three
