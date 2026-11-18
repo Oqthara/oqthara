@@ -251,14 +251,17 @@ final class Patterns {
         /**
          * A single pattern element.
          *
-         * <p>{@code members} holds code points for a class. Ranges are expanded when the
-         * pattern is built rather than kept as endpoints: a class is at most the size of the
-         * Unicode range, and expanding it once turns every later test into a set lookup.
+         * <p>{@code bounds} holds a class's members as alternating low/high pairs, {@code b[2k]} to
+         * {@code b[2k+1]}. A range keeps its endpoints instead of being expanded: expanding is
+         * what a first draft did, and a class spanning most of Unicode then cost
+         * 1,114,111 ints, so a 360-character pattern exhausted a 256 MB heap before a single name
+         * was looked at. Keeping endpoints makes a pattern's cost proportional to its own length,
+         * and a member test is a scan over the ranges actually written.
          */
-        private record Token(Kind kind, int codePoint, int[] members, boolean negated) {
+        private record Token(Kind kind, int codePoint, int[] bounds, boolean negated) {
             boolean matches(int candidate) {
-                for (int member : members) {
-                    if (member == candidate) return !negated;
+                for (int b = 0; b < bounds.length; b += 2) {
+                    if (candidate >= bounds[b] && candidate <= bounds[b + 1]) return !negated;
                 }
                 return negated;
             }
@@ -273,7 +276,7 @@ final class Patterns {
                 // String, so it has to advance by two and stay one token. Walking char by char
                 // made an emoji pattern match neither its own halves nor itself.
                 if (codePoint > Character.MAX_VALUE) {
-                    tokens.add(new Token(Kind.LITERAL, codePoint, NO_MEMBERS, false));
+                    tokens.add(new Token(Kind.LITERAL, codePoint, NO_BOUNDS, false));
                     i += Character.charCount(codePoint);
                     continue;
                 }
@@ -295,19 +298,19 @@ final class Patterns {
                             // `**/` also matches zero directories, so the separator it spells
                             // belongs to the globstar rather than becoming a literal slash.
                             if (i + 2 == source.length()) {
-                                tokens.add(new Token(Kind.TRAILING_GLOBSTAR, 0, NO_MEMBERS, false));
+                                tokens.add(new Token(Kind.TRAILING_GLOBSTAR, 0, NO_BOUNDS, false));
                                 i += 2;
                             } else {
-                                tokens.add(new Token(Kind.GLOBSTAR, 0, NO_MEMBERS, false));
+                                tokens.add(new Token(Kind.GLOBSTAR, 0, NO_BOUNDS, false));
                                 i += 3;
                             }
                         } else {
-                            tokens.add(new Token(Kind.STAR, 0, NO_MEMBERS, false));
+                            tokens.add(new Token(Kind.STAR, 0, NO_BOUNDS, false));
                             i++;
                         }
                     }
                     case '?' -> {
-                        tokens.add(new Token(Kind.ANY_ONE, 0, NO_MEMBERS, false));
+                        tokens.add(new Token(Kind.ANY_ONE, 0, NO_BOUNDS, false));
                         i++;
                     }
                     case '[' -> {
@@ -325,10 +328,10 @@ final class Patterns {
                         if (body.isEmpty()) {
                             throw new OqError("bad pattern: empty character class", span);
                         }
-                        tokens.add(new Token(Kind.CLASS, 0, expandClass(body, span), negated));
+                        tokens.add(new Token(Kind.CLASS, 0, parseClass(body, span), negated));
                     }
                     default -> {
-                        tokens.add(new Token(Kind.LITERAL, codePoint, NO_MEMBERS, false));
+                        tokens.add(new Token(Kind.LITERAL, codePoint, NO_BOUNDS, false));
                         i++;
                     }
                 }
@@ -336,10 +339,16 @@ final class Patterns {
             return tokens;
         }
 
-        private static final int[] NO_MEMBERS = new int[0];
+        private static final int[] NO_BOUNDS = new int[0];
 
-        private static int[] expandClass(String body, Span span) {
-            List<Integer> members = new ArrayList<>();
+        /**
+         * Reads a class body into alternating low/high pairs, one pair per member.
+         *
+         * <p>A single member is a range from itself to itself, so a test never has to know which
+         * members were written as ranges.
+         */
+        private static int[] parseClass(String body, Span span) {
+            List<Integer> bounds = new ArrayList<>();
             int at = 0;
             while (at < body.length()) {
                 int from = body.codePointAt(at);
@@ -348,7 +357,8 @@ final class Patterns {
                 // a leading or trailing `-` is the character itself.
                 boolean hasTo = at + 1 < body.length() && body.charAt(at) == '-';
                 if (!hasTo) {
-                    members.add(from);
+                    bounds.add(from);
+                    bounds.add(from);
                     continue;
                 }
                 int to = body.codePointAt(at + 1);
@@ -358,10 +368,11 @@ final class Patterns {
                             + "-" + new String(Character.toChars(to)) + "' runs backwards", span,
                             "Character class ranges must run low to high, as in [a-z].");
                 }
-                for (int member = from; member <= to; member++) members.add(member);
+                bounds.add(from);
+                bounds.add(to);
             }
-            int[] result = new int[members.size()];
-            for (int k = 0; k < result.length; k++) result[k] = members.get(k);
+            int[] result = new int[bounds.size()];
+            for (int k = 0; k < result.length; k++) result[k] = bounds.get(k);
             return result;
         }
     }

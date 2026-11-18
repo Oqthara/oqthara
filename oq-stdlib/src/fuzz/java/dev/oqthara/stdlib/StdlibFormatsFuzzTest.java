@@ -114,6 +114,72 @@ class StdlibFormatsFuzzTest {
     }
 
     /**
+     * Builds patterns out of character classes and checks them against their members.
+     *
+     * <p>Written after a review of the linear rewrite found a defect the two free-form targets
+     * above could not produce. They generate arbitrary text, so a class in a generated pattern is
+     * almost never a wide range; the draft that expanded ranges into members therefore needed a
+     * class spanning most of Unicode to expose itself, and random text will not spell one. This
+     * target ranges over classes deliberately, including the widest legal range, so the cost of
+     * representing a class is part of what is fuzzed rather than only what is unit-tested.
+     *
+     * <p>The property is a class member must match and a non-member must not. A range's endpoints
+     * are the interesting inputs, since an off-by-one at either end is the defect a hand-written
+     * expansion has.
+     *
+     * <p>The class is repeated a fuzzer-chosen number of times on purpose. One wide class costs a
+     * few megabytes even when its ranges are expanded, which is well inside this target's heap and
+     * therefore invisible; it is the *product* of pattern length and range width that turns into a
+     * heap exhaustion. The first version of this target built a single class and passed against
+     * the expanding implementation, so it could not have caught the defect it was written for.
+     */
+    @FuzzTest(maxDuration = "30s")
+    void globClassesMatchTheirOwnMembers(FuzzedDataProvider data) {
+        int low = data.consumeInt(0, 0x10FFFF);
+        int high = data.consumeInt(low, 0x10FFFF);
+        boolean negated = data.consumeBoolean();
+        // `]` closes the class wherever it appears, so it cannot be spelled as an endpoint; `!`
+        // only negates as the first member and `-` only makes a range between two members, so
+        // either inside the body would change what the pattern means. Excluding the three keeps
+        // this property about representation cost rather than about the class syntax rules, which
+        // the tests and the free-form target below already cover.
+        if (isClassSyntax(low) || isClassSyntax(high)) {
+            return;
+        }
+        String body = new String(Character.toChars(low)) + "-" + new String(Character.toChars(high));
+        String one = "[" + (negated ? "!" : "") + body + "]";
+        int repeat = data.consumeInt(1, 512);
+        String pattern = one.repeat(repeat);
+        Patterns.Glob glob;
+        try {
+            glob = new Patterns.Glob(pattern, Span.synthetic());
+        } catch (OqError expected) {
+            return;
+        } catch (RuntimeException | StackOverflowError | OutOfMemoryError e) {
+            throw new AssertionError("Glob rejected " + repr(pattern) + ": " + e, e);
+        }
+        int[] endpoints = {low, high, Math.max(0, low - 1), Math.min(0x10FFFF, high + 1)};
+        for (int candidate : endpoints) {
+            boolean expected = negated != (candidate >= low && candidate <= high);
+            boolean actual;
+            try {
+                actual = glob.matchesText(new String(Character.toChars(candidate)).repeat(repeat));
+            } catch (RuntimeException | StackOverflowError | OutOfMemoryError e) {
+                throw new AssertionError("Glob " + repr(pattern) + " threw on one member: " + e, e);
+            }
+            if (actual != expected) {
+                throw new AssertionError("Glob " + repr(pattern) + " answered " + actual
+                        + " for member U+" + Integer.toHexString(candidate)
+                        + " but a class is " + (negated ? "negated" : "inclusive"));
+            }
+        }
+    }
+
+    private static boolean isClassSyntax(int codePoint) {
+        return codePoint == ']' || codePoint == '!' || codePoint == '-';
+    }
+
+    /**
      * A pattern with no wildcard is ordinary text, so it matches exactly one name: itself.
      *
      * <p>This is the property {@code translate} gets wrong in the most damaging way. Every

@@ -42,8 +42,15 @@ regex engine is no longer involved.
 2. `matchesText` keeps a `boolean[]` of "the tokens so far account for exactly the first *j* code
    points". Each token advances that row once, so the cost is *tokens × name length* with no
    alternatives to explore. A pattern can no longer make the matcher do super-linear work.
-3. Character-class ranges are expanded to explicit code points at parse time, and the parser
-   rejects a reversed range (`[z-a]`) itself instead of relying on the regex engine to object.
+3. A character class is stored as alternating low/high code-point bounds, one pair per member, so
+   a range keeps its endpoints. The parser rejects a reversed range (`[z-a]`) itself instead of
+   relying on the regex engine to object. **A first draft expanded every range into its members
+   instead, and that was a defect in this very ADR:** a class covering most of Unicode became
+   1,114,111 ints, so a 360-character pattern exhausted a 256 MB heap before a single name was
+   looked at. Keeping endpoints makes a pattern's cost proportional to the pattern's own length.
+   The review that caught this is named under Evidence; `aClassSpanningMostOfUnicodeCostsOnlyItsOwnLength`
+   pins it, and the same mutation that re-expands ranges now fails by name rather than by killing
+   the test JVM.
 4. Matching is done on `int[]` code points, obtained with `String.codePoints()`. This is the
    structural fix for the separate astral defect the same fuzz target found: the old translator
    walked `char` and quoted each surrogate half of an emoji separately, so `fnmatch("😀", "😀")`
@@ -58,10 +65,15 @@ dialect's semantics stop depending on a library's quantifier behaviour — which
 place.
 
 **Negative.** The matcher is now code we own and must test ourselves. The old version delegated
-character-class semantics to the JDK; the new one expands ranges and interprets `!`, `^`, `&` and
-`-` by hand. `GlobTest` is the oracle: all 29 pre-existing cases pass unchanged, and three
-deliberate mutations — modelling `**/` as "anything at any depth", letting `*` cross a separator,
-and expanding classes char-by-char — are each caught by a named test.
+character-class semantics to the JDK; the new one interprets `!`, `^`, `&` and `-` by hand.
+`GlobTest` is the oracle: all 29 pre-existing cases pass unchanged, and four deliberate mutations
+— modelling `**/` as "anything at any depth", letting `*` cross a separator, splitting astral
+characters, and expanding class ranges back into their members — are each caught by a named test.
+
+**Negative.** The linear claim is about the *name*, not the pattern's memory: a pattern's parse
+cost is bounded by its own length, which is what the endpoint representation buys. A pattern
+longer than the name it is matched against still costs a row per token. That is honest linearity
+in both, but the two are not the same bound and the first draft conflated them.
 
 **Neutral.** `matchesText` remains the entry point, so `glob`'s directory walk and the fuzz target
 are untouched.
@@ -81,10 +93,21 @@ are untouched.
 
 ## Evidence
 
-- `oq-stdlib/src/test/java/dev/oqthara/stdlib/GlobTest.java` — 31 tests, including
-  `aPatternFullOfStarsIsMatchedInLinearTime` and
-  `aGlobstarConsumesWholeSegmentsSoItCannotSwallowAHalfName`.
+- `oq-stdlib/src/test/java/dev/oqthara/stdlib/GlobTest.java` — 32 tests, including
+  `aPatternFullOfStarsIsMatchedInLinearTime`,
+  `aGlobstarConsumesWholeSegmentsSoItCannotSwallowAHalfName`, and
+  `aClassSpanningMostOfUnicodeCostsOnlyItsOwnLength`. The count was 31 for one commit because
+  inserting a case above `aPatternFullOfStarsIsMatchedInLinearTime` swallowed that method's
+  `@Test`, leaving the ReDoS regression case in the file but never run; it was restored and then
+  sabotage-checked, and it fails when the pattern is put back to its pre-fix shape.
+- The heap defect was measured directly: 60 classes spanning Unicode, a 360-character pattern,
+  `-Xmx256m` → `java.lang.OutOfMemoryError: Java heap space` before the fix, and `2 ms` after.
+  The same probe at 48,000 pattern characters then built and matched in `1 ms`.
 - `oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/StdlibFormatsFuzzTest.java` —
-  `globPatternsNeverThrowUnexpectedExceptions`.
+  `globPatternsNeverThrowUnexpectedExceptions`, plus `globClassesMatchTheirOwnMembers`, which was
+  added once the heap defect showed the free-form targets could not reach a wide class:
+  `63,011 runs in 151 s` passed, and the expanding mutation fails it in `58 runs`. Its first
+  version built one class and passed against the defect, which is recorded here because a target
+  that cannot fail is not evidence.
 - `JAZZER_FUZZ=1 JAZZER_MAX_DURATION=180s ./gradlew --no-daemon :oq-stdlib:fuzzGlobPatterns`
   → `2,557,015 runs in 181 second(s)`, passed, with the `RegexInjection` sanitizer **enabled**.

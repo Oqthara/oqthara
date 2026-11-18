@@ -124,6 +124,33 @@ class GlobTest {
     }
 
     @Test
+    void aClassSpanningMostOfUnicodeCostsOnlyItsOwnLength() {
+        // Found while reviewing the rewrite, not by fuzzing: a first draft expanded every range
+        // into its members when the pattern was built. A single class covering most of Unicode
+        // then became 1.1 million ints, so a 360-character pattern exhausted a 256 MB heap before
+        // one name was looked at -- a pattern far shorter than the name it is matched against.
+        // Ranges are kept as endpoints now, so this builds and matches and the cost tracks the
+        // pattern's length. A wide class is legal and must keep matching its members.
+        String low = new String(Character.toChars(1));
+        String high = new String(Character.toChars(0x10FFFF));
+        String wide = "[" + low + "-" + high + "]";
+        String pattern = wide.repeat(200);
+        // A regression here is an OutOfMemoryError, which would otherwise take down the whole
+        // test JVM and report as an executor crash rather than as this test failing. Catching it
+        // keeps the regression attributable to the case that causes it.
+        Object matched;
+        try {
+            matched = call("fnmatch", "z".repeat(200), pattern);
+        } catch (OutOfMemoryError e) {
+            throw new AssertionError("a " + pattern.length() + "-character pattern exhausted the"
+                    + " heap; class ranges are being expanded into their members", e);
+        }
+        assertEquals(Boolean.TRUE, matched);
+        assertEquals(Boolean.FALSE, call("fnmatch", "z".repeat(199), pattern));
+        assertEquals(Boolean.TRUE, call("fnmatch", "az", "[" + low + "-" + high + "]z"));
+    }
+
+    @Test
     void aPatternFullOfStarsIsMatchedInLinearTime() {
         // Found by fuzzing: Jazzer's regex-injection sanitizer reported a user-built regex, and
         // the shape that triggered it was a long run of `*a` against a name of `a`s. Under the
@@ -377,6 +404,30 @@ class GlobTest {
     void aNonRecursivePatternDoesNotListNestedFiles() throws IOException {
         touch("sub/d.oq");
         assertEquals(List.of(), call("glob", ".", "*.oq"));
+    }
+
+    @Test
+    void everyTestMethodInThisFileCarriesAnAnnotation() throws IOException {
+        // Inserting a case above an annotated method consumed that method's @Test while this
+        // suite still reported every visible test passing -- the ReDoS regression case had
+        // silently stopped running. A bare `void name()` in a test class is never a test, so the
+        // two counts must match; if they diverge, an annotation was lost or a method was added
+        // without one. Verified by removing this file's `@Test` from the linear-time case: the
+        // guard then fails with "32 annotated, 33 declared".
+        String source = Files.readString(Path.of("src/test/java/dev/oqthara/stdlib/GlobTest.java"));
+        int annotated = 0;
+        int methods = 0;
+        for (String line : source.split("\n", -1)) {
+            // Count annotation lines, not occurrences of the word: this method's own
+            // comment and message mention it, and a raw occurrence count would hide a real
+            // loss. `private void` helpers are not tests, so only package-private methods
+            // take part in the comparison.
+            if (line.strip().equals("@" + "Test")) annotated++;
+            if (line.startsWith("    void ")) methods++;
+        }
+        assertEquals(annotated, methods,
+                "every void method in a test class needs @Test; " + annotated + " annotated, "
+                        + methods + " declared");
     }
 
     @Test

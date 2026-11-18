@@ -37,6 +37,8 @@ val allFuzzTargets = listOf(
         "formatBuiltinsNeverThrowUnexpectedExceptions"),
     FuzzTarget("GlobPatterns", "dev.oqthara.stdlib.StdlibFormatsFuzzTest",
         "globPatternsNeverThrowUnexpectedExceptions"),
+    FuzzTarget("GlobClasses", "dev.oqthara.stdlib.StdlibFormatsFuzzTest",
+        "globClassesMatchTheirOwnMembers"),
 )
 
 tasks.register("printFuzzTargets") {

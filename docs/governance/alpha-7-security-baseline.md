@@ -323,10 +323,11 @@ everything and still pass. The real workflows pass unchanged.
 ### A7.8 — R-018's fuzzing reach, and the ReDoS it found
 **Closes:** R-018, downgraded to `Mitigated`. **State:** done.
 
-Two targets were added, `fuzzStdlibFormats` and `fuzzGlobPatterns`, covering the four stdlib areas
-R-018 named as unreached that a target could actually reach without an `OqHost`: CSV, text
-wrapping, INI/properties, and glob patterns. Between them they account for **three** defects and
-**one** security finding.
+Two targets were added first, `fuzzStdlibFormats` and `fuzzGlobPatterns`, covering the four stdlib
+areas R-018 named as unreached that a target could actually reach without an `OqHost`: CSV, text
+wrapping, INI/properties, and glob patterns. Between them they account for **four** defects and
+**one** security finding. A third, `fuzzGlobClasses`, was added afterwards because the review of
+the rewrite produced a defect the first two could not have found.
 
 **`text_wrap` dropped its indent** when the remaining text contained no word, so `wrap("  ", 10)`
 returned a line of two spaces instead of no lines. **It also re-indented after a hard line break**
@@ -352,10 +353,21 @@ plain `-D` on the Gradle command line does not. That escape hatch was found, ver
 then deliberately not used: a suppressed finding in a security Alpha is the same defect as a gate
 that accepts a placeholder, which is what A7.7 had just finished removing.
 
-**Acceptance.** Every one of the four has a permanent test that fails without its fix. Three
+**The rewrite introduced a fifth defect, and the review caught it.** A first draft expanded every
+character-class range into its members. A class spanning most of Unicode therefore became 1.1
+million ints, and a 360-character pattern exhausted a 256 MB heap before a single name was
+compared: a memory amplification the ADR's own "pattern × name" claim did not cover, written by
+the same pass that was fixing a denial of service. Ranges are kept as endpoints, the same probe now
+answers in `2 ms`, and a 48,000-character pattern builds in `1 ms`. It is recorded here rather than
+quietly fixed because the shape — a fix that restates its own guarantee too broadly — is the one
+this Alpha keeps meeting.
+
+**Acceptance.** Every one of the five has a permanent test that fails without its fix. Four
 mutations of the new matcher — `**/` modelled as "anything at any depth", `*` allowed to cross a
-separator, and classes expanded char-by-char — are each caught by a named `GlobTest` case, so the
-matcher is not merely different but pinned.
+separator, classes expanded char-by-char, and class ranges expanded back into their members — are
+each caught by a named `GlobTest` case, so the matcher is not merely different but pinned. The
+last one is caught by name rather than by taking down the test JVM with an `OutOfMemoryError`,
+which is what it did before the test was written to catch it.
 
 ## What Alpha 7 will not do
 
