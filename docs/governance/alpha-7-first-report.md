@@ -771,6 +771,65 @@ That is the A7.9 mechanism doing its job on the first figure this pass changed. 
 derived from `run.py`'s own `PROBES` table, so it followed the probe automatically once the line
 was corrected, and the inventory's four stale "24 probes" figures were repaired in the same pass.
 
+## Item 9g — A7.11: a blocker that was resolved the day it was written
+
+Item 10 carried this sentence through every revision of this report: "nothing generates a review
+record on the automated path, so the next dependabot pull request will be red for the same reason."
+It is a prediction, and predictions are the easiest kind of claim to leave standing, because nothing
+tests them until the predicted event happens.
+
+The predicted event did not happen, and the entry should have known. `db01622` — merged 2026-11-18
+02:28, before #251 merged at 03:00 — added `app/dependabot` to `AUTOMATED_AUTHORS`. The gate no
+longer asks a bot for a review record, so a dependency pull request cannot go red for that reason.
+This report's own Item 9 status table already recorded the fix as **Done** at line 401. The report
+therefore said, in two places, that the gate was repaired and that it was not.
+
+### The evidence, run rather than read
+
+```
+$ python3 scripts/check-ai-review.py --pr 251
+  - docs/governance/reviews/PR-251.md is absent, and PR #251 was opened by app/dependabot, an
+    automated author that cannot review its own change; every other required context still applies
+AI review gate passed for PR #251.                                         [exit 0]
+$ ls docs/governance/reviews/PR-251.md
+ls: docs/governance/reviews/PR-251.md: No such file or directory
+```
+
+The record is absent and the gate passes anyway. That is the exemption working, on the live API, on
+the exact pull request the old entry named as evidence that it did not work. `gh pr view 251 --json
+author` reports `app/dependabot` with `is_bot: true`, which is the spelling `db01622` added.
+
+### Why the wrong version survived
+
+Because it was never in scope to check. Item 10 is a list of blockers; a blocker is a claim that
+something *will* go wrong, so its truth value is settled in the future and no gate that reads the
+current tree can settle it. The A7.9 claim gate from Item 9e reads figures back from files. This
+sentence contains no figure, no governance noun and no number, so it was invisible to that gate by
+design rather than by oversight — Item 9e's "Not verified" section already says so.
+
+The failure mode is worth naming precisely, because it recurs. A cross-reference made the report
+self-contradictory: line 401 said the red check was repaired, line 784 said the gap was unowned.
+Nothing compared them. Every review record on this branch read one or the other.
+
+### What changed
+
+- Item 10's entry now states what is true: the gate exempts the bot, nothing generates a record on
+  the automated path, and nothing needs to. The residual risk is R-031 rather than a certain future
+  failure.
+- The correction is dated and cites the commands above rather than asserting the outcome.
+- `.oqthara-ai/RESUME.md` repeated the same false prediction and is corrected with it.
+
+### What this does not claim
+
+- It does not claim no automated pull request can be red. `github-actions[bot]` is deliberately
+  *not* exempt, and a workflow-authored change still needs a record or it fails; PR-254 finding 1
+  records why that asymmetry exists.
+- It does not claim the exemption is robust. It matches a login against a hard-coded list, and the
+  first version of that list matched nothing. R-031 is that class of defect, and `db01622`'s own
+  message says the test that should have caught it stubbed the same wrong spelling as the code.
+- It does not claim any gate now catches a failed prediction. None does, and none can without
+  something that re-runs the prediction. This was found by reading a cross-reference and then
+  running one command.
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
@@ -781,10 +840,15 @@ was corrected, and the inventory's four stale "24 probes" figures were repaired 
   work needs a further ADR superseding ADR-0069 — not merely one superseding ADR-0015. The two
   conformance cases keep saying what they say, and now they say it on a decided question rather
   than a pending one.
-- **#251 was red on a required check** from the moment dependabot opened it, because ADR-0059
-  requires an AI review record per pull request and no one wrote one. It is merged now (`9eb3561`),
-  but the gap it exposed is unowned: nothing generates a review record on the automated path, so
-  the next dependabot pull request will be red for the same reason.
+- **#251 was red on a required check**, and this entry used to say the next dependabot pull request
+  would be red for the same reason. That prediction was already false when it was written and is
+  now demonstrated false. `db01622` exempts `app/dependabot` by login, and
+  `python3 scripts/check-ai-review.py --pr 251` exits 0 on the live API, naming `app/dependabot` as
+  an automated author that cannot review its own change. Nothing *generates* a review record on the
+  automated path — that part is still true — but nothing needs to, because the gate no longer asks
+  a bot for one. The residual risk is narrower and is recorded: R-031, an allow-list that matches an
+  external identifier can stop matching silently when the identifier changes, which is exactly how
+  this gate failed the first time. See Item 9g.
 - **The path-resolution fuzz target has no agreed design.** Private, host-dependent; either a stub
   `OqHost` or a production-code extraction. The second is better and is a change to production code
   justified by a test, which needs saying out loud.
