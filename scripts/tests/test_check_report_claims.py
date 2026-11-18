@@ -288,6 +288,25 @@ class HistoricalFiguresStaySilent(unittest.TestCase):
             ),
         )
 
+    def test_a_percentage_after_a_currency_verb_is_silent(self):
+        # `%` is a unit that happens to be a symbol. Found by probing the rule
+        # after writing it: "coverage gives 92.3%" was being read as a figure
+        # that dropped its unit, because the guard only looked for a trailing
+        # letter. The figure is unambiguous and must stay silent.
+        problems = checker.check(
+            "The gate yields 92.3% on this tree and the other one gives 80.5%.",
+            VALUES,
+        )
+        self.assertEqual([], problems)
+
+    def test_a_decimal_after_a_currency_verb_is_read_whole(self):
+        # The same probe found the rule truncating decimals: "yields 3.14"
+        # matched as "yields 3" and the next character was a dot, which the
+        # guard did not look for. A partial numeral in a report is worse than
+        # no numeral, so the pattern reads the decimal or it refuses.
+        matches = checker.CURRENCY_FIGURE.findall("the build yields 3.14")
+        self.assertEqual(["3.14"], matches)
+
 
 class TheExemptionListIsSmall(unittest.TestCase):
     def test_every_exemption_states_a_reason(self):

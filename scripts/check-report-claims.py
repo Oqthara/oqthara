@@ -180,15 +180,18 @@ DEFECT_RANGE = re.compile(r"\bD1\s*[–-]\s*D(\d+)\b")
 # English, while "prints 26" is a claim about a total. Read on the raw sentence,
 # because masking blanks a backticked figure's digits along with its backticks.
 CURRENCY_VERB = r"(?:prints|printed|gives|reports|returns|answers|yields|reads)"
-_NUMERAL = r"\d+(?:\s*/\s*\d+)?"
+_NUMERAL = r"\d+(?:\.\d+)?(?:\s*/\s*\d+)?"
 _QUOTED_NUMERAL = rf"(?:`\s*)?{_NUMERAL}(?:\s*`)?"
+# `%` is a unit that happens to be a symbol. Reading "gives 92.3%" as a figure
+# that dropped its unit would flag a sentence that is already unambiguous.
+_UNIT_SYMBOL = r"(?:%|\u2030)"
 CURRENCY_FIGURE = re.compile(
     rf"\b{CURRENCY_VERB}\b\s+(?:out\s+|back\s+)?"
     rf"({_QUOTED_NUMERAL}(?:\s*,\s*{_QUOTED_NUMERAL})*)"
     # Refuse a partial numeral ("reads 22 words" must not match "2"), then refuse
     # a trailing word: a figure followed by its unit is fine, and only a figure
     # that ends the clause has dropped one.
-    rf"(?!\d)(?!\s*[A-Za-z])",
+    rf"(?!\d)(?!\.\d)(?!\s*{_UNIT_SYMBOL})(?!\s*[A-Za-z])",
     re.IGNORECASE,
 )
 # Printed in the failure message so the repair is mechanical rather than a guess.

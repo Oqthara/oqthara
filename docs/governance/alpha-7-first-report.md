@@ -664,8 +664,8 @@ and never reads the value, so the register's arithmetic is enforced while its *c
 by whoever quoted them. Rather than add a second parser that could diverge, this gate imports the
 existing one.
 
-**The gate is tested in both directions.** 28 tests in `scripts/tests/test_check_report_claims.py`:
-seventeen reintroduce a real class of drift and require rejection, six assert the dated snapshots and
+**The gate is tested in both directions.** 30 tests in `scripts/tests/test_check_report_claims.py`:
+seventeen reintroduce a real class of drift and require rejection, eight assert the dated snapshots and
 unambiguous sentences the record depends on stay silent, and five guard the derivation and the
 exemption lists. The silence tests are not decoration. A gate that rejects §9c's deliberate quotation
 of a historical figure is a gate the first person to hit it deletes from CI.
@@ -676,7 +676,7 @@ mutated probe total written without the unit word, a mutated bare target count, 
 cells, a mutated table total, a wrong Open ID, a mutated defect range, and a mutated per-group subset.
 That harness reported seven misses on its first run, which was the useful result — the pairing rule
 treated any multi-figure sentence as a before/after pair. The current harness runs seventeen catching
-mutations and six silence mutations, all correct:
+mutations and eight silence mutations, all correct:
 
 ```
 $ python3 scripts/check-report-claims.py
