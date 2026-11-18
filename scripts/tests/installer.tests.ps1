@@ -105,10 +105,21 @@ foreach ($a in $args) {
     $jar = $a
     $prev = $a
 }
-if (-not $bundle -or -not (Test-Path -LiteralPath $bundle)) { exit 1 }
-$text = Get-Content -Raw -LiteralPath $bundle
+if (-not $bundle) { exit 1 }
+# .NET I/O, not Get-Content/Get-FileHash: the installer hands this stub its
+# dotfile temp paths, and on Windows the provider refuses hidden items without
+# -Force -- the same restriction that hid the bug this PR fixes. Using the
+# cmdlets here made the stub reject everything and the positive control failed.
+try { $text = [System.IO.File]::ReadAllText($bundle) } catch { exit 1 }
 if ($text -notmatch '"signedSha256"\s*:\s*"([0-9a-fA-F]{64})"') { exit 1 }
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath $jar).Hash -ieq $Matches[1]) { exit 0 }
+$want = $Matches[1]
+try {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($jar)
+    try { $actual = [System.BitConverter]::ToString($sha.ComputeHash($stream)).Replace("-", "") }
+    finally { $stream.Dispose(); $sha.Dispose() }
+} catch { exit 1 }
+if ($actual -ieq $want) { exit 0 }
 exit 1
 '@
             "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$helper`" %*`r`nexit /b %ERRORLEVEL%`r`n"
