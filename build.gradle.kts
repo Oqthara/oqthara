@@ -39,6 +39,12 @@ val allFuzzTargets = listOf(
         "globPatternsNeverThrowUnexpectedExceptions"),
     FuzzTarget("GlobClasses", "dev.oqthara.stdlib.StdlibFormatsFuzzTest",
         "globClassesMatchTheirOwnMembers"),
+    FuzzTarget("CompressionDecode", "dev.oqthara.stdlib.CompressionFuzzTest",
+        "decompressorsNeverThrowUnexpectedExceptions"),
+    FuzzTarget("CompressionRoundTrip", "dev.oqthara.stdlib.CompressionFuzzTest",
+        "compressionRoundTripsItsOwnOutput"),
+    FuzzTarget("ZipRoundTrip", "dev.oqthara.stdlib.CompressionFuzzTest",
+        "zipRoundTripsOneEntry"),
 )
 
 tasks.register("printFuzzTargets") {

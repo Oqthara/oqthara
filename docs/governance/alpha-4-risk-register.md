@@ -663,8 +663,10 @@ best-anchored part of the library.
 OQ-DEC-2026-008 · `docs/governance/alpha-4-requirement-matrix.md` `§17` (published vectors).
 
 **R-018 — Fuzzing does not reach path resolution, directory traversal or semantic analysis.**
-Ten targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
-shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties and glob patterns.
+Fourteen targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
+shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties, three glob shapes and three
+compression shapes (decompress, zlib/gzip round trip, zip round trip). `./gradlew -q printFuzzTargets` prints
+them, and is the authority this sentence follows.
 `docs/spec/fuzzing.md` "What is not covered yet" names what is left: path resolution still needs an
 `OqHost`, so every entry point that resolves a path against the working directory is unreachable;
 `Patterns.glob`'s directory walk is exercised only by `GlobTest`, because the target calls

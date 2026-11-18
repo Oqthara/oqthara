@@ -74,7 +74,7 @@ current. The rows that still say "Still open" remain open against the present tr
 | --- | --- | --- |
 | R-012 | `docs/stdlib/reference.md` generated; the register's own correction table already revised 89 → 205 | Still open as a *breadth* question; the count itself is now stated |
 | R-014 | `docs/adr/0032-static-fields-and-varargs.md` D5; direction out of Java still closed | Still open, correctly described |
-| R-018 | 8 targets in `allFuzzTargets` at the time; 10 named gap builtins had zero occurrences in the fuzz source | **Reproduced exactly then**, and superseded — now 11 targets; see item 4 |
+| R-018 | 8 targets in `allFuzzTargets` at the time; 10 named gap builtins had zero occurrences in the fuzz source | **Reproduced exactly then**, and superseded twice — 11 after PR #253, 14 after Item 9h; see item 4 |
 | R-021 | `grep -c "rollback\|--update" scripts/install.sh` → 0; no `oq update` | Still open. **But its stated reason is now false** |
 | R-022 | `ls -d site` → absent; `OUT = ROOT / "site" / "_site" / "versions"` still in the script | **Reproduced exactly** |
 | R-023 | `Lexer.KEYWORDS` has 22; three documents said 20 | **Reproduced exactly then**, and repaired — all six now say 22; see below |
@@ -555,7 +555,7 @@ whose subject the report's own sequencing then changed.
 | --- | --- | --- |
 | Item 2: Open 7 / Mitigated 10 / Accepted 13, total 30, Low 13 | `d306833` | PR #253 moved R-018 to Mitigated; PR #254 added R-031 |
 | Item 3: R-018 and R-023 "Reproduced exactly" | `d306833` | Both were repaired by PRs #252 and #253 |
-| Item 4: `allFuzzTargets` "declares exactly 8" | `d306833` | PR #253 took it to 11 |
+| Item 4: `allFuzzTargets` "declares exactly 8" | `d306833` | PR #253 took it to 11, and Item 9h to 14 |
 | Item 4: all ten named builtins have "zero occurrences" | `d306833` | PR #253 covered nine of the ten |
 | Item 7: §5 "requires superseding ADRs" for ADR-0015 and the brief | `d306833` | ADR-0069 did exactly that, and answered against §5 |
 
@@ -677,8 +677,9 @@ told me about.
 **It found a real defect in this report, not only in the tests.** Line 664 read "It claims eight
 targets exist" in the present tense, true on `d306833` and false since `e43d384` added three. Every
 prior pass had checked the fuzz counts it was looking for and not this one. The sentence now reads
-"eleven targets exist today, that the run at `d306833` covered eight of them", which is what was
-always meant.
+"fourteen targets exist today, that the run at `d306833` covered eight of them", which is what was
+always meant. It read eleven from `e43d384` until Item 9h added the compression targets, so the same
+sentence has now gone stale twice, once per target batch.
 
 The gate also forced a decision it had been avoiding. Its first version treated any sentence with two
 figures as a before/after pair, which silenced almost everything; its second treated every figure as
@@ -830,6 +831,110 @@ Nothing compared them. Every review record on this branch read one or the other.
 - It does not claim any gate now catches a failed prediction. None does, and none can without
   something that re-runs the prediction. This was found by reading a cross-reference and then
   running one command.
+## Item 9h — The compression gap, closed and then made to fail on purpose
+
+Item 4 named two genuinely unreached builtins, `zip` and `compress`, and stopped there because the
+remaining work was "write targets", not "decide". This item writes them. The reason to write them
+first is that `oq-stdlib/.../Compression.java` is the most security-relevant unreached surface in
+the library: it parses gzip and zip framing by hand rather than delegating the whole container to
+the JDK, and it enforces a 16 MiB amplification cap *inside* the inflate loop, because a length
+field in the input can be lied to and only counted output cannot.
+
+**The gap, re-measured rather than remembered.** Before writing anything, the ten builtins Item 4
+names were counted again across `oq-stdlib/src/fuzz/java/`:
+
+```
+$ for b in csv_parse csv_write wrap_text fill_text fnmatch glob ini_parse \
+    properties_parse zip compress zlib_compress gzip_compress zip_decompress \
+    zlib_decompress gzip_decompress; do
+    printf '%s=%s ' "$b" "$(grep -rl "$b" oq-stdlib/src/fuzz/java/ | wc -l | tr -d ' ')"
+  done
+csv_parse=1 csv_write=1 wrap_text=1 fill_text=1 fnmatch=1 glob=1 ini_parse=1
+properties_parse=1 zip=1 compress=1 zlib_compress=1 gzip_compress=1 zip_decompress=1
+zlib_decompress=1 gzip_decompress=1
+```
+
+Every one is now non-zero. The measurement is a grep, and a grep counts a mention in a comment the
+same as a call, which is why the counts below are not the evidence — the executed runs are.
+
+**Each new target asserts a property rather than the absence of an exception.**
+
+- `decompressorsNeverThrowUnexpectedExceptions` feeds arbitrary hex to `zlib_decompress`,
+  `gzip_decompress` and `zip_decompress`. `OqError` is a normal outcome; anything else, including
+  `StackOverflowError` and `OutOfMemoryError`, is a defect. Every result must be lowercase hex,
+  which is the shape all three document.
+- `compressionRoundTripsItsOwnOutput` compresses then decompresses and requires the original bytes.
+  `gzip_compress` takes text and `zlib_compress` takes hex, so the two are driven separately: for
+  gzip the identity is the text's UTF-8 bytes, not the raw fuzzer bytes, because the writer
+  re-encodes.
+- `zipRoundTripsOneEntry` writes a one-entry archive and reads it back. Entry names are filtered to
+  what the format can carry without the name becoming a claim about the filesystem: the reader
+  refuses absolute names, backslashes and `..` segments by policy, so generating one and asserting a
+  round trip would be asserting that a deliberate security decision is a bug.
+
+All three are registered in `allFuzzTargets` as separate `FuzzTarget` entries, one JVM per target,
+because Jazzer's JUnit integration runs exactly one `@FuzzTest` per invocation and silently skips
+the rest.
+
+```
+$ ./gradlew -q printFuzzTargets | cat -n | tail -3
+    12	CompressionDecode
+    13	CompressionRoundTrip
+    14	ZipRoundTrip
+
+$ JAZZER_FUZZ=1 ./gradlew --no-daemon :oq-stdlib:fuzzCompressionDecode \
+    :oq-stdlib:fuzzCompressionRoundTrip :oq-stdlib:fuzzZipRoundTrip
+Done 893846 runs in 31 second(s)
+CompressionFuzzTest > zipRoundTripsOneEntry(FuzzedDataProvider) > Fuzzing... PASSED
+BUILD SUCCESSFUL in 2m 1s
+```
+
+**A passing run is not evidence the target can fail.** A target that asserts nothing, or whose fix
+generator never reaches the assertion, passes forever. So the target was made to fail against a
+deliberately broken implementation, in two separate mutations, each reverted afterwards:
+
+```
+# Mutation 1: gzip_decompress raises on any 0x78 second byte (i.e. on real zlib input)
+$ JAZZER_FUZZ=1 ./gradlew --no-daemon :oq-stdlib:fuzzCompressionDecode
+> Task :oq-stdlib:fuzzCompressionDecode FAILED
+CompressionFuzzTest > decompressorsNeverThrowUnexpectedExceptions(FuzzedDataProvider) > Fuzzing... FAILED
+    java.lang.AssertionError: gzip_decompress() crashed on 1f8b0800000000006500ab000300000000299e12:
+    java.lang.IllegalStateException: deliberate positive control
+
+# Mutation 2: zlib_compress drops its last byte
+$ JAZZER_FUZZ=1 ./gradlew --no-daemon :oq-stdlib:fuzzCompressionRoundTrip
+CompressionFuzzTest > compressionRoundTripsItsOwnOutput(FuzzedDataProvider) > 004c85dc... FAILED
+    java.lang.AssertionError: zlib_compress/decompress did not round-trip 000029000000012931ff003e...
+```
+
+Both mutations were reverted and `git diff` on `Compression.java` is empty. This is A7.8's
+acceptance criterion 6, executed rather than asserted.
+
+**What the runs do not prove.** They ran for 31 seconds per target at 2 GiB of heap. They did not
+reach the amplification cap, because generating input that expands past 16 MiB inside a 30-second
+budget spends the budget on allocation; the cap is covered by `CompressionTest` and remains a place
+where a fuzz run would only ever agree with itself. `docs/spec/fuzzing.md` now says so, and R-018's
+target count moved from eleven to fourteen with `printFuzzTargets` still named as the authority.
+
+**The count was stale in four places, and the gate flagged two.** Registering the targets made
+`check-report-claims.py` fail on two lines — the R-018 row in the re-check table (line 77) and Item
+9g's "does not claim" bullet (line 899). Two other places carried the same obsolete figure and were
+not flagged: the `Was true at` claims table's `d306833` row, which is legitimately dated, and Item
+9g's quotation of the half-sentence it was describing, which the gate treats as a quotation and not
+as a live claim. All four were corrected together.
+
+The two it missed are the two where being missed is most defensible, and that is the point rather
+than a defect: the gate resolves *figures*, and a figure embedded in a quotation of a broken claim
+looks, to a parser, exactly like the broken claim. The reason the count is now right everywhere is
+that four places were edited by hand after two were pointed at — not that the gate found them.
+
+It also cannot tell a total from a delta. Writing "three targets, each asserting a property" about
+the batch just added failed the gate on the first draft of this item, because a bare figure before
+the word "targets" is a total as far as the rule can see. The sentence was rewritten to name no
+figure. That is the right trade — a false positive that costs one rephrasing is cheaper than a
+checker that guesses which figures are deltas — but it means the gate's green is evidence that the
+totals agree, and nothing more.
+
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
@@ -896,9 +1001,11 @@ Nothing compared them. Every review record on this branch read one or the other.
 
 - It does not claim the risk register is wrong beyond the two corrections named; the other five Open
   entries were re-checked and hold.
-- It does not claim the fuzz suite is trustworthy because it passes. It claims eleven targets exist
-  today, that the run at `d306833` covered eight of them and found seven defects, and that eight more
-  pure builtins are reachable and untested.
+- It does not claim the fuzz suite is trustworthy because it passes. It claims fourteen targets exist
+  today, that the run at `d306833` covered eight of them and found seven defects, and that the gaps
+  R-018 and `docs/spec/fuzzing.md` name by name are still gaps. It does not claim a count of "unreached
+  builtins": any such number depends on calling a builtin "pure", and this item measured reachability
+  by grep, which cannot make that judgement.
 - It does not claim §5 is illegal. It claims §5 contradicts a *decided* question and therefore needs
   a superseding record, which the brief's own "one decision, not one migration" makes affordable.
 - It does not claim `oq-hive-language-syntax` is unusable. It claimed it was not where `AGENTS.md`
