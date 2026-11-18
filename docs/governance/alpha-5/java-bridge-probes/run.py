@@ -222,6 +222,22 @@ PROBES = [
     # C12.2 is a probe and not a defect: the row is "Unsafe by design — now documented", so the
     # behaviour below is the documented one and a change to it is a change to the boundary.
     ("c12_unrestricted", ["0", "true"], None),
+    # C13.7. The direction 13 rows were executed by hand and opened no window, which left layout,
+    # painting, input dispatch and look-and-feel untested. Only *realising* a window needs a
+    # display; the rest of the toolkit runs headless, so all four are reachable here and none of
+    # them needs the machine to have a screen. That is why this is a probe and not a hand run:
+    # it is deterministic, and the runner compares it across both backends.
+    #
+    # `painted` counts non-white pixels rather than reading a pixel, so the expectation below is
+    # whitespace-independent and the line is a number that a broken paint cannot accidentally
+    # produce. `getLookAndFeel().getName()` is deliberately not printed: it is "Mac OS X" on this
+    # machine and "Metal" on a bare Linux JVM, so naming it would make the probe depend on where
+    # it runs instead of on the bridge.
+    (
+        "c13_offscreen",
+        ["true", "20000", '["go"]', "true", "true"],
+        None,
+    ),
 ]
 
 

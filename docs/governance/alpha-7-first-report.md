@@ -318,7 +318,7 @@ and `0069-oqthara-stays-dynamically-typed.md`).
 ## Item 8 — Java Bridge Full validation matrix
 
 The authoritative inventory is `docs/governance/alpha-5-java-bridge-capability-inventory.md`:
-**thirteen** directions, **52** capability rows, and **five** confirmed defects **D1–D5**. §6 asks
+**thirteen** directions, **53** capability rows, and **six** confirmed defects **D1–D6**. §6 asks
 for "Full", and the inventory already defines what that would have to mean.
 
 That count has been wrong in both directions. This report once claimed five defects when the
@@ -334,32 +334,38 @@ list are gone; one stands:
 - ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — still true of the suite,
   but the probes below ran the toolkit, and Direction 13 records the results.
 - ~~The inventory has no Swing row~~ — Direction 13 now has six, C13.1–C13.6, all executed.
-- **Still open:** no test opens a *visible window*. Layout, painting, input dispatch and
-  look-and-feel are untested, because a headless runner cannot cover them.
+- **Was open, now half closed:** layout, painting, input dispatch and look-and-feel were untested
+  because this section assumed a headless runner cannot cover them. That assumption was wrong:
+  `c13_offscreen` now gates all four on both backends with no display. What remains open is
+  *realising* a window — `setVisible`, and with it the platform's own window manager — which a
+  headless runner genuinely cannot cover.
 
 What the pass established: components construct and answer, a closure runs on the event dispatch
 thread, a closure is accepted as an `ActionListener` and receives the real `ActionEvent`, captures
 survive the toolkit calling from a thread the program did not create, and interpreter and compiled
 bytecode agree. What it also found: opening a `JFrame` without a display was reported as an
-unchangeable collection, which is D5.
+unchangeable collection, which is D5; and that drawing at all failed, because the bridge treated a
+public JDK class as reachable when its package is not exported, which is D6.
 
 A validation matrix for §6 has to be built, not consulted. The minimum it must cover, with each row
 required to execute rather than be read:
 
 | Area | Ceiling that already exists |
 | --- | --- |
-| Swing construction and display | direction 13, C13.1 and C13.2; display still untested |
+| Swing construction and display | direction 13, C13.1 and C13.2; display still untested. C13.7 gates the rest of the toolkit without a display |
 | Event dispatch and thread affinity | direction 13, C13.3–C13.5; `print` is still non-atomic (R-029) |
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
-| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C12 in 25 as of the probe-coverage pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it |
+| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C13 in 26 as of the offscreen-Swing pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it. C13 was hand-executed until `c13_offscreen` made the parts of it that need no display a gated probe |
 
 One constraint from the tree must be honoured, not worked around: the probe harness covered C1–C8
-when this section was written, and no direction was probed headlessly, so a GUI program's
-compiled-versus-interpreted parity would not be gated by anything that exists today. The C9–C12
-probes added since exercise non-GUI directions, so the conclusion is unchanged: parity for a
-program that needs a display still has no gate. The other constraint this section used to name — D1, a
+when this section was written and no direction was probed headlessly, so a GUI program's
+compiled-versus-interpreted parity would not be gated by anything that exists today. That has
+narrowed but not closed. `c13_offscreen` now gates layout, painting, input dispatch and
+look-and-feel on both backends without a display — the earlier claim that a headless runner cannot
+cover them was wrong, and the probe is the counter-example — but *realising* a window
+(`setVisible`) still needs one, so parity for a program that opens a real window still has no gate. The other constraint this section used to name — D1, a
 callable Java object refused at `sort`, `sort_by`, `reduce` and `list_sort` — was fixed in PR #231
 (`39b6078`) on 2026-11-15, two days before this report. All four builtins now accept a Java
 functional value whose arity fits, and a wrong-arity value is refused by count rather than by
@@ -404,7 +410,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Blocked as written** — ownership, keyword count and the type-system scope split are all discharged (Item 6's Resolution), but §4's own text is not in this repository, so the work has no boundary. Two of three prerequisites met; the third is a definition, not an adjustment |
-| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.6); visible-window coverage still open |
+| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7); layout, painting, input dispatch and look-and-feel are now gated by `c13_offscreen` with no display (Item 9i). Only `setVisible` coverage is still open |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
 ## Item 9a — Runtime and observability: what the tree actually needed
@@ -540,10 +546,12 @@ $ ls docs/adr/ | wc -l
 ```
 
 The `19` is the one figure in that block that has since moved, and it moved because the gap it
-counted was closed rather than because the measurement was wrong: C9–C12 are now probed, so the
-command prints 24. Re-running it today gives `13`, `52`, `24`, `69`. That is the intended direction
-of change — the count grew because coverage grew — and it is why this paragraph now reads in the past
-tense instead of claiming a number that a reader would immediately contradict.
+counted was closed rather than because the measurement was wrong: every direction the inventory
+lists is now probed, C13 included, so the command prints 26. Re-running it today gives `13`, `52`,
+`26`, `69`. That
+is the intended direction of change — the count grew because coverage grew — and it is why this
+paragraph now reads in the past tense instead of claiming a number that a reader would immediately
+contradict.
 
 That matters for the conclusion: the decay is not uniform. Item 8 cites a document that has not been
 edited since the report was written, so nothing could drift. The items that decayed are the ones
@@ -934,6 +942,112 @@ the word "targets" is a total as far as the rule can see. The sentence was rewri
 figure. That is the right trade — a false positive that costs one rephrasing is cheaper than a
 checker that guesses which figures are deltas — but it means the gate's green is evidence that the
 totals agree, and nothing more.
+
+## Item 9i — §6: the GUI gap was two gaps, and only one of them was the display
+
+Item 8 recorded three obstacles under §6 and closed two of them. The third read:
+
+> **Still open:** no test opens a *visible window*. Layout, painting, input dispatch and
+> look-and-feel are untested, because a headless runner cannot cover them.
+
+The premise is false for four of the five things it lists. Only *realising* a window needs a
+display. Constructing components, laying them out, painting them into an offscreen image,
+dispatching an input event and asking the look-and-feel for a colour all run under
+`-Djava.awt.headless=true`:
+
+```
+$ java -Djava.awt.headless=true -cp /tmp/oqcls Off
+headless=true
+count=2 lbl=java.awt.Rectangle[x=10,y=10,width=100,height=20]
+painted=true px=19922
+laf=Metal
+```
+
+So the gap was never "the runner has no screen". It was two separate things, and separating them
+is what made the second one findable.
+
+### What was actually blocking painting
+
+Trying the same thing through the bridge found it immediately:
+
+```
+$ java -jar oq.jar run t2.oq
+sun.java2d.SunGraphics2D
+
+error: cannot call dispose: class dev.oqthara.core.JavaBridge cannot access class sun.java2d.SunGraphics2D
+       (in module java.desktop) because module java.desktop does not export sun.java2d to unnamed
+       module @150c158
+```
+
+`BufferedImage.createGraphics()` answers a `sun.java2d.SunGraphics2D`. That class is *public*, and
+`Modifier.isPublic` said yes, so the bridge handed the `Method` straight to `invoke` — but a
+modular JDK requires the class's package to be **exported** as well, and `java.desktop` exports no
+`sun.*` at all. The identical declaration on `java.awt.Graphics` invoked fine, which is what made
+it a bug in the bridge rather than a limit of the JDK. This is **D6**.
+
+The repair is one predicate, `reachable`, used wherever `accessible` and `publicDeclaration` used
+to ask `Modifier.isPublic`:
+
+```java
+if (!Modifier.isPublic(type.getModifiers())) return false;
+Module owner = type.getModule();
+if (owner == null || !owner.isNamed()) return true;
+return owner.isExported(type.getPackageName(), JavaBridge.class.getModule());
+```
+
+A class on the classpath lives in an unnamed module, which is open by definition, so nothing about
+application classes changed. Two tests in `JavaBridgeAccessibilityTest` pin it, and both fail when
+the predicate is reverted:
+
+```
+$ ./gradlew :oq-core:test --tests '*JavaBridgeAccessibilityTest*'     # fixed
+5 tests completed
+
+$ # reachable() cut back to "return Modifier.isPublic(...)"
+$ ./gradlew :oq-core:test --tests '*JavaBridgeAccessibilityTest*'
+5 tests completed, 2 failed
+```
+
+### The probe, and the assertion it deliberately does not make
+
+C13.7 is now gated rather than hand-run. `c13_offscreen` lays a `JButton` out inside a `JPanel`,
+paints the panel into a `BufferedImage`, counts the pixels the paint changed, clicks the button on
+the event dispatch thread and checks the closure received `["go"]`:
+
+```
+$ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
+ok: 26 probes match their expectation
+ok: 26 probes compared compiled bytecode against the interpreter
+```
+
+Two details in that program are there to stop it from measuring the wrong thing. It prints
+`painted > 0` **and** the count, because a boolean alone passes if a single stray pixel is painted;
+the count `20000` is the exact number a correct `fillRect`-plus-`paint` produces. And it prints
+`getLookAndFeel() != nothing` rather than the look-and-feel's *name*, because the name is
+`Mac OS X` on this machine and `Metal` on a bare Linux JVM — naming it would make the probe pass or
+fail on the machine instead of on the bridge, which is the same mistake D5's missing conformance
+case avoids.
+
+The probe was mutation-tested before it was trusted, because a passing probe is evidence of
+nothing until it can be shown to fail:
+
+```
+$ # c13_offscreen with `print painted > 0` changed to `print false`
+$ python3 .../run.py oq-cli/build/libs/oq.jar; echo $?
+FAILED
+  c13_offscreen: expected ['true', '20000', '["go"]', 'true', 'true'], got ['false', ...]
+1
+```
+
+### What this closes and what it does not
+
+Closed: layout, painting, input dispatch and look-and-feel are gated on both backends, in CI, with
+no display required. Direction 13 is no longer supported only by runs somebody did by hand.
+
+Not closed: `setVisible` needs a display, so a program that opens a real window still has no
+compiled-versus-interpreted gate. The matrix row in Item 8 now says exactly that instead of
+claiming the whole toolkit is untestable. Reaching the last part would need a virtual framebuffer
+on the CI runner; nothing in this pass did that, and this item does not claim it did.
 
 ## Item 10 — Remaining blockers and risks
 

@@ -145,6 +145,7 @@ below was executed on JDK 21 with `java.awt.headless=true`, which is the setting
 | C13.4 | An Oqthara closure can be an AWT listener | Complete | `b.addActionListener(fun(e) fired.add(e.getActionCommand()) end)` then `b.doClick()` → `["go"]`. The callback receives the real `ActionEvent` and reads `getActionCommand()`. |
 | C13.5 | A closure keeps its captures when the toolkit calls it from another thread | Complete | A closure registered on the EDT appended to a list declared on the main thread; `["x", ["x"]]` came back intact. This is C7.4 holding across a thread the program did not create. |
 | C13.6 | Interpreter and compiled bytecode agree on a Swing program | Complete | `s2.oq` printed `[true]` then `["go"]` under `oq run` and, after `oq build`, the same two lines from `java -jar s2.jar`. the build reported `codepath: compiled bytecode` with nothing skipped. |
+| C13.7 | Layout, painting, input dispatch and look-and-feel run with no display | **Complete, and now a gated probe.** Only *realising* a window needs a display; the rest of the toolkit does not, so `c13_offscreen` runs headless and gates all four on both backends: a `JPanel` lays a `JButton` out at its bound, an offscreen `paint` leaves 20000 non-white pixels in a `BufferedImage`, a click dispatched on the event dispatch thread reaches the registered closure as `["go"]`, and the installed look-and-feel answers a colour. Printing `getLookAndFeel().getName()` was rejected because it is `Mac OS X` here and `Metal` on a bare Linux JVM — a probe that names it would test the machine. This row was reachable at all only after D6 was fixed. |
 
 What is **not** covered, and is not claimed: no test opens a visible window, so layout, painting,
 input dispatch and look-and-feel are untested; the EDT rows prove registration and callback, not
@@ -327,6 +328,47 @@ No conformance case covers this, deliberately: the trigger is a machine without 
 case would pass or fail depending on where it ran. `ImmutableRefusalTest` pins both impostors and
 the unchanged collection behaviour directly.
 
+### D6 — A public JDK implementation class is public but unreachable, and the bridge thought otherwise
+
+**Severity: functional correctness.** `Modifier.isPublic` is not the whole accessibility check on a
+modular JDK. `Method.invoke` and the compiler also require the class's package to be *exported* to
+the caller's module, and the JDK ships public classes in packages it does not export. The bridge
+used `Modifier.isPublic` alone, both to decide a method needed re-resolution and to decide whether a
+re-resolution succeeded, so it kept handing back a `Method` whose declaring class it could not
+reach. `BufferedImage.createGraphics()` answers a `sun.java2d.SunGraphics2D` — public, and in
+`sun.java2d`, which `java.desktop` does not export — so the first thing any drawing program does
+after getting a `Graphics` failed:
+
+```
+error: cannot call setColor: class dev.oqthara.core.JavaBridge cannot access class
+       sun.java2d.SunGraphics2D (in module java.desktop) because module java.desktop does not
+       export sun.java2d to unnamed module @149e0f5d
+```
+
+The identical declaration on `java.awt.Graphics` invokes fine. Painting is the one GUI capability
+that needs no display at all, so this was not a limitation of testing headlessly — it was the reason
+painting could not be tested at all.
+
+**Status: fixed.** `accessible` and `publicDeclaration` now consult `reachable`, which requires the
+class to be public *and*, when it lives in a named module, for that module to export the package to
+the bridge's own module. A class on the classpath is in an unnamed module and stays reachable as
+before, so nothing about application classes changed. Measured:
+
+```
+$ java -jar oq.jar run t2.oq                               # before
+sun.java2d.SunGraphics2D
+
+error: cannot call dispose: class ... cannot access class sun.java2d.SunGraphics2D ...
+
+$ java -jar oq.jar run t2.oq                               # after
+sun.java2d.SunGraphics2D
+```
+
+`c13_offscreen` covers it from now on, on both backends: it paints a `JPanel` into a
+`BufferedImage` and counts the non-white pixels, which cannot happen unless `setColor`, `fillRect`,
+`paint` and `dispose` all reached the real implementation. Re-introducing the `isPublic`-only check
+turns that probe red rather than silently narrowing what a program can draw.
+
 ## Intentional limitations (verified, not defects)
 
 | Limitation | Evidence it is intentional |
@@ -409,7 +451,7 @@ scope at will; each item is a capability this inventory classified as absent or 
 | A6.1 | Compiled code calls Java directly, removing boundary item 2 in `backend.md` | **Done.** A program with `use java.lang.Math` builds with `codepath: compiled bytecode` and prints identical output to `oq run`: `use` lowers to a class constant, and a static call, a static field, a constructor and the class value all compile. `conformance/248-java-interop-by-use.oq` pins all four. A `use` below the top level compiles too, via the run-time registry ADR-0066 introduced, so boundary item 2 no longer narrows `use` at all. Evidence: `python3 scripts/verify-conformance.py` reports `214 compiled, 9 fallback (223 of 223 executable), 0 divergences across 256 programs`. |
 | A6.2 | `Class` reflection is available to Oqthara programs | **Retired, permanently no — [ADR-0065](../adr/0065-reflection-stays-unexposed-by-name.md).** `Class` stays a self-description surface and the member lookup entry points stay refused. The deciding fact is executed, not argued: `getEnclosingClass` is one of the entry points `CLASS_REFLECTION` refuses, yet `MethodHandles.lookup().findVirtual` resolves it and `invokeWithArguments` calls it, and `d2_reflection_reachable.oq` prints `nothing` on both backends against a build whose codepath is `compiled bytecode`. The probe names a refused entry point on purpose — reaching a member the allowlist already permits would prove only that `findVirtual` works. Granting the allowlist entry would therefore add a shorter spelling to a capability the language already has, not a capability, while implying a sandbox the JVM cannot provide in-process for application classes. `d2_reflection_refused.oq` pins the refusal and its wording. The row is closed rather than deferred: a later proposal has to overturn the record, not notice the row is open. |
 | A6.3 | Compiled code answers `Class` self-description without the interpreter fallback | **Done.** A6.1 removed the reason `use` forced a fallback, so `d2_class_instance` now builds with `codepath: compiled bytecode` and its jar prints `java.lang.String` / `String` / `false` / `false`, byte-identical to the interpreter. That was true but ungated: `run.py --both` compared output only, and an interpreter launcher produces identical output because the interpreter produced it, so every probe could have regressed to the fallback and the run would have stayed green. `--both` now requires `codepath: compiled bytecode` per probe and prints `ok: 25 probes compared compiled bytecode against the interpreter` (19 when this row was written; C9–C12 added five more, see A6.4, and C11.1 one after that). There is no exception: `d1_sort_by` used to be declared in `FALLBACK` because `sort_by` was listed as host-dependent, and it stopped falling back once that misclassification was corrected, so `FALLBACK` is now empty. An undeclared fallback fails the run, and so does a declared one that closes. |
-| A6.4 | Probe harness runs in CI | **Done, and now covering C1–C12.** The `Decision probes (A6.4)` step in `ci.yml` runs `docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both` and the three `scripts/probe-*.py --check` harnesses as a required check on the same jar the conformance step builds. `run.py` reports `ok: 25 probes match their expectation` and `ok: 25 probes compared compiled bytecode against the interpreter`; a one-day drift in a single expected date makes it report `FAILED`, name the probe, and exit 1. The 25 programs are `c1`–`c12` (one or two per construct group) plus eleven defect probes for D1, D2 and D3. C9–C12 were the gap this row used to record: five probes now pin builtin precedence on both backends (`c9_precedence`), `use` under each backend including a nested one (`c10_use_both_backends`), a class from the user's own classpath (`c11_user_classpath`) and a fully qualified JDK import (`c11_qualified_name`), public-only reachability (`c12_public_only`) and unrestricted process and environment access (`c12_unrestricted`). Direction 13 (C13.1–C13.6) is still execution evidence gathered by hand, not harness probes, and D5 has no probe either: its trigger is a JVM with no display, so a probe would pass or fail depending on the machine rather than on the bridge. **C11.1 is now probed too**, which is what closes the gap this row used to record. `c11_user_classpath.oq` imports a `Hello` that exists only in a jar built from committed source, and it is the one probe `run.py` launches as `java -cp` rather than `java -jar`: `-jar` ignores `CLASSPATH` and the working directory, so the gap was real. `EXTRA_CLASSPATH` names the probes that take the `-cp` form, so every other probe keeps the launch form its recorded output was produced under. The fixture jar is built on every run rather than kept in the tree, because `*.jar` is in `.gitignore` — `d2_reflection_reachable.jar` sits in this same directory and is not tracked — so a committed binary was never an option. A missing `javac` is reported as a failure, never a skip, because the harness already needs a JDK to build probes. |
+| A6.4 | Probe harness runs in CI | **Done, and now covering C1–C12.** The `Decision probes (A6.4)` step in `ci.yml` runs `docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both` and the three `scripts/probe-*.py --check` harnesses as a required check on the same jar the conformance step builds. `run.py` reports `ok: 25 probes match their expectation` and `ok: 25 probes compared compiled bytecode against the interpreter`; a one-day drift in a single expected date makes it report `FAILED`, name the probe, and exit 1. The 25 programs are `c1`–`c12` (one or two per construct group) plus eleven defect probes for D1, D2 and D3. C9–C12 were the gap this row used to record: five probes now pin builtin precedence on both backends (`c9_precedence`), `use` under each backend including a nested one (`c10_use_both_backends`), a class from the user's own classpath (`c11_user_classpath`) and a fully qualified JDK import (`c11_qualified_name`), public-only reachability (`c12_public_only`) and unrestricted process and environment access (`c12_unrestricted`). Direction 13 was execution evidence gathered by hand until `c13_offscreen` joined the harness; **C13.7 is now a probe** and runs on both backends, because layout, painting, input dispatch and look-and-feel need no display — only *realising* a window does, and that remains the one part of direction 13 with no gate. D5 has no probe, deliberately: its trigger is a JVM with no display, so a probe would pass or fail depending on the machine rather than on the bridge. D6 does have one, for the same reason inverted: its failure needs no display either. **C11.1 is now probed too**, which is what closes the gap this row used to record. `c11_user_classpath.oq` imports a `Hello` that exists only in a jar built from committed source, and it is the one probe `run.py` launches as `java -cp` rather than `java -jar`: `-jar` ignores `CLASSPATH` and the working directory, so the gap was real. `EXTRA_CLASSPATH` names the probes that take the `-cp` form, so every other probe keeps the launch form its recorded output was produced under. The fixture jar is built on every run rather than kept in the tree, because `*.jar` is in `.gitignore` — `d2_reflection_reachable.jar` sits in this same directory and is not tracked — so a committed binary was never an option. A missing `javac` is reported as a failure, never a skip, because the harness already needs a JDK to build probes. |
 
 ## What this audit does not claim
 

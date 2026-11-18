@@ -1,0 +1,45 @@
+use javax.swing.JPanel
+use javax.swing.JButton
+use javax.swing.UIManager
+use javax.swing.SwingUtilities
+use java.awt.Color
+use java.awt.image.BufferedImage
+
+fired = []
+panel = JPanel(nothing)
+panel.setSize(200, 100)
+button = JButton("go")
+button.setBounds(10, 40, 80, 30)
+button.addActionListener(fun(e)
+  fired.add(e.getActionCommand())
+end)
+panel.add(button)
+button.doLayout()
+
+img = BufferedImage(200, 100, BufferedImage.TYPE_INT_ARGB)
+g = img.createGraphics()
+g.setColor(Color.WHITE)
+g.fillRect(0, 0, 200, 100)
+panel.paint(g)
+g.dispose()
+
+painted = 0
+for y in 0 to 99
+  for x in 0 to 199
+    if (img.getRGB(x, y) and 16777215) != 16777215
+      painted = painted + 1
+    end
+  end
+end
+print painted > 0
+print painted
+
+SwingUtilities.invokeAndWait(fun()
+  button.doClick()
+end)
+print fired
+# The look-and-feel is installed and can answer a colour. Its *name* is
+# platform-dependent -- "Mac OS X" here, "Metal" on a bare Linux JVM -- so naming it
+# would make this probe pass or fail on the machine rather than on the bridge.
+print UIManager.getLookAndFeel() != nothing
+print UIManager.getColor("Button.background") != nothing
