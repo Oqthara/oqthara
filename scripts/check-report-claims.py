@@ -202,8 +202,15 @@ CLAIM_SHAPE_HINT = ", ".join(noun for noun, _ in NOUNS)
 # three figures and no change at all, so treating any multi-figure sentence as a
 # pairing would switch off the very checks this gate exists to run — which is
 # exactly what an early draft of it did.
+#
+# A bare "now" does not mark a pairing. "Measured now: 13 directions, 54
+# capability rows, 27 probe files, 69 ADRs" is an ordinary list of four current
+# totals, and the word dates none of them — but reading it as a pairing checked
+# only the last figure and passed the other three unread, which is how a stale
+# "27 probe files" survived the pass that added the 28th probe. Only "took
+# ... from ... to" and the other phrasings below actually name a change.
 PAIRED = re.compile(
-    r"\bnow\b|\bno longer\b|\binstead\b|\bas of\b|\btook\b|\bfrom\b[^.]{0,20}\bto\b"
+    r"\bno longer\b|\binstead\b|\bas of\b|\btook\b|\bfrom\b[^.]{0,20}\bto\b"
     r"|\band covers\b|\bsuperseded\b|\bstill true when\b|\bpreviously\b",
     re.IGNORECASE,
 )

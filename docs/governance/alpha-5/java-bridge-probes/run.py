@@ -273,6 +273,12 @@ PROBES = [
         ["true", "caught", "true", "caught-again"],
         None,
     ),
+    # The other half of C13, and the one that needs a real display. It is deliberately not in
+    # `HEADLESS`: it must run under whatever the host provides, because the relationship is the
+    # thing under test. `headless` and `worked` are complementary by definition of the JDK
+    # check, so printing whether they agree gives the same answer on a machine with a display
+    # and one without, and the second line refuses the degenerate case where both are false.
+    ("c13_display", ["true", "true"], None),
 ]
 
 

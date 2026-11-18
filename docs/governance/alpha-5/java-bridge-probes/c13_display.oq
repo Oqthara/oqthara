@@ -1,0 +1,32 @@
+use javax.swing.JFrame
+use java.awt.GraphicsEnvironment
+
+# C13 the half that needs a real display: realising a window, and having the window system
+# actually map it. `c13_window` pins -Djava.awt.headless=true and asserts what a program sees
+# when there is no display. This probe does the opposite and asserts the *relationship*
+# between the two answers, which is what makes one recorded expectation correct on a macOS
+# developer machine and on a Linux CI runner alike.
+#
+# Printing `headless` or `worked` alone would make the expectation host-dependent and the
+# probe would only ever match one machine. Printing whether they agree cannot: a host with a
+# display answers false/true and a host without one answers true/false, and both reduce to
+# true here. The second line is the guard against the degenerate case where a broken bridge
+# returns false for both, which would satisfy `headless == not worked` while proving nothing.
+#
+# This is not a member of `HEADLESS` in run.py. It must run under whatever the host provides,
+# because the invariant is the thing under test.
+headless = GraphicsEnvironment.isHeadless()
+
+worked = false
+try
+  frame = JFrame("c13-display")
+  frame.setSize(80, 60)
+  frame.setVisible(true)
+  worked = true
+  frame.dispose()
+catch err
+  worked = false
+end
+
+print headless == not worked
+print worked or headless

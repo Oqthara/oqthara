@@ -359,7 +359,7 @@ required to execute rather than be read:
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
-| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C13 in 27 as of the offscreen-Swing pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it. C13 was hand-executed until `c13_offscreen` made the parts of it that need no display a gated probe, and `c13_window` gates the one that does: it pins `-Djava.awt.headless=true` so the answer is the same on a desktop and on CI, which is what makes the display-dependent half testable where no display exists |
+| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C13 in 28 as of the offscreen-Swing pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it. C13 was hand-executed until `c13_offscreen` made the parts of it that need no display a gated probe, and `c13_window` gates the one that does: it pins `-Djava.awt.headless=true` so the answer is the same on a desktop and on CI, which is what makes the display-dependent half testable where no display exists |
 
 One constraint from the tree must be honoured, not worked around: the probe harness covered C1–C8
 when this section was written and no direction was probed headlessly, so a GUI program's
@@ -552,7 +552,7 @@ $ ls docs/adr/ | wc -l
 
 The `19` is the one figure in that block that has since moved, and it moved because the gap it
 counted was closed rather than because the measurement was wrong: every direction the inventory
-lists is now probed, C13 included, so the command counts 27 probe files where it counted 19. That
+lists is now probed, C13 included, so the command counts 28 probe files where it counted 19. That
 is the intended direction of change — the count grew because coverage grew — and it is why this
 paragraph reads in the past tense instead of claiming a number that a reader would immediately
 contradict.
@@ -561,8 +561,8 @@ The other three figures in that block need the same care, and the first draft of
 not give it. It said the block had one stale figure and quoted the rest as current. In fact the
 inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
 so by the time this paragraph was written the block held **two** figures that had moved, not one.
-Measured now: 13 directions, 54 capability rows, 27 probe files, 69 ADRs. Three of the four differ
-from the block above.
+Measured now: 13 directions, 54 capability rows, 28 probe files, 69 ADRs. Two of the four differ
+from the block above, which is the **two** this paragraph just said had moved.
 
 That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites
 a document that has not been edited since the report was written, so nothing could drift. That was
@@ -1138,10 +1138,12 @@ What remains genuinely open is narrower than it was, and it is worth stating pre
 this repository displays a window on a real screen, so painting *as composited by a window manager*
 is unexercised. Everything up to that point — layout, painting into an image, input dispatch,
 look-and-feel, and the failure a program sees when there is no display — is gated. Reaching the
-last step would need a virtual framebuffer such as Xvfb on the Linux runner. The `ubuntu-latest`
-image already ships one (`xvfb 2:21.1.12-1ubuntu1.9`, per `actions/runner-images`), so the missing
-piece is a probe launched under a display manager rather than a package to install. Nothing in this
-pass added one, and this item does not claim otherwise.
+last step turned out not to need a virtual framebuffer at all. `c13_display` asserts the
+*relationship* rather than a host-specific value: `headless == not worked` and `worked or headless`
+is `true` / `true` whether or not a display exists, so one recorded expectation is correct on a
+macOS desktop and on a Linux runner alike. Verified in all four combinations of interpreter and
+compiled, each with and without `-Djava.awt.headless=true`. What is still unexercised is how a
+*window manager* composites the window — a property of the desktop, not of the bridge.
 
 ## Item 10 — Remaining blockers and risks
 
