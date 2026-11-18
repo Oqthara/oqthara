@@ -491,7 +491,7 @@ def commit_exists(root: pathlib.Path, sha: str) -> tuple[bool, bool]:
 # modernised app answers `app/dependabot`. Both spellings are kept because an older installation
 # still reports the bracketed login, and a missing spelling here does not degrade gently -- the
 # exemption silently never matches and the required check goes red on every dependency pull
-# request (PR #251, which is what R-024 describes).
+# request. That is how PR #251 became unmergeable; R-031 records the class.
 AUTOMATED_AUTHORS = {
     "dependabot[bot]", "renovate[bot]",
     "app/dependabot", "app/renovate",
