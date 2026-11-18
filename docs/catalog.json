@@ -482,6 +482,12 @@
       "slug": "docs/governance/alpha-6-requirement-matrix"
     },
     {
+      "path": "docs/governance/alpha-7-first-report.md",
+      "title": "Alpha 7 — Required first report",
+      "section": "governance",
+      "slug": "docs/governance/alpha-7-first-report"
+    },
+    {
       "path": "docs/governance/alpha-7-security-baseline.md",
       "title": "Alpha 7 security baseline",
       "section": "governance",

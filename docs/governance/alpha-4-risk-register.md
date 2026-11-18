@@ -684,7 +684,7 @@ existing gate.
 | R-020 | The POSIX installer verifies authenticity but the PowerShell one verifies only integrity | Low | High | Medium | 9 | Mitigated |
 | R-021 | No update or rollback path; re-running the installer is the only upgrade | Medium | Low | Low | 9 | Open |
 | R-022 | Versioned-docs script writes to a directory that no longer exists | High | Low | Low | 12 | Open |
-| R-023 | Keyword count is stated two ways across five documents | High | Low | Low | 1 | Open |
+| R-023 | Keyword count is written down in six places and drifted in three | High | Low | Low | 1 | Open |
 | R-027 | Line-number citations in the stdlib inventory drift silently | High | Low | Low | 16 | Open |
 | R-025 | Nothing executes the specification's code examples, so a wrong one ships silently | Medium | Low | Low | 16 | Accepted |
 
@@ -746,8 +746,11 @@ runs the same suite because the end-to-end block no longer depends on a Windows-
 There is no `oq update`, no version manager, no rollback to a previous release, and no bundled JDK —
 both installers require a pre-existing `java` on `PATH` and fail if it is absent. Workstream 9 as
 written asks for "JDK runtime selection, platform installers, integrity, update, rollback"; only the
-installers and integrity exist. The workstream is unowned, per
-[`alpha-4-workstream-assignment.md`](alpha-4-workstream-assignment.md).
+installers and integrity exist. The workstream is owned —
+[`alpha-4-workstream-assignment.md`](alpha-4-workstream-assignment.md) records workstream 9 as
+"Covered (ownership resolved 2026-11-11)" with `oq-hive-testing-security` as primary — and the gap
+is capability, not ownership. An earlier version of this entry said the workstream was unowned,
+which that file had contradicted since 2026-11-11.
 
 *Mitigation.* None. `OQ_VERSION` pins a specific release and `OQ_INSTALL_DIR` pins the destination,
 so a manual rollback is possible by re-running with an older tag — undocumented as a rollback
@@ -776,31 +779,34 @@ README corrected. Both are one-line decisions that have not been taken.
 absence of `site/` · `scripts/README.md` Documentation table ·
 `docs/adr/0011-standalone-website-repository.md`.
 
-**R-023 — Keyword count is stated two ways across five documents.**
-`Lexer.KEYWORDS` holds 22 entries. `docs/stdlib/reference.md` says "22 keywords (budget: 30)" and
-`CONTRIBUTING.md` says "The keyword budget is 30; we are at 22" — both correct, and
-`scripts/check-docs-sync.py` keeps them correct. But `AGENTS.md` says "budget 30, now 20", and two
-agent files (`oq-hive-orchestrator`, `oq-hive-language-syntax`) repeat "It currently uses 20." So two
-of the five statements are correct and three are stale, and the ones checked by CI are not the ones an
-agent reads first.
+**R-023 — Keyword count is written down in six places and drifted in three.**
+`Lexer.KEYWORDS` holds 22 entries. Five documents repeat the number: `docs/stdlib/reference.md`
+("22 keywords (budget: 30)"), `CONTRIBUTING.md` ("The keyword budget is 30; we are at 22"),
+`docs/spec/design.md` (its simplicity table), `AGENTS.md`, and two `oq-hive-*` agent files.
+At the Alpha 7 boundary re-read three of the six were stale — `AGENTS.md` said "budget 30, now 20"
+and both agent files said "It currently uses 20" — and `scripts/check-docs-sync.py` read only the
+three correct ones, so the copies an agent reads first were the ones CI could not catch.
 
-This entry was itself one of the stale statements until the Alpha 7 boundary re-read: it quoted
-`CONTRIBUTING.md` as saying "we are at 21" and counted four statements in four documents, when there
-are five statements in five documents and the contributing file already said 22. That is the whole
-risk occurring inside the document that records it, and it is the second consecutive re-read to find
-this entry describing a document it had not re-opened.
+This entry has now been wrong about itself twice. It first quoted `CONTRIBUTING.md` as saying "we
+are at 21" and counted four statements in four documents. The Alpha 7 re-read corrected that to
+five-and-five and still missed `docs/spec/design.md`, which the gate had been checking all along.
+Two consecutive re-reads found this entry describing documents it had not re-opened, which is the
+risk occurring inside the document that records it.
 
-*Mitigation.* `scripts/check-docs-sync.py` cross-checks the reference against `Lexer.KEYWORDS` and
-against `CONTRIBUTING.md`, so the machine-readable pair cannot drift. The agent-facing statements have
-no equivalent check.
+*Mitigation.* `scripts/check-docs-sync.py` cross-checks the reference against `Lexer.KEYWORDS`, and
+since the Alpha 7 boundary re-read it also reads `AGENTS.md` and both agent files, requiring each to
+state a budget and count that match the lexer. A missing or reworded statement is a problem rather
+than a silent skip, because the way this drift survived was a file quietly leaving coverage.
 
-*Why open.* The fix is to make the agent files read the count from one source, or to extend
-`scripts/check-docs-sync.py` to cover `AGENTS.md` and `.github/agents/*.agent.md`. Neither is
-done.
+*Why still open.* The count is now correct in all six places and cannot drift unnoticed again. What
+remains is the root cause: the same number is written down six times. Collapsing it to one source
+that the others cite would remove the class rather than the instance, and it is not done.
 
 *Evidence.* `oq-core/src/main/java/dev/oqthara/core/Lexer.java` `KEYWORDS` ·
 `docs/stdlib/reference.md` line 11 · `CONTRIBUTING.md` line 9 · `AGENTS.md` line 21 ·
-`.github/agents/oq-hive-language-syntax.agent.md` rule 2 · `scripts/check-docs-sync.py`
+`.github/agents/oq-hive-language-syntax.agent.md` rule 2 ·
+`.github/agents/oq-hive-orchestrator.agent.md` ·
+`scripts/tests/test_check_docs_sync_keywords.py`
 `keyword_budget_is_honest`.
 
 **R-027 — Line-number citations in the stdlib inventory drift silently.**

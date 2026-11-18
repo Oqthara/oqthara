@@ -62,7 +62,7 @@ scope.
 - Two writers never share a checkout.
 - Never stage `gradlew.bat` line-ending changes; they are pre-existing local noise.
 - Any new `docs/**/*.md` requires regenerating `docs/catalog.json` in the same change.
-- The keyword budget is 30. It currently uses 20. Every new keyword must earn its place.
+- The keyword budget is 30. It currently uses 22. Every new keyword must earn its place.
 - No Rust-style syntax, ever.
 
 ## Reporting

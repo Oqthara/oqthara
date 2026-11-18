@@ -151,6 +151,33 @@ def keyword_budget_is_honest() -> None:
             f"design.md states a budget of {design_budget} but the reference says {budget}")
     note(f"design.md keyword count ({design_current}) matches the lexer")
 
+    # R-023: the agent-facing statements said 20 while the lexer had 22, and this check did
+    # not read them, so CI could not catch the copy an agent reads first. Each file is
+    # required to contain a statement -- a renamed file or a reworded sentence fails here
+    # rather than silently dropping out of coverage, which is how the drift survived.
+    agent_facing = {
+        "AGENTS.md": r"keyword \(budget (\d+), now (\d+)\)",
+        ".github/agents/oq-hive-language-syntax.agent.md":
+            r"keyword budget is (\d+)\. It currently uses (\d+)\.",
+        ".github/agents/oq-hive-orchestrator.agent.md":
+            r"keyword budget is (\d+)\. It currently uses (\d+)\.",
+    }
+    for name, pattern in agent_facing.items():
+        statement = re.search(pattern, read(name))
+        if not statement:
+            problems.append(
+                f"{name} does not state the keyword budget and count in the expected form; "
+                "this check exists because those copies drifted to 20")
+            continue
+        file_budget, file_count = int(statement.group(1)), int(statement.group(2))
+        if file_count != len(keywords):
+            problems.append(
+                f"{name} claims {file_count} keywords but the lexer defines {len(keywords)}")
+        if file_budget != budget:
+            problems.append(
+                f"{name} states a budget of {file_budget} but the reference says {budget}")
+    note(f"agent-facing keyword counts match the lexer in {len(agent_facing)} files")
+
 
 def command_form_matches_the_spec() -> None:
     # The spec said "Both accept any number of arguments" of two names, then its example
