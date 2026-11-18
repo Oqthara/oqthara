@@ -187,8 +187,17 @@ All three adjustments are now discharged.
 | Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 |
 | Scope must not absorb the type system | **Fixed.** The agent file has a "Where your ownership stops" section: syntax owns the annotation grammar and the specification's account of it; `oq-hive-development` owns the value model, the semantic-analysis pass, and failed-check behaviour. A change needing both is two changes |
 
-The keyword count is still not read by CI. That gap is unchanged and is R-031's shape — the
-operating instructions and the agent files are prose, and nothing compares them against the lexer.
+The keyword count **is** read by CI, in the same commit that corrected it. PR #252 added an
+`agent_facing` block to `scripts/check-docs-sync.py` that pattern-matches the budget sentence in
+`AGENTS.md`, `oq-hive-language-syntax.agent.md` and `oq-hive-orchestrator.agent.md` and compares
+each count against `Lexer.KEYWORDS`. Setting the orchestrator file to `It currently uses 19` makes
+the gate fail with `claims 19 keywords but the lexer defines 22`.
+
+This paragraph previously asserted the opposite — that nothing compares the prose against the
+lexer — and Item 10 below said the same thing a second time. Both were wrong when written. The
+correction is recorded here rather than quietly applied, because a governance report that overstates
+a remaining gap is as misleading as one that understates it, and this is the same failure the report
+charges elsewhere: prose about the tree, not checked against the tree.
 
 ## Item 7 — Type-system decisions requiring superseding ADRs
 
@@ -377,10 +386,53 @@ emitted to stderr, to a file, or exposed as a value is the kind of choice ADR-00
 before code. Item 8 therefore stays **partly done** rather than closing, and the honest statement is
 that the observability it lacked most was the plainest: asking a command for help.
 
+## Item 9b — Four claims in this report that the tree contradicted
+
+Item 9a ended with a claim this report makes in two places: that nothing compares the agent-facing
+keyword counts against the lexer. Checking that claim instead of repeating it produced the opposite
+answer, and the same audit found three more entries that had gone stale.
+
+**The keyword counts are gated.** `scripts/check-docs-sync.py` has an `agent_facing` block, added
+in PR #252 by the same commit that corrected the count from 20 to 22. It reads three files and
+compares each stated count against `Lexer.KEYWORDS`:
+
+```
+$ sed -i '' 's/It currently uses 22/It currently uses 19/' \
+    .github/agents/oq-hive-orchestrator.agent.md
+$ python3 scripts/check-docs-sync.py
+Documentation drift detected:
+  - .github/agents/oq-hive-orchestrator.agent.md claims 19 keywords but the lexer defines 22
+[exit 1; file restored afterwards]
+```
+
+Both statements to the contrary — one in Item 6's closing paragraph, one in Item 10 — are corrected
+in place rather than deleted, because a report that overstates a remaining gap is as misleading as
+one that understates it. What survives is narrower and real: the gate reads the *count*, not the
+rest of those files' prose.
+
+**The type-system conflict is decided, against §5.** ADR-0069 (Accepted, 2026-11-18) supersedes
+ADR-0015's scope and the brief. Item 10 said the conflict was unresolved pending a superseding ADR;
+that ADR now exists and answers the question the other way. §5 is blocked by a decision rather than
+by an absence of one, which is a different blocker needing a different record.
+
+**Item 8's status row understated its own fix.** It named two commands after six had been repaired,
+and omitted that `oq new --help` created a directory. Corrected in this pass.
+
+The pattern across all four is the one Item 10 of the original report names about R-031: governance
+prose about the tree is not checked against the tree. Three of these four were true when written and
+became false when a later change landed. Nothing in CI could notice, because nothing compares a
+sentence in `docs/governance/` against the behaviour it describes.
+
 ## Item 10 — Remaining blockers and risks
 
-- **The type-system conflict is unresolved.** Until an ADR supersedes ADR-0015 and the brief, §5
-  cannot start, and the two conformance cases must keep saying what they say.
+- **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
+  2026-11-18) supersedes ADR-0015's scope and the type-system brief: Oqthara stays dynamically
+  typed and `data` fields stay untyped. This entry previously read "unresolved … until an ADR
+  supersedes ADR-0015", which was true when the report was written and is not true now. §5 as
+  ordered cannot start because the question it asks has been answered *against* it, so any typing
+  work needs a further ADR superseding ADR-0069 — not merely one superseding ADR-0015. The two
+  conformance cases keep saying what they say, and now they say it on a decided question rather
+  than a pending one.
 - **#251 was red on a required check** from the moment dependabot opened it, because ADR-0059
   requires an AI review record per pull request and no one wrote one. It is merged now (`9eb3561`),
   but the gap it exposed is unowned: nothing generates a review record on the automated path, so
@@ -390,8 +442,12 @@ that the observability it lacked most was the plainest: asking a command for hel
   justified by a test, which needs saying out loud.
 - **`oq-hive-language-syntax` was not on the primary orchestration path** and its keyword count was
   stale. Both are fixed: #252 corrected the count to 22, and #257 named both agent directories in
-  `AGENTS.md` and wrote down where syntax ownership stops. What is still unowned is that **no gate
-  reads the agent files**, so the count can drift again unobserved.
+  `AGENTS.md` and wrote down where syntax ownership stops. **The claim that no gate reads the agent
+  files was wrong** — `scripts/check-docs-sync.py` has compared those three counts against
+  `Lexer.KEYWORDS` since PR #252, and it was verified by editing a count and watching the gate
+  fail. What remains genuinely unowned is narrower: that check covers the *keyword count* in those
+  files, not their other prose. A statement about, say, which backend supports which feature could
+  still drift unobserved.
 - **Workstream 2 is `Under-covered`** and §5 lands entirely inside it.
 - **Swing has partial coverage and no test** — direction 13 records six executed capabilities, but
   no example and no conformance case exist, and nothing in CI would notice a regression. What
