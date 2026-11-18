@@ -259,7 +259,7 @@ All three adjustments are now discharged.
 | Adjustment | State |
 | --- | --- |
 | No language-syntax role in the operating instructions | **Fixed.** `AGENTS.md` now names both agent sets and says which one is loadable here and which one the governance documents assign owners to |
-| Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 |
+| Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 words |
 | Scope must not absorb the type system | **Fixed.** The agent file has a "Where your ownership stops" section: syntax owns the annotation grammar and the specification's account of it; `oq-hive-development` owns the value model, the semantic-analysis pass, and failed-check behaviour. A change needing both is two changes |
 
 The keyword count **is** read by CI, in the same commit that corrected it. PR #252 added an
@@ -552,15 +552,24 @@ $ ls docs/adr/ | wc -l
 
 The `19` is the one figure in that block that has since moved, and it moved because the gap it
 counted was closed rather than because the measurement was wrong: every direction the inventory
-lists is now probed, C13 included, so the command prints 26. Re-running it today gives `13`, `52`,
-`26`, `69`. That
+lists is now probed, C13 included, so the command counts 27 probe files where it counted 19. That
 is the intended direction of change — the count grew because coverage grew — and it is why this
-paragraph now reads in the past tense instead of claiming a number that a reader would immediately
+paragraph reads in the past tense instead of claiming a number that a reader would immediately
 contradict.
 
-That matters for the conclusion: the decay is not uniform. Item 8 cites a document that has not been
-edited since the report was written, so nothing could drift. The items that decayed are the ones
-whose subject the report's own sequencing then changed.
+The other three figures in that block need the same care, and the first draft of this paragraph did
+not give it. It said the block had one stale figure and quoted the rest as current. In fact the
+inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
+so by the time this paragraph was written the block held **two** figures that had moved, not one.
+Measured now: 13 directions, 54 capability rows, 27 probe files, 69 ADRs. Three of the four differ
+from the block above.
+
+That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites
+a document that has not been edited since the report was written, so nothing could drift. That was
+true when it was written and is false now: `66e68f8` and `ec8947a` both edit the capability
+inventory, and `ec8947a` edits `run.py` as well. Only the ADR count survived untouched, and only
+because nothing in this branch writes to `docs/adr/`. A figure stays true here for exactly as long as
+no commit touches its subject — which is a property of the branch, not of the figure.
 
 **Five more claims had decayed**, all corrected in place above:
 
@@ -655,27 +664,36 @@ and never reads the value, so the register's arithmetic is enforced while its *c
 by whoever quoted them. Rather than add a second parser that could diverge, this gate imports the
 existing one.
 
-**The gate is tested in both directions.** 22 tests in `scripts/tests/test_check_report_claims.py`:
-fourteen reintroduce a real class of drift and require rejection, one is the positive control for the
-ADR repair just below, three assert the dated snapshots the record depends on stay silent, and four
-guard the derivation and the exemption lists. The silence tests are not decoration. A gate that
-rejects §9c's deliberate quotation of a historical figure is a gate the first person to hit it
-deletes from CI.
+**The gate is tested in both directions.** 28 tests in `scripts/tests/test_check_report_claims.py`:
+seventeen reintroduce a real class of drift and require rejection, six assert the dated snapshots and
+unambiguous sentences the record depends on stay silent, and five guard the derivation and the
+exemption lists. The silence tests are not decoration. A gate that rejects §9c's deliberate quotation
+of a historical figure is a gate the first person to hit it deletes from CI.
 
 **What mutation testing found while building it.** Fifteen deliberate corruptions of the real report,
 against the first version: a mutated total, a mutated spelled-out total, a mutated coverage range, a
 mutated probe total written without the unit word, a mutated bare target count, three mutated status
 cells, a mutated table total, a wrong Open ID, a mutated defect range, and a mutated per-group subset.
 That harness reported seven misses on its first run, which was the useful result — the pairing rule
-treated any multi-figure sentence as a before/after pair. The current harness runs eleven catching
-mutations and four silence mutations, all correct:
+treated any multi-figure sentence as a before/after pair. The current harness runs seventeen catching
+mutations and six silence mutations, all correct:
 
 ```
 $ python3 scripts/check-report-claims.py
-report claims: every figure agrees — 24 probes, 52 capability rows, 13 directions,
-22 keywords, 11 fuzz targets, 69 ADRs, 5 defects, 31 risks (6 Open)
+report claims: every figure agrees — 27 probes, 27 probe files, 54 capability rows,
+13 directions, 22 keywords, 14 fuzz targets, 69 ADRs, 6 defects, 31 risks (6 Open)
 exit=0
 ```
+
+**The gate could not read the sentence that defeated it, and this section held the same defect.** The
+first version of the paragraph above stated the gate's own totals, and every one of them had moved:
+the probe total, the capability-row total, the fuzz-target total and the defect total were all
+smaller than the tree. They survived because they sit in a fenced block, and fenced blocks are exempt:
+a gate that compares a figure against the tree cannot also read the transcript of a command that
+produced it. The distinction is only honest if the transcript is labelled as a transcript. So this
+block is now the gate's *actual* output, re-derived when the sentence around it was last edited, and
+any figure in it that a reader wants to trust must be re-run rather than believed. That is the same
+rule the report asks of its own claims, applied to the evidence it shows for them.
 
 **It found a bug in itself, and the first review that missed it was mine.** `NOUN_KEY` was built from
 each noun as written and then read with the matched text lowercased, so the `("ADRs", "adrs")` entry

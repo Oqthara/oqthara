@@ -93,6 +93,43 @@ class DriftIsCaught(unittest.TestCase):
         problems = problems_after("C1–C13 in 27", "C1–C13 in 19")
         self.assertTrue(problems)
 
+    def test_a_figure_after_a_currency_verb_is_caught(self):
+        # PR-264 finding 22. §9c said "so the command prints 26" — a figure with
+        # no unit word, attached to a verb. No noun rule could see it and the
+        # CLAIM_SHAPE catch-all could not either, so it passed unread while the
+        # tree held 27. The repaired sentence names its unit; this restates the
+        # shape that defeated the gate.
+        problems = problems_after(
+            "so the command counts 27 probe files where it counted 19",
+            "so the command prints 26",
+        )
+        self.assertTrue(problems)
+        self.assertIn("prints 26", problems[0])
+
+    def test_a_backticked_figure_tuple_after_a_currency_verb_is_caught(self):
+        # The same defect's harder half. Backticks are masked to spaces before
+        # any noun rule runs, so a tuple of four units-dropped figures was
+        # invisible twice over: no unit word, and the digits themselves blanked.
+        problems = problems_after(
+            "Measured now: 13 directions, 54 capability rows, 27 probe files, 69 ADRs.",
+            "Re-running it today gives `13`, `52`, `26`, `69`.",
+        )
+        self.assertTrue(problems)
+        self.assertIn("gives", problems[0])
+
+    def test_the_new_probe_file_quantity_is_derived_not_guessed(self):
+        # A sentence may now say "27 probe files", so the number behind it must
+        # come from the tree rather than from a second copy of the total.
+        self.assertEqual(
+            len(list((SCRIPTS.parent / checker.PROBE_DIR).glob("*.oq"))),
+            VALUES["probe_files"],
+        )
+
+    def test_a_mutated_probe_file_total_is_caught(self):
+        problems = problems_after("27 probe files", "26 probe files")
+        self.assertTrue(problems)
+        self.assertIn("26 probe files", problems[0])
+
     def test_a_mutated_bare_target_count_is_caught(self):
         # The repaired line 664. Written in the present tense, so a dating
         # exemption does not apply and the count must match the build file.
@@ -222,6 +259,32 @@ class HistoricalFiguresStaySilent(unittest.TestCase):
             problems_after(
                 "`run.py` covering\nC1–C8 with 19 probes",
                 "`run.py` covering\nC1–C5 with 9 probes",
+            ),
+        )
+
+    def test_a_figure_that_keeps_its_unit_after_a_currency_verb_is_silent(self):
+        # "reads 22" is the shape a currency-verb rule fires on, but here the
+        # unit follows the figure, so the sentence is unambiguous and refusing
+        # it would be noise. This is the pairing for the catching test above:
+        # the rule fires on a dropped unit, not on the verb.
+        self.assertEqual(
+            [],
+            problems_after(
+                "and the agent file reads 22 words",
+                "and the agent file reads 30 words",
+            ),
+        )
+
+    def test_a_rating_after_a_currency_verb_is_silent(self):
+        # "returns to 27/27 and exit 0" states a ratio, not a count of anything.
+        # Reading it as one figure with no unit would flag a correct sentence —
+        # the score is the whole claim. This is why the numeral pattern accepts
+        # a slash before a currency verb is allowed to reject the shape.
+        self.assertEqual(
+            [],
+            problems_after(
+                "the run returns to 27/27 and exit 0",
+                "the run returns to 26/26 and exit 0",
             ),
         )
 

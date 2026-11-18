@@ -108,6 +108,7 @@ BACKTICK_SHA = re.compile(r"`[0-9a-f]{7,40}`")
 # a correctly scoped subset as drift.
 NOUNS = [
     ("capability rows", "capability_rows"),
+    ("probe files", "probe_files"),
     ("confirmed defects", "defects"),
     ("fuzz targets", "fuzz_targets"),
     # The fuzz totals are written bare: "8 targets" (line 77), "eight targets"
@@ -160,6 +161,39 @@ RANGE_PROBES = re.compile(
 SCOPED_PROBES = re.compile(rf"\b({NUMBER})\s+`d(\d)_\*`\s+probes\b")
 DEFECT_RANGE = re.compile(r"\bD1\s*[–-]\s*D(\d+)\b")
 
+# A currency verb introduces a figure whose unit has been dropped: "so the
+# command prints 26", "re-running it gives `13`, `52`, `26`, `69`". Every rule
+# above reads a figure through the noun attached to it, and this shape attaches
+# none, so no rule can fire and no rule reports the miss either — CLAIM_SHAPE
+# needs a governance noun near the number and there is none. Item 9c carried two
+# stale figures in exactly this shape through the review that was auditing
+# figures; the sentence had been repaired in the commit that re-staled it.
+#
+# The gate must not guess which total is meant. The quantities it can derive —
+# probes, capability rows, directions, ADRs — coincide at 27, 54, 13 and 69
+# today, and they did not coincide last week. Reading one positionally as
+# another would produce a confident wrong answer, so the shape is refused and
+# the prose has to name what it counted. Positional matching was the first draft
+# and it is the reason this comment exists.
+#
+# Digits only, never a spelled-out number: "it gives five reasons" is ordinary
+# English, while "prints 26" is a claim about a total. Read on the raw sentence,
+# because masking blanks a backticked figure's digits along with its backticks.
+CURRENCY_VERB = r"(?:prints|printed|gives|reports|returns|answers|yields|reads)"
+_NUMERAL = r"\d+(?:\s*/\s*\d+)?"
+_QUOTED_NUMERAL = rf"(?:`\s*)?{_NUMERAL}(?:\s*`)?"
+CURRENCY_FIGURE = re.compile(
+    rf"\b{CURRENCY_VERB}\b\s+(?:out\s+|back\s+)?"
+    rf"({_QUOTED_NUMERAL}(?:\s*,\s*{_QUOTED_NUMERAL})*)"
+    # Refuse a partial numeral ("reads 22 words" must not match "2"), then refuse
+    # a trailing word: a figure followed by its unit is fine, and only a figure
+    # that ends the clause has dropped one.
+    rf"(?!\d)(?!\s*[A-Za-z])",
+    re.IGNORECASE,
+)
+# Printed in the failure message so the repair is mechanical rather than a guess.
+CLAIM_SHAPE_HINT = ", ".join(noun for noun, _ in NOUNS)
+
 # A sentence states a before and an after only when it says so. "**thirteen**
 # directions, **52** capability rows, and **five** confirmed defects" carries
 # three figures and no change at all, so treating any multi-figure sentence as a
@@ -198,8 +232,7 @@ CLAIM_SPAN = re.compile(
 # Counts that are real claims but have no authority file to re-derive them from.
 # Each is listed with its reason, so "checked and found exempt" is visible here
 # rather than indistinguishable from "never looked at".
-EXEMPT = [
-    (
+EXEMPT = [    (
         re.compile(rf"\b{NUMBER}\s+(?:real\s+)?defects\b(?!.{0,24}(?:D1|confirmed))"),
         "fuzz findings: what a fuzz run turned up is a past event with no file in the tree",
     ),
@@ -229,6 +262,11 @@ def derive(cwd: Path = Path(".")) -> dict:
     values = {}
 
     values["probes"] = len(_load("oq_probe_harness", cwd / PROBE_HARNESS).PROBES)
+    # A second, different quantity that prose states as "probes": the files on
+    # disk. They agree at 27 today and did not two commits ago, so the two are
+    # kept apart rather than folded together — a rule that swaps them is a rule
+    # that reports the right number for the wrong reason.
+    values["probe_files"] = len(list((cwd / PROBE_DIR).glob("*.oq")))
 
     inventory = (cwd / INVENTORY).read_text(encoding="utf-8")
     values["capability_rows"] = len(re.findall(r"^\| C\d+\.\d+ ", inventory, re.M))
@@ -462,6 +500,18 @@ def classify(raw: str, sentence: str, line: int, values: dict) -> list[str]:
                 f" {values['defects']} defects"
             )
 
+    # A figure with no unit word, attached to a verb that presents it as the
+    # command's current answer. Nothing above can read it, so refuse it rather
+    # than let it pass unread; dating it is still the way to quote an old total.
+    # Read from the raw sentence, because the digits sit inside backticks.
+    for match in CURRENCY_FIGURE.finditer(raw):
+        if dated(*match.span()):
+            continue
+        problems.append(
+            f"line {line}: a figure with no unit word after \"{match.group(0)}\" —"
+            f" name what was counted ({CLAIM_SHAPE_HINT})"
+        )
+
     # The count and the ID list must agree with each other and with the register:
     # a right count naming the wrong entries is a claim no arithmetic check in
     # the risk gate would notice.
@@ -540,6 +590,7 @@ def main() -> int:
 
     print(
         f"report claims: every figure agrees — {values['probes']} probes,"
+        f" {values['probe_files']} probe files,"
         f" {values['capability_rows']} capability rows, {values['directions']} directions,"
         f" {values['keywords']} keywords, {values['fuzz_targets']} fuzz targets,"
         f" {values['adrs']} ADRs, {values['defects']} defects, {values['risk_total']} risks"
