@@ -57,7 +57,7 @@ class TheRealReportIsConsistent(unittest.TestCase):
     def test_the_derived_values_are_the_real_ones(self):
         # If a deriver silently returned 0 the gate would pass on any figure
         # zero, so pin the derivation itself, not just the report that uses it.
-        self.assertEqual(24, VALUES["probes"])
+        self.assertEqual(25, VALUES["probes"])
         self.assertEqual(52, VALUES["capability_rows"])
         self.assertEqual(13, VALUES["directions"])
         self.assertEqual(11, VALUES["fuzz_targets"])
@@ -83,14 +83,14 @@ class DriftIsCaught(unittest.TestCase):
     def test_a_mutated_coverage_range_is_caught(self):
         # PR-263 finding 5. A grep for the count 19 does not see this one,
         # because the stale thing is the range, not the count.
-        problems = problems_after("covers C1–C12 in 24", "covers C1–C8 in 24")
+        problems = problems_after("covers C1–C12 in 25", "covers C1–C8 in 25")
         self.assertTrue(problems)
         self.assertIn("C8", problems[0])
 
     def test_a_mutated_probe_total_with_no_unit_word_is_caught(self):
-        # The report writes "covers C1–C12 in 24" without the word "probes".
+        # The report writes "covers C1–C12 in 25" without the word "probes".
         # Requiring the unit word let this class through entirely.
-        problems = problems_after("C1–C12 in 24", "C1–C12 in 19")
+        problems = problems_after("C1–C12 in 25", "C1–C12 in 19")
         self.assertTrue(problems)
 
     def test_a_mutated_bare_target_count_is_caught(self):

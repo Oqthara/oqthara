@@ -46,6 +46,7 @@ Exit code is 0 when every probe matches its expectation and every recorded defec
 verbatim, 1 otherwise.
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -88,6 +89,22 @@ COMPILED = "codepath: compiled bytecode"
 # Probes whose build reports something other than COMPILED, mapped to the exact line the build
 # printed. Not a wildcard: a probe absent from here must report COMPILED.
 FALLBACK = {}
+
+# Probes that need a second jar on the JVM classpath, mapped to the source file that jar is
+# built from. `java -jar` ignores `CLASSPATH` and the working directory, so a probe resolving a
+# class from anywhere other than oq.jar cannot be reached that way at all. Rather than change the
+# launch form for every probe, only the probes named here are launched as `java -cp`; the rest
+# keep the `-jar` form the other probes' recorded output was produced under.
+#
+# The jar is built from committed source on every run rather than kept in the tree. A committed
+# jar is invisible to review and needs regenerating by hand whenever it changes. Building it needs
+# a JDK, which this harness already requires: it runs `oq build` and expects `codepath: compiled
+# bytecode`, and that needs a JDK too. A missing `javac` is therefore a failure, never a skip — a
+# probe that quietly skipped itself would report a pass for a check that never ran.
+EXTRA_CLASSPATH = {"c11_user_classpath": "Hello.java"}
+CLI_MAIN = "dev.oqthara.cli.Main"
+# What `oq build` writes into the manifest of every jar it produces.
+COMPILED_MAIN = "oq.generated.Program"
 
 # The `codepath:` line is the only field of the build output this runner reads, and it is
 # printed on stdout, so a probe's own program output can never be mistaken for it.
@@ -182,8 +199,13 @@ PROBES = [
     # branch did not run, and this probe would still pass. `if true` is therefore load-bearing
     # only in that it keeps the statement below the top level, not as a condition.
     ("c10_use_both_backends", ["7", "42", "b", "2026-01-01"], None),
-    # C11.2. C11.1 needs a `-cp` flag `run.py` cannot pass, which the probe's own header
-    # records; the inventory's A6.4 row is the other half of that admission.
+    # C11.1. This is the one probe `run.py` launches as `java -cp` instead of `java -jar`,
+    # because `-jar` ignores `CLASSPATH` and the working directory. `Hello` is only in the
+    # fixture jar, so the probe cannot pass by finding it somewhere else. It was run under both
+    # launch forms before its expectation was written down: `-jar` says "cannot find Java class
+    # 'Hello'", `-cp` prints the line below.
+    ("c11_user_classpath", ["hi world"], None),
+    # C11.2. A JDK class is importable by fully qualified name, under both backends.
     ("c11_qualified_name", ["class dev.oqthara.core.Lexer"], None),
     # C12.1. The second line is the diagnostic this build actually prints: `getClass` returns a
     # `Class` value, so the refusal names the receiver and says "no static method". The
@@ -210,16 +232,64 @@ def matches(lines, expected) -> bool:
     return lines == expected
 
 
-def run(jar: Path, program: Path):
+def fixture_jar(source: Path, scratch: Path) -> Path:
+    """Compile `source` into a jar of its own and return its path.
+
+    The class must end up somewhere that is *not* `oq.jar`, or the probe would be measuring the
+    jar's own contents rather than the classpath it was launched with.
+    """
+    staged = scratch / source.stem
+    staged.mkdir(parents=True, exist_ok=True)
+    compiled = subprocess.run(
+        ["javac", "-d", str(staged), str(source)],
+        capture_output=True,
+        text=True,
+    )
+    if compiled.returncode != 0:
+        detail = (compiled.stdout + compiled.stderr).strip() or "no output"
+        raise RuntimeError(f"javac failed for {source.name}: {detail}")
+    target = scratch / f"{source.stem.lower()}_fixture.jar"
+    packed = subprocess.run(
+        ["jar", "--create", "--file", str(target), "-C", str(staged), "."],
+        capture_output=True,
+        text=True,
+    )
+    if packed.returncode != 0 or not target.is_file():
+        detail = (packed.stdout + packed.stderr).strip() or "no output"
+        raise RuntimeError(f"jar failed for {source.name}: {detail}")
+    return target
+
+
+def launch(jar: Path, *args, extra: Path | None = None):
+    """The command line for `jar`, with `extra` on the classpath when one is needed.
+
+    `java -jar` ignores both `CLASSPATH` and the working directory, so a probe that imports a
+    class from another jar has to be launched with `-cp` and the main class spelled out. Only
+    the probes listed in `EXTRA_CLASSPATH` take that form: every other probe's recorded output
+    was produced under `-jar`, and changing the launch form for all of them would move
+    evidence that has nothing to do with this.
+    """
+    if extra is None:
+        return [sys.executable and "java", "-jar", str(jar), *args]
+    return [
+        sys.executable and "java",
+        "-cp",
+        f"{jar}{os.pathsep}{extra}",
+        CLI_MAIN,
+        *args,
+    ]
+
+
+def run(jar: Path, program: Path, extra: Path | None = None):
     result = subprocess.run(
-        [sys.executable and "java", "-jar", str(jar), "run", str(program)],
+        launch(jar, "run", str(program), extra=extra),
         capture_output=True,
         text=True,
     )
     return result.stdout + result.stderr, result.returncode
 
 
-def compile_program(jar: Path, program: Path):
+def compile_program(jar: Path, program: Path, extra: Path | None = None):
     """Compiles a probe in a scratch copy.
 
     `oq build` has no output flag: it writes `<name>.jar` beside the source. Copying the probe
@@ -232,16 +302,34 @@ def compile_program(jar: Path, program: Path):
     copied = scratch / program.name
     shutil.copy2(program, copied)
     result = subprocess.run(
-        [sys.executable and "java", "-jar", str(jar), "build", str(copied)],
+        launch(jar, "build", str(copied), extra=extra),
         capture_output=True,
         text=True,
     )
     return scratch / f"{program.stem}.jar", result.stdout + result.stderr, result.returncode
 
 
-def run_compiled(target: Path):
+def compiled_launch(target: Path, extra: Path | None = None):
+    """The command line that runs a built jar, mirroring `launch` for the compiler's output.
+
+    A compiled jar's own `Main-Class` is what `-jar` would use, so the `-cp` form names that
+    class explicitly instead of reading the manifest back.
+    """
+    if extra is None:
+        return [sys.executable and "java", "-jar", str(target)]
+    return [
+        sys.executable and "java",
+        "-cp",
+        f"{target}{os.pathsep}{extra}",
+        COMPILED_MAIN,
+    ]
+
+
+def run_compiled(target: Path, extra: Path | None = None):
+    # `cwd` is set because the jar is written in a scratch directory and the program may resolve
+    # a relative path.
     result = subprocess.run(
-        [sys.executable and "java", "-jar", str(target)],
+        compiled_launch(target, extra=extra),
         capture_output=True,
         text=True,
         cwd=str(target.parent),
@@ -321,11 +409,25 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
     if not program.is_file():
         failures.append(f"{name}: missing probe file")
         return
-    output, code = run(jar, program)
+    extra = None
+    if name in EXTRA_CLASSPATH:
+        source = HERE / EXTRA_CLASSPATH[name]
+        if not source.is_file():
+            failures.append(f"{name}: needs {source.name} compiled onto the classpath and it is missing")
+            return
+        scratch = Path(tempfile.mkdtemp())
+        try:
+            extra = fixture_jar(source, scratch)
+        except (RuntimeError, FileNotFoundError) as error:
+            # A missing `javac` lands here as FileNotFoundError. Reported as a failure rather
+            # than skipped: this harness already needs a JDK to build probes.
+            failures.append(f"{name}: {error}")
+            return
+    output, code = run(jar, program, extra=extra)
     if both:
         # Compare the two backends on the same program. A refusal is compared as text, so a
         # backend that runs a program the interpreter rejects is caught.
-        target, build_output, build_code = compile_program(jar, program)
+        target, build_output, build_code = compile_program(jar, program, extra=extra)
         if build_code != 0 or not target.is_file():
             tail = build_output.strip().splitlines()[-1] if build_output.strip() else "no output"
             failures.append(f"{name}: oq build did not produce a jar (exit {build_code}): {tail}")
@@ -337,7 +439,7 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
         if refusal is not None:
             failures.append(refusal)
             return
-        compiled_output, compiled_code = run_compiled(target)
+        compiled_output, compiled_code = run_compiled(target, extra=extra)
         tally.ran += 1
         if CODEPATH.search(build_output).group(0).strip() == COMPILED:
             tally.compiled += 1

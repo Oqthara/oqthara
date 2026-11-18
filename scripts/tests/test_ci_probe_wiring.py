@@ -293,18 +293,18 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
                 return [expected], 1
             return list(expected), 0
 
-        def fake_run(jar, program):
+        def fake_run(jar, program, extra=None):
             lines, code = output_for(program.stem)
             return "\n".join(lines) + "\n", code
 
-        def fake_build(jar, program):
+        def fake_build(jar, program, extra=None):
             target = jar.parent / f"{program.stem}.jar"
             target.write_bytes(b"")
             output = (f"compiled {program.name}\nbackend=classfile\n"
                       f"{codepath_for(program.stem)}\n")
             return target, output, 0
 
-        def fake_compiled(target):
+        def fake_compiled(target, extra=None):
             lines, code = output_for(target.stem)
             return "\n".join(lines) + "\n", code
 

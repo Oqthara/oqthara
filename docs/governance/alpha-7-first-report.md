@@ -353,7 +353,7 @@ required to execute rather than be read:
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
-| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C12 in 24 as of the probe-coverage pass. C11.1 — a class on the user's own classpath — is still unprobed: it needs a `-cp` flag `run.py` cannot pass |
+| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C12 in 25 as of the probe-coverage pass. C11.1 — a class on the user's own classpath — used to be the one row the harness could not reach, because `java -jar` ignores `CLASSPATH`; `c11_user_classpath` now runs as the single `java -cp` probe and closes it |
 
 One constraint from the tree must be honoured, not worked around: the probe harness covered C1–C8
 when this section was written, and no direction was probed headlessly, so a GUI program's
@@ -704,6 +704,72 @@ out checked, which is the safe direction: the failure mode worth preventing is a
 quietly, not a stale figure being reported twice. Requiring both halves to carry a noun before the
 exemption applies would be tidier, and it would also have re-silenced the bare-total shapes closed
 above.
+
+## Item 9f — A7.10: the one capability row the harness could not reach
+
+§3.1 named C11.1 — a class on the user's own classpath — as the remaining gap in the probe
+matrix. The inventory classified it `Complete` and its evidence was real: someone had run
+`use Hello` by hand with and without `-cp` and written down both outcomes. What was missing was
+a gate, and the reason was mechanical rather than editorial. `run.py` launched every probe as
+`java -jar`, and `-jar` ignores both `CLASSPATH` and the working directory, so a probe written
+that way cannot reach a class that is not inside `oq.jar` no matter what is on the disk.
+
+**The gap was closed by changing the launch form for one probe, not for all of them.** A
+`Hello` class was checked in as `Hello.java` beside the probes and is compiled into a jar of its
+own on every run. `EXTRA_CLASSPATH` names the probes that need a second jar alongside `oq.jar`;
+`launch()` emits `java -cp "<oq.jar><sep><fixture>" …` only for those, and every other probe
+keeps the `-jar` form its recorded output was produced under. Changing all of them would have
+moved evidence that has nothing to do with this gap.
+
+The jar is built rather than committed, and that is not a preference. `*.jar` is in `.gitignore`,
+so a fixture jar cannot be checked in at all — `d2_reflection_reachable.jar` sits on disk in the
+same directory and is **not tracked**, which the first draft of this item got wrong by citing it
+as precedent. The PR-263 review record made the same mistake from the other side: it offered "a
+committed fixture jar" as one of the two ways to close this gap, and that option never existed.
+Building from committed source is the only shape available, and it is also the better one: the
+class is reviewable, and it cannot drift from the jar because the build regenerates it.
+
+Both halves were run before the expectation was written down, and both failed the old way and
+passed the new one:
+
+```
+$ java -jar oq-cli/build/libs/oq.jar run c11_user_classpath.oq
+error: cannot find Java class 'Hello'
+$ java -cp "oq-cli/build/libs/oq.jar:hello_fixture.jar" \
+    dev.oqthara.cli.Main run c11_user_classpath.oq
+hi world
+```
+
+The compiled half needed the same treatment. `oq build` writes `Main-Class: oq.generated.Program`
+into the manifest, and `java -jar` on that jar cannot see the fixture either, so `compiled_launch()`
+spells the class out under `-cp` when a probe needs one. Both backends now print `hi world`.
+
+**Five things are gated, not asserted.** `scripts/tests/test_probe_extra_classpath.py` runs
+twelve tests over the launch decision and the fixture path: the classpath probe gets `-cp` and the
+others do not, the compiled half can see the fixture and keeps `-jar` without one, the separator is
+the platform one, the fixture is built from source rather than committed, and both a broken fixture
+and a missing `javac` are failures rather than skips.
+
+Three of those only became real after a mutation survived. The separator test originally compared
+against `os.pathsep`, which *is* `:` on the machine running it, so a hard-coded `:` passed — it now
+substitutes a separator that appears in neither path. A mutation that made a missing fixture source
+`return` quietly also survived, because the tests only exercised the paths that worked; that case
+now has its own test. Each of the four mutations is caught. The harness itself fails both ways when
+the mechanism breaks: with `launch` forced back to `-jar` the probe reports the real `cannot find
+Java class 'Hello'`, and with `Hello.java` removed it reports the missing source. A probe that
+skipped itself when a fixture was absent would report a pass for a check that never ran.
+
+Before the probe was added, this gate caught the drift the change introduced:
+
+```
+$ python3 scripts/check-report-claims.py
+report claims: 1 problem(s)
+  - line 356: says 24 probes but the harness runs 25
+```
+
+That is the A7.9 mechanism doing its job on the first figure this pass changed. The count is
+derived from `run.py`'s own `PROBES` table, so it followed the probe automatically once the line
+was corrected, and the inventory's four stale "24 probes" figures were repaired in the same pass.
 
 ## Item 10 — Remaining blockers and risks
 
