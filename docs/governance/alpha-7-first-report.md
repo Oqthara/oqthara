@@ -205,6 +205,35 @@ Alpha 7 therefore cannot assign §5 to an existing owner without first naming on
 Three adjustments were needed before §4 could be executed. All three are now discharged; the
 Resolution table at the end of this item records how.
 
+**But §4 itself is not defined anywhere in this repository,** and that is a different problem from
+the three above. Items 7 and 8 both state what their directive section asks for — §5 orders optional
+gradual typing with generics, §6 orders the Java Bridge to Full and Swing first. This report never
+states what §4 orders. Before this pass it named the section six times and paraphrased it zero
+times: as an owner row (line 197), as a sequence entry (line 355), as a status cell (line 373), as
+the recipient of language-core (lines 100 and 345), and as the thing three adjustments had to precede
+(line 205). Every one of those is a reference. None is a statement of scope.
+
+Searching for the text rather than the label turned up nothing to quote:
+
+```
+$ git grep -ci 'language-core\|language core\|core language' -- docs/ AGENTS.md .github/ .kilo/
+docs/governance/alpha-4-workstream-assignment.md:1
+docs/governance/alpha-7-first-report.md:7
+docs/governance/remediation/alpha-4-execution-report.md:1
+docs/governance/reviews/PR-257.md:2
+```
+
+Run against `41191b7`, before this pass added text. Four files, and all four hits resolve to
+something other than a definition. The assignment failure is workstream 7's title "Core Language
+Features" in a different mapping. The execution report hit is `## 5. Language core — completed`, a
+closing heading for Alpha 4 work already done. The two review-record hits are PR #257 quoting this
+report back to itself. The remaining seven are this report's own lines. The directive is an external
+text that is not checked in, which is consistent — §10 and §11 are cited the same way — but it means
+a reader holding only this repository cannot tell what work §4 authorizes.
+
+The three adjustments below are therefore **necessary and not sufficient**. They clear the ownership
+obstacles; they do not bound the work.
+
 **The agent set the repository designates has no language-syntax role.** `AGENTS.md` line 63 says
 agents "live in `.kilo/agents/` (`oq-orchestrator` primary)". That directory holds twelve agents:
 architect, ci-release, compiler, debugger, docs, dogfood, orchestrator, qa, reviewer, runtime,
@@ -352,7 +381,9 @@ Ordered by what actually blocks what, not by what reads best.
    report. Verified: the five `d1_*` probes pass and `ListSortTest` covers the arity refusal, so
    §6's callback-dependent surface is unblocked. Nothing to do here; recorded because the ordering
    below previously gated §6 on it.
-6. **§4 language-core evolution**, after item 2 so the owner is reading a correct count.
+6. **§4 language-core evolution**, after item 2 so the owner is reading a correct count — and only
+   once §4's text is available. The three ownership adjustments are discharged; the scope is not
+   written down in this repository, so this entry cannot be started as specified.
 7. **§6 Java Bridge Full**, after the inventory row creation (item 5 is already done, so it gates
    nothing).
 8. **Runtime and observability**, independent of 4–7.
@@ -370,7 +401,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 3 | A7.8, R-018 fuzzing reach | **Done** — PR #253 |
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
-| 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split are all discharged; see Item 6's Resolution |
+| 6 | §4 language-core evolution | **Blocked as written** — ownership, keyword count and the type-system scope split are all discharged (Item 6's Resolution), but §4's own text is not in this repository, so the work has no boundary. Two of three prerequisites met; the third is a definition, not an adjustment |
 | 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.6); visible-window coverage still open |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
@@ -537,6 +568,46 @@ rather than quantitative was left alone; re-deriving "the register is mostly hon
 unfinished" is not a command. And Item 2's original counts are preserved in the correction rather
 than deleted, because a report that silently rewrites its own history cannot be audited a third time.
 
+## Item 9d — Item 6 was not stale, it was unbounded
+
+The five claims corrected in Item 9c share one shape: each was true on `d306833` and a later commit
+made it false. Item 6 is a different failure and the only one of its kind in this report. It was not
+true and then false. It was **never verifiable**, because the thing it reports on is not written down
+anywhere in the repository.
+
+Item 6's status cell read "Unblocked", and the reasoning behind the word is sound as far as it goes.
+The three adjustments it names were real obstacles, all three were genuinely discharged, and the
+Resolution table documents each with a command and a result. What the cell never established is that
+what remains is *work*. Three cleared obstacles in front of an unbounded directive is not
+"Unblocked" — it is "nothing is known to be in the way, because nothing is known".
+
+Two prior passes noticed this and deferred it. Rather than defer again, the scope was looked for.
+The four files that mention the phrase at all are all accounted for, and none of them defines it.
+Run against `41191b7`, before this pass added text of its own:
+
+```
+$ git grep -ci 'language-core\|language core\|core language' -- docs/ AGENTS.md .github/ .kilo/
+docs/governance/alpha-4-workstream-assignment.md:1
+docs/governance/alpha-7-first-report.md:7
+docs/governance/remediation/alpha-4-execution-report.md:1
+docs/governance/reviews/PR-257.md:2
+```
+
+The assignment hit is workstream 7's title in a mapping for Alpha 4. The execution report hit is
+`## 5. Language core — completed`, a closing heading. The two review-record hits are PR #257
+quoting this report. The seven are this report's own references. **No document states what §4
+orders.** Since Items 7 and 8 both paraphrase their section in one sentence each, the absence here is
+an omission in the report, not a convention of the directive.
+
+The status is now **Blocked as written**, and the unblocking step is to obtain §4's text. Recording
+it as blocked is more useful than recording it as unblocked, because "unblocked" invites someone to
+start, and starting an unbounded task is how a 30-minute task becomes a rewrite.
+
+This is also the third consecutive pass to find that absence, and the first to act on it. That
+pattern — noticed, deferred, noticed again — is the same one that let Items 2, 3, 4 and 7 drift, and
+it is worth naming: a deferred finding decays faster than a recorded one, because nothing about it
+changes and so it keeps looking smaller.
+
 ## Item 10 — Remaining blockers and risks
 
 - **The type-system conflict is resolved, in the opposite direction to §5.** ADR-0069 (Accepted,
@@ -563,6 +634,12 @@ than deleted, because a report that silently rewrites its own history cannot be 
   files, not their other prose. A statement about, say, which backend supports which feature could
   still drift unobserved.
 - **Workstream 2 is `Under-covered`** and §5 lands entirely inside it.
+- **§4's directive text is not in this repository.** Item 6 reported "Unblocked" for three passes on
+  the strength of the ownership adjustments, which are real. But the section it clears the way for is
+  described nowhere: items 7 and 8 both state what their section orders, item 6 states what it clears
+  and not what it authorizes. The ownership fixes were necessary and are not sufficient, and the
+  difference has been deferred twice. Status is now **Blocked as written**, and the unblocking step is
+  to obtain §4's text, not to make another adjustment.
 - **Swing has partial coverage and no test** — direction 13 records six executed capabilities, but
   no example and no conformance case exist, and nothing in CI would notice a regression. What
   cannot be covered headlessly (layout, painting, input, look-and-feel) is still unmeasured, so
