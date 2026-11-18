@@ -209,9 +209,9 @@ Resolution table at the end of this item records how.
 the three above. Items 7 and 8 both state what their directive section asks for — §5 orders optional
 gradual typing with generics, §6 orders the Java Bridge to Full and Swing first. This report never
 states what §4 orders. Before this pass it named the section six times and paraphrased it zero
-times: as an owner row (line 197), as a sequence entry and twice as a status cell (lines 355 and
-373), as the recipient of language-core (lines 100 and 345), and as the thing three adjustments had
-to precede (line 205). Every one of those is a reference. None is a statement of scope.
+times: as an owner row (line 197), as a sequence entry (line 355), as a status cell (line 373), as
+the recipient of language-core (lines 100 and 345), and as the thing three adjustments had to precede
+(line 205). Every one of those is a reference. None is a statement of scope.
 
 Searching for the text rather than the label turned up nothing to quote:
 
