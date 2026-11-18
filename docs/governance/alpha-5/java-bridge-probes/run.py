@@ -160,10 +160,13 @@ PROBES = [
     # these rows; adding them is what shrinks it. Each one was run under `oq run` and again as
     # a built jar before its expectation was written down here.
     #
-    # C9.1 is partly pinned already by `d3_shadowing`, which covers `remove("x")`. This probe
-    # adds the half that was not: a *two-argument* comparator reaching the builtin's arity
-    # check rather than `List.sort`, plus the list still being unsorted afterwards, which is
-    # what separates "the builtin answered" from "the builtin refused and Java ran anyway".
+    # `d3_shadowing` already pins `remove("x")`, but its receiver is an Oq list literal, so it
+    # proves the builtin answers for an Oq list and says nothing about a Java receiver. C9.1 is
+    # the stronger claim -- that a real `java.util.ArrayList` is still claimed by the builtin --
+    # so this probe uses an ArrayList for both calls and adds the two-argument comparator, which
+    # `d3_shadowing` does not cover. The final `[3, 1, 2]` is what separates "the builtin
+    # answered" from "the builtin refused and Java ran anyway": a descending sort would reorder
+    # it, and `remove(Object)` would shorten it.
     (
         "c9_precedence",
         [
