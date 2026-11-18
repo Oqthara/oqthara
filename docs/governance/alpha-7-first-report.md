@@ -1173,10 +1173,19 @@ installed one, and this item does not claim otherwise.
   and not what it authorizes. The ownership fixes were necessary and are not sufficient, and the
   difference has been deferred twice. Status is now **Blocked as written**, and the unblocking step is
   to obtain §4's text, not to make another adjustment.
-- **Swing has partial coverage and no test** — direction 13 records six executed capabilities, but
-  no example and no conformance case exist, and nothing in CI would notice a regression. What
-  cannot be covered headlessly (layout, painting, input, look-and-feel) is still unmeasured, so
-  §6's "Swing first" is now half a measurement.
+- **Swing has no example and no conformance case.** This entry used to add two claims that were
+  wrong when written and are now demonstrated wrong. "Nothing in CI would notice a regression" was
+  false: the probes runner is a CI step on the Ubuntu leg, and deleting either direction 13
+  probe makes it exit non-zero on both backends. Deleting `c13_offscreen.oq` and re-running the
+  harness gives `FAILED / c13_offscreen: missing probe file` and exit 1; restoring it gives
+  `ok: 27 probes match their expectation` and exit 0. "What cannot be covered headlessly
+  is still unmeasured" was the premise Item 9i overturned — only *realising* a window needs a
+  display, and layout, painting, input dispatch and look-and-feel all run under
+  `-Djava.awt.headless=true` and are gated by C13.7. What is genuinely absent is smaller than
+  either claim: no `examples/*.oq` and no `conformance/*.oq` exercises Swing, so the bridge's Swing
+  path is gated by a governance harness rather than by the ordinary test suite, and a reader
+  looking for how to use it has nothing to read. The remaining unmeasurable is one thing: painting
+  as composited by a real window manager, which needs a virtual framebuffer on the Linux runner.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
 - **The security baseline's "measured starting point" table has drifted, and the new gate already
