@@ -185,7 +185,7 @@ contract is checked, what a violation reports), and refusing is honest until tha
 - It does not count a fallback as a pass. `verify-conformance.py` requires
   `compiled + fallback <= executable` and pins `compiled` against a regression, so a fallback
   cannot silently become a divergence.
-- The 19 Java Bridge decision probes are a separate population with their own declaration in
+- The 28 Java Bridge decision probes are a separate population with their own declaration in
   `docs/governance/alpha-5/java-bridge-probes/run.py`; none of them is a declared fallback any
   more — `d1_sort_by` was the last, and it stopped falling back when the misclassification above
   was corrected, so `FALLBACK` is empty.
