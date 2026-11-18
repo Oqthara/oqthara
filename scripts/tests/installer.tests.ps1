@@ -83,16 +83,35 @@ function New-CosignStub([string]$Name, [string]$Mode) {
     if ($onWin) { $path = "$path.cmd" }
     if ($Mode -eq "pass") {
         $body = if ($onWin) {
-            "@echo off`r`necho %2 %3 %4 >> `"$($script:CosignLog)`"`r`nexit /b 0`r`n"
+            # %*, not %2 %3 %4: the first argument is verify-blob, and dropping it
+            # made the case-14 assertion look like cosign was never asked to verify.
+            "@echo off`r`necho %* >> `"$($script:CosignLog)`"`r`nexit /b 0`r`n"
         } else {
             "#!/usr/bin/env bash`necho `"`$@`" >> '$($script:CosignLog)'`nexit 0`n"
         }
     } elseif ($Mode -eq "hashcheck") {
         # Behaves like cosign: exit 0 only when the signed hash in the bundle equals
-        # the hash of the jar passed to verify-blob. Uses only the file paths in argv
-        # so the same script works under bash and under cmd.
+        # the hash of the jar passed to verify-blob.
         $body = if ($onWin) {
-            "@echo off`r`nset BUNDLE=`r`nset JAR=`r`n:loop`r`nif `"%~1`"==`"`" goto done`r`nif `"%~1`"==`"--bundle`" set BUNDLE=%~2`r`nset JAR=%~1`r`nshift`r`ngoto loop`r`n:done`r`nfor /f `"tokens=2 delims=:`" %%a in ('findstr /c:`"signedSha256`" `"%BUNDLE%`"') do set SIGNED=%%a`r`nset SIGNED=%SIGNED:`"=%%`r`nset SIGNED=%SIGNED: =%%`r`nfor /f `"tokens=*`" %%a in ('certutil -hashfile `"%JAR%`" SHA256 ^| findstr /v `"hash`"') do set ACTUAL=%%a`r`nset ACTUAL=%ACTUAL: =%%`r`nif /i `"%SIGNED%`"==`"%ACTUAL%`" exit /b 0`r`nexit /b 1`r`n"
+            # Batch cannot parse this reliably: splitting the JSON on ":" leaves a
+            # trailing brace on the hash, and certutil's success line defeats
+            # findstr. The script does the comparison and a .cmd shim returns its
+            # exit code, which is what `& $Cosign` reads.
+            $helper = Join-Path $root "cosign-hashcheck.ps1"
+            Set-Content -Path $helper -Encoding ASCII -Value @'
+$bundle = $null; $jar = $null; $prev = $null
+foreach ($a in $args) {
+    if ($prev -eq "--bundle") { $bundle = $a }
+    $jar = $a
+    $prev = $a
+}
+if (-not $bundle -or -not (Test-Path -LiteralPath $bundle)) { exit 1 }
+$text = Get-Content -Raw -LiteralPath $bundle
+if ($text -notmatch '"signedSha256"\s*:\s*"([0-9a-fA-F]{64})"') { exit 1 }
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath $jar).Hash -ieq $Matches[1]) { exit 0 }
+exit 1
+'@
+            "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$helper`" %*`r`nexit /b %ERRORLEVEL%`r`n"
         } else {
             "#!/usr/bin/env bash`nbundle=''`njar=''`nprev=''`nfor a in `"`$@`"; do if [ `"`$prev`" = '--bundle' ]; then bundle=`$a; fi; jar=`$a; prev=`$a; done`nsigned=`$(sed -n 's/.*signedSha256`":`"\([0-9a-f]*\)`".*/\1/p' `"`$bundle`")`nactual=`$(shasum -a 256 `"`$jar`" | cut -d' ' -f1)`n[ -n `"`$signed`" ] && [ `"`$signed`" = `"`$actual`" ]`n"
         }
