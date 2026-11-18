@@ -81,25 +81,60 @@ public final class Errors {
     }
 
     /**
-     * Turns a JDK refusal to change an unchangeable collection into the program error it is.
+     * Turns a JDK exception crossing the boundary into the program error the program can catch.
      *
      * <p>Both backends share this so a program gets one verdict whichever way it is run: a
      * compiled jar used to report {@code internal error} and exit 70 for a failure the
-     * interpreter reported as a program error and exit 1. A tuple keeps its own wording, because
-     * the value really is a tuple; anything else is a JDK collection the program built itself,
-     * such as {@code List.of(1, 2, 3)}, and blaming Oqthara for that would be wrong.
+     * interpreter reported as a program error and exit 1.
+     *
+     * <p>{@link UnsupportedOperationException} is <em>not</em> the same condition as "refused to
+     * change an unchangeable collection", even though that is the commonest way a program meets
+     * it. A tuple keeps its own wording, because the value really is a tuple. A JDK collection
+     * the program built unchangeable, such as {@code List.of(1, 2, 3)}, is the case the message
+     * was written for. Everything else has to be reported as itself — blaming a collection for
+     * {@code HeadlessException} sends a reader looking in the wrong place, and {@code
+     * ReadOnlyBufferException} is a buffer, not a collection. Any other subclass says so by
+     * class name and carries the hint the JDK gave, when it gave one.
      */
-    public static OqError immutableRefusal(UnsupportedOperationException error, Span span) {
+    public static OqError refusal(Throwable error, Span span) {
         if (OqTuple.IMMUTABLE.equals(error.getMessage())) {
             return new OqError(OqTuple.IMMUTABLE, span,
                     "Tuples cannot change after they are made. Build a new tuple with the items"
                             + " you want, or use a list when the items must change.");
         }
         String message = error.getMessage();
-        return new OqError("cannot change an unchangeable collection: "
-                + (message == null || message.isBlank() ? "the operation is not supported" : message),
-                span,
-                "This value was built unchangeable, for example by List.of(...). Build a list"
-                        + " when the items must change.");
+        if (isCollectionRefusal(error)) {
+            return new OqError("cannot change an unchangeable collection: "
+                    + (message == null || message.isBlank() ? "the operation is not supported" : message),
+                    span,
+                    "This value was built unchangeable, for example by List.of(...). Build a list"
+                            + " when the items must change.");
+        }
+        String name = error.getClass().getSimpleName();
+        return new OqError(name + (message == null || message.isBlank() ? "" : ": " + message), span,
+                error instanceof UnsupportedOperationException
+                        ? "The JDK refused this operation; the message above is its own."
+                        : null);
+    }
+
+    /**
+     * Whether this refusal is a container saying it cannot change, rather than some other JDK
+     * condition that happens to share the exception type.
+     *
+     * <p>The type alone cannot answer it: {@code java.awt.HeadlessException} (a GUI opened
+     * without a display) and {@code java.nio.ReadOnlyBufferException} (a write to a read-only
+     * buffer) both extend {@link UnsupportedOperationException} and are neither a collection nor
+     * about immutability a program can fix by building a list instead.
+     *
+     * <p>The names are compared as text rather than by {@code instanceof} because {@code
+     * HeadlessException} lives in the {@code java.desktop} module, and a link to it would make
+     * this class unloadable on a runtime that does not ship that module — turning a good
+     * diagnostic into a {@code NoClassDefFoundError}.
+     */
+    private static boolean isCollectionRefusal(Throwable error) {
+        if (!(error instanceof UnsupportedOperationException)) return false;
+        String name = error.getClass().getName();
+        return !name.equals("java.awt.HeadlessException")
+                && !name.equals("java.nio.ReadOnlyBufferException");
     }
 }

@@ -704,8 +704,9 @@ public final class Interpreter implements OqHost {
                 // A collection that refuses to change is a program-visible condition, never an
                 // Oqthara defect: a tuple reached through a view, or a JDK value the program made
                 // unchangeable itself, such as List.of(...). Report it as a program error instead
-                // of letting it escape as `internal error`.
-                throw JavaBridge.immutableRefusal(e, span);
+                // of letting it escape as `internal error`. The classifier keeps anything that
+                // merely shares the exception type honest about which condition it is.
+                throw JavaBridge.refusal(e, span);
             } finally {
                 stack.remove(stack.size() - 1);
             }
