@@ -2,7 +2,7 @@
 
 **Status:** Accepted
 **Date:** 2026-11-18
-**Related:** [ADR-0043](0043-textwrap-difflib.md) for the same "replace a borrowed engine with one
+**Related:** [ADR-0043](0043-word-wrapping-and-text-diffs.md) for the same "replace a borrowed engine with one
 we can reason about" decision, `Stdlib.patterns`, `Patterns.Glob`, `GlobTest`, and R-018 in
 [`docs/governance/alpha-4-risk-register.md`](../governance/alpha-4-risk-register.md)
 
