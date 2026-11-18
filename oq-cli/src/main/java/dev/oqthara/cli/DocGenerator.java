@@ -30,6 +30,15 @@ final class DocGenerator {
     }
 
     static int run(PrintStream out, PrintStream err, String[] args) {
+        if (args.length > 0 && (args[0].equals("--help") || args[0].equals("-h"))) {
+            out.println("""
+                    Usage: oq doc [path] [--source <path>]
+
+                    Generates docs/stdlib/reference.md from the standard library sources.
+                    The path defaults to the current directory; --source points at the
+                    standard library itself when running from elsewhere.""");
+            return 0;
+        }
         if (args.length > 0 && args[0].equals("--source")) {
             return runSource(out, err, args);
         }

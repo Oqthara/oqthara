@@ -300,7 +300,82 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split are all discharged; see Item 6's Resolution |
 | 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.6); visible-window coverage still open |
-| 8 | Runtime and observability | Open, independent |
+| 8 | Runtime and observability | Partly done — the CLI help and missing-file diagnostics for `oq run`/`oq check` are fixed (PR #259); no execution tracing exists |
+
+## Item 9a — Runtime and observability: what the tree actually needed
+
+Item 8 arrives in this report as one line, "Runtime and observability, independent of 4–7", with no
+acceptance criteria. Its owner row points at "§5", which is the section this report establishes is
+about optional typing — almost certainly a typo for the §3–§6 grouping rather than a claim that
+runtime work sits in the typing section. Before doing anything, the state was measured rather than
+inferred.
+
+**What already worked.** Elapsed time is measurable today without any new API:
+
+```
+$ oq run obs3.oq
+sum=500000500000
+elapsed_ms=189
+```
+
+That is `timestamp()` (epoch milliseconds, a `number`) subtracted from a later call. `memory_mb()`
+reports resident memory, `type_of()` reports types, and the budget failures already produce
+diagnostics: unbounded recursion prints `error: call stack is too deep` with a span and a help line.
+This report does not claim an observability gap in those places, because measuring them showed there
+is not one — an earlier draft of this section asserted that `now()` returning text made elapsed time
+unmeasurable, which was wrong; `timestamp()` answers it.
+
+**What did not work.** Subcommands mishandled `--help`, and the diagnostic for a missing file was
+not a sentence:
+
+```
+$ oq run --help
+Cannot find file '--help.oq'.
+
+$ oq check --help
+Cannot read '--help.oq': --help.oq
+
+$ oq check absent
+Cannot read 'absent.oq': absent.oq
+```
+
+`oq build` was fixed for exactly this in an earlier change and carries a comment saying so, and only
+its two siblings were checked at first. Auditing the rest found the same defect in `oq fmt`,
+`oq new`, `oq doc` and `oq test` — six of the seven file-taking commands in total:
+
+```
+$ oq fmt --help
+Cannot read '--help.oq': --help.oq
+
+$ oq doc --help
+Cannot find the standard library sources under .../--help
+
+$ oq test --help
+Cannot scan '--help': not a directory: --help
+
+$ oq new --help
+Created project --help/
+Run it with: oq --help/main.oq
+```
+
+The last is worse than a bad message: it created a directory. A user who types `oq new --help` to
+learn the syntax gets a stray project they did not ask for and are not told about. All four now
+answer `--help`/`-h` with usage and exit 0, `oq fmt` and `oq new` reject an unknown option by name
+with exit 2, and `oq check` reports a missing file as `Cannot find file 'absent.oq'.` instead of the
+filename twice — the latter because `NoSuchFileException`'s own message is only the path, so passing
+it through gave no reason at all.
+
+That six commands shared one defect is the finding worth more than the fix. A guard copied into one
+command is not a rule that binds its siblings, and nothing in the tree enumerates the subcommands, so
+nothing could assert that all of them behave alike. The parameterized test added with the fix is the
+closest substitute available, and it is a list a future author must remember to extend.
+
+**What remains open.** There is still no execution tracing: no flag reports which statements ran, how
+many steps were taken before a budget stop, or which host calls a program made. That is a real gap and
+it is not attempted here, because tracing is a language-surface decision — whether the trace is
+emitted to stderr, to a file, or exposed as a value is the kind of choice ADR-0059 asks to be recorded
+before code. Item 8 therefore stays **partly done** rather than closing, and the honest statement is
+that the observability it lacked most was the plainest: asking a command for help.
 
 ## Item 10 — Remaining blockers and risks
 
