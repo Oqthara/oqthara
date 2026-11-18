@@ -228,15 +228,20 @@ acceptance permits. The gate asserts that too: `test_the_read_only_workflows_are
 fails if one of them starts declaring write scope, so the exemption cannot drift into silently
 covering a workflow that has gained permissions.
 
-**Why fifth:** it is the largest diff on the list and Dependabot cannot bump a SHA pin without a
-config change, so it is the item most likely to need follow-up work.
+**Why fifth:** it is the largest diff on the list, so it is the item most likely to need follow-up
+work.
 
-**Follow-up this creates.** Dependabot will not update these pins by default. A `dependabot.yml`
-entry of the form `groups: {patterns: ["*"]}` with `insecure-external-code-execution` does not help;
-the supported mechanism is Dependabot's own SHA-pinning support, which rewrites a pinned `uses:` and
-its version comment together. Until it is configured, these pins age. That is written down here
-rather than left as a surprise, and it is the honest cost of the item — the alternative, moving
-tags, is what TH-45 is about.
+**Follow-up this creates.** None, and an earlier draft of this paragraph claimed otherwise. It said
+Dependabot would not update a SHA pin without a config change, and that the pins would therefore age.
+That was wrong, and it was written without being checked. Dependabot bumps a pinned `uses:` and
+rewrites the version comment beside it, from a plain `github-actions` entry — which this repository
+already has. The evidence is Dependabot's own pull request on its own repository, which moved
+`github/codeql-action` to `33d7b85d`, the exact commit pinned here.
+
+What is left is narrower and worth stating precisely. A pin still ages until the next weekly run, so
+"pinned" never means "current". And a comment that contains no version is not rewritten even when the
+pin moves, which is why `check-action-pins.py` now requires the comment to name one rather than
+merely exist. See A7.7.
 
 ### A7.6 — `install.ps1` parity with `install.sh`
 
@@ -278,6 +283,37 @@ this is a reason the item was last, not a reason it was skipped.
 **Residual:** authenticity is still opt-in, and neither installer script is itself signed. Both are
 recorded in R-020 rather than solved.
 
+### A7.7 — audit A7.5's own claims
+**Closes:** TH-45 by way of the check that reads it. **State:** done.
+
+Two defects, both introduced or left by A7.5, both latent — nothing was broken in the tree. Both are
+the class this Alpha exists to remove: a check that does not check, and a claim that was written
+down without being executed.
+
+**The gate accepted any comment.** `check-action-pins.py` required a pinned action to carry a
+trailing comment and its error said the comment must name the version, but the only condition was
+`if not comment:`. `# TODO fix this later`, `# v` and `# not a version at all` all passed. The
+comment is what makes a pin reviewable, so a placeholder made a pin look reviewed while telling a
+reader nothing — and because Dependabot only rewrites a comment it can find a version in, a junk
+comment also stopped the pin from being updated. The rule now requires the comment to contain a
+version; `# v4` still passes, because naming the release line is what a reviewer needs.
+
+**The documentation claimed the opposite of the behaviour.** A7.5's follow-up paragraph and R-008's
+residual both said Dependabot would not bump a SHA pin without a config change. It does. Its own
+`dependabot-core` pull request #16786 moved `github/codeql-action` to `33d7b85d` and rewrote the
+comment beside it, from a plain `github-actions` entry; `33d7b85d` is the commit this repository
+pins. The claim came from reading the option list, where it is never stated either way — absence of a
+statement is not evidence, and the source plus a real bot pull request are. Both paragraphs are
+corrected where they live rather than left to be found again.
+
+**Why it is its own item.** The wrong claim was made while doing A7.5 and would have been read as
+fact, because residuals are trusted more than feature text — they are the part a reader assumes was
+measured. A residual that was not executed is the most likely place for a false claim to sit.
+
+**Acceptance.** Three tests fail against the old condition and pass against the new one; a positive
+control proves the rule still accepts a real version, so it cannot be tightened into rejecting
+everything and still pass. The real workflows pass unchanged.
+
 ## What Alpha 7 will not do
 
 - **No capability hook on `OqHost`.** The threat model names it as the gap an embedding
@@ -297,12 +333,14 @@ recorded in R-020 rather than solved.
 
 ## The honest summary
 
-Exactly one thing in this Alpha is a *new* defect report: TH-15's mitigation stopped existing and
-nobody noticed for three releases because no gate reads the threat model. The other five
-corrections are drift of the ordinary kind — versions, line numbers, an installer that gained a
+Two things in this Alpha are *new* defect reports. TH-15's mitigation stopped existing and nobody
+noticed for three releases because no gate reads the threat model. And A7.5's own write-up asserted
+Dependabot behaviour that was the opposite of the truth, beside a gate that accepted a placeholder
+comment as a version — both found by auditing the item rather than by anything failing. The other
+five corrections are drift of the ordinary kind — versions, line numbers, an installer that gained a
 feature a sibling did not.
 
-The backlog is six items, all small, none of which makes the product safer against a hostile
+The backlog is seven items, all small, none of which makes the product safer against a hostile
 program. They make the *documentation* true, which is a different and more achievable goal: a user
 who reads that a threat is mitigated should be looking at a control that exists, and a user who
 reads that the compiled backend refuses something should find that it does.

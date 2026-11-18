@@ -13,10 +13,12 @@ A7.5 answers it by pinning those two workflows to commit SHAs with a comment
 naming the version, because a bare SHA is unreviewable.
 
 This gate is not a blanket rule, deliberately. The read-only workflows keep
-major-version tags, because that is where Dependabot's bump behaviour works
-without a config change, and an all-or-nothing rule here would be abandoned at
-the first exception. Which workflows are in scope is therefore derived from what
-they declare, not from a list in this file:
+major-version tags, because a tag they can act on is still only a read: the cost
+of a repointed ref is bounded by what the job is permitted to do. Pinning buys
+the most where the job can publish or sign, so that is where it is required, and
+an all-or-nothing rule here would be abandoned at the first exception. Which
+workflows are in scope is therefore derived from what they declare, not from a
+list in this file:
 
 * `contents: write` or any other `write` scope, or
 * `id-token: write`, which can mint a signing identity, or
@@ -28,7 +30,8 @@ to add it to a list. A workflow that drops its write scope leaves scope on its
 own, and the gate then says so rather than silently continuing to demand pins.
 
 Exit codes: 0 all in-scope workflows are pinned, 1 a moving tag in scope or an
-action pin without a version comment, 2 a workflow could not be read or parsed.
+action pin whose comment names no version, 2 a workflow could not be read or
+parsed.
 """
 
 from __future__ import annotations
@@ -44,6 +47,14 @@ WORKFLOWS = Path(".github/workflows")
 # branch, a short SHA -- is mutable in the sense this gate cares about: a short
 # SHA cannot be relied on to be unambiguous, and a tag is not a commit at all.
 PINNED = re.compile(r"^[0-9a-f]{40}$")
+
+# A version comment has to name a version, not merely exist. The comment is
+# what makes a pin reviewable, and an empty or placeholder comment satisfies
+# "there is a comment" while telling a reader nothing -- which is the exact
+# failure this gate was written to detect, one level up. Dependabot's own
+# updater only rewrites a comment it recognises a version in, so a junk comment
+# also silently stops the pin from being bumped.
+VERSION_COMMENT = re.compile(r"\bv\d+(?:\.\d+)*\b|\b\d+\.\d+(?:\.\d+)*\b")
 
 # `uses: owner/repo@ref`, optionally with a subpath and a trailing comment that
 # should name the version. `uses:` can appear as a step or a job-level reusable
@@ -103,7 +114,7 @@ def check_workflow(name: str, text: str) -> list[str]:
             continue
         _, ref = value.rsplit("@", 1)
         if PINNED.match(ref):
-            if not comment:
+            if not comment or not VERSION_COMMENT.search(comment):
                 problems.append(
                     f"{name}:{number} `{value}` is pinned but the comment does not name"
                     f" the version, which makes the pin unreviewable"
