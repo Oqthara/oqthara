@@ -1138,8 +1138,10 @@ What remains genuinely open is narrower than it was, and it is worth stating pre
 this repository displays a window on a real screen, so painting *as composited by a window manager*
 is unexercised. Everything up to that point — layout, painting into an image, input dispatch,
 look-and-feel, and the failure a program sees when there is no display — is gated. Reaching the
-last step would need a virtual framebuffer such as Xvfb on the Linux runner. Nothing in this pass
-installed one, and this item does not claim otherwise.
+last step would need a virtual framebuffer such as Xvfb on the Linux runner. The `ubuntu-latest`
+image already ships one (`xvfb 2:21.1.12-1ubuntu1.9`, per `actions/runner-images`), so the missing
+piece is a probe launched under a display manager rather than a package to install. Nothing in this
+pass added one, and this item does not claim otherwise.
 
 ## Item 10 — Remaining blockers and risks
 
