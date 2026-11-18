@@ -579,6 +579,30 @@ class ItExemptsAutomatedAuthors(Repository):
         self.assertEqual([], problems)
         self.assertTrue(any("automated" in note for note in checker.checked))
 
+    def test_the_modernised_app_login_is_also_exempt(self):
+        # GitHub reports an App-authored pull request as `app/dependabot`, not
+        # `dependabot[bot]`. The gate originally listed only the bracketed spelling, so this test
+        # passed while the real exemption never matched and every dependency pull request failed
+        # a required context -- PR #251 stayed red for that reason alone. The spelling below is
+        # the one `gh pr view --json author` actually returns.
+        self.stub_gh("app/dependabot")
+        problems = self.run_gate("5")
+        self.assertEqual([], problems, problems)
+        self.assertTrue(any("automated" in note for note in checker.checked))
+
+    def test_renovate_modernised_login_is_also_exempt(self):
+        self.stub_gh("app/renovate")
+        problems = self.run_gate("5")
+        self.assertEqual([], problems, problems)
+
+    def test_an_unrecognised_app_is_not_exempt(self):
+        # The exemption is for dependency updaters, not for every App. A workflow token can open
+        # a pull request too, and exempting `app/*` wholesale would let such a change merge with
+        # no review at all.
+        self.stub_gh("app/some-other-automation")
+        problems = self.run_gate("5")
+        self.assertTrue(any("PR-5.md is missing" in p for p in problems), problems)
+
     def test_a_human_still_needs_a_record(self):
         self.stub_gh("a-human")
         problems = self.run_gate("5")

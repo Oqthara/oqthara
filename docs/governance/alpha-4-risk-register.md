@@ -512,6 +512,7 @@ defend.
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
 | R-028 | A timing test asserts exact zero and fails only under CI load | Medium | Medium | Medium | 11 | Mitigated |
+| R-031 | A gate's allow-list silently stops matching, so a required context goes permanently red | High | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
 The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
@@ -535,6 +536,31 @@ not a required context, so a macOS installer regression would not block a merge.
 *Evidence.* `docs/adr/0049-macos-ci-on-github-actions.md` · `.github/workflows/ci.yml` (matrix) ·
 `scripts/apply-branch-protection.sh` (required contexts) · `scripts/check-circleci.py` (grouped
 requirements) · `scripts/tests/test_check_ci_gate.py`.
+
+**R-031 — A gate's allow-list silently stops matching, so a required context goes permanently red.**
+`scripts/check-ai-review.py` exempts automated authors from needing a review record, because a bot
+cannot review its own change. The allow-list held `dependabot[bot]` and `renovate[bot]`, which is
+how an older installation reports them. GitHub now reports an App-authored pull request as
+`app/<slug>`, so Dependabot answers `app/dependabot` and the exemption stopped matching. The gate
+then reported "PR has no AI review record" for every dependency pull request, and
+`ubuntu-latest / JDK 21` — one of the twelve required contexts — went red and stayed red. PR #251, a
+one-line gradle-wrapper bump, was unmergeable for this reason alone, and the red check said nothing
+about the dependency.
+
+*Mitigation.* Both spellings are exempt, and the tests pin the spelling `gh pr view --json author`
+actually returns rather than the one the gate was written to expect. A test was added asserting an
+unrecognised App is still refused, so the fix cannot be read as exempting `app/*`.
+
+*Residual.* This is a general class, not a one-off: any gate that matches an external identifier
+against a hard-coded list fails this way, and it fails **closed but silent** — the check goes red for
+a reason unrelated to the change, so a maintainer reading only the red square learns nothing. The
+existing tests could not catch it because a stub supplies the value the stub was written to supply;
+only running the gate against the real API does. Nothing currently exercises the gates against live
+GitHub data, so the next such drift will be found the same way this one was: by a pull request
+sitting red for days.
+
+*Evidence.* `scripts/check-ai-review.py` (`AUTOMATED_AUTHORS`) ·
+`scripts/tests/test_check_ai_review.py` (`ItExemptsAutomatedAuthors`) · PR #251 · PR #254.
 
 **R-026 — The build cache replays a Linux test result as a macOS or Windows one.**
 `gradle.properties` enables the build cache, and `gradle/actions/setup-gradle@v6` in
@@ -938,9 +964,9 @@ here; the specific silent-misbinding class is closed, the general ordering quest
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 4 | R-002, R-008, R-024, R-030 |
-| Medium | 11 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029 |
+| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029, R-031 |
 | Low | 14 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-018, R-019, R-021, R-022, R-023, R-025, R-027 |
-| **Total** | **30** | |
+| **Total** | **31** | |
 
 ## Review cadence
 
@@ -950,7 +976,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 30 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 31 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to
@@ -992,7 +1018,7 @@ only true while their paths are absent.
 
 ### The Alpha 7 boundary re-read
 
-Cadence rule 2 asks for all 30 entries to be re-read at an Alpha boundary. It was done, on
+Cadence rule 2 asks for all 31 entries to be re-read at an Alpha boundary. It was done, on
 2026-11-17, at `b5e758f` (`v0.1.0-alpha.6`), and this subsection is its record rather than a claim
 that it will happen.
 
