@@ -169,7 +169,7 @@ PROBES = [
         [
             "'sort' needs a function taking 1 argument as argument 1",
             "remove takes an index, not text",
-            "[3, 1]",
+            "[3, 1, 2]",
         ],
         None,
     ),

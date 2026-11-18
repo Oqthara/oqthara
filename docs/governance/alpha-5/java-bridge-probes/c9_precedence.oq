@@ -4,13 +4,19 @@
 # The receiver is a real `java.util.ArrayList`, so both calls below reach the
 # builtin first: `sort` refuses the two-argument comparator by arity rather than
 # handing it to `List.sort`, and `remove` refuses text rather than matching
-# `List.remove(Object)`. The last line proves neither call reached Java, because
-# a `List.sort` that had run would have reordered the list.
+# `List.remove(Object)`.
+#
+# The last line is the part that makes the two refusals mean something. The list
+# is `[3, 1, 2]`, not `[3, 1]`, because `reverseOrder()` leaves `[3, 1]` unchanged
+# and a probe whose final line cannot move is not evidence. A `List.sort` that had
+# run would reorder this to `[3, 2, 1]`, and a `List.remove(Object)` that had run
+# would leave two elements; the printed `[3, 1, 2]` rules out both.
 use java.util.ArrayList
 use java.util.Comparator
 xs = ArrayList()
 xs.add(3)
 xs.add(1)
+xs.add(2)
 try
   print xs.sort(Comparator.reverseOrder())
 catch err

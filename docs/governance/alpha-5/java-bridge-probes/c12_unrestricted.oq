@@ -7,10 +7,12 @@
 # interop section names both doors.
 #
 # `exit 0` is used instead of the inventory's `id` so the probe prints a number
-# and not a username. `sh` is assumed: the A6.4 step runs on `ubuntu-latest` and
-# `macos-latest` only (`ci.yml`), and this probe is not wired into a Windows leg.
-# `PATH` is read rather than `HOME` for the same reason — it is set everywhere the
-# gate runs, so the expectation does not depend on the host's environment.
+# and not a username. `sh` is assumed, which is sound because the A6.4 step is
+# guarded to `ubuntu-latest` alone (`ci.yml`: every `if:` in that job reads
+# `matrix.os == 'ubuntu-latest' && matrix.java == '21'`), so no Windows or macOS
+# leg ever reaches this file. `PATH` is read rather than `HOME` for the same
+# reason — it is set on that one leg, so the expectation does not depend on which
+# host happens to run it.
 use java.lang.ProcessBuilder
 use java.lang.System
 print ProcessBuilder(["sh", "-c", "exit 0"]).start().waitFor()
