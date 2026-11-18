@@ -1,0 +1,20 @@
+# C12.1: only public members are reachable, and no accessibility escalation.
+#
+# Two refusals, both of which a JVM program could satisfy if the boundary let a
+# name through: a private field is unreadable, and the reflection entry point is
+# refused. The second message names the receiver rather than the method, because
+# `getClass` returns a `Class` value and `Class.getDeclaredMethod` is not static
+# — the refusal is stated as it is printed rather than as the inventory
+# paraphrased it, so a rewording shows up here instead of passing silently.
+use java.util.ArrayList
+xs = ArrayList()
+try
+  print xs.elementData
+catch err
+  print err.message
+end
+try
+  print xs.getClass().getDeclaredMethod("size")
+catch err
+  print err.message
+end

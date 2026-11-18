@@ -1,0 +1,13 @@
+# C11.2: a JDK class is importable by fully qualified name, under both backends.
+#
+# C11.1 — a class on the *user's* classpath — is not covered here on purpose.
+# It needs a `Hello` class in a separate jar and a `-cp` flag, and `run.py`
+# invokes `java -jar` with no way to add one. A probe that quietly resolved
+# `Hello` from the harness's own classpath would prove the opposite of the claim,
+# so the gap is recorded in the inventory rather than papered over with a
+# fixture that would have to be rebuilt and committed as a binary.
+#
+# `dev.oqthara.core.Lexer` is on the jar's own classpath, so this checks the
+# name resolution path and nothing about classpath configuration.
+use dev.oqthara.core.Lexer
+print Lexer

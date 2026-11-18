@@ -1,0 +1,17 @@
+# C12.2: Java is reachable without restriction, including process execution.
+#
+# This probe deliberately exercises the behaviour the spec documents as "not a
+# sandbox" rather than a vulnerability. It is a probe and not a defect because
+# the inventory classifies the row "Unsafe by design — now documented": the
+# authority is the same one `run_command` and `env()` already grant, and the
+# interop section names both doors.
+#
+# `exit 0` is used instead of the inventory's `id` so the probe prints a number
+# and not a username. `sh` is assumed: the A6.4 step runs on `ubuntu-latest` and
+# `macos-latest` only (`ci.yml`), and this probe is not wired into a Windows leg.
+# `PATH` is read rather than `HOME` for the same reason — it is set everywhere the
+# gate runs, so the expectation does not depend on the host's environment.
+use java.lang.ProcessBuilder
+use java.lang.System
+print ProcessBuilder(["sh", "-c", "exit 0"]).start().waitFor()
+print System.getenv("PATH") != ""

@@ -353,7 +353,7 @@ required to execute rather than be read:
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
 | Third-party classpath | direction 11 |
-| Interpreter-versus-compiled parity | direction 10; `run.py --both` covers C1–C8 only, 19 probes |
+| Interpreter-versus-compiled parity | direction 10; `run.py --both` covered C1–C8 in 19 probes when this table was written, and covers C1–C12 in 24 as of the probe-coverage pass. C11.1 — a class on the user's own classpath — is still unprobed: it needs a `-cp` flag `run.py` cannot pass |
 
 One constraint from the tree must be honoured, not worked around: the probe harness covers C1–C8
 only, so a GUI program's compiled-versus-interpreted parity would not be
@@ -524,7 +524,7 @@ structural. The honest next step was to stop sampling. This pass re-derived ever
 in Items 2, 3, 4, 7 and 8 against the tree rather than against the report's own text.
 
 **Item 8 held up completely.** Thirteen directions, 52 capability rows, D1–D5, `run.py` covering
-C1–C8 with 19 probes, and "next ADR is 0070" are all still true:
+C1–C8 with 19 probes, and "next ADR is 0070" were all still true when this pass ran:
 
 ```
 $ grep -cE '^### Direction|^## Direction' docs/governance/alpha-5-java-bridge-capability-inventory.md
@@ -536,6 +536,12 @@ $ ls docs/governance/alpha-5/java-bridge-probes/*.oq | wc -l
 $ ls docs/adr/ | wc -l
 69
 ```
+
+The `19` is the one figure in that block that has since moved, and it moved because the gap it
+counted was closed rather than because the measurement was wrong: C9–C12 are now probed, so the
+command prints 24. Re-running it today gives `13`, `52`, `24`, `69`. That is the intended direction
+of change — the count grew because coverage grew — and it is why this paragraph now reads in the past
+tense instead of claiming a number that a reader would immediately contradict.
 
 That matters for the conclusion: the decay is not uniform. Item 8 cites a document that has not been
 edited since the report was written, so nothing could drift. The items that decayed are the ones
