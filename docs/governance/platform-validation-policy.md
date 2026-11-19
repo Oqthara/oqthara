@@ -122,7 +122,7 @@ each documented context is a job the workflow actually produces.
 
 ### Not required, and therefore not evidence
 
-One job runs on every pull request and is **not** in the required set:
+Some jobs run on every pull request and are **not** in the required set:
 
 | Job | What it proves | Why this is a gap |
 | --- | --- | --- |

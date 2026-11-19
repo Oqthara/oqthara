@@ -237,12 +237,10 @@ class TheCommittedTreePasses(unittest.TestCase):
         # for explaining itself.
         policy = (REPO / checker.POLICY).read_text(encoding="utf-8")
         required = checker.read_required_contexts(policy)
-        gap_section = policy.split("### Not required", 1)[1].split("\n## ", 1)[0]
-        gap_rows = [
-            line.split("|")[1].strip().strip("`")
-            for line in gap_section.splitlines()
-            if line.startswith("|") and not line.startswith("| ---")
-        ]
+        gap_rows = [cells[0] for cells in checker.table_rows(policy, "### Not required")]
+        # Without this the loop below is satisfied by an emptied table, which is the
+        # exact edit this test exists to catch.
+        self.assertTrue(gap_rows, "the gap table parsed empty")
         for row in gap_rows:
             named = [name for name in required if name in row]
             self.assertEqual([], named, f"row {row!r} also requires {named}")

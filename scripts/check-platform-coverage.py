@@ -338,7 +338,7 @@ def table_rows(policy: str, heading: str) -> list[list[str]]:
         if not inside or not line.startswith("|"):
             continue
         cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
-        if not cells or set(cells[0]) <= set("-") or cells[0] in ("Test", "Suite", "Context"):
+        if not cells or set(cells[0]) <= set("-") or cells[0] in ("Test", "Suite", "Context", "Job"):
             continue
         rows.append(cells)
     return rows

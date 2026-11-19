@@ -78,11 +78,12 @@ declaration.
    than describing it as a requirement it was not.
 
    The gap is closed as of 2026-11-19: the context ran green on #273 and was added to
-   `main-protection`, taking the required set to thirteen. The order was the one this ADR
-   demanded — a green run first, then the ruleset change — because promoting a context that has
-   never passed would have made every pull request unmergeable rather than making it safer. The
-   policy and this decision are updated in the same change that records the run, so the settings
-   and the documentation cannot drift apart silently.
+   `main-protection`, taking the required set to thirteen. A green run came first, then the
+   ruleset change, because promoting a context that has never passed would have made every pull
+   request unmergeable rather than making it safer. That ordering was imposed by the review of
+   #273 (`docs/governance/reviews/PR-273.md`), not by this ADR, which does not state one. The
+   policy and this decision are updated in the same change that records the run; the ruleset itself
+   remains, as the consequences below say, an observation rather than a checked invariant.
 
 6. **The matrix stays at six legs.** `./gradlew build` already runs the full suite on every leg, so
    the cost of platform coverage is already being paid and no test is opted into extra runs. The

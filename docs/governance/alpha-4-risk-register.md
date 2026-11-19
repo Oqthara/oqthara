@@ -583,13 +583,18 @@ sentence that names the cause sits below a summary line that does not. This is t
 the two mechanisms above: the required context is absent or red for a reason that has nothing to do
 with the change being reviewed.
 
-**A fourth mechanism, found on PR #273.** A job can be scheduled and never run. `macos-latest /
-JDK 21` reported `conclusion: cancelled` after exactly 15m1s with `runner_name: ""` and zero
-completed steps, having started and completed in the same second — so no runner was ever assigned
-and no step ever executed. The job's own `timeout-minutes` is 40, which is how the 15m expiry is
-identifiable as queue time rather than step time. Twice on #264 this happened to both macOS legs at
-once; on #273 the CircleCI `macOS / JDK 21` fallback passed throughout, so the required evidence
-existed while the required context read red.
+**A fourth mechanism, documented once on PR #273.** A job can be scheduled and never run.
+`macos-latest / JDK 21` reported `conclusion: cancelled` after 15m1s wall-clock with
+`runner_name: ""` and zero completed steps, so no runner was ever assigned and no step ever
+executed. The job's own `timeout-minutes` is 40; the 15m1s is therefore queue time rather than step
+time, and it matches the GitHub-hosted runner queue limit. On #273 the CircleCI `macOS / JDK 21`
+fallback passed throughout, so the required evidence existed while the required context read red.
+
+*One instance, not a pattern.* An earlier cancelled macOS leg elsewhere in the project could not be
+distinguished from an ordinary superseded-push cancellation, because `.github/workflows/ci.yml` sets
+`concurrency: cancel-in-progress` and a cancelled job on a superseded push carries the same
+`conclusion` — only `runner_name` and the step count separate the two. That case is therefore not
+counted here.
 
 The read is the same as the other three and the fix is the same: re-run. The distinguishing field
 is `runner_name`, which is empty for a queue expiry and populated for a job that actually ran. This
@@ -613,7 +618,8 @@ cannot review its own change. The allow-list held `dependabot[bot]` and `renovat
 how an older installation reports them. GitHub now reports an App-authored pull request as
 `app/<slug>`, so Dependabot answers `app/dependabot` and the exemption stopped matching. The gate
 then reported "PR has no AI review record" for every dependency pull request, and
-`ubuntu-latest / JDK 21` — one of the twelve required contexts — went red and stayed red. PR #251, a
+`ubuntu-latest / JDK 21` — one of the twelve contexts required at the time — went red and stayed
+red. PR #251, a
 one-line gradle-wrapper bump, was unmergeable for this reason alone, and the red check said nothing
 about the dependency.
 
