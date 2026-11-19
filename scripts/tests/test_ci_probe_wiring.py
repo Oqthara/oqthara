@@ -21,6 +21,7 @@ cannot tell which job a step belongs to -- and the `installers` job has no `matr
 step moved there would be skipped while still looking present.
 """
 import importlib.util
+import os
 import pathlib
 from pathlib import Path
 import subprocess
@@ -440,6 +441,66 @@ class HeadlessPinTest(unittest.TestCase):
                          ["java", "-jar", "oq.jar", "run", "p.oq"])
 
 
+class TheDisplayGuardTest(unittest.TestCase):
+    """`--under-display` refuses to run on a Linux host with no `DISPLAY`, before any probe.
+
+    The refusal exists because the mode's only value is that its probe fails without a display;
+    running it on a host where the variable is unset would produce a red build whose cause is the
+    invocation rather than the code. On macOS and Windows AWT never sets the variable, so the
+    same refusal there would be wrong -- those are the machines that certainly have a screen.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("probe_runner_guard", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.runner = module
+        self.jar = Path(tempfile.mkdtemp()) / "oq.jar"
+        self.jar.write_bytes(b"")
+
+    def invoke(self, platform, display):
+        """`main --under-display` with the platform and `DISPLAY` stated rather than inherited."""
+        argv, self_argv = self.runner.sys.argv, sys.argv
+        environ, platform_attr = dict(os.environ), self.runner.sys.platform
+        os.environ.pop("DISPLAY", None)
+        if display is not None:
+            os.environ["DISPLAY"] = display
+        self.runner.sys.platform = platform
+        self.runner.sys.argv = ["run.py", str(self.jar), "--both", "--under-display"]
+        sys.argv = self.runner.sys.argv
+        try:
+            import io
+            from contextlib import redirect_stdout
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = self.runner.main()
+            return code, buffer.getvalue()
+        finally:
+            self.runner.sys.argv = argv
+            self.runner.sys.platform = platform_attr
+            sys.argv = self_argv
+            os.environ.clear()
+            os.environ.update(environ)
+
+    def test_linux_without_a_display_is_misuse(self):
+        code, out = self.invoke("linux", None)
+        self.assertEqual(code, 2, out)
+        self.assertIn("DISPLAY is unset", out)
+
+    def test_linux_with_a_display_is_not_refused(self):
+        # A refusal keyed on the platform alone would make the Xvfb job impossible to run.
+        code, out = self.invoke("linux", ":99")
+        self.assertNotEqual(code, 2, out)
+        self.assertNotIn("DISPLAY is unset", out)
+
+    def test_macos_is_never_refused_for_a_missing_variable(self):
+        # AWT on macOS talks to the window server and never sets `DISPLAY`; refusing here would
+        # refuse on the one kind of machine that certainly has a screen.
+        code, out = self.invoke("darwin", None)
+        self.assertNotEqual(code, 2, out)
+        self.assertNotIn("DISPLAY is unset", out)
+
+
 class DisplayBackedModeTest(unittest.TestCase):
     """`--under-display` is the only mode where the display-backed probe runs, so the modes have
     to be real and disjoint rather than a flag the harness accepts and ignores.
@@ -532,7 +593,16 @@ class DisplayBackedModeTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
 
     def drive(self, *extra):
+        """Run `main` with argv and the platform pinned to a machine that has a display.
+
+        `main` refuses `--under-display` on Linux when `DISPLAY` is unset, before any probe is
+        launched. That guard is worth having, but it would answer every question these tests ask
+        about probe selection and failure propagation on the Linux runner that has no display,
+        so the environment is stated here rather than inherited from whatever host runs them.
+        """
         argv, self_argv = self.runner.sys.argv, sys.argv
+        environ = dict(os.environ)
+        os.environ["DISPLAY"] = ":99"
         self.runner.sys.argv = ["run.py", str(self.jar), "--both", *extra]
         sys.argv = self.runner.sys.argv
         try:
@@ -545,6 +615,8 @@ class DisplayBackedModeTest(unittest.TestCase):
         finally:
             self.runner.sys.argv = argv
             sys.argv = self_argv
+            os.environ.clear()
+            os.environ.update(environ)
 
 
 if __name__ == "__main__":
