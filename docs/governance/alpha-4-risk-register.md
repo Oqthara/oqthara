@@ -391,7 +391,7 @@ table · `SECURITY.md` "Scope" · `oq-runtime/src/main/java/dev/oqthara/runtime/
 |---|---|---|---|---|---|---|
 | R-012 | Standard-library breadth has no denominator | High | Low | Low | 8 | Open |
 | R-013 | `data` cannot carry methods or implement contracts | High | Low | Low | 7 | Accepted |
-| R-014 | A Java function value is callable but not fully a `fun` | Medium | Low | Low | 6 | Open |
+| R-014 | A Java function value is callable but not fully a `fun` | Medium | Low | Low | 6 | Accepted |
 | R-015 | Local and UTC time are easy to confuse | Medium | Low | Low | 8 | Mitigated |
 | R-016 | XML is deliberately absent | Medium | Low | Low | 8 | Accepted |
 
@@ -462,24 +462,34 @@ corrected with it — `map(xs, Comparator.naturalOrder())` used to say the value
 which contradicted the method call that had just succeeded, and now says that it is a Java object
 whose methods are callable but which cannot stand where a `fun` is expected.
 
-What is still missing, measured 2026-11-19, is narrower than the heading: a function held in a
-`data` field cannot be called through the field (`b.mapper(5)` reports "expects 0 arguments") even
-when the function is plain Oqthara, and a default method is not reachable from the Oqthara side of
-a proxy, so `cmp.reversed()` on a lambda is refused while `Comparator.naturalOrder().reversed()` is
-not. Neither is a conversion question, and both are decided in the brief below.
+What is still missing, measured 2026-11-19, is narrower than the heading, and **both of the two
+gaps this paragraph originally named were described with the wrong mechanism**. A function in a
+`data` field is called as `b.mapper()(5)`; the field read itself is ordinary (`b.mapper` answers the
+function), but the *call* spelling `b.mapper(5)` goes through a zero-argument accessor synthesised
+for any called name matching a field (`MethodResolverImpl.java:53`), so it reports "mapper() expects
+0 arguments, got 1". The behaviour is correct and the same for any field value — nothing is broken
+and nothing needs fixing. And an Oqthara function value has no member surface at all, so `cmp.reversed()`
+on a lambda is refused by Oqthara's own member resolution ("type function <lambda> has no method
+'reversed'") before `java.lang.reflect.Proxy` is reached; Java code that does reach the proxy invokes
+default methods normally, and `Collections.reverseOrder(cmp).compare(1, 2)` answers `1`. Neither is
+a conversion question, and both are decided in ADR-0070.
 
 *Mitigation.* The supporting direction is shipped and tested, and the two remaining gaps are named
 with reproductions so they are not mistaken for the conversion question they were originally
 filed as.
 
-*Why open.* A decision was proposed about whether a function value should convert to a
-single-method interface implicitly — Option A, the behaviour that exists, without adding an
-implicit adapter in either direction. It is not yet accepted, so this row stays Open; what
-remains open beyond it is the two narrower defects above, not the shape of the conversion.
+*Why accepted.* ADR-0070 accepts Option A: a functional-interface value returned from Java stays an
+ordinary Java object, with no implicit adapter in either direction, and arity remains the dispatch
+rule. The two narrower defects above are accepted as limitations with their reproductions, not
+claimed fixed, and the mechanism behind each was corrected when the ADR was written. The
+`data`-field case is the call-spelling accessor convention, not a defect; the default-method case is
+the function value model, not `Proxy`. Accepting A changes no program, which is why it could be accepted without
+a migration.
 
-*Decision.* [`docs/governance/remediation/java-function-conversion-decision-brief.md`](remediation/java-function-conversion-decision-brief.md)
-(Alpha 7 §2.1) measures the current behaviour on both backends and proposes Option A. It awaits
-acceptance; nothing in it is implemented.
+*Decision.* [`docs/adr/0070-java-functional-values-stay-java-objects.md`](../adr/0070-java-functional-values-stay-java-objects.md)
+(Alpha 7 §2.3) records the acceptance and names the two limitations.
+[`docs/governance/remediation/java-function-conversion-decision-brief.md`](remediation/java-function-conversion-decision-brief.md)
+(Alpha 7 §2.1) is the measurement it rests on.
 
 *Evidence.* `docs/governance/alpha-4-requirement-matrix.md` `§16 JavaBridge expansion` gaps column ·
 `docs/adr/0032-static-fields-and-varargs.md` · `oq-core/src/main/java/dev/oqthara/core/JavaBridge.java`.

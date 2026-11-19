@@ -120,28 +120,37 @@ What remains genuinely open is narrower, and is listed below.
 
 ### What genuinely does not work
 
-**1. A function stored in a `data` field cannot be called.** Independent of Java:
+**1. A function stored in a `data` field is reached by an accessor, so it is called as
+`b.mapper()(5)`.**
 
 ```oq
 data Box(mapper)
 b = Box((x) -> x * 3)
-print b.mapper(5)
+print b.mapper()(5)
 ```
 
 ```
-error: mapper() expects 0 arguments, got 1
+15
 ```
 
-Reading the field into a variable first works (`h = b.mapper; print h(5)` → `15`). This is a
-repository-level parser or interpreter question, **not a Java bridge question**, and it affects
-plain Oqthara functions exactly as it affects Java ones. It should be tracked separately; it is
-named here so it is not mistaken for part of R-014.
+Written as `b.mapper(5)` it reports `mapper() expects 0 arguments, got 1`, because `b.mapper` is the
+zero-argument *accessor* and passing `5` is an argument to the accessor, not to the function it
+returns. Reading the field into a variable first also works (`h = b.mapper; print h(5)` → `15`).
 
-**2. A default method cannot be reached from the Oqthara side of the proxy.**
+**Corrected 2026-11-19:** this item originally called the accessor convention a parser or
+interpreter bug, and then described it as the field read rather than the call spelling. It is
+neither bug: `b.mapper` is an ordinary field read that answers the function, and only the *call*
+`b.mapper(5)` goes through a zero-argument accessor (`MethodResolverImpl.java:53`). It applies
+identically to a non-function field, and nothing needs repairing. The surprise is real and worth a
+documentation note, which is why it is filed as
+[#269](https://github.com/Oqthara/oqthara/issues/269), but it is not a defect and it is not part of
+R-014.
+
+**2. An Oqthara function value has no member surface, so a default method cannot be reached from
+the Oqthara side.**
 
 ```oq
 use java.util.Comparator
-xs = [3,1,2]
 cmp = (a, b) -> a - b
 rev = cmp.reversed()
 ```
@@ -150,11 +159,16 @@ rev = cmp.reversed()
 error: type function <lambda> has no method 'reversed'
 ```
 
-The proxy implements only the abstract method. `JavaBridge.java:637` makes this explicit — a
-`default` method invoked *on the proxy* raises "cannot stand in for the default method" — so this
-is a stated limitation rather than an oversight. The asymmetry is real and worth naming: a JDK
-comparator's `reversed()` works (`Comparator.naturalOrder().reversed()` is callable), an Oqthara
-lambda's does not.
+**Corrected 2026-11-19:** this paragraph originally blamed `java.lang.reflect.Proxy`, citing
+`JavaBridge.java:637`. That line is real, but it is unreachable from this program. `cmp` is an
+Oqthara function, so `cmp.reversed()` is refused by the interpreter's own member resolution before
+any Java dispatch happens — `cmp.compare(1, 2)` is refused the same way, and so is reading
+`cmp.toString`. The proxy's default-method refusal only fires when *Java* invokes a default method
+on the proxy, and that path works: `Collections.reverseOrder(cmp).compare(1, 2)` answers `1`. The
+asymmetry is real — a JDK comparator's `reversed()` works, a lambda's does not — but its cause is
+that a function value has no methods at all, not that the proxy drops default methods. Closing it
+would mean giving function values a Java member surface, which is a larger question than
+conversion and is not what any of the three options below proposes.
 
 **3. Whether a Java value is a `fun` is not answerable in the language.** There is no `type`
 builtin, so a program cannot branch on "is this callable" and must instead assume.

@@ -422,6 +422,12 @@
       "slug": "docs/adr/0069-oqthara-stays-dynamically-typed"
     },
     {
+      "path": "docs/adr/0070-java-functional-values-stay-java-objects.md",
+      "title": "ADR-0070 — Java functional values stay Java objects",
+      "section": "adr",
+      "slug": "docs/adr/0070-java-functional-values-stay-java-objects"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

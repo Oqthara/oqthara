@@ -170,7 +170,7 @@ DEFECT_RANGE = re.compile(r"\bD1\s*[–-]\s*D(\d+)\b")
 # figures; the sentence had been repaired in the commit that re-staled it.
 #
 # The gate must not guess which total is meant. The quantities it can derive —
-# probes, capability rows, directions, ADRs — coincide at 27, 54, 13 and 69
+# probes, capability rows, directions, ADRs — coincide at 28, 55, 13 and 69
 # today, and they did not coincide last week. Reading one positionally as
 # another would produce a confident wrong answer, so the shape is refused and
 # the prose has to name what it counted. Positional matching was the first draft
@@ -203,7 +203,7 @@ CLAIM_SHAPE_HINT = ", ".join(noun for noun, _ in NOUNS)
 # pairing would switch off the very checks this gate exists to run — which is
 # exactly what an early draft of it did.
 #
-# A bare "now" does not mark a pairing. "Measured now: 13 directions, 54
+# A bare "now" does not mark a pairing. "Measured now: 13 directions, 55
 # capability rows, 27 probe files, 69 ADRs" is an ordinary list of four current
 # totals, and the word dates none of them — but reading it as a pairing checked
 # only the last figure and passed the other three unread, which is how a stale

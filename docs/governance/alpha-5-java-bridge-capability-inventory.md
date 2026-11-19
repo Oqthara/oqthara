@@ -29,129 +29,131 @@ rationale. "It has not been implemented" is not an intentional limitation.
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C1.1 | Construct with `ClassName(args)` | Complete | `ArrayList()` → `[]`; `LocalDate(2026, 1, 1)` per spec. |
-| C1.2 | Constructor overload selection | Complete | `StringBuilder(16)` and `StringBuilder("x")` both resolve; `describeConstructors` lists candidates on failure. |
-| C1.3 | Failed construction names the available arities | Complete | `ArrayList(1 to 3)` → `cannot create ArrayList with 1 argument` + `Available constructors: ArrayList(Collection); ArrayList(); ArrayList(int)`. Matches the spec character for character. |
-| C1.4 | Enum constant reference (`DayOfWeek.MONDAY`) | Complete | Prints `MONDAY`; `d.plus(1)` → `TUESDAY`; `d == DayOfWeek.MONDAY` → `true`. |
+| C1.1 | Construct with `ClassName(args)` | Complete | `ArrayList()` → `[]`; `LocalDate(2026, 1, 1)` per spec. | `c1_construct` |
+| C1.2 | Constructor overload selection | Complete | `StringBuilder(16)` and `StringBuilder("x")` both resolve; `describeConstructors` lists candidates on failure. | `c1_construct` |
+| C1.3 | Failed construction names the available arities | Complete | `ArrayList(1 to 3)` → `cannot create ArrayList with 1 argument` + `Available constructors: ArrayList(Collection); ArrayList(); ArrayList(int)`. Matches the spec character for character. | `c4_conversion` |
+| C1.4 | Enum constant reference (`DayOfWeek.MONDAY`) | Complete | Prints `MONDAY`; `d.plus(1)` → `TUESDAY`; `d == DayOfWeek.MONDAY` → `true`. | `c4_conversion` |
 
 ## Direction 2 — Oqthara calls Java: instance methods
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C2.1 | Call an instance method on a returned Java object | Complete | `al.size()`, `al.isEmpty()`, `al.get(0)`, `al.contains(1)` all answer correctly. |
-| C2.2 | Call a method declared only on a package-private class via a public supertype | Complete | `Comparator.naturalOrder().compare(1, 2)` → `-1`. `JavaBridge.accessible`/`publicDeclaration` implement this. |
-| C2.3 | Instance methods on a `Class` value | **Complete, with a stated boundary** | Found as Partial: `String("x").getClass().getName()` reported `Java class String has no static method 'getName'`, because `Interpreter.java:741` and `Methods.java:64` routed `Class<?>` receivers to `callStatic` only. Now statics resolve first, then a 22-method self-description allowlist answers `getName` → `java.lang.String`, `getSimpleName` → `String`, `isInterface` → `false`. Reflection members (`getDeclaredMethod`, `getMethods`, …) are refused by design; see D2 below for the security reason and the residual limitation. |
+| C2.1 | Call an instance method on a returned Java object | Complete | `al.size()`, `al.isEmpty()`, `al.get(0)`, `al.contains(1)` all answer correctly. | `c2_instance` |
+| C2.2 | Call a method declared only on a package-private class via a public supertype | Complete | `Comparator.naturalOrder().compare(1, 2)` → `-1`. `JavaBridge.accessible`/`publicDeclaration` implement this. | `c2_instance` |
+| C2.3 | Instance methods on a `Class` value | **Complete, with a stated boundary** | Found as Partial: `String("x").getClass().getName()` reported `Java class String has no static method 'getName'`, because `Interpreter.java:741` and `Methods.java:64` routed `Class<?>` receivers to `callStatic` only. Now statics resolve first, then a 22-method self-description allowlist answers `getName` → `java.lang.String`, `getSimpleName` → `String`, `isInterface` → `false`. Reflection members (`getDeclaredMethod`, `getMethods`, …) are refused by design; see D2 below for the security reason and the residual limitation. | `d2_class_instance` `d2_reflection_refused` `d2_reflection_reachable` |
 
 ## Direction 3 — Oqthara calls Java: static methods and fields
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C3.1 | Static method call | Complete | `Math.abs(-7)` → `7`, `Integer.toString(42)` → `42`. |
-| C3.2 | Static field read | Complete | `Integer.MAX_VALUE` → `2147483647`; `Math.PI` → `3.141592653589793`; `Long.MIN_VALUE` → `-9223372036854775808`. |
-| C3.3 | Instance field named on the class is refused | Complete | `Integer.size` → `cannot read field 'size' on java Class`. Matches the spec. |
-| C3.4 | Instance field read on a returned object | Complete (public only) | `readField` uses `getField` (public members only) and refuses private ones: `String("abc").value` → `cannot read field 'value' on text`. |
+| C3.1 | Static method call | Complete | `Math.abs(-7)` → `7`, `Integer.toString(42)` → `42`. | `c3_static` |
+| C3.2 | Static field read | Complete | `Integer.MAX_VALUE` → `2147483647`; `Math.PI` → `3.141592653589793`; `Long.MIN_VALUE` → `-9223372036854775808`. | `c3_static` |
+| C3.3 | Instance field named on the class is refused | Complete | `Integer.size` → `cannot read field 'size' on java Class`. Matches the spec. | `c3_static` |
+| C3.4 | Instance field read on a returned object | Complete (public only) | `readField` uses `getField` (public members only) and refuses private ones: `String("abc").value` → `cannot read field 'value' on text`. | `c2_instance` |
 
 ## Direction 4 — Overload selection and conversion
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C4.1 | Overload selection by argument fit | Complete | `String.valueOf(1)`→`1`, `(true)`→`true`, `(1.5)`→`1.5`; `Math.abs(-5)`→`5` and `Math.abs(-5.5)`→`5.5` reach different overloads. |
-| C4.2 | Primitive and wrapper conversion (`int`/`long`/`double`/`boolean`/`char`) | Complete | `ArrayList.add(1)` then `al.toString()` → `[1, 2]`; `Character.isDigit("5")` → `true`; `Character.toUpperCase("a")` → `A`. |
-| C4.3 | `String` conversion | Complete | `String.valueOf` of every scalar; `m.get("k")` returns text usable as an Oqthara `text`. |
-| C4.4 | `List`/`Map` conversion | Complete | Oqthara `list` is an `ArrayList`; `Collections.sort(xs, ...)` mutates the caller's list in place. |
-| C4.5 | `Path`/`File` conversion | Complete | `Path.of("/tmp").getFileName()` → `tmp`; `getNameCount()` → `1`. |
-| C4.6 | Enum parameter conversion | Complete | `EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.FRIDAY)` → `{MONDAY, FRIDAY}`. |
-| C4.7 | `range` cannot satisfy a `Collection` parameter | Complete — **intentional limitation** | `ArrayList(1 to 3)` refused by name with a materialisation hint. Spec states the rationale: a `range` is a computed interval, not a stored collection. |
-| C4.8 | Exact Java numbers survive the boundary | Complete | `BigDecimal("0.1").add(BigDecimal("0.2"))` → `0.3`; wide `BigInteger` arithmetic keeps all digits. ADR-0045. |
+| C4.1 | Overload selection by argument fit | Complete | `String.valueOf(1)`→`1`, `(true)`→`true`, `(1.5)`→`1.5`; `Math.abs(-5)`→`5` and `Math.abs(-5.5)`→`5.5` reach different overloads. | `c4_conversion` |
+| C4.2 | Primitive and wrapper conversion (`int`/`long`/`double`/`boolean`/`char`) | Complete | `ArrayList.add(1)` then `al.toString()` → `[1, 2]`; `Character.isDigit("5")` → `true`; `Character.toUpperCase("a")` → `A`. | `c4_conversion` |
+| C4.3 | `String` conversion | Complete | `String.valueOf` of every scalar; `m.get("k")` returns text usable as an Oqthara `text`. | `c4_conversion` |
+| C4.4 | `List`/`Map` conversion | Complete | Oqthara `list` is an `ArrayList`; `Collections.sort(xs, ...)` mutates the caller's list in place. | `c7_callbacks` |
+| C4.5 | `Path`/`File` conversion | Complete | `Path.of("/tmp").getFileName()` → `tmp`; `getNameCount()` → `1`. | `c4_conversion` |
+| C4.6 | Enum parameter conversion | Complete | `EnumSet.of(DayOfWeek.MONDAY, DayOfWeek.FRIDAY)` → `{MONDAY, FRIDAY}`. | `c4_conversion` |
+| C4.7 | `range` cannot satisfy a `Collection` parameter | Complete — **intentional limitation** | `ArrayList(1 to 3)` refused by name with a materialisation hint. Spec states the rationale: a `range` is a computed interval, not a stored collection. | `c1_construct` |
+| C4.8 | Exact Java numbers survive the boundary | Complete | `BigDecimal("0.1").add(BigDecimal("0.2"))` → `0.3`; wide `BigInteger` arithmetic keeps all digits. ADR-0045. | `c4_conversion` |
 
 ## Direction 5 — Varargs
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C5.1 | Varargs with several trailing arguments | Complete | `String.format("%s-%s", "a", "b")` → `a-b`. |
-| C5.2 | Varargs with exactly one argument | Complete | `String.join(",", ["a"])` → `a`. |
-| C5.3 | Varargs with zero arguments | Complete | `String.join(",", [])` → empty line. |
-| C5.4 | Varargs through an array-taking method (`Arrays.asList`) | Complete | `Arrays.asList("x", "y").size()` → `2`. |
+| C5.1 | Varargs with several trailing arguments | Complete | `String.format("%s-%s", "a", "b")` → `a-b`. | `c5_varargs` |
+| C5.2 | Varargs with exactly one argument | Complete | `String.join(",", ["a"])` → `a`. | `c5_varargs` |
+| C5.3 | Varargs with zero arguments | Complete | `String.join(",", [])` → empty line. | `c5_varargs` |
+| C5.4 | Varargs through an array-taking method (`Arrays.asList`) | Complete | `Arrays.asList("x", "y").size()` → `2`. | `c5_varargs` |
 
 ## Direction 6 — Exceptions crossing the boundary
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C6.1 | A Java throwable becomes an Oqthara error with the Java class and message | Complete | `NumberFormatException: For input string: "not a number"`. |
-| C6.2 | The translated error carries the call site span and excerpt | Complete | The refusal shows `--> p1.oq:...` and the caret under the call. |
-| C6.3 | The error is catchable as an Oqthara error | Complete | `try print Integer.parseInt("zz") catch err print err.message end` → `caught: NumberFormatException: For input string: "zz"`, execution continues. |
+| C6.1 | A Java throwable becomes an Oqthara error with the Java class and message | Complete | `NumberFormatException: For input string: "not a number"`. | `c6_exceptions` |
+| C6.2 | The translated error carries the call site span and excerpt | Complete | The refusal shows `--> p1.oq:...` and the caret under the call. | `c6_exceptions` |
+| C6.3 | The error is catchable as an Oqthara error | Complete | `try print Integer.parseInt("zz") catch err print err.message end` → `caught: NumberFormatException: For input string: "zz"`, execution continues. | `c6_exceptions` |
 
 ## Direction 7 — Callbacks (Oqthara function into Java)
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C7.1 | An Oqthara `fun` becomes the declared functional interface | Complete | `xs.forEach(fun(x) print x end)` prints `3 1 2`. |
-| C7.2 | A lambda becomes a `Comparator` for `Collections.sort` | Complete | `Collections.sort(xs, (a, b) -> a - b)` → `[1, 2, 3]`. |
-| C7.3 | Arity mismatch names the interface and both counts | Complete | `'forEach' wants a Consumer, which takes 1 argument, but '<lambda>' takes 2`. Matches the spec. |
-| C7.4 | A callback keeps its own captures | Complete | Spec states it; `JavaBridgeCallbackTest` covers it. |
+| C7.1 | An Oqthara `fun` becomes the declared functional interface | Complete | `xs.forEach(fun(x) print x end)` prints `3 1 2`. | `c7_callbacks` |
+| C7.2 | A lambda becomes a `Comparator` for `Collections.sort` | Complete | `Collections.sort(xs, (a, b) -> a - b)` → `[1, 2, 3]`. | `c7_callbacks` |
+| C7.3 | Arity mismatch names the interface and both counts | Complete | `'forEach' wants a Consumer, which takes 1 argument, but '<lambda>' takes 2`. Matches the spec. | `c7_callbacks` |
+| C7.4 | A callback keeps its own captures | Complete | Spec states it; `JavaBridgeCallbackTest` covers it. | `c13_offscreen` |
 
 ## Direction 8 — What Java hands back (reverse direction)
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C8.1 | A returned Java object keeps its methods | Complete | `ArrayList` returned from a Java call supports `size`/`get`/`contains`/`isEmpty`. |
-| C8.2 | A returned Java collection is iterable by Oqthara | Complete | `for x in al` over a Java `ArrayList` after `Collections.reverse` yields `3 2 1`. |
-| C8.3 | A Java functional interface is callable as a function | Complete | `Comparator.naturalOrder()` answers both `c.compare(1, 2)` and `c(1, 2)` → `-1`. |
-| C8.4 | Declared interfaces outrank inherited ones | Complete | `Comparator.naturalOrder()` is an enum inheriting `Comparable`; `c(1, 2)` reaches `compare`, not `compareTo`. ADR-0032. |
-| C8.5 | A Java function object can be passed to an Oqthara higher-order **method** that accepts any callable | Complete | `xs.map(Function.identity())` → `[1, 2, 3]`; `xs.filter(Predicate.isEqual(2))` → `[1]`; `xs.any/find/find_index` all accept it. |
-| C8.6 | A Java function object can be passed to `sort`, `sort_by`, `reduce` and `list_sort` | **Complete** | Found as Incorrect: all four refused a callable Java object even though the same object was callable as `c(a, b)`, because they coerced with `instanceof OqCallable` while `map`/`filter` passed the raw value to `host.call`. Now `JavaBridge.callableArity` answers the arity and all four accept a Java functional value whose arity fits. See D1 below. |
+| C8.1 | A returned Java object keeps its methods | Complete | `ArrayList` returned from a Java call supports `size`/`get`/`contains`/`isEmpty`. | `c8_reverse` |
+| C8.2 | A returned Java collection is iterable by Oqthara | Complete | `for x in al` over a Java `ArrayList` after `Collections.reverse` yields `3 2 1`. | `c8_reverse` |
+| C8.3 | A Java functional interface is callable as a function | Complete | `Comparator.naturalOrder()` answers both `c.compare(1, 2)` and `c(1, 2)` → `-1`. | `c8_reverse` |
+| C8.4 | Declared interfaces outrank inherited ones | Complete | `Comparator.naturalOrder()` is an enum inheriting `Comparable`; `c(1, 2)` reaches `compare`, not `compareTo`. ADR-0032. | `c8_reverse` |
+| C8.5 | A Java function object can be passed to an Oqthara higher-order **method** that accepts any callable | Complete | `xs.map(Function.identity())` → `[1, 2, 3]`; `xs.filter(Predicate.isEqual(2))` → `[1]`; `xs.any/find/find_index` all accept it. | `c8_reverse` |
+| C8.6 | A Java function object can be passed to `sort`, `sort_by`, `reduce` and `list_sort` | **Complete** | Found as Incorrect: all four refused a callable Java object even though the same object was callable as `c(a, b)`, because they coerced with `instanceof OqCallable` while `map`/`filter` passed the raw value to `host.call`. Now `JavaBridge.callableArity` answers the arity and all four accept a Java functional value whose arity fits. See D1 below. | `d1_sort` `d1_sort_by` `d1_list_sort` `d1_reduce` `d1_key_arity` |
 
 ## Direction 9 — Method-resolution precedence
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C9.1 | An Oqthara builtin wins over a same-named Java method on a collection receiver | **Complete — deliberate, now documented** | `ArrayList().sort(cmp)` is answered by the Oqthara `sort`, and `ArrayList().remove("x")` reports `remove takes an index, not text`; neither reaches `List.sort`/`List.remove(Object)`. The precedence is deliberate (ADR-0032 rejected Java-first dispatch because `list.map(...)` would then be answered by whatever `ArrayList` declares) and is now stated in `docs/spec/language.md` under "Which method a name means", with the shadowed set enumerated. The diagnostic wording is unchanged — repinning it would break existing CLI tests for a documentation problem. See D3 below. |
-| C9.2 | The same rule holds on both backends | Complete | `Methods.dispatch` consults the resolver before `interop`, mirroring the interpreter. |
+| C9.1 | An Oqthara builtin wins over a same-named Java method on a collection receiver | **Complete — deliberate, now documented** | `ArrayList().sort(cmp)` is answered by the Oqthara `sort`, and `ArrayList().remove("x")` reports `remove takes an index, not text`; neither reaches `List.sort`/`List.remove(Object)`. The precedence is deliberate (ADR-0032 rejected Java-first dispatch because `list.map(...)` would then be answered by whatever `ArrayList` declares) and is now stated in `docs/spec/language.md` under "Which method a name means", with the shadowed set enumerated. The diagnostic wording is unchanged — repinning it would break existing CLI tests for a documentation problem. See D3 below. | `c9_precedence` `d3_shadowing` `d3_precedence_agree` `d3_shadowed_names` |
+| C9.2 | The same rule holds on both backends | Complete | `Methods.dispatch` consults the resolver before `interop`, mirroring the interpreter. | `c9_precedence` `d3_shadowing` `d3_precedence_agree` `d3_shadowed_names` |
 
 ## Direction 10 — Backends
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C10.1 | `use` imports a Java class under the interpreter | Complete | Every probe above ran under `oq run`. |
-| C10.2 | `use` imports a Java class under the compiled backend | Complete | **Reclassified by A6.1.** A top-level `use` lowers to a class constant, so a static call, a static field, a constructor and the class value itself all compile (`conformance/248-java-interop-by-use.oq` builds with `codepath: compiled bytecode` and prints identical output to `oq run`). A `use` below the top level is now compiled as well: ADR-0066 replaced ADR-0064's refusal with a run-time registration into `dev.oqthara.runtime.UsedClasses`, so whether the name exists still depends on whether that block ran, and both backends reproduce it. Boundary item 2 in `docs/spec/backend.md` no longer narrows `use` at all. The earlier measurement (`variable 'Math' is used before assignment`) recorded a message that has since been rewritten. |
-| C10.3 | Method calls on Java values that arrive from a compiled call | Complete | `Methods` → `JavaBridge` reflective delegation, stated at `backend.md:276`. |
-| C10.4 | Interpreter and compiled output agree on an interop program | Complete | `bc3.oq` printed `7 / 2 / 1` under both `oq run` and `java -jar bc3.jar`. |
+| C10.1 | `use` imports a Java class under the interpreter | Complete | Every probe above ran under `oq run`. | `c10_use_both_backends` |
+| C10.2 | `use` imports a Java class under the compiled backend | Complete | **Reclassified by A6.1.** A top-level `use` lowers to a class constant, so a static call, a static field, a constructor and the class value itself all compile (`conformance/248-java-interop-by-use.oq` builds with `codepath: compiled bytecode` and prints identical output to `oq run`). A `use` below the top level is now compiled as well: ADR-0066 replaced ADR-0064's refusal with a run-time registration into `dev.oqthara.runtime.UsedClasses`, so whether the name exists still depends on whether that block ran, and both backends reproduce it. Boundary item 2 in `docs/spec/backend.md` no longer narrows `use` at all. The earlier measurement (`variable 'Math' is used before assignment`) recorded a message that has since been rewritten. | `c10_use_both_backends` |
+| C10.3 | Method calls on Java values that arrive from a compiled call | Complete | `Methods` → `JavaBridge` reflective delegation, stated at `backend.md:276`. | `c10_use_both_backends` |
+| C10.4 | Interpreter and compiled output agree on an interop program | Complete | `bc3.oq` printed `7 / 2 / 1` under both `oq run` and `java -jar bc3.jar`. | `c10_use_both_backends` |
 
 ## Direction 11 — Classpath
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C11.1 | A class on the JVM classpath is importable | Complete | `c11_user_classpath.oq` imports a `Hello` that exists only in a jar built from `Hello.java` beside it. It is the one probe `run.py` launches as `java -cp "oq.jar:fixture.jar" dev.oqthara.cli.Main` rather than `java -jar`, because `-jar` ignores both `CLASSPATH` and the working directory. Both launch forms were run before the expectation was recorded: `-jar` prints `cannot find Java class 'Hello'` and the `-cp` form prints `hi world` — the interpreter and the built jar (`Main-Class: oq.generated.Program`) both. |
-| C11.2 | A JDK class is importable by fully qualified name | Complete | `use dev.oqthara.core.Lexer` exercised in the Alpha 4 matrix. |
+| C11.1 | A class on the JVM classpath is importable | Complete | `c11_user_classpath.oq` imports a `Hello` that exists only in a jar built from `Hello.java` beside it. It is the one probe `run.py` launches as `java -cp "oq.jar:fixture.jar" dev.oqthara.cli.Main` rather than `java -jar`, because `-jar` ignores both `CLASSPATH` and the working directory. Both launch forms were run before the expectation was recorded: `-jar` prints `cannot find Java class 'Hello'` and the `-cp` form prints `hi world` — the interpreter and the built jar (`Main-Class: oq.generated.Program`) both. | `c11_user_classpath` |
+| C11.2 | A JDK class is importable by fully qualified name | Complete | `use dev.oqthara.core.Lexer` exercised in the Alpha 4 matrix. | `c11_qualified_name` |
 
 ## Direction 12 — Security of the boundary
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C12.1 | Only public members are reachable; no accessibility escalation | Complete | `setAccessible` appears nowhere in production sources. `Class.getDeclaredMethod` is unreachable (via C2.3). Private fields are refused. |
-| C12.2 | Java is reachable without restriction, including process execution | **Unsafe by design — now documented at the interop boundary** | `ProcessBuilder(["sh", "-c", "id"]).start().waitFor()` → `0`. `System.getenv("HOME")` → the real home. This is the same authority `run_command` and `env()` already grant and the project's "Oqthara is **not** a sandbox" statement (`language.md:1906`) already concedes, so it is not a new vulnerability or a regression. The interop section now says so directly in "What the boundary does not restrict", naming both doors. See D4 below. |
+| C12.1 | Only public members are reachable; no accessibility escalation | Complete | `setAccessible` appears nowhere in production sources. `Class.getDeclaredMethod` is unreachable (via C2.3). Private fields are refused. | `c12_public_only` |
+| C12.2 | Java is reachable without restriction, including process execution | **Unsafe by design — now documented at the interop boundary** | `ProcessBuilder(["sh", "-c", "id"]).start().waitFor()` → `0`. `System.getenv("HOME")` → the real home. This is the same authority `run_command` and `env()` already grant and the project's "Oqthara is **not** a sandbox" statement (`language.md:1906`) already concedes, so it is not a new vulnerability or a regression. The interop section now says so directly in "What the boundary does not restrict", naming both doors. See D4 below. | `c12_unrestricted` |
 
 ## Direction 13 — Gui toolkits (Swing and AWT)
 
 Added by the Alpha 7 execution pass. §6 of the Alpha 7 report orders Swing first, and this
-document had no row for it, so "Swing works" had been neither verified nor refuted. Every row
-below was executed on JDK 21 with `java.awt.headless=true`, which is the setting CI uses.
+document had no row for it, so "Swing works" had been neither verified nor refuted. Rows C13.1
+to C13.8 were executed on JDK 21 with `java.awt.headless=true`, which is the setting the default
+CI job uses. C13.9 is the exception: it needs a display, and the separate `display-backed` job
+supplies one under Xvfb.
 
 | ID | Capability | Class | Evidence |
 |---|---|---|---|
-| C13.1 | A Swing component can be constructed and queried | Complete | `JLabel("hello").getText()` → `hello`; `getHorizontalAlignment()` → `10`; `JPanel().getComponentCount()` → `0`; `Color.RED.getRed()` → `255`. Component construction needs no display. |
-| C13.2 | A Swing window cannot be realised without a display, and says so | **Complete after fix** | `JFrame("x")` under `-Djava.awt.headless=true` raised `HeadlessException`, but the boundary reported it as `cannot change an unchangeable collection` with a hint about `List.of(...)`. Fixed: it now reports `HeadlessException` and names no collection. See D5. |
-| C13.3 | A closure can be run on the event dispatch thread | Complete | `SwingUtilities.invokeAndWait(fun() ... end)` ran with `isEventDispatchThread()` → `true`. `invokeLater` plus a `CountDownLatch` also returned `true` inside the closure and `false` outside it. |
-| C13.4 | An Oqthara closure can be an AWT listener | Complete | `b.addActionListener(fun(e) fired.add(e.getActionCommand()) end)` then `b.doClick()` → `["go"]`. The callback receives the real `ActionEvent` and reads `getActionCommand()`. |
-| C13.5 | A closure keeps its captures when the toolkit calls it from another thread | Complete | A closure registered on the EDT appended to a list declared on the main thread; `["x", ["x"]]` came back intact. This is C7.4 holding across a thread the program did not create. |
-| C13.6 | Interpreter and compiled bytecode agree on a Swing program | Complete | `s2.oq` printed `[true]` then `["go"]` under `oq run` and, after `oq build`, the same two lines from `java -jar s2.jar`. the build reported `codepath: compiled bytecode` with nothing skipped. |
-| C13.7 | Layout, painting, input dispatch and look-and-feel run with no display | **Complete, and now a gated probe.** Only *realising* a window needs a display; the rest of the toolkit does not, so `c13_offscreen` runs headless and gates all four on both backends: a `JPanel` lays a `JButton` out at its bound, an offscreen `paint` leaves 20000 non-white pixels in a `BufferedImage`, a click dispatched on the event dispatch thread reaches the registered closure as `["go"]`, and the installed look-and-feel answers a colour. Printing `getLookAndFeel().getName()` was rejected because it is `Mac OS X` here and `Metal` on a bare Linux JVM — a probe that names it would test the machine. This row was reachable at all only after D6 was fixed. |
-| C13.8 | Opening a window with no display fails as a catchable error, not a crash | **Complete, and a gated probe.** Java checks headlessness inside the `Window` constructor, so `new JFrame(...)` throws before `setVisible` is ever reached — the earlier note that "`setVisible` needs a display" named the wrong call, and a test written against it would have called the method that works and passed. `c13_window` constructs a frame inside a `try`, then asserts the headless flag is set, the construction was caught, the caught error carries a message (`err.message.length() > 0`), and a second attempt fails identically rather than handing back a half-built window. Neither the exception class nor the message text is asserted: the class is `HeadlessException` on this JDK, but that is `java.desktop`'s choice and pinning it would test the JDK version — the same distinction C13.7 draws about the look-and-feel name. The probe is a member of the runner's `HEADLESS` set, so it is launched with `-Djava.awt.headless=true`; ungated it would print `false` / `visible` on a machine with a display and the recorded expectation could only ever match one kind of host. Removing the pin makes the harness report the desktop output and exit 1. |
+| C13.1 | A Swing component can be constructed and queried | Complete | `JLabel("hello").getText()` → `hello`; `getHorizontalAlignment()` → `10`; `JPanel().getComponentCount()` → `0`; `Color.RED.getRed()` → `255`. Component construction needs no display. | `c13_offscreen` |
+| C13.2 | A Swing window cannot be realised without a display, and says so | **Complete after fix** | `JFrame("x")` under `-Djava.awt.headless=true` raised `HeadlessException`, but the boundary reported it as `cannot change an unchangeable collection` with a hint about `List.of(...)`. Fixed: it now reports `HeadlessException` and names no collection. See D5. | `c13_window` |
+| C13.3 | A closure can be run on the event dispatch thread | Complete | `SwingUtilities.invokeAndWait(fun() ... end)` ran with `isEventDispatchThread()` → `true`. `invokeLater` plus a `CountDownLatch` also returned `true` inside the closure and `false` outside it. | `c13_offscreen` |
+| C13.4 | An Oqthara closure can be an AWT listener | Complete | `b.addActionListener(fun(e) fired.add(e.getActionCommand()) end)` then `b.doClick()` → `["go"]`. The callback receives the real `ActionEvent` and reads `getActionCommand()`. | `c13_offscreen` |
+| C13.5 | A closure keeps its captures when the toolkit calls it from another thread | Complete | A closure registered on the EDT appended to a list declared on the main thread; `["x", ["x"]]` came back intact. This is C7.4 holding across a thread the program did not create. | `c13_offscreen` |
+| C13.6 | Interpreter and compiled bytecode agree on a Swing program | Complete | `s2.oq` printed `[true]` then `["go"]` under `oq run` and, after `oq build`, the same two lines from `java -jar s2.jar`. the build reported `codepath: compiled bytecode` with nothing skipped. | `c13_offscreen` |
+| C13.7 | Layout, painting, input dispatch and look-and-feel run with no display | **Complete, and now a gated probe.** | Only *realising* a window needs a display; the rest of the toolkit does not, so `c13_offscreen` runs headless and gates all four on both backends: a `JPanel` lays a `JButton` out at its bound, an offscreen `paint` leaves 20000 non-white pixels in a `BufferedImage`, a click dispatched on the event dispatch thread reaches the registered closure as `["go"]`, and the installed look-and-feel answers a colour. Printing `getLookAndFeel().getName()` was rejected because it is `Mac OS X` here and `Metal` on a bare Linux JVM — a probe that names it would test the machine. This row was reachable at all only after D6 was fixed. | `c13_offscreen` |
+| C13.8 | Opening a window with no display fails as a catchable error, not a crash | **Complete, and now a gated probe.** | Java checks headlessness inside the `Window` constructor, so `new JFrame(...)` throws before `setVisible` is ever reached — the earlier note that "`setVisible` needs a display" named the wrong call, and a test written against it would have called the method that works and passed. `c13_window` constructs a frame inside a `try`, then asserts the headless flag is set, the construction was caught, the caught error carries a message (`err.message.length() > 0`), and a second attempt fails identically rather than handing back a half-built window. Neither the exception class nor the message text is asserted: the class is `HeadlessException` on this JDK, but that is `java.desktop`'s choice and pinning it would test the JDK version — the same distinction C13.7 draws about the look-and-feel name. The probe is a member of the runner's `HEADLESS` set, so it is launched with `-Djava.awt.headless=true`; ungated it would print `false` / `visible` on a machine with a display and the recorded expectation could only ever match one kind of host. Removing the pin makes the harness report the desktop output and exit 1. | `c13_window` |
+| C13.9 | A window realises under a display, and reports itself displayable | **Complete, display-backed job** | Under Xvfb on `:99`, `GraphicsEnvironment.isHeadless()` is `false`, so the branch below is the display-backed one rather than a headless fallback. A `JFrame` is sized, shown, and asserts `isDisplayable()` is `true`, then disposed and asserts it is `false` — a probe that only checked the first line would pass on a machine where `setVisible` had silently done nothing. `c13_mapped` is the probe; it is in the runner's `DISPLAY` set and the default job skips it rather than pretending it ran. What this does not claim: that Xvfb composites like a desktop window manager. | `c13_mapped` `c13_display` |
 
-What is **not** covered, and is not claimed: no test opens a visible window, so layout, painting,
-input dispatch and look-and-feel are untested; the EDT rows prove registration and callback, not
-rendering. A headless runner cannot cover them, so covering them needs a display, which CI does
-not have.
+What is **not** covered, and is not claimed: no test proves window-manager compositing, because
+Xvfb is not a compositor; the EDT rows prove registration and callback, not rendering. A headless
+runner cannot cover realization at all, which is why C13.9 runs in its own display-backed job.
 
 ## Confirmed defects
 
