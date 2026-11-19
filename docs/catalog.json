@@ -506,6 +506,12 @@
       "slug": "docs/governance/alpha-7-first-report"
     },
     {
+      "path": "docs/governance/alpha-7-language-core-capability-matrix.md",
+      "title": "Alpha 7 — Language Core Capability Matrix",
+      "section": "governance",
+      "slug": "docs/governance/alpha-7-language-core-capability-matrix"
+    },
+    {
       "path": "docs/governance/alpha-7-security-baseline.md",
       "title": "Alpha 7 security baseline",
       "section": "governance",

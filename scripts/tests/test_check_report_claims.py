@@ -291,6 +291,66 @@ class DriftIsCaught(unittest.TestCase):
         self.assertIn("88", problems[0])
 
 
+class TheCapabilityMatrixCountsItsOwnRows(unittest.TestCase):
+    """The matrix states its arithmetic; the gate derives it from the table.
+
+    Three hand-counts of the same document gave 29, 49 and 50 before these
+    rules existed, and the closing paragraph restates every verdict a second
+    time, so an edit to one usually misses the other.
+    """
+
+    MATRIX = SCRIPTS.parent / "docs" / "governance" / "alpha-7-language-core-capability-matrix.md"
+    MATRIX_TEXT = MATRIX.read_text(encoding="utf-8")
+
+    def matrix_problems_after(self, old, new):
+        assert old in self.MATRIX_TEXT, f"the matrix no longer contains {old!r}"
+        return checker.check_capability_matrix(
+            self.MATRIX_TEXT.replace(old, new, 1)
+        )
+
+    def test_the_real_matrix_is_consistent(self):
+        self.assertEqual([], checker.check_capability_matrix())
+
+    def test_a_mutated_verdict_count_is_caught(self):
+        problems = self.matrix_problems_after("| Complete | 50 |", "| Complete | 49 |")
+        self.assertTrue(problems)
+        self.assertIn("49 'Complete'", problems[0])
+        self.assertIn("holds 50", problems[0])
+
+    def test_a_mutated_row_total_is_caught(self):
+        problems = self.matrix_problems_after("57 rows, counted", "58 rows, counted")
+        self.assertTrue(problems)
+        self.assertIn("says 58 rows", problems[0])
+
+    def test_a_mutated_prose_count_is_caught(self):
+        # The second copy of the same quantity. Editing one and not the other
+        # is the exact error the matrix was written to document.
+        problems = self.matrix_problems_after("three are missing", "four are missing")
+        self.assertTrue(problems)
+        self.assertIn("4 'Missing'", problems[0])
+
+    def test_a_mutated_refusal_verdict_is_caught(self):
+        problems = self.matrix_problems_after("| Intentionally refused | 1 |", "| Intentionally refused | 2 |")
+        self.assertTrue(problems)
+        self.assertIn("'Intentionally refused'", problems[0])
+
+    def test_an_emptied_matrix_is_caught(self):
+        # Deleting every row leaves the counts and the prose agreeing at zero,
+        # which would otherwise read as success.
+        stripped = "\n".join(
+            line for line in self.MATRIX_TEXT.splitlines() if not line.startswith("| L")
+        )
+        problems = checker.check_capability_matrix(stripped)
+        self.assertTrue(problems)
+        self.assertIn("no capability rows", problems[0])
+
+    def test_a_stray_clause_is_not_read_as_a_total(self):
+        # "L3.11 is missing" appears in the prose and matches the Missing clause
+        # shape, reading "L3" as the count. The closing paragraph is read on its
+        # own for exactly this reason.
+        self.assertEqual([], checker.check_capability_matrix())
+
+
 class HistoricalFiguresStaySilent(unittest.TestCase):
     """The dated snapshots the record depends on must not be reported."""
 

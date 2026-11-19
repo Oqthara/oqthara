@@ -73,6 +73,10 @@ RISK_GATE = Path("scripts/check-risk-register.py")
 # read. §4's scope record now states the figure, so it is derived rather than
 # trusted: mutating "twelve" to "thirteen" used to pass every gate.
 REFUSAL_MATRIX = Path("docs/governance/alpha-6-requirement-matrix.md")
+# The capability matrix is §4's first deliverable and states its own arithmetic.
+# Hand-counting it produced three different wrong totals in one sitting, which is
+# exactly the argument for deriving the verdicts from the rows instead.
+CAPABILITY_MATRIX = Path("docs/governance/alpha-7-language-core-capability-matrix.md")
 
 # Prose spells small counts out. Leaving these unreadable is how "thirteen
 # directions" survived four reviews while every numeral in the file was checked.
@@ -628,6 +632,99 @@ def check_required_sections(text: str) -> list[str]:
     return problems
 
 
+def check_capability_matrix(text: str | None = None) -> list[str]:
+    """Problems where the matrix's stated arithmetic disagrees with its own rows.
+
+    The verdict counts are derived from the table, never from the prose. Three
+    hand-counts of the same document gave 29, 49 and 50 before this existed.
+    """
+    problems: list[str] = []
+    if text is None:
+        try:
+            text = CAPABILITY_MATRIX.read_text(encoding="utf-8")
+        except OSError as unreadable:
+            return [f"cannot read {CAPABILITY_MATRIX}: {unreadable}"]
+
+    verdicts: dict[str, int] = {}
+    total = 0
+    for line in text.splitlines():
+        if not re.match(r"^\| L\d", line):
+            continue
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if len(cells) < 3:
+            continue
+        total += 1
+        verdict = cells[2].replace("*", "").strip()
+        verdicts[verdict] = verdicts.get(verdict, 0) + 1
+    total = total
+
+    if total == 0:
+        return [f"{CAPABILITY_MATRIX} has no capability rows; the matrix was emptied"]
+
+    stated_total = re.search(r"^(\d+) rows, counted from the table IDs", text, re.M)
+    if not stated_total:
+        problems.append("the matrix no longer states its row total")
+    elif int(stated_total.group(1)) != total:
+        problems.append(
+            f"the matrix says {stated_total.group(1)} rows but its table holds {total}"
+        )
+
+    for verdict, count in sorted(verdicts.items()):
+        stated = re.search(rf"^\| {verdict} \| (\d+) \|", text, re.M)
+        if not stated:
+            problems.append(f"the matrix lists {count} {verdict!r} rows but does not count them")
+        elif int(stated.group(1)) != count:
+            problems.append(
+                f"the matrix says {stated.group(1)} {verdict!r} rows but the table holds {count}"
+            )
+
+    # The closing paragraph restates every verdict in prose. Restating a number in
+    # two places is how this document was wrong three times, so both are checked.
+    # Each clause is read on its own: the verb varies ("two are ambiguous" but "one
+    # is undocumented"), and a single pattern across all six silently matched
+    # nothing when it required "are" everywhere. Reading them from the closing
+    # paragraph only, because "L3.11 is missing" earlier in the document matches the
+    # Missing clause and reads "L3" as the count.
+    words = {
+        "zero": 0, "none": 0, "no": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+        "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    }
+    anchor = text.find("rows behave as")
+    if anchor >= 0:
+        # Back up over "**N " so the Complete clause can read its own total.
+        line_start = text.rfind("\n", 0, anchor)
+        anchor = line_start + 1 if line_start >= 0 else 0
+    closing = text[anchor : text.find("\n## ", anchor)] if anchor >= 0 else ""
+    clauses = [
+        (r"\*\*(\d+) rows behave as", "Complete"),
+        (r"(\w+)\s+(?:are|is)\s+ambiguous", "Ambiguous"),
+        (r"(\w+)\s+(?:are|is)\s+undocumented", "Undocumented"),
+        (r"(\w+)\s+(?:are|is)\s+missing", "Missing"),
+        (r"(\w+)\s+(?:are|is)\s+defective", "Defective"),
+        (r"(\w+)\s+(?:are|is)\s+refused deliberately", "Intentionally refused"),
+    ]
+    if not closing:
+        problems.append("the matrix's closing paragraph no longer states the row total")
+    else:
+        for pattern, verdict in clauses:
+            found = re.search(pattern, closing)
+            if not found:
+                problems.append(
+                    f"the matrix's closing paragraph no longer states how many"
+                    f" {verdict!r} rows there are"
+                )
+                continue
+            raw = found.group(1)
+            claimed = int(raw) if raw.isdigit() else words.get(raw, -1)
+            if claimed != verdicts.get(verdict, 0):
+                problems.append(
+                    f"the matrix's closing paragraph says {claimed} {verdict!r}"
+                    f" rows but the table holds {verdicts.get(verdict, 0)}"
+                )
+
+    return problems
+
+
 def check(text: str, values: dict) -> list[str]:
     """Every figure problem in the report; empty means every claim agrees.
 
@@ -669,7 +766,7 @@ def main() -> int:
         print(f"cannot read a file the check needs: {unreadable}", file=sys.stderr)
         return 2
 
-    problems = check_required_sections(text) + check(text, values)
+    problems = check_required_sections(text) + check(text, values) + check_capability_matrix()
     if problems:
         print(f"report claims: {len(problems)} problem(s)")
         for problem in problems:
