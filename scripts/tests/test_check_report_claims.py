@@ -58,13 +58,13 @@ class TheRealReportIsConsistent(unittest.TestCase):
         # If a deriver silently returned 0 the gate would pass on any figure
         # zero, so pin the derivation itself, not just the report that uses it.
         self.assertEqual(28, VALUES["probes"])
-        self.assertEqual(54, VALUES["capability_rows"])
+        self.assertEqual(55, VALUES["capability_rows"])
         self.assertEqual(13, VALUES["directions"])
         self.assertEqual(14, VALUES["fuzz_targets"])
         self.assertEqual(22, VALUES["keywords"])
         self.assertEqual(6, VALUES["defects"])
         self.assertEqual(31, VALUES["risk_total"])
-        self.assertEqual(6, VALUES["Open"])
+        self.assertEqual(5, VALUES["Open"])
         self.assertEqual(13, VALUES["probed_groups"])
 
 
@@ -72,7 +72,7 @@ class DriftIsCaught(unittest.TestCase):
     """One test per class of defect a real review record has found."""
 
     def test_a_mutated_total_is_caught(self):
-        problems = problems_after("**54** capability rows", "**41** capability rows")
+        problems = problems_after("**55** capability rows", "**41** capability rows")
         self.assertTrue(problems)
         self.assertIn("41 capability rows", problems[0])
 
@@ -111,8 +111,8 @@ class DriftIsCaught(unittest.TestCase):
         # any noun rule runs, so a tuple of four units-dropped figures was
         # invisible twice over: no unit word, and the digits themselves blanked.
         problems = problems_after(
-            "Measured now: 13 directions, 54 capability rows, 29 probe files, 69 ADRs.",
-            "Re-running it today gives `13`, `52`, `26`, `69`.",
+            "Measured now: 13 directions, 55 capability rows, 29 probe files, 70 ADRs.",
+            "Re-running it today gives `13`, `52`, `26`, `71`.",
         )
         self.assertTrue(problems)
         self.assertIn("gives", problems[0])
@@ -131,12 +131,12 @@ class DriftIsCaught(unittest.TestCase):
         self.assertIn("26 probe files", problems[0])
 
     def test_measured_now_does_not_hide_the_figures_before_the_last_one(self):
-        # "Measured now: 13 directions, 54 capability rows, 28 probe files, 69
+        # "Measured now: 13 directions, 55 capability rows, 28 probe files, 69
         # ADRs" is four current totals, not a before-and-after. Reading bare
         # "now" as a pairing marker checked only the trailing figure, and a
         # stale "27 probe files" sat in this sentence through the pass that
         # added the 28th probe. Every figure in the list must be read.
-        sentence = "Measured now: 13 directions, 54 capability rows, 29 probe files, 69 ADRs."
+        sentence = "Measured now: 13 directions, 55 capability rows, 29 probe files, 70 ADRs."
         problems = problems_after(sentence, sentence.replace("29 probe files", "27 probe files"))
         self.assertTrue(problems)
         self.assertIn("27 probe files", problems[0])
@@ -150,7 +150,7 @@ class DriftIsCaught(unittest.TestCase):
         self.assertTrue(problems)
 
     def test_a_mutated_status_cell_is_caught(self):
-        for name, held in (("Open", "6"), ("Mitigated", "12"), ("Accepted", "13")):
+        for name, held in (("Open", "5"), ("Mitigated", "12"), ("Accepted", "14")):
             with self.subTest(status=name):
                 other = str(int(held) - 1)
                 problems = problems_after(f"| {name} | {held} |", f"| {name} | {other} |")
@@ -164,8 +164,8 @@ class DriftIsCaught(unittest.TestCase):
         # A count alone would miss this: the register still has six Open
         # entries, but the sentence now names one that is not among them.
         problems = problems_after(
-            "**R-012, R-014, R-021, R-022, R-023, R-027**",
-            "**R-012, R-014, R-021, R-022, R-023, R-028**",
+            "**R-012, R-021, R-022, R-023, R-027**",
+            "**R-012, R-021, R-022, R-023, R-028**",
         )
         self.assertTrue(problems)
 

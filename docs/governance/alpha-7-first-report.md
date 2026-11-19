@@ -33,15 +33,15 @@ because the reason they changed is the subject of this correction.
 
 | Status | Count |
 | --- | --- |
-| Open | 6 |
+| Open | 5 |
 | Mitigated | 12 |
-| Accepted | 13 |
+| Accepted | 14 |
 | **Total** | **31** |
 
 Exposure buckets, which `scripts/check-risk-register.py` enforces arithmetically: Critical 1,
 High 4, Medium 12, Low 14. The arithmetic closes.
 
-The six Open entries are **R-012, R-014, R-021, R-022, R-023, R-027**. Five of the six are
+The five Open entries are **R-012, R-021, R-022, R-023, R-027**. Four of the five are
 documentation-or-tooling defects, not language defects. That distribution is itself the finding:
 the risk register is mostly honest about what is unfinished, and what is unfinished is mostly
 *claims*, not code.
@@ -312,13 +312,14 @@ not one migration." The decision was originally made because the maintainer was 
 Option A was "the only option reversible at zero cost". ADR-0069 re-affirmed that reasoning,
 reversal cost included.
 
-**Next ADR number is 0070** (69 exist; highest are `0068-glob-matching-is-a-linear-dynamic-program.md`
-and `0069-oqthara-stays-dynamically-typed.md`).
+**Next ADR number is 0071** (70 exist; highest are `0069-oqthara-stays-dynamically-typed.md` and
+`0070-java-functional-values-stay-java-objects.md`). ADR-0070 was written by §2.3, not by the
+typing work this item anticipates; §4's supersession therefore takes 0071.
 
 ## Item 8 — Java Bridge Full validation matrix
 
 The authoritative inventory is `docs/governance/alpha-5-java-bridge-capability-inventory.md`:
-**thirteen** directions, **54** capability rows, and **six** confirmed defects **D1–D6**. §6 asks
+**thirteen** directions, **55** capability rows, and **six** confirmed defects **D1–D6**. §6 asks
 for "Full", and the inventory already defines what that would have to mean.
 
 That count has been wrong in both directions. This report once claimed five defects when the
@@ -561,15 +562,16 @@ The other three figures in that block need the same care, and the first draft of
 not give it. It said the block had one stale figure and quoted the rest as current. In fact the
 inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
 so by the time this paragraph was written the block held **two** figures that had moved, not one.
-Measured now: 13 directions, 54 capability rows, 29 probe files, 69 ADRs. Two of the four differ
+Measured now: 13 directions, 55 capability rows, 29 probe files, 70 ADRs. Two of the four differ
 from the block above, which is the **two** this paragraph just said had moved.
 
 That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites
 a document that has not been edited since the report was written, so nothing could drift. That was
 true when it was written and is false now: `66e68f8` and `ec8947a` both edit the capability
-inventory, and `ec8947a` edits `run.py` as well. Only the ADR count survived untouched, and only
-because nothing in this branch writes to `docs/adr/`. A figure stays true here for exactly as long as
-no commit touches its subject — which is a property of the branch, not of the figure.
+inventory, and `ec8947a` edits `run.py` as well. The ADR count survived every edit made before §2.3,
+because nothing then in this branch wrote to `docs/adr/`; ADR-0070 ended that, and the same paragraph
+now carries 70. A figure stays true here for exactly as long as no commit touches its subject — which
+is a property of the branch, not of the figure.
 
 **Five more claims had decayed**, all corrected in place above:
 
@@ -680,8 +682,8 @@ mutations and eight silence mutations, all correct:
 
 ```
 $ python3 scripts/check-report-claims.py
-report claims: every figure agrees — 27 probes, 27 probe files, 54 capability rows,
-13 directions, 22 keywords, 14 fuzz targets, 69 ADRs, 6 defects, 31 risks (6 Open)
+report claims: every figure agrees — 28 probes, 29 probe files, 55 capability rows,
+13 directions, 22 keywords, 14 fuzz targets, 70 ADRs, 6 defects, 31 risks (5 Open)
 exit=0
 ```
 
@@ -1039,8 +1041,8 @@ the event dispatch thread and checks the closure received `["go"]`:
 
 ```
 $ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
-ok: 27 probes match their expectation
-ok: 27 probes compared compiled bytecode against the interpreter
+ok: 28 probes match their expectation
+ok: 28 probes compared compiled bytecode against the interpreter
 ```
 
 Two details in that program are there to stop it from measuring the wrong thing. It prints
@@ -1098,8 +1100,8 @@ message, and that a second attempt fails the same way rather than returning a ha
 
 ```
 $ python3 docs/governance/alpha-5/java-bridge-probes/run.py oq-cli/build/libs/oq.jar --both
-ok: 27 probes match their expectation
-ok: 27 probes compared compiled bytecode against the interpreter
+ok: 28 probes match their expectation
+ok: 28 probes compared compiled bytecode against the interpreter
 ```
 
 The probe asserts no exception class and no message text. The class is `HeadlessException` on this
@@ -1144,6 +1146,74 @@ is `true` / `true` whether or not a display exists, so one recorded expectation 
 macOS desktop and on a Linux runner alike. Verified in all four combinations of interpreter and
 compiled, each with and without `-Djava.awt.headless=true`. What is still unexercised is how a
 *window manager* composites the window — a property of the desktop, not of the bridge.
+
+## Item 9j — §2.3: the completion gate for every capability row
+
+The Alpha 7 order's completion checklist for the bridge asks for "executable evidence or an
+explicit, accepted limitation" for **every** capability row. That is a per-row question, and no gate
+answered it. `check-report-claims.py` re-derives the *figures* — 55 rows, 13 directions, six
+defects — with `re.findall(r"^\| C\d+\.\d+ ", inventory, re.M)`, a shape match. A row can therefore
+exist, be counted, and assert a result nothing executes. The count is the only thing checked, and
+the count is not the claim a reader consults the table for.
+
+**`scripts/check-bridge-coverage.py` is the per-row gate.** Each row's Evidence column now ends with
+a marker naming the probe files that exercise it:
+
+| C1.1 | Construct with `ClassName(args)` | Complete | `ArrayList()` → `[]` | `c1_construct` |
+
+Six rules, each of which the tests break on purpose:
+
+1. Every row carries a marker. A row without one is not evidence-backed, whatever its Evidence
+   column argues.
+2. Every named probe exists. A row citing a deleted probe is the drift this gate exists to catch.
+3. Every named probe is registered in `run.py`'s `PROBES`. A file no harness runs is not executable
+   evidence, however correct its contents.
+4. Every registered probe is cited. An orphan is either a row that lost its marker or a probe no row
+   claims; both mean the map and the harness diverged.
+5. Every direction's rows reach at least one probe of that direction. This catches a marker copied
+   from the row above, which satisfies 1–4 while proving nothing about the row it sits on. Cross-
+   direction citation stays legal, because a constructor refusal is legitimately proven by whichever
+   file exercises it — C1.3 and C1.4 are proven by `c4_conversion` and C3.4 by `c2_instance`.
+6. A row classified `Missing`, `Incorrect` or `Unverified` cannot cite a probe whose expected output
+   is a pass. Those classifications assert the capability is absent; a green probe beside one is a
+   contradiction. `run.py` already distinguishes the two: a list expectation is a value, a string is
+   a diagnostic, and a diagnostic is how a refusal is asserted.
+
+The linkage is declared, not inferred. A probe named `c2_instance.oq` beside a row `C2.1` *looks*
+like coverage, but the file exercises `size`, `isEmpty` and `contains` while the row might be about a
+`Class` value. Direction-level naming says where a probe lives, not what it proves, so the marker is
+a claim the document makes about itself and the gate checks the claim is still true.
+
+**It found three real defects on its first run.** Two are pre-existing. `C13.7` and `C13.8` carried
+only four cells: their argument was folded into the Class column and there was no Evidence column at
+all, so those two rows had never been readable as rows. Restructured, both now parse. The third is a
+hole §2.2 left: `c13_mapped` and `c13_display` — the display-backed probes it added — had no
+capability row. `C13.9` records both, which is why the table carries 55 rows.
+
+The gate then caught prose that §2.2 had invalidated. The Swing section's heading had claimed that
+every row beneath it ran with `java.awt.headless=true`, which the display-backed probes make untrue,
+and the section had closed by denying that any test opens a window, which `c13_display` does.
+Both sentences are rewritten. The non-claim that Xvfb is not a window manager survives intact.
+
+**Rule 6 is vacuous on the current tree, and the tests say so.** Every row is `Complete` since Alpha 6
+fixed D1–D6, so no row asserts absence and rule 6 has nothing to bite on. The tests that exercise it
+run against a small synthetic tree that is wrong in exactly one way. There is also a test asserting
+the real inventory still has no absence classification — not a tautology, but a tripwire: if a future
+defect reopens a `Missing` row, that test fails and the fixture's assumptions get revisited.
+
+```
+$ python3 scripts/check-bridge-coverage.py
+Every one of 55 capability rows names executable evidence (68 row/probe citations, 29 registered probes).
+exit=0
+```
+
+Nineteen tests in `scripts/tests/test_check_bridge_coverage.py`, and the gate runs in the same CI step
+as the other eight. What this does **not** claim: that a passing probe is a correct probe. Every rule
+here is about a row pointing at something that runs, and a probe can run, pass, and still measure the
+wrong thing — Item 9i's mutation-testing of `c13_offscreen` is the discipline that answers that
+question, and it is per-probe, not per-row. Nor does it claim every JDK class works: it claims every
+row the inventory makes is backed by something executed, and the inventory's own boundaries are
+unchanged.
 
 ## Item 10 — Remaining blockers and risks
 
