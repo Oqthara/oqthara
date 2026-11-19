@@ -80,6 +80,7 @@ jobs:
           python3 scripts/check-report-claims.py
           python3 scripts/check-requirement-matrix.py
           python3 scripts/check-bridge-coverage.py
+          python3 scripts/check-platform-coverage.py
       - name: Check the pull request has an AI review record
         if: matrix.os == 'ubuntu-latest' && matrix.java == '21'
         # ADR-0059 makes AI review the review mechanism for this repository, and this step is
