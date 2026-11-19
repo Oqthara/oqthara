@@ -10,17 +10,23 @@ it against a small synthetic tree that is wrong in exactly one way and asserts t
 gate names that way. It can over-fire, so another asserts the committed tree passes:
 a gate that rejected everything would look thorough and enforce nothing.
 
-The fixture also pins the three shapes that a naive implementation gets wrong, each
-of which the real repository contains:
+The fixture also pins the shapes that a naive implementation gets wrong, each of which
+the real repository contains:
 
 - `assumeTrue(false, ...)` inside a `catch` is a capability probe after a real
   attempt, which is legitimate; the same call at the top of a test body is a test
   that skips everywhere, which is not. Only the position distinguishes them.
-- a suite that defines a `WINDOWS` constant but guards every dependent test names
-  no suite row, because the per-test rows already carry the declaration. Requiring
-  both would be bookkeeping, not evidence.
+- a `return` from a `catch` is a silent platform refusal: the test asserts nothing on
+  the host that raised, and JUnit records a *pass* rather than a skip, so no skip count
+  sees it. A `return` inside a lambda leaves the lambda rather than the test.
+- a suite that defines a `WINDOWS` constant needs a suite row even when its dependent
+  tests carry their own guard rows. One declared test is not a declaration for the file
+  around it.
 - a platform word in a comment is not a dependency. The audit that produced the
   policy matched six javadoc sentences before comments were stripped.
+- a brace inside a string literal is not structure. `"{}"` and `"{not json"` unbalanced
+  the count and attributed every later method's `catch` to one test.
+- a step name is not a check context. Only a job's own `name` and its `jobs:` key are.
 """
 import importlib.util
 import pathlib
@@ -68,6 +74,7 @@ POLICY = """
 | Suite | Runs on | What differs |
 | --- | --- | --- |
 | `Branching` | linux, macos, windows | a batch file on Windows, a shell script elsewhere |
+| `Guarded` | linux, macos, windows | defines a `WINDOWS` constant consumed by its per-test guards |
 """
 
 # One test per shape the gate must distinguish.
@@ -77,6 +84,7 @@ import java.nio.file.*;
 class Guarded {
     private static final boolean WINDOWS = System.getProperty("os.name", "")
             .toLowerCase().contains("win");
+    private static final boolean POSIX = java.io.File.separatorChar == '/';
 
     @Test
     void aFifoTest() throws Exception {
@@ -98,7 +106,7 @@ class Guarded {
 
     @Test
     void aPosixProbe() throws Exception {
-        assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        assumeTrue(POSIX, "needs a POSIX shell");
         assertTrue(true);
     }
 }
@@ -129,11 +137,19 @@ jobs:
     name: ${{ matrix.os }} / JDK ${{ matrix.java }}
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Check out
+        uses: actions/checkout@v4
       - run: echo hi
+"""
+
+CODEQL = """
+name: CodeQL
+jobs:
   analyze:
     runs-on: ubuntu-latest
     steps:
-      - uses: github/codeql-action/analyze@v4
+      - name: Initialize
+        uses: github/codeql-action/init@v4
 """
 
 CIRCLECI = """
@@ -149,6 +165,25 @@ workflows:
 """
 
 
+RESULT = """<testsuite name="{cls}" tests="{tests}" skipped="{skipped}" failures="0"
+        errors="0">{cases}</testsuite>"""
+
+SKIPPED_CASE = '<testcase name="{name}()" classname="{cls}"/>'
+
+
+def results(cwd: pathlib.Path, cls: str, tests: int, skipped: tuple[str, ...] = ()) -> None:
+    """Writes the JUnit XML Gradle would leave behind for one test class."""
+    cases = "".join(SKIPPED_CASE.format(name=name, cls=cls) for name in skipped)
+    cased = cases.replace("/>", "><skipped/></testcase>")
+    plain = "".join(f'<testcase name="passing{i}()" classname="{cls}"/>'
+                    for i in range(tests - len(skipped)))
+    path = cwd / "oq-stdlib" / "build" / "test-results" / "test"
+    path.mkdir(parents=True, exist_ok=True)
+    (path / f"TEST-{cls}.xml").write_text(
+        RESULT.format(cls=cls, tests=tests, skipped=len(skipped), cases=plain + cased),
+        encoding="utf-8")
+
+
 def tree(policy: str = POLICY, guarded: str = GUARDED, branching: str = BRANCHING,
          workflow: str = WORKFLOW) -> pathlib.Path:
     """A small repository that is correct in every way the gate can check."""
@@ -161,6 +196,7 @@ def tree(policy: str = POLICY, guarded: str = GUARDED, branching: str = BRANCHIN
     (tests / "Branching.java").write_text(branching, encoding="utf-8")
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / ".github" / "workflows" / "ci.yml").write_text(workflow, encoding="utf-8")
+    (root / ".github" / "workflows" / "codeql.yml").write_text(CODEQL, encoding="utf-8")
     (root / ".circleci").mkdir()
     (root / ".circleci" / "config.yml").write_text(CIRCLECI, encoding="utf-8")
     return root
@@ -199,11 +235,37 @@ class TheCommittedTreePasses(unittest.TestCase):
 
     def test_the_comment_words_are_not_dependencies(self):
         # The audit that produced the policy matched six javadoc sentences before
-        # comments were stripped. `SafeArchiveTest` is the live example.
+        # comments were stripped. `SafeArchiveTest` is the live example: its prose
+        # discusses WINDOWS and POSIX while its body has no guard at all.
         source = (REPO / "oq-cli/src/test/java/dev/oqthara/cli/SafeArchiveTest.java")
+        original = source.read_text(encoding="utf-8")
+        code = checker.strip_comments(original)
+        self.assertIn("POSIX", original, "the fixture lost the word this test is about")
+        self.assertNotIn("POSIX", code, "comments were not stripped")
+        self.assertNotIn("windows", code, "comments were not stripped")
+
+    def test_a_brace_in_a_literal_does_not_unbalance_the_file(self):
+        # `ServerTest` writes the frame `"{}"` and the payload `"{not json"`. Counting
+        # braces in the raw text read the second as structure, ran to end of file, and
+        # attributed every following method's `catch` to the test above it.
+        source = (REPO / "oq-lsp/src/test/java/dev/oqthara/lsp/ServerTest.java")
         code = checker.strip_comments(source.read_text(encoding="utf-8"))
-        self.assertNotIn("WINDOWS", code.replace("WINDOWS", ""), "comments were not stripped")
-        self.assertNotIn("POSIX", code.replace("POSIX", ""))
+        self.assertEqual(code.count("{"), code.count("}"),
+                         "a literal unbalanced the brace count, so method bodies are wrong")
+
+    def test_every_suite_that_branches_has_a_row(self):
+        # The exemption this used to grant — one guard row covers the whole file — was the
+        # hole the suite table exists to close. This pins the *shape* (set difference is
+        # empty), never a total, so adding a branching suite needs a row and adding a
+        # non-branching one needs nothing.
+        policy = (REPO / checker.POLICY).read_text(encoding="utf-8")
+        rows = set(checker.read_suite_rows(policy))
+        branching = {path.stem for path in checker.sources(REPO)
+                     if checker.BRANCH.search(
+                         checker.strip_comments(path.read_text(encoding="utf-8"),
+                                                literals=False))}
+        self.assertEqual(set(), branching - rows,
+                         "a suite branches on the platform without a policy row")
 
 
 class ItCatchesDrift(unittest.TestCase):
@@ -222,7 +284,7 @@ class ItCatchesDrift(unittest.TestCase):
 
     def test_a_stale_guard_row(self):
         found = problems(policy=replaced(POLICY, "`aPosixProbe`", "`aDeletedTest`"))
-        self.assertTrue(any("no such guarded test exists" in p for p in found), found)
+        self.assertTrue(any("no such platform-dependent test exists" in p for p in found), found)
 
     def test_a_stale_suite_row(self):
         found = problems(policy=replaced(POLICY, "| `Branching` |", "| `Deleted` |"))
@@ -260,11 +322,78 @@ class ItAcceptsTheLegitimateShapes(unittest.TestCase):
         found = problems()
         self.assertEqual([], found)
 
-    def test_a_suite_that_guards_every_dependent_test_needs_no_suite_row(self):
-        # FileOperationsTest's shape: the constant is defined, every dependent test
-        # carries its own row, so a suite row would repeat the declarations.
-        self.assertNotIn("FileOperationsTest", checker.read_suite_rows(
-            (REPO / checker.POLICY).read_text(encoding="utf-8")))
+    def test_a_suite_with_guarded_tests_still_needs_a_suite_row(self):
+        # The shape that used to be exempt: a suite constant consumed by per-test guards.
+        # The synthetic `Guarded` suite has three guard rows of its own, so an exemption
+        # based on per-test rows would hide it. Removing its suite row must fail.
+        found = problems(policy=replaced(POLICY, "| `Guarded` | linux, macos, windows | "
+                                                 "defines a `WINDOWS` constant consumed by "
+                                                 "its per-test guards |\n", ""))
+        self.assertTrue(any("Guarded branches on the operating system" in p for p in found),
+                        found)
+
+    def test_a_return_inside_a_lambda_is_not_a_silent_platform_return(self):
+        # FileOperationsTest submits a task that answers `return true` / `return false`
+        # and then asserts two lines further down. Those leave the lambda, not the test.
+        lambdas = GUARDED.replace(
+            "    @Test\n    void aPosixProbe() throws Exception {",
+            "    @Test\n    void aLambdaTest() {\n"
+            "        pool.submit(() -> {\n"
+            "            try {\n"
+            "                call();\n"
+            "                return true;\n"
+            "            } catch (OqError refused) {\n"
+            "                return false;\n"
+            "            }\n"
+            "        });\n"
+            "        assertEquals(1, 1);\n"
+            "    }\n\n"
+            "    @Test\n    void aPosixProbe() throws Exception {")
+        found = problems(guarded=lambdas)
+        self.assertFalse(any("aLambdaTest" in p for p in found), found)
+
+    def test_a_silent_return_is_declared(self):
+        # A test that returns from a `catch` asserts nothing there and is recorded as a
+        # pass, so no skip count sees it. It needs a row just as a guard does.
+        silent = GUARDED.replace(
+            "    @Test\n    void aPosixProbe() throws Exception {",
+            "    @Test\n    void aSilentTest() throws Exception {\n"
+            "        try {\n"
+            "            Files.getAttribute(dir, \"unix:mode\");\n"
+            "        } catch (UnsupportedOperationException e) {\n"
+            "            return;\n"
+            "        }\n"
+            "        assertEquals(1, 1);\n"
+            "    }\n\n"
+            "    @Test\n    void aPosixProbe() throws Exception {")
+        found = problems(guarded=silent)
+        self.assertTrue(any("aSilentTest returns from a `catch`" in p for p in found), found)
+
+    def test_a_posix_guard_is_compared_rather_than_skipped(self):
+        # `POSIX` matched no name in PLATFORMS, so check 3 hit `continue` and never
+        # compared it to the row. A row claiming the test runs only on Windows passed,
+        # because the guard covered a family the check could not name.
+        policy = replaced(POLICY, "| `aPosixProbe` | `Guarded` | linux, macos | windows | "
+                                  "needs POSIX attributes |",
+                          "| `aPosixProbe` | `Guarded` | windows | linux, macos | "
+                          "needs POSIX attributes |")
+        found = problems(policy=policy)
+        self.assertTrue(any("claims coverage the run did not produce" in p for p in found),
+                        found)
+
+    def test_a_required_context_attributed_to_the_wrong_workflow(self):
+        found = problems(policy=replaced(POLICY, "| `analyze` | `codeql.yml` |",
+                                         "| `analyze` | `ci.yml` |"))
+        self.assertTrue(any("a reader is sent to a file that never reports" in p for p in found),
+                        found)
+
+    def test_a_step_name_is_not_a_required_context(self):
+        # `_collect_names` recursed for every `name:` under a job, so a step name or an
+        # artifact name satisfied check 5 while naming nothing that reports a status.
+        found = problems(policy=replaced(POLICY, "| `analyze` | `codeql.yml` |",
+                                         "| `Check out` | `ci.yml` |"))
+        self.assertTrue(any("unsatisfiable requirement blocks every merge" in p for p in found),
+                        found)
 
     def test_a_platform_word_in_a_comment_creates_no_dependency(self):
         commented = BRANCHING.replace(
@@ -278,3 +407,50 @@ class ItAcceptsTheLegitimateShapes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ItReadsTheLastRun(unittest.TestCase):
+    """Check 6, which turns the policy's `skipped=0` sentence into something enforced."""
+
+    def test_a_skipped_test_on_a_run_row_is_a_contradiction(self):
+        # Assumed silently, `skipped=0` was prose. Gradle records the suspended case by
+        # name, so the row that claimed coverage can be pointed at the test that did not.
+        root = tree()
+        try:
+            results(root, "Guarded", 3, ("aPosixProbe",))
+            found = checker.problems_for(root)
+        finally:
+            shutil.rmtree(root)
+        self.assertTrue(any("aPosixProbe" in p and "skipped it" in p for p in found), found)
+
+    def test_a_row_that_declares_a_skip_here_is_not_blamed(self):
+        # `aFifoTest` declares `skips on windows`. On Windows its skip is the policy
+        # working, not a contradiction; on macOS the same skip is a failure to produce the
+        # coverage the row claims. Only the host decides which, so the check reads it.
+        root = tree()
+        try:
+            results(root, "Guarded", 3, ("aFifoTest",))
+            original = checker.host_platform
+            checker.host_platform = lambda: "windows"
+            try:
+                found = checker.problems_for(root)
+            finally:
+                checker.host_platform = original
+        finally:
+            shutil.rmtree(root)
+        self.assertFalse([p for p in found if "aFifoTest" in p], found)
+
+    def test_no_results_means_no_verdict(self):
+        # An unbuilt tree is not evidence of zero skips. A gate that read a missing
+        # directory as a clean run would report coverage it never saw.
+        self.assertEqual(checker.read_results(tree()), None)
+
+    def test_the_class_total_alone_does_not_convict_a_row(self):
+        # The count is a filter; the skipped names decide. A skip in the class that is not
+        # one of the declared tests must not be blamed on every row in it.
+        root = tree()
+        try:
+            results(root, "Guarded", 4, ("someOtherTest",))
+            found = checker.problems_for(root)
+        finally:
+            shutil.rmtree(root)
+        self.assertEqual(found, [])

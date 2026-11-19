@@ -17,17 +17,21 @@ one of six legs.
 | --- | --- | --- |
 | Declaring merge-ready while a platform leg is pending | The merge set is the platform set; a pending leg is not evidence | ruleset `strict_required_status_checks_policy` |
 | A platform-conditional test absent from this table | The cheap way out is to leave the table empty | check 1, check 2 |
-| A test declaring `run` on a platform whose body then skips it | The row claims coverage the run did not produce | check 3 |
+| A test declaring `run` on a platform whose body then skips it | The row claims coverage the run did not produce | check 3, check 6 |
 | A row naming a test that no longer exists | A stale row protects nothing while reading as coverage | check 4 |
 | A required context that no job produces | An unsatisfiable requirement blocks every merge silently | check 5 |
+| A test marked `run` that the last run recorded as skipped | A skip is not a pass, and the pass count never shows it | check 6 |
 | `assumeTrue(false, …)` guarding a platform difference | It skips everywhere, so the green tick proves nothing anywhere | check 3 |
 
 ## Dispositions
 
 Every test below carries exactly one, and both are legitimate.
 
-- **`run` on an environment** — the test executes to a real assertion there. `skipped=0` is required
-  for that suite on that environment.
+- **`run` on an environment** — the test executes to a real assertion there. `skipped=0` is
+  required for that suite on that environment, and check 6 reads the JUnit XML to enforce it: a
+  declared test that appears among its class's skipped cases while its row says `run` on this
+  host is reported. With no results on disk the check says so in its summary instead of passing
+  quietly, because an unbuilt tree is not evidence of zero skips.
 - **`skip` on an environment** — the test is not applicable there and says why. A skip is *not* a
   pass, and it is *not* coverage. It must never be counted as validated.
 
@@ -54,6 +58,21 @@ the environments the test must execute in and must not. The gate proves the guar
 | `aProbeThatFloodsItsOutputIsRefused` | `RuntimeResolverTest` | linux, macos | windows | the fake JVM is a POSIX shell script with an execute bit |
 | `aWellBehavedProbeStillReportsItsMajor` | `RuntimeResolverTest` | linux, macos | windows | the fake JVM is a POSIX shell script with an execute bit |
 
+## Declared silent returns
+
+One row per test that returns from a `catch` instead of asserting. These are the shape that
+finding 20 hid behind, and they are more dangerous than a guard: `assumeTrue(false, …)` records a
+**skip**, which a skip count notices, while `return` inside a `catch` records a **pass**, which
+nothing notices. Each one is legitimate — the capability genuinely cannot be faked — so each is
+declared rather than removed.
+
+| Test | File | Runs on | Skips on | Why |
+| --- | --- | --- | --- | --- |
+| `leavesAnOrdinaryFileInexecutable` | `SafeArchiveTest` | linux, macos | windows | Windows has no execute bit to withhold, so asserting inexecutability would test the platform |
+| `neverSetsTheSetuidBitFromAnArchive` | `SafeArchiveTest` | linux, macos | windows | the setuid bit is a POSIX attribute |
+| `refusesToWriteThroughAnExistingSymbolicLink` | `SafeArchiveTest` | linux, macos, windows | — | skips only on a filesystem that cannot create links |
+| `walkDoesNotFollowASymbolicLinkIntoACycle` | `FileOperationsTest` | linux, macos, windows | — | a filesystem without symlinks cannot exhibit the cycle |
+
 ## Platform-branching suites
 
 A suite that branches on the operating system and passes on **every** branch is the most deceptive
@@ -66,8 +85,17 @@ platform, and the gate refuses a file that branches without being listed here.
 | `RuntimeCompatibilityTest` | linux, macos, windows | the fake JVM is a batch file on Windows and a shell script elsewhere |
 | `RuntimeInstallerTest` | linux, macos, windows | the executable name is `java.exe` on Windows and `java` elsewhere |
 | `RuntimeRetentionTest` | linux, macos, windows | the executable name is `java.exe` on Windows and `java` elsewhere |
+| `RuntimeResolverTest` | linux, macos, windows | same, plus a `POSIX` constant that decides which probe scripts can run at all |
 | `SafeArchiveTest` | linux, macos, windows | case-insensitive filesystems reject the duplicate; others accept both files |
 | `HostBuiltinLimitsTest` | linux, macos, windows | fixtures are `.bat` under `cmd.exe` on Windows and `#!/bin/sh` elsewhere |
+| `FileOperationsTest` | linux, macos, windows | defines a `WINDOWS` constant; its dependent tests each carry a guard row above |
+| `FileSystemModuleTest` | linux, macos, windows | defines a `WINDOWS` constant for the FIFO tests |
+| `GlobTest` | linux, macos, windows | defines a `WINDOWS` constant for the unreadable-directory test |
+
+A suite listed here with "its dependent tests each carry a guard row" is not exempt from this
+table. An earlier revision of the gate read it that way — one guard row exempted the whole file —
+and that is exactly the hole the table exists to close: a *new, unguarded* branch added to
+`FileOperationsTest` would have passed a gate whose stated job was to refuse it.
 
 ## Required merge contexts
 

@@ -56,6 +56,12 @@ declaration.
    gate rejects it. This is the specific mechanism that stops a platform-dependent test from
    counting as validated when it did not run.
 
+   A guard is checked statically; a skip is also checked against what happened. The gate reads
+   the JUnit XML a build leaves behind and fails when a test whose row says `run` on this host
+   appears among its class's skipped cases. Without that half, `skipped=0` was a sentence in
+   this policy that nothing implemented — the same shape of defect as a declared platform with
+   no run, committed in the document that exists to forbid it.
+
 4. **The merge-blocking set is the platform set.** The required status checks on `main` name every
    operating system in the support list at every supported JDK. A required context that omits a
    platform converts that platform into advice. The set is recorded in the policy with the date it
@@ -64,7 +70,14 @@ declaration.
 5. **A job that proves something no other job proves is required or it is not evidence.** The
    display-backed Swing job is the only place a frame is realized under a real X server. If it is
    not merge-blocking, then no merge-blocking job proves it, and its green tick is a fact about a
-   runner that a broken change cannot affect. It is recorded as required in the policy.
+   runner that a broken change cannot affect.
+
+   **As measured, it is not required.** The `main-protection` ruleset requires twelve contexts and
+   `Display-backed Swing` is not one of them, so the gap is live rather than hypothetical. The
+   policy records it under *Not required, and therefore not evidence* rather than describing it as
+   a requirement it is not. Closing the gap is a repository-settings change that this ADR cannot
+   perform and no gate can verify; recording it is what this decision can do, and pretending
+   otherwise would be the exact failure the policy is written against.
 
 6. **The matrix stays at six legs.** `./gradlew build` already runs the full suite on every leg, so
    the cost of platform coverage is already being paid and no test is opted into extra runs. The
@@ -74,17 +87,28 @@ declaration.
 ## Consequences
 
 - **A platform-conditional test cannot be added without declaring it.** The gate scans for
-  `os.name`, `assume*` and the platform constants, so the table is checked against the code rather
-  than trusted. Adding a test that skips on Windows fails the build until the table says so.
+  `os.name`, `assume*`, `File.separatorChar`, `@EnabledOnOs`, the platform constants and the
+  `.exe` / `.bat` / `unix:` markers, so the table is checked against the code rather than
+  trusted. It does **not** see every possible platform predicate: a test that branches on
+  `line.separator`, `File.pathSeparator`, a locale, or a JDK-version behaviour is outside what
+  these markers find, and would have to be declared by hand. The list is a floor, not a proof.
 
-- **A declaration cannot outlive its test.** The gate resolves every named test against the source,
-  so deleting or renaming a test leaves a stale row that fails rather than a row that quietly
-  protects nothing.
+- **A declaration cannot outlive its test.** The gate resolves every named test against the source
+  and checks that the row names the class that actually declares it, so deleting or renaming a
+  test leaves a stale row that fails rather than a row that quietly protects nothing.
 
-- **Skipping remains legitimate.** The policy does not ban `assumeFalse`. Three of the nine
-  declared tests skip on Windows for a real reason — a FIFO, an execute bit, a POSIX shell — and
-  driving them to pass would mean faking the capability, which finding 20's sibling defect already
-  showed is worse than skipping. What the policy bans is *undeclared* skipping.
+- **Skipping remains legitimate.** The policy does not ban `assumeFalse`. Most of the guarded
+  tests skip on Windows for a real reason — a FIFO, an execute bit, a POSIX shell, a POSIX
+  attribute view — and driving them to pass would mean faking the capability, which finding 20's
+  sibling defect already showed is worse than skipping. What the policy bans is *undeclared*
+  skipping, and a skip recorded where the row promised a run.
+
+- **A test can also give up without skipping, and that is worse.** Four tests return from a
+  `catch` on a host that lacks a capability. They assert nothing there, but JUnit records a
+  **pass**, so no skip count and no report notices. `SafeArchiveTest`'s execute-bit test is the
+  example: it cannot make Windows withhold a bit Windows does not have. Those four are declared
+  in the policy's silent-return table for the same reason the guards are declared — the
+  behaviour is legitimate, the silence is not.
 
 - **The policy cannot enforce repository settings.** Nothing in this tree can read `main`'s ruleset,
   so the required-context list is a recorded observation with a date rather than a checked
