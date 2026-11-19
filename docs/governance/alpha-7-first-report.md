@@ -463,19 +463,22 @@ count to four. There is now a real D5, found by running the Swing program §6 or
 pass — so the number is five again, for a different reason, and this time it names a section that
 exists.
 
-§6 orders Swing first, and this pass executed it. Two of the three obstacles the report used to
-list are gone; one stands:
+§6 orders Swing first, and this pass executed it. The report used to list three obstacles; two are
+gone and the third is narrowed to compositing:
 
-- ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — still true of the suite,
-  but the probes below ran the toolkit, and Direction 13 records the results.
-- ~~The inventory has no Swing row~~ — Direction 13 now has six, C13.1–C13.6, all executed.
-- **Was open, now half closed:** layout, painting, input dispatch and look-and-feel were untested
+- ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — the probes below ran
+  the toolkit first, and then the gap itself closed: `examples/swing.oq` (#267) and
+  `conformance/257-swing-runs-with-no-display` (#264). Direction 13 records the probes.
+- ~~The inventory has no Swing row~~ — Direction 13 now has nine, C13.1–C13.9, all executed.
+- **Was open, now narrowed:** layout, painting, input dispatch and look-and-feel were untested
   because this section assumed a headless runner cannot cover them. That assumption was wrong:
-  `c13_offscreen` now gates all four on both backends with no display. What remains open is
-  *displaying* a window — and with it the platform's own window manager — which a headless runner
-  genuinely cannot cover. The failure a program gets when there is no display *is* covered, by
-  `c13_window` (Item 9j), which pins `-Djava.awt.headless=true` so the answer does not depend on
-  the host.
+  `c13_offscreen` now gates all four on both backends with no display. Displaying a window closed
+  too, by #267: a dedicated CI job runs `c13_mapped` under `xvfb-run`, so a window is realised and
+  reports itself displayable on a Linux runner. The failure a program gets when there is no display
+  is covered separately, by `c13_window` (Item 9i), which pins `-Djava.awt.headless=true` so the
+  answer does not depend on the host. What stands is compositing by a compositor: Xvfb is an X
+  server and runs none, so `isDisplayable()` says a window was realised, not that anything was
+  composited.
 
 What the pass established: components construct and answer, a closure runs on the event dispatch
 thread, a closure is accepted as an `ActionListener` and receives the real `ActionEvent`, captures
@@ -489,7 +492,7 @@ required to execute rather than be read:
 
 | Area | Ceiling that already exists |
 | --- | --- |
-| Swing construction and display | direction 13, C13.1 and C13.2; display still untested. C13.7 gates the rest of the toolkit without a display |
+| Swing construction and display | direction 13, C13.1 and C13.2; a window realises and reports displayable under Xvfb (C13.9, `c13_mapped`, #267). Compositing is still untested. C13.7 gates the rest of the toolkit without a display |
 | Event dispatch and thread affinity | direction 13, C13.3–C13.5; `print` is still non-atomic (R-029) |
 | CLI, network, filesystem, JDBC | directions 1–3; JDBC behind R-006/R-007 |
 | Streams and `java.util.concurrent` | direction 7 for callbacks; D1 fixed in #231, so callbacks are accepted |
@@ -551,7 +554,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split were discharged by Item 6's Resolution, and Item 6b now records §4's scope in this repository, which was the last thing missing. The next deliverable is the language-core capability matrix Item 6b defines, owned by `oq-hive-language-syntax` |
-| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), and the no-display failure is gated by `c13_window` (Item 9j). Only displaying a window on a real screen is still open |
+| 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.9). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), the no-display failure is gated by `c13_window` and a realised window by `c13_mapped` (both Item 9i), and only compositing is still open |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 | 5 (follow-on) | §5 typing and generics | **Answered, not executed** — ADR-0069 closed the decision (dynamically typed, as decided) and ADR-0075 assigned workstream 2 to `oq-hive-language-syntax` with `oq-hive-development` supporting. The section is answerable now; it is not scheduled and not implemented |
 
@@ -1211,7 +1214,7 @@ FAILED
 Closed: layout, painting, input dispatch and look-and-feel are gated on both backends, in CI, with
 no display required. Direction 13 is no longer supported only by runs somebody did by hand.
 
-Not closed: opening a *visible* window still has no gate that exercises a real display. The
+Not closed: opening a *visible* window still has no gate that exercises a physical display. The
 matrix row in Item 8 says exactly that instead of claiming the whole toolkit is untestable.
 
 ### The second half, and where the boundary actually is
@@ -1276,7 +1279,7 @@ forms and assert that an unlisted probe gets none.
 The Swing path is now gated twice, and the two gates answer different questions. The probes harness
 asks what the bridge did on the day it was measured; `conformance/257-swing-runs-with-no-display`
 asks whether it still does, on both backends, in the ordinary suite. It compiles, so the corpus
-moves to 215 of 224 executable programs, measured rather than assumed.
+moves to 229 of 263 executable programs when re-derived, rather than assumed.
 
 What remains genuinely open is narrower than it was, and it is worth stating precisely: no test in
 this repository displays a window on a real screen, so painting *as composited by a window manager*
@@ -1398,21 +1401,68 @@ unchanged.
   adjustment. Alpha 7's revised execution order supplied that text, and **Item 6b** now records its
   scope, exclusions, ownership boundaries, and first deliverable here. Status is **Unblocked**; the
   outstanding work is the capability matrix, not a definition.
-- **Swing has no example and no conformance case.** This entry used to add two claims that were
-  wrong when written and are now demonstrated wrong. "Nothing in CI would notice a regression" was
-  false: the probes runner is a CI step on the Ubuntu leg, and deleting either direction 13
-  probe makes it exit non-zero on both backends. Deleting `c13_offscreen.oq` and re-running the
-  harness gives `FAILED / c13_offscreen: missing probe file` and exit 1; restoring it gives
-  `ok: 28 probes match their expectation` and exit 0. "What cannot be covered headlessly
-  is still unmeasured" was the premise Item 9i overturned — only *realising* a window needs a
-  display, and layout, painting, input dispatch and look-and-feel all run under
-  `-Djava.awt.headless=true` and are gated by C13.7. What is genuinely absent is smaller than
-  either claim: no `examples/*.oq` and no `conformance/*.oq` exercises Swing, so the bridge's Swing
-  path is gated by a governance harness rather than by the ordinary test suite, and a reader
-  looking for how to use it has nothing to read. The remaining unmeasurable is one thing: painting
-  as composited by a real window manager, which needs a virtual framebuffer on the Linux runner.
-- **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
-  deliberately deferred and still deferred.
+- **Swing has an example and a conformance case, and this bullet said otherwise.** The heading and
+  its last clause were both false when this pass began and are false again now for a different
+  reason: `examples/swing.oq` landed in #267 and `conformance/257-swing-runs-with-no-display`
+  landed in #264, and this bullet was never re-derived after either. The report cited case 257 in
+  Item 9i while this entry denied it existed. What the two cases actually cover is narrower than
+  "Swing works": the example branches on `GraphicsEnvironment.isHeadless()` and so runs unchanged
+  on a desktop and on a runner, and the conformance case asserts layout, painting into an
+  offscreen image, input dispatch and a closure on the event dispatch thread — none of which needs
+  a display, and none of them look-and-feel, which no case names because it varies by host.
+
+  This entry has now carried five claims that were wrong when written, and they are not all
+  wrong the same way. Two were **false at birth**, in the commit that wrote them: "no
+  `conformance/*.oq` exercises Swing" was contradicted by `07eef68`, the same commit that added
+  case 257 and whose subject is *adding a gate that re-derives this report's claims*; and "gated by
+  a governance harness rather than by the ordinary test suite" was false because
+  `ConformanceTest` globs the corpus that case 257 already sat in. Three more were **true at birth
+  and decayed**, all at #267: "no `examples/*.oq`", "a reader looking for how to use it has nothing
+  to read", and "needs a virtual framebuffer on the Linux runner". A sixth — where case 257 is
+  cited — was introduced by the very pass that repaired the first five, which is why this bullet
+  now states its evidence rather than its conclusion.
+
+  Two of those five are separately checkable. "Nothing in CI would notice a regression" was false:
+  the probes runner is a CI step on the Ubuntu leg, and deleting `c13_offscreen.oq` or
+  `c13_window.oq` makes it fail on both backends — deleting `c13_offscreen.oq` and re-running the
+  harness prints
+
+  ```
+  FAILED
+    c13_offscreen: missing probe file
+  ```
+
+  and exits 1, and restoring it gives `ok: 28 probes match their expectation` and exit 0.
+  (`c13_mapped` is excluded from the default selection, so deleting that one alone changes
+  nothing.) "What cannot be covered headlessly is still unmeasured" was the premise Item 9i
+  overturned.
+
+  The lesson is not that any one of them was careless. It is that an entry about *absence* decays
+  the moment someone fills the gap, and absence is the one thing no gate here re-checks:
+  `check-report-claims.py` re-derives every figure in this document and has no rule that can tell
+  whether a file exists.
+
+  The remaining unmeasurable is still one thing: how a compositor composites the painted window.
+  The display half closed at #267. The job runs `c13_mapped`, which prints
+  `GraphicsEnvironment.isHeadless()` and `frame.isDisplayable()` — so what it establishes is that a
+  window realises under Xvfb and reports itself **displayable**, not that anything is *mapped* or
+  composited. Xvfb is an X server with no compositor in it. It is not unmeasurable for lack of an
+  idea: `picom`, with a window manager such as `openbox` to give it windows to composite, would
+  supply one. Note that window-manager insets would *not* measure it — frame extents are decoration
+  geometry and are readable with no compositor running — so the assertion would have to be about the
+  composited output itself. The obstacle is narrower than "CI cannot install things": the
+  `Dockerfile` already installs as root and drops to `USER oq`, and `docker.yml` builds that image,
+  so a compositor could be installed with no escalation at all if a job ran in a container built
+  from it. On the runner itself, the straightforward install is `sudo apt-get`, `AGENTS.md` forbids
+  `sudo`, and no workflow here has ever escalated. Whether to take the container route, carry the
+  packages in an image, or leave the property recorded as unmeasured is a decision about CI's
+  shape, and the report records it as one rather than closing it by quietly adding a step.
+- ~~**R-002's dangling "See R-008."** at line 95~~ — a pre-existing inaccuracy, wrong since
+  `1e87f00`, recorded as deferred in the review of #250 and closed here. R-002's residual is that both backends
+  share one author and so cannot detect a shared misreading; R-008 is "no action pinning by digest",
+  which is unrelated. The intended target is R-017, "Conformance corpus is circular: tests and
+  implementation share one author", which has said that since the file was created. The reference
+  now reads `See R-017, which is that risk stated on its own.`
 - **The security baseline's "measured starting point" table has drifted, and the new gate already
   shows it.** `docs/governance/alpha-7-security-baseline.md` said its figures "were re-derived from
   the tree on the commit that carries this file, none is carried forward". Run against today's tree,
@@ -1426,9 +1476,9 @@ unchanged.
   who needs today's numbers at the gates named in the Source column. The table itself is unchanged,
   because rewriting it with figures measured on a different tree would repeat the mistake it was
   accused of.
-  This is the fifth document found carrying a figure that decayed silently. Unlike the first four it
-  was not repaired by editing a number: the defect was in a tense, and correcting the tense was
-  enough.
+  This document carries a figure that decayed silently, and it is not the only one this report has
+  found. Unlike the others it was not repaired by editing a number: the defect was in a tense, and
+  correcting the tense was enough.
 - **No release, tag, deployment or version change is authorized** (§10), so none of the above may be
   validated by shipping.
 
@@ -1446,5 +1496,5 @@ unchanged.
 - It does not claim `oq-hive-language-syntax` is unusable. It claimed it was not where `AGENTS.md`
   said agents live and that its keyword count was stale; both were corrected in #252 and #257.
 - It does not claim Swing works. It claims six specific capabilities were executed under a headless
-  JVM and matched their expectation, and that nothing tests layout, painting, input dispatch or
-  look-and-feel.
+  JVM and matched their expectation, that layout, painting, input dispatch and look-and-feel are
+  gated by `c13_offscreen` with no display (Item 9i), and that compositing is not gated at all.
