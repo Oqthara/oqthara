@@ -1187,7 +1187,7 @@ compiled, each with and without `-Djava.awt.headless=true`. What is still unexer
   false: the probes runner is a CI step on the Ubuntu leg, and deleting either direction 13
   probe makes it exit non-zero on both backends. Deleting `c13_offscreen.oq` and re-running the
   harness gives `FAILED / c13_offscreen: missing probe file` and exit 1; restoring it gives
-  `ok: 27 probes match their expectation` and exit 0. "What cannot be covered headlessly
+  `ok: 28 probes match their expectation` and exit 0. "What cannot be covered headlessly
   is still unmeasured" was the premise Item 9i overturned — only *realising* a window needs a
   display, and layout, painting, input dispatch and look-and-feel all run under
   `-Djava.awt.headless=true` and are gated by C13.7. What is genuinely absent is smaller than

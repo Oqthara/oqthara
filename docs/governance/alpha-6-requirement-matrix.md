@@ -15,9 +15,10 @@ The probe set is reproducibility, not testimony: for each `DONE` row the program
 prints the value in the Evidence column; for each `REFUSED` row the program exits 1 and prints
 the diagnostic quoted there. A row is not `DONE` because a document claims it.
 
-**Last verified:** the branch that adds this file, at the commit named in the pull request that
-merged it. The pin must name a commit reachable from the branch under review, because
-squash-merge discards branch SHAs and a pin to one of them stops resolving.
+**Last verified:** `d5f6797`, the squash commit that merged the display probe and the gate
+repair. The pin names a commit reachable from `main` rather than a branch SHA, because a
+squash merge discards branch SHAs and a pin to one of them stops resolving.
+`scripts/check-requirement-matrix.py` proves reachability, so this line cannot drift again.
 
 ## Language surface
 
