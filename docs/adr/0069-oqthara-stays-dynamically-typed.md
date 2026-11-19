@@ -89,6 +89,10 @@ the type model. That is about ownership rather than a missing decision, and chan
 workstream belongs in its own governance commit. It is named here so that closing §4's decision is
 not mistaken for closing §4's ownership gap.
 
+That follow-up commit has since been made: [ADR-0075](0075-workstream-two-owns-the-type-model.md)
+assigns workstream 2 to `oq-hive-language-syntax` and leaves this record's typing decision
+untouched.
+
 ## Evidence
 
 `docs/governance/remediation/type-system-decision-brief.md` (the decision and every measurement it

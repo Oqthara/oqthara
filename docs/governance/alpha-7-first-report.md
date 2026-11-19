@@ -183,19 +183,26 @@ Proposed A7.8 acceptance criteria, each of which would fail if the work were ski
 
 ## Item 5 — Proposed Alpha 7 workstream assignments
 
-The existing mapping is `docs/governance/alpha-4-workstream-assignment.md`: twelve workstreams,
-eleven `Covered`, one `Under-covered`, none unowned. The `Under-covered` row is **workstream 2, Type
-System & Values**, whose note reads "no role names types".
+The existing mapping is `docs/governance/alpha-4-workstream-assignment.md`: twelve workstreams.
+When this report was written, eleven were `Covered` and one was `Under-covered`, none unowned. The
+`Under-covered` row was **workstream 2, Type System & Values**, whose note read "no role names
+types".
 
 That is the row §5 collides with. §5 orders optional gradual typing with generics; the only
-workstream that owns the type system is the one the repository already recorded as under-covered.
-Alpha 7 therefore cannot assign §5 to an existing owner without first naming one.
+workstream that owns the type system is the one the repository had recorded as under-covered.
+Alpha 7 therefore could not assign §5 to an existing owner without first naming one.
+
+**Both halves have since been discharged.** [ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md)
+names `oq-hive-language-syntax` as owner of the type model, with `oq-hive-development` supporting
+on the runtime representation, so row 2 now reads `Covered`. [ADR-0069](../adr/0069-oqthara-stays-dynamically-typed.md)
+closes the typing question itself. They are two records deliberately: the owner was missing, and the
+decision was already taken. The owner exists; the decision was not reversed.
 
 | §3–§6 unit | Proposed owner | Rationale from the tree |
 | --- | --- | --- |
 | R-018 fuzzing reach (A7.8) | `oq-hive-testing-security` | Already owns `docs/spec/fuzzing.md` and both `src/fuzz` trees (workstream 10) |
 | Language-core evolution (§4) | `oq-hive-language-syntax` | Sole owner per its own scope; workstream 1 |
-| Optional typing and generics (§5) | **Unassigned — needs a decision** | Workstream 2 is `Under-covered`; assigning it is itself an ADR |
+| Optional typing and generics (§5) | `oq-hive-language-syntax` | Workstream 2 is now `Covered`; ADR-0075 names the owner and ADR-0069 closes the typing decision |
 | Java Bridge Full (§6) | `oq-hive-development` | Workstream 6, `Covered`; owns `JavaBridge.java` |
 | Runtime and observability (§5) | `oq-hive-development` | Workstreams 4 and 5 |
 | Security continuation | `oq-hive-testing-security` | Workstreams 10 and 11 |
@@ -273,6 +280,12 @@ lexer — and Item 10 below said the same thing a second time. Both were wrong w
 correction is recorded here rather than quietly applied, because a governance report that overstates
 a remaining gap is as misleading as one that understates it, and this is the same failure the report
 charges elsewhere: prose about the tree, not checked against the tree.
+
+The third row's split — syntax owns the annotation grammar and the spec's account of it,
+`oq-hive-development` owns the value model and the analysis pass — is now the workstream-level split
+too: [ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md) makes `oq-hive-language-syntax`
+primary on row 2 with `oq-hive-development` supporting on the runtime representation. The agent
+scopes and the workstream assignment now say the same thing, which is not how they started.
 
 **The fourth obstacle was a missing definition, and it is discharged too.** The three adjustments
 above bounded ownership. They did not bound the work, because nothing in this repository said what
@@ -528,6 +541,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split were discharged by Item 6's Resolution, and Item 6b now records §4's scope in this repository, which was the last thing missing. The next deliverable is the language-core capability matrix Item 6b defines, owned by `oq-hive-language-syntax` |
 | 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), and the no-display failure is gated by `c13_window` (Item 9j). Only displaying a window on a real screen is still open |
+| 5 | §5 typing and generics | **Answered, not executed** — ADR-0069 closed the decision (dynamically typed, as decided) and ADR-0075 assigned workstream 2 to `oq-hive-language-syntax`. The section is answerable now; it is not scheduled and not implemented |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
 ## Item 9a — Runtime and observability: what the tree actually needed
@@ -673,11 +687,11 @@ The other three figures in that block need the same care, and the first draft of
 not give it. It said the block had one stale figure and quoted the rest as current. In fact the
 inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
 so by the time this paragraph was written the block held **two** figures that had moved, not one.
-Measured now: 13 directions, 55 capability rows, 29 probe files, 74 ADRs. Two of the four differ
+Measured now: 13 directions, 55 capability rows, 29 probe files, 75 ADRs. Two of the four differ
 from the block above for the reason this paragraph just gave — the capability row and the probe file
-that closed C13 — and a third, the ADR count, has moved again since for an unrelated reason: ADR-0074
-landed. Three of the four differ today, which is the point rather than a contradiction: every figure
-here keeps decaying for as long as commits touch its subject.
+that closed C13 — and a third, the ADR count, has moved again since for unrelated reasons: ADR-0074
+and ADR-0075 both landed. Three of the four differ today, which is the point rather than a
+contradiction: every figure here keeps decaying for as long as commits touch its subject.
 
 That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites
 a document that has not been edited since the report was written, so nothing could drift. That was
@@ -1362,7 +1376,9 @@ unchanged.
   fail. What remains genuinely unowned is narrower: that check covers the *keyword count* in those
   files, not their other prose. A statement about, say, which backend supports which feature could
   still drift unobserved.
-- **Workstream 2 is `Under-covered`** and §5 lands entirely inside it.
+- **Workstream 2 was `Under-covered`** and §5 lands entirely inside it. ADR-0075 has since named
+  `oq-hive-language-syntax` as owner, so the gap is closed; the sentence stands as what was true
+  when this list was written.
 - **§4's directive text was not in this repository, and now the scope is.** Item 6 reported
   "Unblocked" for three passes on the strength of the ownership adjustments, which were real but
   insufficient: items 7 and 8 both stated what their section ordered, while item 6 stated what it
