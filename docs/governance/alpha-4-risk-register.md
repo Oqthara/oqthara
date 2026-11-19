@@ -583,18 +583,23 @@ sentence that names the cause sits below a summary line that does not. This is t
 the two mechanisms above: the required context is absent or red for a reason that has nothing to do
 with the change being reviewed.
 
-**A fourth mechanism, documented once on PR #273.** A job can be scheduled and never run.
-`macos-latest / JDK 21` reported `conclusion: cancelled` after 15m1s wall-clock with
-`runner_name: ""` and zero completed steps, so no runner was ever assigned and no step ever
-executed. The job's own `timeout-minutes` is 40; the 15m1s is therefore queue time rather than step
-time, and it matches the GitHub-hosted runner queue limit. On #273 the CircleCI `macOS / JDK 21`
-fallback passed throughout, so the required evidence existed while the required context read red.
+**A fourth mechanism, documented twice.** A job can be scheduled and never run. `macos-latest /
+JDK 21` reported `conclusion: cancelled` after 15m1s wall-clock with `runner_name: ""` and zero
+completed steps, so no runner was ever assigned and no step ever executed. The job's own
+`timeout-minutes` is 40; the 15m1s is therefore queue time rather than step time, and it matches
+the GitHub-hosted runner queue limit. On #273 the CircleCI `macOS / JDK 21` fallback passed
+throughout, so the required evidence existed while the required context read red.
 
-*One instance, not a pattern.* An earlier cancelled macOS leg elsewhere in the project could not be
-distinguished from an ordinary superseded-push cancellation, because `.github/workflows/ci.yml` sets
-`concurrency: cancel-in-progress` and a cancelled job on a superseded push carries the same
-`conclusion` — only `runner_name` and the step count separate the two. That case is therefore not
-counted here.
+The second instance arrived on #274 while this paragraph was being repaired, in the same shape:
+`macos-latest / JDK 25`, `conclusion: cancelled`, `runner_name: ""`, zero steps, started
+17:46:31Z and completed 18:01:32Z — 15m1s again. That the duration repeats to the second across
+two different jobs six months apart is what identifies a queue limit rather than a coincidence.
+
+*Not every cancellation counts.* A cancelled job on a superseded push carries the same
+`conclusion`, because `.github/workflows/ci.yml` sets `concurrency: cancel-in-progress`; only
+`runner_name` and the step count separate the two. Both instances above have an empty
+`runner_name` and zero steps, so neither can be a superseded-push cancellation — a job that was
+ever assigned a runner has a populated `runner_name` and its steps recorded.
 
 The read is the same as the other three and the fix is the same: re-run. The distinguishing field
 is `runner_name`, which is empty for a queue expiry and populated for a job that actually ran. This
