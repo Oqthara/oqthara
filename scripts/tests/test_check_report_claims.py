@@ -194,6 +194,39 @@ class DriftIsCaught(unittest.TestCase):
         self.assertTrue(problems)
         self.assertIn("30 risks", problems[0])
 
+    def test_deleting_the_scope_section_is_caught(self):
+        # The scope record is the thing this change exists to add, so its
+        # absence has to fail. Deleting Item 6b outright passed all nine gates
+        # before this rule: every other check searches for what is present, and
+        # none requires anything to be.
+        start = REPORT_TEXT.index("## Item 6b — §4's scope, recorded")
+        end = REPORT_TEXT.index("## Item 7 — Type-system decisions")
+        problems = checker.check_required_sections(REPORT_TEXT[:start] + REPORT_TEXT[end:])
+        self.assertTrue(problems)
+        self.assertIn("no longer has", problems[0])
+
+    def test_deleting_one_exclusion_row_is_caught(self):
+        # Deleting a row silently widens §4, which is the only way a scope
+        # record can fail without becoming obviously wrong.
+        problems = checker.check_required_sections(
+            REPORT_TEXT.replace("| Grafeno and OQSS | Outside this repository's Alpha 7 work |\n", "")
+        )
+        self.assertTrue(problems)
+        self.assertIn("Grafeno", problems[0])
+
+    def test_weakening_the_refusal_rule_is_caught(self):
+        # "The twelve ADR-0062 refusals remain refusals" is the boundary that
+        # stops §4 reviving a decided question. Rewording it to something
+        # weaker is not a copy-edit.
+        problems = checker.check_required_sections(
+            REPORT_TEXT.replace(
+                "**The twelve ADR-0062 refusals remain refusals**",
+                "**These remain refusals**",
+            )
+        )
+        self.assertTrue(problems)
+        self.assertIn("twelve ADR-0062 refusals remain refusals", problems[0])
+
     def test_a_mutated_refusal_count_is_caught(self):
         # The refusals live in the Alpha 6 matrix, which this gate did not read.
         # §4's scope record is the first place to state the figure in prose, so

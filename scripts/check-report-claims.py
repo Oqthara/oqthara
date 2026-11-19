@@ -577,8 +577,64 @@ def classify(raw: str, sentence: str, line: int, values: dict) -> list[str]:
     return problems
 
 
+# A figure recorded in the report is only worth gating if the section holding it
+# still exists. Deleting Item 6b outright passed every gate: the refusals figure
+# and the §4 status both vanished and nothing noticed, because every rule below
+# searches for what is present and none requires anything to be.
+REQUIRED_SECTIONS = [
+    # (heading, phrases the section must still state)
+    (
+        "## Item 6b — §4's scope, recorded",
+        [
+            # The in-scope surface, sampled at both ends: a section that loses
+            # its first and last bullets is a section that was rewritten, not
+            # edited.
+            "Operator precedence and expression evaluation.",
+            "Interpreter and compiled-backend agreement for supported language behavior.",
+            # The out-of-scope boundary. These are the rows a future pass is most
+            # likely to delete while "tidying" a table, and deleting one silently
+            # widens §4.
+            "| Java Bridge Full |",
+            "| Generics as a distinct pre-0.2.0 deliverable |",
+            "| Grafeno and OQSS |",
+            # The refusal rule, which is the one boundary that protects decisions
+            # already made.
+            "The twelve ADR-0062 refusals remain refusals",
+            # The ownership table, so a scope record cannot outlive its owner.
+            "`oq-hive-language-syntax` | Language design, syntax decisions",
+            # The first deliverable, which is what makes the scope actionable.
+            "A language-core capability matrix, before broad implementation.",
+        ],
+    ),
+]
+
+
+def check_required_sections(text: str) -> list[str]:
+    """Problems where a section that must exist is missing or hollowed out."""
+    problems: list[str] = []
+    for heading, phrases in REQUIRED_SECTIONS:
+        start = text.find(heading)
+        if start < 0:
+            problems.append(f"the report no longer has a {heading!r} section")
+            continue
+        nxt = text.find("\n## ", start + len(heading))
+        section = text[start : nxt if nxt >= 0 else len(text)]
+        for phrase in phrases:
+            if phrase not in section:
+                problems.append(
+                    f"{heading!r} no longer states {phrase!r}; a scope record that"
+                    " drops a boundary is worse than none"
+                )
+    return problems
+
+
 def check(text: str, values: dict) -> list[str]:
-    """Every problem in the report; empty means every claim agrees."""
+    """Every figure problem in the report; empty means every claim agrees.
+
+    Structure is checked separately by `check_required_sections`, because a
+    synthetic one-line text is a legitimate input to this function and is not
+    a report.
+    """
     problems: list[str] = []
     for line, unit, fenced in paragraphs(text):
         if fenced:
@@ -613,7 +669,7 @@ def main() -> int:
         print(f"cannot read a file the check needs: {unreadable}", file=sys.stderr)
         return 2
 
-    problems = check(text, values)
+    problems = check_required_sections(text) + check(text, values)
     if problems:
         print(f"report claims: {len(problems)} problem(s)")
         for problem in problems:
