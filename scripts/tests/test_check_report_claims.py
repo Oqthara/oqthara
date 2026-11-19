@@ -24,6 +24,7 @@ one that reports nothing.
 """
 import importlib.util
 import pathlib
+import re
 import sys
 import unittest
 
@@ -312,10 +313,20 @@ class TheCapabilityMatrixCountsItsOwnRows(unittest.TestCase):
         self.assertEqual([], checker.check_capability_matrix())
 
     def test_a_mutated_verdict_count_is_caught(self):
-        problems = self.matrix_problems_after("| Complete | 50 |", "| Complete | 49 |")
+        # The fixture reads the stated count out of the document rather than
+        # naming it. Pinning a literal here is how two tests in this file broke
+        # when L9.3 was closed and Complete legitimately moved 50 -> 51: the
+        # gate was right and the fixture was stale, which is the failure the
+        # gate exists to catch, reproduced in the gate's own tests.
+        stated = re.search(r"^\| Complete \| (\d+) \|", self.MATRIX_TEXT, re.M)
+        self.assertIsNotNone(stated, "the matrix no longer states a Complete count")
+        current = int(stated.group(1))
+        problems = self.matrix_problems_after(
+            f"| Complete | {current} |", f"| Complete | {current - 1} |"
+        )
         self.assertTrue(problems)
-        self.assertIn("49 'Complete'", problems[0])
-        self.assertIn("holds 50", problems[0])
+        self.assertIn(f"{current - 1} 'Complete'", problems[0])
+        self.assertIn(f"holds {current}", problems[0])
 
     def test_a_mutated_row_total_is_caught(self):
         problems = self.matrix_problems_after("57 rows, counted", "58 rows, counted")
@@ -324,10 +335,16 @@ class TheCapabilityMatrixCountsItsOwnRows(unittest.TestCase):
 
     def test_a_mutated_prose_count_is_caught(self):
         # The second copy of the same quantity. Editing one and not the other
-        # is the exact error the matrix was written to document.
-        problems = self.matrix_problems_after("three are missing", "four are missing")
+        # is the exact error the matrix was written to document. The words are
+        # read from the document for the same reason as the test above.
+        phrasing = re.search(r"\*\*(\d+) rows behave as", self.MATRIX_TEXT)
+        self.assertIsNotNone(phrasing, "the matrix no longer states its Complete total in prose")
+        stated = int(phrasing.group(1))
+        problems = self.matrix_problems_after(
+            f"**{stated} rows behave as", f"**{stated + 1} rows behave as"
+        )
         self.assertTrue(problems)
-        self.assertIn("4 'Missing'", problems[0])
+        self.assertIn(f"{stated + 1} 'Complete'", problems[0])
 
     def test_a_mutated_refusal_verdict_is_caught(self):
         problems = self.matrix_problems_after("| Intentionally refused | 1 |", "| Intentionally refused | 2 |")

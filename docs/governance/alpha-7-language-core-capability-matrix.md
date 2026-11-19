@@ -40,15 +40,17 @@ formally reversing the relevant decision.
 
 | Verdict | Rows | Which |
 |---|---|---|
-| Complete | 50 | every row not listed below |
-| Missing | 3 | L3.11, L6.6, L9.3 |
+| Complete | 51 | every row not listed below |
+| Missing | 2 | L3.11, L6.6 |
 | Ambiguous | 2 | L4.9, L5.7 |
 | Undocumented | 1 | L2.6 |
 | Intentionally refused | 1 | L4.8 |
 | Defective | 0 | — |
 
-The seven non-Complete rows — three Missing, two Ambiguous, one Undocumented, one refused — are
-§4's open backlog. Everything else the audit touched behaves as its documentation says.
+The six non-Complete rows — two Missing, two Ambiguous, one Undocumented, one refused — are
+§4's open backlog. L9.3 was the seventh until this branch closed it; it is recorded Complete
+below with the check that closed it, rather than deleted, because the audit found it and a reader
+should be able to see what became of every row the audit touched.
 
 Rows are grouped into the nine scope areas of §3. Each area is one direction below.
 
@@ -183,18 +185,19 @@ raise it.
 |---|---|---|---|---|
 | L9.1 | The TextMate grammar highlights all 22 keywords and 3 constants | Complete | 16 control words + `true`/`false`/`nothing` + `and`/`or`/`not` = 22, reconciled against `Lexer.KEYWORDS` by reading both files | `editors/vscode/syntaxes/oq.tmLanguage.json` |
 | L9.2 | Operators, comments, strings, interpolation and numbers are highlighted | Complete | Patterns present for each; the number pattern accepts `_` separators and exponents | Same |
-| L9.3 | No gate reconciles the editor grammar with the specification | **Missing** | `check-docs-sync.py:103` reconciles the *reference document* against `Lexer.KEYWORDS` and against `CONTRIBUTING.md`. Nothing reads the grammar file. A keyword added to the lexer today would fail the gate on the reference and pass silently on the editor | `scripts/check-docs-sync.py` |
+| L9.3 | A gate reconciles the editor grammar with `Lexer.KEYWORDS` | Complete | `the_editor_grammar_knows_every_keyword` in `check-docs-sync.py` reads the three grammar groups (`keywords`, `constants`, `operators`), collects only the `\\b(...)\\b` alternations so punctuation and operators are not mistaken for keywords, and fails on either direction of difference. Closed on this branch: when the audit ran it, `check-docs-sync.py` reconciled the *reference document* and `CONTRIBUTING.md` and read neither the grammar nor the LSP, so a new keyword failed two checks and reached the editor silently | `scripts/check-docs-sync.py` |
 
-L9.3 is a gating gap with a concrete cost: the editor silently stops highlighting a new keyword,
-and the docs-sync gate reports success. The fix is small — parse the `keywords` match group in
-`oq.tmLanguage.json`, subtract `Lexer.KEYWORDS`, and fail on a difference, mirroring the existing
-reference check. It is listed here rather than fixed, because §4's first deliverable is the
-audit, not the correction.
+L9.3 was the audit's cheapest finding and the first one closed. The gap had a concrete cost: the
+editor silently stopped highlighting a new keyword while the docs-sync gate reported success. The
+fix parses the grammar's three groups rather than only `keywords`, because `true`/`false`/`nothing`
+and `and`/`or`/`not` are keywords the lexer knows and a check reading one group would call missing.
+It also fails when a group is *absent* or when the grammar parses to no keywords at all, since
+either would narrow the comparison until it agreed with whatever was left.
 
 ## What this audit does not establish
 
-It does not establish that the language is complete. It establishes that **50 rows behave as
-documented, two are ambiguous, one is undocumented, three are missing, none is defective, and one is
+It does not establish that the language is complete. It establishes that **51 rows behave as
+documented, two are ambiguous, one is undocumented, two are missing, none is defective, and one is
 refused deliberately** — across the nine scope areas the order names.
 
 It does not review Alpha 9's object-oriented surface. `data` and classes appear only where an
@@ -209,12 +212,12 @@ It does not revive a refusal. The ten leader words and `finally` stay refused. D
 
 ## The bounded backlog this audit establishes
 
-Five of §4's seven non-Complete findings are worth acting on, in order of cost:
+Four of §4's six remaining non-Complete findings are worth acting on, in order of cost. L9.3 was
+the fifth and is now closed:
 
-1. **L9.3 — gate the editor grammar.** Smallest, and it prevents a silent class of drift.
-2. **L3.11 and L6.6 — conformance for destructuring and modules.** Two holes in a 257-program
+1. **L3.11 and L6.6 — conformance for destructuring and modules.** Two holes in a 257-program
    suite that covers everything else.
-3. **L2.6 and L5.7 — decide, then document.** The text-coercion rule for `+` and the non-mutating
+2. **L2.6 and L5.7 — decide, then document.** The text-coercion rule for `+` and the non-mutating
    `.sort()` are the two places where the tree behaves one way and the specification says another
    or nothing. Both need an ADR before either an implementation change or a documentation change;
    picking one without the other would make the divergence official.
