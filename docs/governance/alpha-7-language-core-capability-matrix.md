@@ -42,17 +42,19 @@ formally reversing the relevant decision.
 |---|---|---|
 | Complete | 55 | every row not listed below |
 | Missing | 0 | none |
-| Ambiguous | 1 | L4.9 |
+| Ambiguous | 0 | none |
 | Undocumented | 0 | none |
-| Intentionally refused | 1 | L4.8 |
+| Intentionally refused | 2 | L4.8, L4.9 |
 | Defective | 0 | — |
 
-The two non-Complete rows — one Ambiguous, one refused — are §4's open backlog. Five of the
-audit's seven non-Complete findings were closed on this branch (L3.11, L6.6, L9.3, L2.6, L5.7) and
-are recorded Complete below with the evidence that closed them, rather than deleted, because the
+The two non-Complete rows — both deliberately refused — are decided, not pending. Six of the
+audit's eight non-Complete findings were closed on this branch (L3.11, L6.6, L9.3, L2.6, L5.7,
+L4.9) and are recorded below with the evidence that closed them, rather than deleted, because the
 audit found them and a reader should be able to see what became of every row the audit touched.
-L2.6 and L5.7 are the two that needed a decision before a change: neither could be documented from
-the code alone, so each got an ADR (0071, 0072) and a conformance case that pins the decision.
+L2.6, L5.7 and L4.9 each needed a decision before any change: none could be documented from the
+code alone, so each got an ADR (0071, 0072, 0073) and conformance cases that pin the decision. A
+refusal is a closed row: the audit's question was what the language does and whether that is
+settled, and an ADR settles it.
 
 Rows are grouped into the nine scope areas of §3. Each area is one direction below.
 
@@ -121,7 +123,7 @@ now makes, which is what the audit predicted and is the reason it recorded the c
 | L4.6 | Arity mismatch names the expectation | Complete | `f(1,2)` against a 1-parameter `f` → `error: f() expects 1 argument, got 2` with `help: Expected: a` and a caret at `3:2` | `Interpreter.java` |
 | L4.7 | `return` outside a function is refused | Complete | → `error: 'return' outside a function` | `Parser.java` |
 | L4.8 | Default parameter values | **Intentionally refused** | `fun f(a, b = 2)` → `error: expected ')' to close the parameter list`. Absence is consistent — `docs/spec/language.md` lists `.get(k, fallback)` for maps and never a default parameter — but no ADR states the decision. It is refused, and this matrix does not propose adding it | `Parser.java` |
-| L4.9 | Block-bodied lambda | **Ambiguous** | `f = x ->\n  y = x * 2\n  return y\nend` → `error: expected an expression`. The specification documents `x -> expr` and a block form for `items.sort(item -> ...)` but never states whether `->` may open an indented block. A reader of the `fun` documentation could reasonably expect it to | `Parser.java` |
+| L4.9 | Block-bodied lambda | **Intentionally refused** | `f = x ->` at end of line → `error: expected an expression`; `f = x -> x * 2` → `6`. `->` takes one expression and does not open a block, because a lambda is a value (`spec:33`) and a value expression ends at one expression, while a block is a statement construct that needs `fun` … `end` to produce one. Two ADR-0073 cases pin both halves: `262` the working forms, `263` the refusal. Recorded Ambiguous first because the spec never addressed the question; the answer was to decline it rather than to add a second spelling of `fun` | `Parser.java`, [ADR-0073](../adr/0073-lambdas-are-expressions.md) |
 
 L4.8 is classified "intentionally refused" on the weaker of the two grounds the vocabulary allows:
 the specification is silently consistent, not explicit. That is a documentation gap to record, not
@@ -184,7 +186,7 @@ no requirement in scope asks for it.
 |---|---|---|---|---|
 | L8.1 | The two backends agree on arithmetic, collections, tuples, and `data` | Complete | A ten-statement program (`fib(10)`, `x.sort()`, map insert, `7 / 2`, `7.0 / 2`, a tuple and a `data` instance) produced **byte-identical** output interpreted and as a built jar: `55 / [3, 1, 2] / {"k": 1} / 3.5 / 3.5 / (1, "a") / P(x: 1, y: 2)` | `Compiler`, `Interpreter` |
 | L8.2 | `.sort()` is non-mutating on both backends | Complete | The same program shows `[3, 1, 2]` after `x.sort()` on both. Consistent, which is why L5.7 is Ambiguous rather than Defective | Both |
-| L8.3 | Agreement is verified systematically, not by sample | Complete | `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` runs **every** `.oq` file in `conformance/`, skips the 10 that declare a compiler fallback, and asserts the compiled output equals `oq run`'s. Measured 2026-11-18: **218 compiled / 10 fallback / 0 divergences over 261 programs (228 executable)**. The contract is stated in the test: "a program is only compiled when the compiler can prove it, and once compiled it must behave exactly like `oq run`" | `BytecodeCompilerTest.java:1560` |
+| L8.3 | Agreement is verified systematically, not by sample | Complete | `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` runs **every** `.oq` file in `conformance/`, skips the 10 that declare a compiler fallback, and asserts the compiled output equals `oq run`'s. Measured 2026-11-18: **219 compiled / 10 fallback / 0 divergences over 263 programs (229 executable)**. The contract is stated in the test: "a program is only compiled when the compiler can prove it, and once compiled it must behave exactly like `oq run`" | `BytecodeCompilerTest.java:1560` |
 
 L8.3 was the row I expected to record as Missing — the tree only ever *demonstrated* backend
 agreement, case by case, and never stated the invariant. It is Complete: the invariant is the test's
@@ -211,17 +213,17 @@ either would narrow the comparison until it agreed with whatever was left.
 ## What this audit does not establish
 
 It does not establish that the language is complete. It establishes that **55 rows behave as
-documented, one is ambiguous, none is undocumented, none is missing, none is defective, and one is
+documented, none is ambiguous, none is undocumented, none is missing, none is defective, and two are
 refused deliberately** — across the nine scope areas the order names.
 
 It does not review Alpha 9's object-oriented surface. `data` and classes appear only where an
 audit row needed them; OOP completion is an Alpha 9 objective and §4 does not absorb it.
 
-It does not propose ADRs beyond the two it needed. The "Ambiguous" and "Undocumented" findings
+It does not propose ADRs beyond the three it needed. The "Ambiguous" and "Undocumented" findings
 above were questions for §4's backlog, and each needed its own decision record (ADR-0071 onward;
-ADR-0070 is consumed by §2.3) before implementation. L2.6 and L5.7 have them now — ADR-0071 and
-ADR-0072 — and each is pinned by a conformance case rather than by inspection alone. L4.9 is the
-one row that remains ambiguous, and it has no record yet.
+ADR-0070 is consumed by §2.3) before implementation. L2.6, L5.7 and L4.9 have them now — ADR-0071,
+ADR-0072 and ADR-0073 — and each is pinned by conformance cases rather than by inspection alone. No
+row remains ambiguous.
 
 It does not revive a refusal. The ten leader words and `finally` stay refused. Default parameters
 (L4.8) are recorded as refused and are not proposed.
@@ -237,10 +239,14 @@ the two that needed a decision, and they now have one each:
 2. **L5.7 — decided, then documented.** `.sort()` and `.reverse()` copy; six named methods mutate.
    ADR-0072 records the choice and the composition argument for it.
 
-The remaining two are recorded, not actioned. **L4.9** (block-bodied lambda) would expand the audit
-into a parser rewrite that §4 explicitly forbids, and no 0.2.0 requirement depends on it. **L4.8**
-(default parameters) is refused, and §4 may not revive it. **L8.3** turned out Complete on
-inspection, which is recorded above rather than dropped.
+3. **L4.9 — decided, then documented.** A lambda body is one expression (ADR-0073). Allowing the
+   block form would give the language two spellings of one construct and expand the parser, which
+   §4 forbids; `fun` already covers the case it would serve. `262` and `263` pin both halves.
+
+Nothing in the audit is left unactioned. **L4.8** (default parameters) is refused, and §4 may not
+revive it. **L8.3** turned out Complete on inspection, which is recorded above rather than dropped.
+L4.9 is now refused by decision rather than ambiguous by omission — the distinction is the whole
+of §4's work, because an ambiguity is a question nobody answered and a refusal is an answer.
 
 ---
 

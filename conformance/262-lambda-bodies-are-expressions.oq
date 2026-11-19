@@ -1,0 +1,14 @@
+# L4.9 / ADR-0073: a lambda body is one expression. `->` does not open a block.
+double = x -> x * 2
+add = (a, b) -> a + b
+print double(4)
+print add(2, 3)
+print [1, 2, 3].sort(x -> -x)
+print [3, 1, 2].sort(x -> x)
+nested = (a, b) -> (c -> a + b + c)
+print nested(1, 2)(3)
+handler = fun(x)
+  y = x * 2
+  return y + 1
+end
+print handler(5)

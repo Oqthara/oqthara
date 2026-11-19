@@ -360,7 +360,15 @@ class TheCapabilityMatrixCountsItsOwnRows(unittest.TestCase):
         self.assertIn(f"{stated + 1} 'Complete'", problems[0])
 
     def test_a_mutated_refusal_verdict_is_caught(self):
-        problems = self.matrix_problems_after("| Intentionally refused | 1 |", "| Intentionally refused | 2 |")
+        # Derived, not pinned: the refused count moved from 1 to 2 when L4.9 was
+        # decided, and a test that breaks on a correct count teaches the next
+        # person to edit the number instead of reading it.
+        stated = re.search(r"^\| Intentionally refused \| (\d+) \|", self.MATRIX_TEXT, re.M)
+        self.assertIsNotNone(stated, "the matrix no longer states its refused count")
+        held = int(stated.group(1))
+        problems = self.matrix_problems_after(
+            f"| Intentionally refused | {held} |", f"| Intentionally refused | {held + 1} |"
+        )
         self.assertTrue(problems)
         self.assertIn("'Intentionally refused'", problems[0])
 

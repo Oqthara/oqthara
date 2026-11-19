@@ -1,0 +1,6 @@
+# L4.9 / ADR-0073: `->` at end of line is a parse error, not a block opener.
+f = x ->
+  y = x * 2
+  return y
+end
+print f(3)

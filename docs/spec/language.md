@@ -454,6 +454,11 @@ handler = fun(x)
 end
 ```
 
+A body of statements needs `fun`, which closes with `end`. `->` takes one expression and does not
+open a block, so a `->` at the end of a line is a parse error rather than the first line of a body
+([ADR-0073](../adr/0073-lambdas-are-expressions.md)). This document's earlier mention of an
+"anonymous function with a body" is the `fun` form shown above; it is not a block-bodied `->`.
+
 Closures capture their environment:
 
 ```

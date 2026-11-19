@@ -1584,7 +1584,7 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(218, compiled,
+        assertEquals(219, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
         // Measured 2026-11-20: 218 compiled / 10 fallback / 0 divergences over 261 programs
         // (228 executable). 260-plus-text-coercion and 261-list-methods-copy close the two rows

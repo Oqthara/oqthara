@@ -440,6 +440,12 @@
       "slug": "docs/adr/0072-list-methods-return-new-lists"
     },
     {
+      "path": "docs/adr/0073-lambdas-are-expressions.md",
+      "title": "ADR-0073 — A lambda body is one expression, never a block",
+      "section": "adr",
+      "slug": "docs/adr/0073-lambdas-are-expressions"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
