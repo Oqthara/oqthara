@@ -60,8 +60,8 @@ split has three parts, all of them written into the amended agent file: syntax o
 its specification, `oq-hive-development` owns the value classes *and* the semantic-analysis pass
 that would consume an annotation, and `oq-hive-testing-security` owns the `conformance/` corpus.
 Row 2 becomes `Covered` with `oq-hive-development` as supporting owner, and its artefacts column
-names what the primary produces: `docs/spec/language.md` `## Values` and `## Data types`, plus
-ADRs 0015, 0069 and 0075.
+names what the primary produces: `docs/spec/language.md` `## Values` and `## Data types`, plus the
+five type and value ADRs the row carries — 0007, 0015, 0017, 0069 and 0075.
 
 **The artefacts cell moved, and that is part of the decision.** On `origin/main` row 2 listed
 `Values.java` and `Value.java` — the files the type model is implemented *in* — as the artefacts of
