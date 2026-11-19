@@ -17,7 +17,7 @@ This closes the `§4.1 workstream assignment` row of
 | # | Workstream | Primary owner | Supporting roles | Artefacts the role produces | Coverage |
 |---|---|---|---|---|---|
 | 1 | Language Architecture & Syntax | `oq-hive-language-syntax` | `oq-hive-architecture-governance`, `oq-hive-development` | `oq-core/src/main/java/dev/oqthara/core/Lexer.java`, `Parser.java`, `Ast.java`; `docs/spec/language.md`; `conformance/*.oq`; `docs/adr/0001-syntax.md`, `0013-destructuring.md`, `0014-try-as-an-expression.md`, `0026-range-membership-follows-the-walk.md` | Covered |
-| 2 | Type System & Values | `oq-hive-language-syntax` | `oq-hive-development` (runtime representation) | `oq-runtime/src/main/java/dev/oqthara/runtime/Values.java`, `Value.java`; `docs/adr/0015-type-families.md`, `0017-equality-and-hashing.md`, `0007-boxed-values.md`, `0069-oqthara-stays-dynamically-typed.md`, `0075-workstream-two-owns-the-type-model.md`; `docs/spec/language.md` `## Values`, `## Data types` | Covered (ownership resolved 2026-11-19) |
+| 2 | Type System & Values | `oq-hive-language-syntax` | `oq-hive-development` (value classes in `oq-runtime/`, the analysis pass) | `docs/spec/language.md` `## Values`, `## Data types`; `docs/adr/0015-type-families.md`, `0069-oqthara-stays-dynamically-typed.md`, `0075-workstream-two-owns-the-type-model.md` | Covered (ownership resolved 2026-11-19) |
 | 3 | Collections & Iteration | `oq-hive-development` | `oq-hive-testing-security` | `oq-stdlib/src/main/java/dev/oqthara/stdlib/MethodResolverImpl.java`; `oq-runtime/src/main/java/dev/oqthara/runtime/{OqTuple,OqSet,OqFrozenSet,OqRange,OqIterator}.java`; `docs/adr/0020-iterator-protocol.md` through `0024-text-is-a-sequence-of-code-points.md`; `docs/governance/alpha-4-9-7-collection-evidence.md`; `bench-jmh/`; `scripts/bench-backends.py` | Covered |
 | 4 | Compiler & Bytecode | `oq-hive-development` | `oq-hive-testing-security` | `oq-compiler/src/main/java/dev/oqthara/compiler/{Lowering,BytecodeCompiler,ClassFileWriter,JarBuilder,Ir,Backends}.java`; `docs/spec/backend.md`; `docs/adr/0003-bytecode.md`, `0006-classfile-writer.md`; `oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java`; `oq-compiler/src/test/java/dev/oqthara/compiler/LoweringTest.java`; `oq-compiler/src/fuzz/java/dev/oqthara/compiler/PipelineFuzzTest.java` | Covered |
 | 5 | Interpreter & JVM Runtime | `oq-hive-development` | `oq-hive-testing-security` | `oq-core/src/main/java/dev/oqthara/core/Interpreter.java`; `oq-runtime/src/main/java/dev/oqthara/runtime/{OqTask,OqMutex,OutputBudget,WaitedBudget,OqHost}.java`; `oq-core/src/test/java/dev/oqthara/core/NestingLimitTest.java`; `docs/adr/0039-executors-and-cancellation.md` | Covered |
@@ -109,7 +109,9 @@ is less" is not the same as "someone owns it".
 belongs to `oq-hive-language-syntax`, which already owns the specification of the type families
 (`docs/spec/language.md`, `## Values` and `## Data types`, not the SQLite table under `## Databases`),
 with the runtime representation staying with `oq-hive-development` as a supporting owner. No new
-role was needed, which is what the proposal in this section said before it was decided.
+role was needed, which is what the proposal in this section said before it was decided. That
+paragraph is now the resolution above rather than a separate proposal: the gap it proposed to close
+is closed.
 
 **The row reads `Covered` while typing remains closed.** [ADR-0069](../adr/0069-oqthara-stays-dynamically-typed.md)
 still governs the language: Oqthara is dynamically typed, `data` fields stay untyped, and the
@@ -146,5 +148,15 @@ agent adds a column of accountability and requires re-reading all twelve rows. T
 [`alpha-4-risk-register.md`](alpha-4-risk-register.md) cites workstream numbers from this table,
 so renumbering a workstream is a change to two documents.
 
-**Last verified:** 2026-11-19, against the agent files as they stand at ADR-0075. Row 2 changed
-owner in that change; the other eleven rows were re-read against their roles and are unchanged.
+**Last verified:** 2026-11-19, against the agent files as they stand at
+[ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md), read on the branch that adds that
+record. Row 2 changed owner there, and `.github/agents/oq-hive-language-syntax.agent.md` changed
+with it in the same pull request. The other eleven rows were re-read against their roles and are
+unchanged.
+
+There is no SHA in that pin on purpose, rather than an omission: the rule above is that a pin must
+name a commit reachable from the branch under review, and this document changed in the same pull
+request as the ADR, so no squash commit carries the state it describes at the time it describes it.
+The pin is added in the follow-up that next re-reads this document against `main`, which is the
+first moment a reachable commit exists. Pinning to the pre-change `27cac46` would have been a
+verifiable claim about a table that no longer exists.

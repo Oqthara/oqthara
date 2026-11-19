@@ -267,7 +267,7 @@ All three adjustments are now discharged.
 | --- | --- |
 | No language-syntax role in the operating instructions | **Fixed.** `AGENTS.md` now names both agent sets and says which one is loadable here and which one the governance documents assign owners to |
 | Stale keyword count (20 vs 22) | **Fixed in PR #252.** Verified independently: `Lexer.KEYWORDS` holds 22 words (6 + 6 + 5 + 5), and the agent file reads 22 words |
-| Scope must not absorb the type system | **Fixed.** The agent file has a "Where your ownership stops" section: syntax owns the annotation grammar and the specification's account of it; `oq-hive-development` owns the value model, the semantic-analysis pass, and failed-check behaviour. A change needing both is two changes |
+| Scope must not absorb the type system | **Fixed in PR #257, then widened on 2026-11-19.** The agent file gained a "Where your ownership stops" section: syntax owns the annotation grammar and the specification's account of it; `oq-hive-development` owns the value model, the semantic-analysis pass, and failed-check behaviour. That split kept a single role from doing two jobs, but it also wrote the type model out of every role — the defect ADR-0075 closes. The section now grants syntax the type model itself and keeps the rest of the boundary. A change needing both is still two changes |
 
 The keyword count **is** read by CI, in the same commit that corrected it. PR #252 added an
 `agent_facing` block to `scripts/check-docs-sync.py` that pattern-matches the budget sentence in
@@ -281,15 +281,17 @@ correction is recorded here rather than quietly applied, because a governance re
 a remaining gap is as misleading as one that understates it, and this is the same failure the report
 charges elsewhere: prose about the tree, not checked against the tree.
 
-The third row's split — syntax owns the annotation grammar and the spec's account of it,
-`oq-hive-development` owns the value model and the analysis pass — is now the workstream-level split
-too: [ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md) makes `oq-hive-language-syntax`
-primary on row 2 with `oq-hive-development` supporting on the runtime representation. That took a
-second edit, because the fix for this item had written the role out of the type system entirely
-("you own the syntax surface, not the type system"), which would have made ADR-0075's assignment
-false by this document's own definition of `Covered`. The agent file was amended in the same change
-as the ADR, which is the only sequence this document permits. The two now agree; they did not
-before either edit, and they did not between them.
+The third row's split is now the workstream-level split too, and it took two edits to get right.
+[ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md) makes `oq-hive-language-syntax`
+primary on row 2 with `oq-hive-development` supporting. The first edit was PR #257's, which closed
+this item by writing the role out of the type system entirely — *"you own the syntax surface, not
+the type system"* — leaving the type model owned by nobody, which is the gap ADR-0075 exists to
+close. The second edit widens the grant back: syntax owns the type model and its specification,
+development owns the value classes and the analysis pass, testing-security owns the `conformance/`
+corpus. Had the ADR been written against the PR #257 wording, its assignment would have been false
+by this document's own definition of `Covered`, which is why the agent file was amended in the same
+change as the ADR — the only sequence this document permits. The two agree now; they did not before
+either edit, and they did not between them.
 
 **The fourth obstacle was a missing definition, and it is discharged too.** The three adjustments
 above bounded ownership. They did not bound the work, because nothing in this repository said what
@@ -326,7 +328,7 @@ Alpha 9 objective. It is not part of §4's implementation scope.
 | Excluded | Where it belongs instead |
 | --- | --- |
 | Java Bridge Full | §6, this report's Items 8 and 9 |
-| Optional strict typing and annotations | §5, gated on ADR-0071 superseding ADR-0069 (Item 7) |
+| Optional strict typing and annotations | §5, which needs an ADR superseding ADR-0069 to start at all; no such ADR exists. (The `0071` this row used to name is the `+` coercion record, not a supersession) |
 | Generics as a distinct pre-0.2.0 deliverable | Its own deliverable, not §4 |
 | Standard-library breadth | Not §4 |
 | Runtime Manager and observability | Item 9a, which names what the tree already needed |

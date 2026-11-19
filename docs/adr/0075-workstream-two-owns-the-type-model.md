@@ -6,7 +6,8 @@
 does not reverse) · [ADR-0015](0015-type-families.md) (the inventory it builds on)
 **Related:** [`alpha-4-workstream-assignment.md`](../governance/alpha-4-workstream-assignment.md)
 (row 2, the gap this closes), [`alpha-7-first-report.md`](../governance/alpha-7-first-report.md)
-(Item 5, whose table says assigning this workstream "is itself an ADR"), ADR-0001, ADR-0017,
+(Item 5, whose table read of this workstream that assigning it "is itself an ADR" — it now reads
+`Covered`, so the sentence is quoted as what it said before this record), ADR-0001, ADR-0017,
 ADR-0027, ADR-0028
 
 ## Context
@@ -25,10 +26,13 @@ omission.
 **The owner was missing.** Row 2 of
 [`alpha-4-workstream-assignment.md`](../governance/alpha-4-workstream-assignment.md) — Type System
 & Values — was the only one of twelve rows marked **Under-covered**, with the note "no role names
-types". Its primary owner is `oq-hive-development` **"(de facto)"**, which the document is careful
-to distinguish from an assignment: the role's scope never says it owns the type model, it merely
-produces the files the type model lives in. Every other workstream has a role whose written scope
-names its subject.
+types". Its primary owner was `oq-hive-development` **"(de facto)"**, which the document is careful to
+distinguish from an assignment. That role's scope does name the *value model* — its file opens
+"Owns implementation — the interpreter, value model, …" — so it was not absent from the subject.
+What it never named is the type model as a model: the families, what a value belongs to, and how
+the specification states them. It produced the files the type model lives in without owning the
+contract those files implement, which is the gap `"(de facto)"` was marking. Every other
+workstream has a role whose written scope names its subject outright.
 
 The report's table said of workstream 2 that assigning it "is itself an ADR", and this is that
 record. It is written
@@ -42,9 +46,16 @@ answers the question.
 The role already owns `docs/spec/language.md`, the lexer, the parser, the AST, and the syntax cases
 in `conformance/`. `oq-hive-development` keeps the *runtime* half, where values actually live:
 `Values.java`, `Value.java`, `OqTuple`, `OqSet` and the rest. That split follows the existing rows
-rather than inventing one: workstream 1 is syntax, workstream 2's artefacts are the value classes,
-and the type model is the contract between them. Row 2 becomes `Covered`, with
-`oq-hive-development` as supporting owner, which is the inverse of the de facto arrangement.
+rather than inventing one: workstream 1 is syntax, workstream 2 is the type model and its
+specification, and the value classes are where that model is implemented rather than what it is. The
+split has three parts, all of them written into the amended agent file: syntax owns the model and
+its specification, `oq-hive-development` owns the value classes *and* the semantic-analysis pass
+that would consume an annotation, and `oq-hive-testing-security` owns the `conformance/` corpus.
+Row 2 becomes `Covered` with `oq-hive-development` as supporting owner — the inverse of the de facto
+arrangement — and its artefacts column names what the primary now produces:
+`docs/spec/language.md` `## Values` and `## Data types`, plus ADRs 0015, 0069 and 0075. The runtime
+classes stay with `oq-hive-development` in the supporting cell, where they were, because no row
+itemises `Values.java` and this record does not invent one.
 
 **This decision required amending the role, and the amendment is part of it.** The cell above is
 the second half of the sentence, not a footnote to it: the role's agent file previously said, in a
@@ -84,9 +95,9 @@ ADR may reverse ADR-0069 without touching ownership. Neither implies the other.
 | Option | What it would be | Why not |
 | --- | --- | --- |
 | Reverse ADR-0069 and build optional typing | A superseding ADR, grammar, both backends, adversarial tests for the refusal and its absence, then a conformance re-measurement | The condition ADR-0069 set has not been met: no program needs it. It was also decided *while the maintainer was unavailable*, expressly because it was the only option reversible at zero cost — so reversing it would reverse a decision taken on someone else's behalf, which needs the maintainer, not an agent |
-| Leave workstream 2 `Under-covered` | Record the gap and proceed | The report says §5 cannot begin without an owner, and §5 is a directive section. An `Under-covered` row is an accurate record of a gap, not a way to satisfy the section that names it |
+| Leave workstream 2 `Under-covered` | Record the gap and proceed | The report found §5 could not begin without an owner, and §5 is a directive section. An `Under-covered` row is an accurate record of a gap, not a way to satisfy the section that names it |
 | Assign workstream 2 to `oq-hive-development` formally | Make the de facto owner explicit | It would leave one role owning both the contract and the implementation of the contract, which is the arrangement that let the gap exist unnoticed. It also gives the role that would *implement* typing the authority to decide whether types are wanted |
-| Assign to `oq-hive-architecture-governance` | Give the ADR-writing role the type model | It owns decisions, not language surface. A role whose artefacts are ADRs and registries cannot maintain a normative spec section or a conformance corpus |
+| Assign to `oq-hive-architecture-governance` | Give the ADR-writing role the type model | It owns decisions, not language surface. A role whose artefacts are ADRs and registries cannot maintain a normative spec section — and the type model is specified in `docs/spec/language.md`, which that role does not own. This is the option the decision brief recommended, and decision 1 explains why it was not taken |
 
 ## Consequences
 
@@ -96,8 +107,8 @@ rather than relying on a reader to check ADR-0069. Anyone who finds the row and 
 will find the pointer that says otherwise.
 
 **What is not changed.** No grammar, runtime, conformance case, or compatibility surface moves.
-This ADR adds no keyword, no syntax, and no refusal. Both conformance cases that pin the typed-field
-refusal continue to pass unchanged, and ADR-0069 remains Accepted and authoritative on the typing
+This ADR adds no keyword, no syntax, and no refusal. Both conformance cases that pin the refusals — `246` for
+typed fields, `247` for typed parameters — continue to pass unchanged, and ADR-0069 remains Accepted and authoritative on the typing
 question.
 
 **The type model now has an owner with no work assigned in Alpha 7.** That is the intended state:
@@ -114,11 +125,14 @@ half of the finding, not as its resolution.
 - [`docs/adr/0069-oqthara-stays-dynamically-typed.md`](0069-oqthara-stays-dynamically-typed.md) —
   the typing decision, its reversal condition, and the warning that ownership is a separate change.
 - [`docs/governance/alpha-4-workstream-assignment.md`](../governance/alpha-4-workstream-assignment.md)
-  — row 2, now `Covered`, and the "(de facto)" qualifier the previous marking carried.
+  — row 2, now `Covered`. The "(de facto)" qualifier the previous marking carried is gone with the
+  marking it qualified; `origin/main` is where it survives, not this tree.
 - [`.github/agents/oq-hive-language-syntax.agent.md`](../../.github/agents/oq-hive-language-syntax.agent.md)
   — the role's written scope, amended in this change from an explicit exclusion to the split above.
 - [`docs/governance/alpha-7-first-report.md`](../governance/alpha-7-first-report.md) Item 5 — the
-  finding that §5 could not begin as written, and that assigning it is itself an ADR.
+  finding that §5 could not begin as written, and that assigning its workstream warranted an ADR.
+  The Item 5 row was rewritten by this change to record the assignment, so the quotation above is
+  of the report as it stood, not of the table as it now reads.
 - `conformance/246-typed-field-names-the-decision-error.oq` and
   `conformance/247-typed-parameter-names-the-decision-error.oq` — the refusal as published
   behaviour, unchanged by this record.
