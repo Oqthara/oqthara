@@ -44,7 +44,7 @@ by the reviewer, and the reviewer is the thing that was supposed to catch it. Th
 account `JoaoGaValentim` belongs to the same person and does not constitute independence.
 
 *Mitigation.* Everything a single maintainer can satisfy honestly remains enforced: pull requests
-required, squash-only merges, no bypass actors, 12 required status checks with
+required, squash-only merges, no bypass actors, 13 required status checks with
 `strict_required_status_checks_policy`, required review-thread resolution, stale-review dismissal
 on push. Review is supplemented by machine evidence that does not depend on opinion — JaCoCo
 `coverageGate` at 80% for `dev/oqthara/core` (`build.gradle.kts`), the interpreter-versus-jar
@@ -536,7 +536,7 @@ defend.
 | R-031 | A gate's allow-list silently stops matching, so a required context goes permanently red | High | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
-The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
+The `main-protection` ruleset requires thirteen status contexts. Between 2026-11-11 and 2026-11-12,
 CircleCI stopped dispatching the `macOS / JDK 21` and `macOS / JDK 25` jobs on three consecutive
 pull requests while continuing to report `ci/circleci: jazzer-fuzz` normally. The missing contexts
 were **absent**, not failing, so `statusCheckRollup` read SUCCESS while `mergeStateStatus` read
@@ -582,6 +582,19 @@ transient `429` is indistinguishable from a real regression without reading the 
 sentence that names the cause sits below a summary line that does not. This is the same shape as
 the two mechanisms above: the required context is absent or red for a reason that has nothing to do
 with the change being reviewed.
+
+**A fourth mechanism, found on PR #273.** A job can be scheduled and never run. `macos-latest /
+JDK 21` reported `conclusion: cancelled` after exactly 15m1s with `runner_name: ""` and zero
+completed steps, having started and completed in the same second — so no runner was ever assigned
+and no step ever executed. The job's own `timeout-minutes` is 40, which is how the 15m expiry is
+identifiable as queue time rather than step time. Twice on #264 this happened to both macOS legs at
+once; on #273 the CircleCI `macOS / JDK 21` fallback passed throughout, so the required evidence
+existed while the required context read red.
+
+The read is the same as the other three and the fix is the same: re-run. The distinguishing field
+is `runner_name`, which is empty for a queue expiry and populated for a job that actually ran. This
+one is weather rather than a defect in the branch, and treating the first red macOS leg as a real
+failure costs a debugging session that finds nothing.
 
 *Residual.* The failure mode itself is unavoidable: a required context is identified by name alone,
 and GitHub cannot distinguish "not dispatched" from "still queued". A conflicted branch is a third
@@ -1118,7 +1131,7 @@ methods across 5 classes rather than to files (R-001); the CodeQL cron (R-001, R
 50,000,000-step budget and 16 MiB
 output budget (R-004), `eclipse-temurin` tags and the six workflow files (R-007, R-008),
 `MAX_SLEEP_MILLIS = 10_000` and `WaitedBudget.MAX_MILLIS = 60_000` (R-010), 256 conformance cases
-(R-017), the 80% coverage gate and its scope (R-019), the 12 required contexts (R-024), 146 fenced
+(R-017), the 80% coverage gate and its scope (R-019), the 13 required contexts (R-024), 146 fenced
 blocks in the specification (R-025), and `gradle/actions/setup-gradle@v6` (R-026). All nine cited
 `*Test` classes exist; all ten cited ADR paths exist; every `§` reference exists in the matrix.
 

@@ -131,7 +131,8 @@ payload=$(cat <<JSON
           {"context": "analyze"},
           {"context": "macos-latest / JDK 21"},
           {"context": "macos-latest / JDK 25"},
-          {"context": "ci/circleci: jazzer-fuzz"}
+          {"context": "ci/circleci: jazzer-fuzz"},
+          {"context": "Display-backed Swing"}
         ]
       }
     }

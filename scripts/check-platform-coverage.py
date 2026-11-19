@@ -128,6 +128,11 @@ SILENT_RETURN = re.compile(r"\breturn\b")
 # is the only place the number check 6 makes a claim about actually appears.
 RESULTS = "*/build/test-results/test/TEST-*.xml"
 
+# The apply script encodes the same required set as the ruleset, so a context added to
+# the policy and not to the script is reverted the next time anyone re-applies protection.
+# It is read with its own pattern rather than by parsing JSON out of bash.
+SCRIPT_CONTEXT = re.compile(r'\{"context":\s*"([^"]+)"\}')
+
 
 
 def strip_comments(source: str, literals: bool = True) -> str:

@@ -228,10 +228,24 @@ class TheCommittedTreePasses(unittest.TestCase):
         self.assertTrue(checker.read_required_contexts(policy), "the context table parsed empty")
 
     def test_the_not_required_table_is_not_read_as_required(self):
-        # `Display-backed Swing` is recorded as a gap. Reading it as a requirement
-        # would make the gate demand a context nobody claims to require.
+        # The gate must read requirements from the required table only. A context that
+        # is merely *mentioned* under "Not required" must not become one, or the gate
+        # would demand a context the policy records as a gap.
+        #
+        # Only the gap table's first cells count. The prose around it names contexts that
+        # have moved between the tables, and matching that prose would convict the policy
+        # for explaining itself.
         policy = (REPO / checker.POLICY).read_text(encoding="utf-8")
-        self.assertNotIn("Display-backed Swing", checker.read_required_contexts(policy))
+        required = checker.read_required_contexts(policy)
+        gap_section = policy.split("### Not required", 1)[1].split("\n## ", 1)[0]
+        gap_rows = [
+            line.split("|")[1].strip().strip("`")
+            for line in gap_section.splitlines()
+            if line.startswith("|") and not line.startswith("| ---")
+        ]
+        for row in gap_rows:
+            named = [name for name in required if name in row]
+            self.assertEqual([], named, f"row {row!r} also requires {named}")
 
     def test_the_comment_words_are_not_dependencies(self):
         # The audit that produced the policy matched six javadoc sentences before
@@ -394,6 +408,17 @@ class ItAcceptsTheLegitimateShapes(unittest.TestCase):
                                          "| `Check out` | `ci.yml` |"))
         self.assertTrue(any("unsatisfiable requirement blocks every merge" in p for p in found),
                         found)
+
+    def test_the_policy_and_the_apply_script_name_the_same_contexts(self):
+        # `apply-branch-protection.sh` re-applies the ruleset, so a context added to
+        # the policy but not the script is silently reverted the next time it runs.
+        # This asserts the two lists agree, without pinning how many there are.
+        policy = (REPO / checker.POLICY).read_text(encoding="utf-8")
+        documented = set(checker.read_required_contexts(policy))
+        script = (REPO / "scripts/apply-branch-protection.sh").read_text(encoding="utf-8")
+        scripted = set(checker.SCRIPT_CONTEXT.findall(script))
+        self.assertTrue(scripted, "the apply script's context list parsed empty")
+        self.assertEqual(sorted(documented), sorted(scripted))
 
     def test_a_platform_word_in_a_comment_creates_no_dependency(self):
         commented = BRANCHING.replace(
