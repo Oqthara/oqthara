@@ -135,6 +135,46 @@ jobs:
           compression-level: 1
           retention-days: 7
 
+  display-backed:
+    # C13's display half needs a display, and no step in the main matrix provides one: the
+    # ubuntu runner has no DISPLAY, so `c13_display` there necessarily takes its headless
+    # branch and its green line is evidence about an invariant, not about a window being
+    # mapped. This job runs the probe that *requires* a display under Xvfb, so the
+    # display-backed path is exercised somewhere rather than assumed from a host-independent
+    # relationship check.
+    #
+    # The presence of a display is asserted, not assumed: `c13_mapped` prints
+    # `GraphicsEnvironment.isHeadless()`, which must be `false`, and dies on the `JFrame`
+    # constructor if no display is reachable. A broken Xvfb therefore fails this job instead of
+    # quietly reducing to the headless path the main matrix already covers.
+    #
+    # What this does not prove is window-manager compositing: Xvfb maps the window and reports
+    # it displayable but runs no compositor, so that stays a desktop property.
+    name: Display-backed Swing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build the standalone jar
+        run: ./gradlew :oq-cli:standaloneJar --no-daemon --console=plain
+      - name: Run the display-backed probe under Xvfb
+        run: |
+          # `xvfb-run -a` picks a free display number and exports DISPLAY, so two runs cannot
+          # collide. `--under-display` refuses to start when DISPLAY is unset, which is what
+          # stops this job from passing on the headless path by accident.
+          #
+          # The screen depth is given explicitly because `xvfb-run`'s default is 8 bits per
+          # pixel, which AWT can refuse; 24 is what a real desktop offers and what Swing is
+          # tested against everywhere else.
+          xvfb-run -a --server-args="-screen 0 1024x768x24" \
+            python3 docs/governance/alpha-5/java-bridge-probes/run.py \
+            oq-cli/build/libs/oq.jar --both --under-display
+
   classfile:
     name: Bytecode backend (JDK 25)
     runs-on: ubuntu-latest

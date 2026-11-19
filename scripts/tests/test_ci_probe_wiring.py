@@ -276,7 +276,7 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
         self.jar = pathlib.Path(tempfile.mkdtemp()) / "q.jar"
         self.jar.write_bytes(b"")
 
-    def drive(self, codepath_for):
+    def drive(self, codepath_for, extra=()):
         """Run `main --both` with the builds simulated; `codepath_for` returns a codepath line.
 
         Every probe is given output that satisfies its own expectation, whatever shape that
@@ -313,7 +313,7 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
         self.runner.compile_program = fake_build
         self.runner.run_compiled = fake_compiled
         argv, self_argv = self.runner.sys.argv, sys.argv
-        self.runner.sys.argv = ["run.py", str(self.jar), "--both"]
+        self.runner.sys.argv = ["run.py", str(self.jar), "--both", *extra]
         sys.argv = self.runner.sys.argv
         try:
             import io
@@ -348,7 +348,14 @@ class TheGateIsWiredNotJustDefined(unittest.TestCase):
     def test_a_compiled_run_passes_and_says_what_it_compared(self):
         code, out = self.drive(self.declare)
         self.assertEqual(code, 0, out)
-        compiled = len(self.runner.PROBES) - len(self.runner.FALLBACK)
+        # The default run executes every probe except the display-only ones, so the count in
+        # the success line is PROBES minus DISPLAY minus FALLBACK. Counting PROBES alone would
+        # assert a number the default run never prints.
+        compiled = (
+            len(self.runner.PROBES)
+            - len(self.runner.DISPLAY)
+            - len(self.runner.FALLBACK)
+        )
         self.assertIn(
             f"ok: {compiled} probes compared compiled bytecode against the interpreter", out
         )
@@ -431,6 +438,113 @@ class HeadlessPinTest(unittest.TestCase):
         launch = self.runner.launch
         self.assertEqual(launch(Path("oq.jar"), "run", "p.oq"),
                          ["java", "-jar", "oq.jar", "run", "p.oq"])
+
+
+class DisplayBackedModeTest(unittest.TestCase):
+    """`--under-display` is the only mode where the display-backed probe runs, so the modes have
+    to be real and disjoint rather than a flag the harness accepts and ignores.
+
+    `c13_display` passes with or without a display by design -- it asserts that "headless" and
+    "a window realised" are complementary, so it prints `true`/`true` either way. That makes it
+    incapable of proving a window was ever mapped, which is why the display-backed half is a
+    separate probe in `DISPLAY` and a separate CI job. If the default run leaked the display
+    probe in, it would demand a display on every developer machine and on the plain CI leg.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("probe_runner_display", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.runner = module
+        self.jar = Path(tempfile.mkdtemp()) / "oq.jar"
+        self.jar.write_bytes(b"")
+
+    def test_display_probes_are_a_strict_subset_of_all_probes(self):
+        names = {name for name, _, _ in self.runner.PROBES}
+        self.assertTrue(self.runner.DISPLAY)
+        self.assertLess(self.runner.DISPLAY, names)
+
+    def test_the_display_probe_is_not_also_a_headless_probe(self):
+        # A probe in both sets would be launched with `-Djava.awt.headless=true` under
+        # `--under-display` and could never see a display, defeating the mode entirely.
+        self.assertFalse(self.runner.DISPLAY & self.runner.HEADLESS)
+
+    def test_c13_display_is_not_cited_as_display_backed(self):
+        # The record-correcting half of this change: the probe that holds on every host cannot
+        # be the one that proves a hosted display works.
+        self.assertNotIn("c13_display", self.runner.DISPLAY)
+
+    def test_the_flag_selects_the_display_probe_and_only_then(self):
+        # The selection expression is the whole mechanism, so it is tested directly rather than
+        # inferred from the count the mode prints.
+        select = self.runner.select_probes
+        self.assertNotIn("c13_mapped", {n for n, _, _ in select(False)})
+        self.assertIn("c13_mapped", {n for n, _, _ in select(True)})
+        self.assertGreater(len(select(True)), len(select(False)))
+
+    def fake_build(self):
+        """`oq build` is expected to leave a jar behind, so the stand-in has to write one."""
+        def build(jar, program, extra=None, flags=()):
+            target = jar.parent / f"{program.stem}.jar"
+            target.write_bytes(b"")
+            return target, "codepath: compiled bytecode\n", 0
+        return build
+
+    def test_a_display_probe_that_fails_fails_the_run(self):
+        # The point of the Xvfb job is that a broken or absent display turns the build red. A
+        # mode that reported success while its one display probe failed would be worse than no
+        # job at all, because it would look like coverage.
+        def fake_run(jar, program, extra=None, flags=()):
+            if program.stem == "c13_mapped":
+                return "", 1
+            return "unused\n", 0
+
+        self.runner.run = fake_run
+        self.runner.compile_program = self.fake_build()
+        self.runner.run_compiled = lambda target, extra=None, flags=(): ("unused\n", 0)
+        code, out = self.drive("--under-display")
+        self.assertEqual(code, 1, out)
+        self.assertIn("c13_mapped", out)
+
+    def test_without_the_flag_the_same_failure_is_never_reached(self):
+        # The mirror of the test above: the display probe is not launched at all by default, so
+        # a probe that fails unconditionally cannot make the plain leg red.
+        expected = {name: (e, d) for name, e, d in self.runner.PROBES}
+
+        def fake_run(jar, program, extra=None, flags=()):
+            if program.stem == "c13_mapped":
+                raise AssertionError("the display probe ran without --under-display")
+            lines, defect = expected[program.stem]
+            if isinstance(lines, str):
+                return lines + "\n", 1
+            return "\n".join(lines) + "\n", 0
+
+        def fake_compiled(target, extra=None, flags=()):
+            lines, _ = expected[target.stem]
+            if isinstance(lines, str):
+                return lines + "\n", 1
+            return "\n".join(lines) + "\n", 0
+
+        self.runner.run = fake_run
+        self.runner.compile_program = self.fake_build()
+        self.runner.run_compiled = fake_compiled
+        code, out = self.drive()
+        self.assertEqual(code, 0, out)
+
+    def drive(self, *extra):
+        argv, self_argv = self.runner.sys.argv, sys.argv
+        self.runner.sys.argv = ["run.py", str(self.jar), "--both", *extra]
+        sys.argv = self.runner.sys.argv
+        try:
+            import io
+            from contextlib import redirect_stdout
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = self.runner.main()
+            return code, buffer.getvalue()
+        finally:
+            self.runner.sys.argv = argv
+            sys.argv = self_argv
 
 
 if __name__ == "__main__":

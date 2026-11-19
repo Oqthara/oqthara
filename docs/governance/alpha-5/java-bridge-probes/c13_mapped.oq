@@ -1,0 +1,37 @@
+use javax.swing.JFrame
+use java.awt.GraphicsEnvironment
+
+# The display-backed half of C13, run only under a display the harness itself provides.
+#
+# `c13_display` asserts the *relationship* between headless detection and frame realisation, so
+# its single recorded expectation is correct on a desktop and on a bare runner alike. That is
+# what makes it host-independent, and it is also why it cannot prove display-backed coverage: on
+# a host with no display its `worked` branch is unreachable, and `headless == not worked` is
+# satisfied by `true` / `false` alone. A green run there is evidence about the invariant, not
+# about a window being mapped.
+#
+# This probe is the opposite: it *requires* a display and fails without one, so it can only pass
+# where the display-backed path actually ran. The runner launches it under Xvfb, which picks a
+# free display number and exports `DISPLAY`, and the harness refuses to run this probe at all
+# when `DISPLAY` is unset on Linux, because a silent fallback to headless would turn a green line
+# into a false claim.
+#
+# The three printed lines are deliberately about observable state, not about policy:
+#
+#   `headless` must be `false`, which is the check that the JVM accepted the display rather than
+#   quietly switching to headless mode.
+#   `displayable` must be `true` after `setVisible`, which is the window being realised by the
+#   window system rather than merely allocated.
+#   `closed` must be `true` after `dispose`, so the probe leaves nothing behind on a shared
+#   virtual display and the successful realisation is shown to be reversible.
+#
+# What this still does not prove is how a *window manager* composites the window. Xvfb maps the
+# window and reports it displayable; it runs no compositor. That remains a desktop property.
+print GraphicsEnvironment.isHeadless()
+
+frame = JFrame("c13-mapped")
+frame.setSize(80, 60)
+frame.setVisible(true)
+print frame.isDisplayable()
+frame.dispose()
+print frame.isDisplayable() == false

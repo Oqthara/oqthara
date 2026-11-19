@@ -16,6 +16,7 @@ java -jar oq.jar examples/hello.oq
 | `fibonacci.oq` | recursion and a memoised version |
 | `json.oq` | parsing and re-serialising JSON |
 | `interop.oq` | calling `java.time.LocalDate` directly |
+| `swing.oq` | a Swing window, and skipping it when there is no display |
 | `wordcount.oq` | reading a file and ranking words |
 | `grep.oq` | a small CLI with arguments and exit codes |
 | `todo.oq` | mutating records in a list |

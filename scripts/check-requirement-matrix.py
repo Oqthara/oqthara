@@ -75,12 +75,26 @@ def cited_conformance(text: str) -> set[int]:
 
 
 def probe_total() -> int:
-    """The harness's own count, read from `PROBES` rather than from its output."""
+    """The harness's own count, read from `PROBES` rather than from its output.
+
+    Probes in `DISPLAY` are excluded because the default run excludes them: they need a display
+    the harness provides and are run separately under `--under-display`. Counting them here
+    would make the figure the document quotes disagree with the run it describes.
+    """
     path = ROOT / "docs/governance/alpha-5/java-bridge-probes/run.py"
     spec = importlib.util.spec_from_file_location("probe_run", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return len(module.PROBES)
+    return sum(1 for name, _, _ in module.PROBES if name not in module.DISPLAY)
+
+
+def display_probe_total() -> int:
+    """The probes only a display-backed run executes."""
+    path = ROOT / "docs/governance/alpha-5/java-bridge-probes/run.py"
+    spec = importlib.util.spec_from_file_location("probe_run_display", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return len(module.DISPLAY)
 
 
 def executable_programs() -> tuple[int, int]:
