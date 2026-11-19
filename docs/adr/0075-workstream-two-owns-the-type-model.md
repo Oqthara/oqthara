@@ -103,7 +103,8 @@ deliberately; the answer remains ADR-0069's.
 mistaken for closing the other.**
 
 ADR-0069's final section already warned about this and is now satisfied rather than contradicted:
-it said changing who owns a workstream "belongs in its own governance commit". This is that commit.
+it said changing who owns a workstream "belongs in its own governance commit". This is that
+governance change — the pull request that carries this record and the role's amendment together.
 A future change may assign workstream 2 elsewhere without touching the typing decision, and a future
 ADR may reverse ADR-0069 without touching ownership. Neither implies the other.
 
@@ -154,7 +155,11 @@ half of the finding, not as its resolution.
   of the report as it stood, not of the table as it now reads.
 - `conformance/246-typed-field-names-the-decision-error.oq` and
   `conformance/247-typed-parameter-names-the-decision-error.oq` — the refusal as published
-  behaviour, unchanged by this record.
+  behaviour, unchanged by this record. The names overstate what the fixtures pin: the `.err` files
+  carry the headline (`typed fields are not supported`), and the `help:` line that follows is
+  rendered from `Parser.java` and says "Oqthara is dynamically typed" without citing an ADR. The
+  decision is named in the parser's own javadoc, which points at the decision brief rather than at
+  ADR-0069. The behaviour is the decision's; the citation is the source comment's.
 - `oq-core/src/main/java/dev/oqthara/core/Parser.java` (`rejectTypedField`, `rejectTypedParameter`)
   — where the refusal is implemented, and the comment naming the decision.
 - `docs/governance/remediation/type-system-decision-brief.md` — the measurement the original
