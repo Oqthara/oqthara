@@ -1423,7 +1423,12 @@ unchanged.
 
   The remaining unmeasurable is still one thing: how a real window manager composites the painted
   window. Xvfb maps a window and reports it mapped, which is what #267's display-backed job
-  requires and what `c13_mapped` asserts; it is not a compositor.
+  requires and what `c13_mapped` asserts; it is not a compositor. It is not unmeasurable for lack
+  of an idea — `openbox` would supply a compositor and the job could assert window-manager insets
+  rather than a raw `isDisplayable()`. It is unmeasurable because installing it needs `sudo apt-get`
+  on the runner, `AGENTS.md` forbids `sudo`, and no workflow here has ever escalated. This is
+  therefore a decision about whether CI may escalate for this one property, and the report records
+  it as one rather than closing it by quietly adding the step.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
 - **The security baseline's "measured starting point" table has drifted, and the new gate already
