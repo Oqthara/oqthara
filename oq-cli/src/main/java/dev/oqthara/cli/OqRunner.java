@@ -2,6 +2,7 @@ package dev.oqthara.cli;
 
 import dev.oqthara.core.Ast;
 import dev.oqthara.core.Interpreter;
+import dev.oqthara.core.Modules;
 import dev.oqthara.core.Parser;
 import dev.oqthara.runtime.OqError;
 import dev.oqthara.stdlib.MethodResolverImpl;
@@ -12,6 +13,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +33,15 @@ public final class OqRunner {
         BufferedReader in = new BufferedReader(new StringReader(stdin == null ? "" : stdin));
         try {
             Ast.Program program = Parser.parse(sourceName, source);
+            // A conformance case may import a module, and `oq run` splices imports before the
+            // interpreter sees the program (Main.execute). This runner parsed and ran the raw
+            // source, so a module case passed through the CLI and failed through every harness
+            // that used this method -- the corpus said the feature worked and the suite said
+            // it did not. Resolve imports here for the same reason: there is one semantics.
+            Path entry = cwd == null ? null : cwd.resolve(sourceName);
+            if (entry != null && Files.isRegularFile(entry)) {
+                program = Modules.resolve(entry, program);
+            }
             Interpreter interpreter = new Interpreter(out, err, in, args, cwd, new MethodResolverImpl());
             Stdlib.install(interpreter);
             interpreter.run(program);

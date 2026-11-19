@@ -1584,10 +1584,19 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(215, compiled,
+        assertEquals(216, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-18: 215 compiled / 9 fallback / 0 divergences over 257 programs
-        // (224 executable). 257-swing-runs-with-no-display added the Swing path to the ordinary
+        // Measured 2026-11-18: 216 compiled / 10 fallback / 0 divergences over 259 programs
+        // (226 executable). 258-destructuring and 259-modules added the first coverage of the
+        // two surfaces the language-core audit found untested: every destructuring source the
+        // spec names, and a module import reached from a program. Destructuring compiles;
+        // modules fall back to the interpreter launcher, because `oq build` splices a module
+        // into the built program by running it, not by compiling it -- so 259 is one of the 10
+        // fallback programs rather than one of the 216 compiled, and the fallback count rose by
+        // one for the same reason the compiled count did.
+        //
+        // Measured 2026-11-18 (earlier): 215 compiled / 9 fallback / 0 divergences over 257
+        // programs (224 executable). 257-swing-runs-with-no-display added the Swing path to the ordinary
         // suite, and it compiles: the bridge calls it makes were already lowered, so this is a
         // newly measured capability rather than a compiler change.
         //

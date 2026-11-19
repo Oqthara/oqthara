@@ -40,17 +40,18 @@ formally reversing the relevant decision.
 
 | Verdict | Rows | Which |
 |---|---|---|
-| Complete | 51 | every row not listed below |
-| Missing | 2 | L3.11, L6.6 |
+| Complete | 53 | every row not listed below |
+| Missing | 0 | none |
 | Ambiguous | 2 | L4.9, L5.7 |
 | Undocumented | 1 | L2.6 |
 | Intentionally refused | 1 | L4.8 |
 | Defective | 0 | — |
 
-The six non-Complete rows — two Missing, two Ambiguous, one Undocumented, one refused — are
-§4's open backlog. L9.3 was the seventh until this branch closed it; it is recorded Complete
-below with the check that closed it, rather than deleted, because the audit found it and a reader
-should be able to see what became of every row the audit touched.
+The four non-Complete rows — two Ambiguous, one Undocumented, one refused — are §4's open
+backlog. Three of the audit's seven non-Complete findings were closed on this branch (L3.11, L6.6,
+L9.3) and are recorded Complete below with the evidence that closed them, rather than deleted,
+because the audit found them and a reader should be able to see what became of every row the audit
+touched.
 
 Rows are grouped into the nine scope areas of §3. Each area is one direction below.
 
@@ -99,10 +100,11 @@ is removed. §4 should not leave it as a de facto contract.
 | L3.8 | Destructuring count mismatch is an error, never a partial binding | Complete | `a, b = [1,2,3]` → `error: cannot destructure 3 items into 2 names`. Atomicity confirmed under `try`: after a failed `a, b = [9]` inside `try`, `print a + b` still prints `3`, so neither name was written | `Interpreter.java` |
 | L3.9 | Destructuring rejects `data` instances and scalars | Complete | `a, b = P(1)` → `error: cannot destructure P`; `a, b = nothing` → `error: cannot destructure nothing` | `Interpreter.java` |
 | L3.10 | `(a, b) = v` is not destructuring | Complete | `(a, b) = (1,2)` → `error: cannot assign to this expression`, matching the specification's explicit statement that parentheses make a tuple literal | `Parser.java` |
-| L3.11 | Destructuring has conformance coverage | **Missing** | No file in `conformance/` contains a destructuring binding. `grep -rln ", b = \|, *[a-z]* = (" conformance/*.oq` returns nothing. All eight behaviours above are verified here for the first time and nothing would catch a regression | `conformance/` |
+| L3.11 | Destructuring has conformance coverage | Complete | `conformance/258-destructuring.oq` covers every source the specification names — tuple, list, text, map, range — plus rebinding, `const`, and `_` as an ordinary name, asserting the exact output. Closed on this branch: when the audit ran, no file in `conformance/` contained a destructuring binding and `grep -rln ", b = \|, *[a-z]* = (" conformance/*.oq` returned nothing | `conformance/258-destructuring.oq` |
 
-An **eleven-row** audit of one feature is disproportionate; L3.7–L3.10 exist because L3.11 is
-missing. The right fix is conformance files, after which these rows collapse to one.
+An **eleven-row** audit of one feature was disproportionate, and L3.7–L3.10 exist only because
+L3.11 was missing. With the conformance file in place those rows collapse to the single claim L3.11
+now makes, which is what the audit predicted and is the reason it recorded the coverage hole at all.
 
 ## Direction 4 — Functions, lambdas, closures, and call semantics
 
@@ -148,10 +150,16 @@ or the method should mutate, matching every sibling in the list. The decision be
 | L6.3 | `use` without the prefix is a Java import | Complete | `use java.util.ArrayList` resolves the class; the two forms are distinguished by the `"oq:"` prefix | `Interpreter.java` |
 | L6.4 | Module search order is program directory, then `modules/`, then `lib/` | Complete | Stated at `docs/spec/language.md:2525` | `Interpreter.java` |
 | L6.5 | Import cycles terminate | Complete | Stated at `docs/spec/language.md:2530`; a file is loaded at most once | `Interpreter.java` |
-| L6.6 | Module and import semantics have conformance coverage | **Missing** | No file in `conformance/` imports an Oqthara module. `grep -rln 'use "oq:' conformance/*.oq` returns nothing. L6.1–L6.5 are verified here for the first time | `conformance/` |
+| L6.6 | Module and import semantics have conformance coverage | Complete | `conformance/259-modules.oq` imports `module-helper.oq` twice and asserts that its top-level statement runs once, that its functions and its `data` type both reach the importer, and that the second import is a no-op. Closed on this branch: when the audit ran, no file in `conformance/` imported an Oqthara module and `grep -rln 'use "oq:' conformance/*.oq` returned nothing | `conformance/259-modules.oq` |
 
-L6.6 is the second of the two coverage holes. Modules are a documented, load-bearing feature —
-`oq build` splices them — with no regression test.
+L6.6 was the second of the two coverage holes, and closing it surfaced a limitation the audit had not
+recorded: `259-modules` reports `codepath: interpreter launcher (module imports are not compiled
+
+yet)`, so a module program builds to a jar that runs through the interpreter rather than through
+compiled bytecode. The behaviour is identical — `verify-conformance.py` asserts both backends and
+found zero divergences — but the module path is not yet a compiled one. That is a fact about the
+compiler, not about module semantics, and it is recorded here rather than opened as a finding because
+no requirement in scope asks for it.
 
 ## Direction 7 — Error and diagnostic behaviour that forms the language contract
 
@@ -170,12 +178,12 @@ L6.6 is the second of the two coverage holes. Modules are a documented, load-bea
 |---|---|---|---|---|
 | L8.1 | The two backends agree on arithmetic, collections, tuples, and `data` | Complete | A ten-statement program (`fib(10)`, `x.sort()`, map insert, `7 / 2`, `7.0 / 2`, a tuple and a `data` instance) produced **byte-identical** output interpreted and as a built jar: `55 / [3, 1, 2] / {"k": 1} / 3.5 / 3.5 / (1, "a") / P(x: 1, y: 2)` | `Compiler`, `Interpreter` |
 | L8.2 | `.sort()` is non-mutating on both backends | Complete | The same program shows `[3, 1, 2]` after `x.sort()` on both. Consistent, which is why L5.7 is Ambiguous rather than Defective | Both |
-| L8.3 | Agreement is verified systematically, not by sample | Complete | `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` runs **every** `.oq` file in `conformance/`, skips the 9 that declare a compiler fallback, and asserts the compiled output equals `oq run`'s. Measured 2026-11-18: **215 compiled / 9 fallback / 0 divergences over 257 programs (224 executable)**. The contract is stated in the test: "a program is only compiled when the compiler can prove it, and once compiled it must behave exactly like `oq run`" | `BytecodeCompilerTest.java:1560` |
+| L8.3 | Agreement is verified systematically, not by sample | Complete | `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` runs **every** `.oq` file in `conformance/`, skips the 10 that declare a compiler fallback, and asserts the compiled output equals `oq run`'s. Measured 2026-11-18: **216 compiled / 10 fallback / 0 divergences over 259 programs (226 executable)**. The contract is stated in the test: "a program is only compiled when the compiler can prove it, and once compiled it must behave exactly like `oq run`" | `BytecodeCompilerTest.java:1560` |
 
 L8.3 was the row I expected to record as Missing — the tree only ever *demonstrated* backend
 agreement, case by case, and never stated the invariant. It is Complete: the invariant is the test's
 own contract sentence, and the assertion is corpus-wide. Recording that is worth doing, because the
-finding that survives is the opposite of the one I went looking for: 257 programs, 9 declared
+finding that survives is the opposite of the one I went looking for: 259 programs, 10 declared
 fallbacks, **zero divergences**, and the count is pinned with a comment requiring new measurement to
 raise it.
 
@@ -196,8 +204,8 @@ either would narrow the comparison until it agreed with whatever was left.
 
 ## What this audit does not establish
 
-It does not establish that the language is complete. It establishes that **51 rows behave as
-documented, two are ambiguous, one is undocumented, two are missing, none is defective, and one is
+It does not establish that the language is complete. It establishes that **53 rows behave as
+documented, two are ambiguous, one is undocumented, none is missing, none is defective, and one is
 refused deliberately** — across the nine scope areas the order names.
 
 It does not review Alpha 9's object-oriented surface. `data` and classes appear only where an
@@ -212,12 +220,10 @@ It does not revive a refusal. The ten leader words and `finally` stay refused. D
 
 ## The bounded backlog this audit establishes
 
-Four of §4's six remaining non-Complete findings are worth acting on, in order of cost. L9.3 was
-the fifth and is now closed:
+Two of §4's four remaining non-Complete findings are worth acting on. L9.3, L3.11 and L6.6 were
+the other three and are now closed:
 
-1. **L3.11 and L6.6 — conformance for destructuring and modules.** Two holes in a 257-program
-   suite that covers everything else.
-2. **L2.6 and L5.7 — decide, then document.** The text-coercion rule for `+` and the non-mutating
+1. **L2.6 and L5.7 — decide, then document.** The text-coercion rule for `+` and the non-mutating
    `.sort()` are the two places where the tree behaves one way and the specification says another
    or nothing. Both need an ADR before either an implementation change or a documentation change;
    picking one without the other would make the divergence official.

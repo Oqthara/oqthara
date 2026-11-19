@@ -77,6 +77,18 @@ REFUSAL_MATRIX = Path("docs/governance/alpha-6-requirement-matrix.md")
 # Hand-counting it produced three different wrong totals in one sitting, which is
 # exactly the argument for deriving the verdicts from the rows instead.
 CAPABILITY_MATRIX = Path("docs/governance/alpha-7-language-core-capability-matrix.md")
+# Every verdict the matrix is allowed to reach. Recounting only the verdicts that
+# happen to appear leaves a counter unguarded the moment one drops to zero: with
+# "| Missing | 0 |" a stray "| Missing | 1 |" passed, because there was no row to
+# iterate over. The set is closed so a zeroed verdict is still reconciled.
+VERDICTS = (
+    "Complete",
+    "Missing",
+    "Undocumented",
+    "Ambiguous",
+    "Intentionally refused",
+    "Defective",
+)
 
 # Prose spells small counts out. Leaving these unreadable is how "thirteen
 # directions" survived four reviews while every numeral in the file was checked.
@@ -669,7 +681,17 @@ def check_capability_matrix(text: str | None = None) -> list[str]:
             f"the matrix says {stated_total.group(1)} rows but its table holds {total}"
         )
 
-    for verdict, count in sorted(verdicts.items()):
+    unknown = sorted(set(verdicts) - set(VERDICTS))
+    for verdict in unknown:
+        problems.append(
+            f"the matrix uses the verdict {verdict!r}, which is not one of the six it defines"
+        )
+
+    # Iterate the closed set, not the observed verdicts, so a verdict that fell to
+    # zero still has its counter read. Otherwise "| Missing | 0 |" could be edited
+    # to any number and nothing would notice.
+    for verdict in VERDICTS:
+        count = verdicts.get(verdict, 0)
         stated = re.search(rf"^\| {verdict} \| (\d+) \|", text, re.M)
         if not stated:
             problems.append(f"the matrix lists {count} {verdict!r} rows but does not count them")
@@ -677,6 +699,10 @@ def check_capability_matrix(text: str | None = None) -> list[str]:
             problems.append(
                 f"the matrix says {stated.group(1)} {verdict!r} rows but the table holds {count}"
             )
+
+    summed = sum(verdicts.values())
+    if summed != total:
+        problems.append(f"the verdicts sum to {summed} but the table holds {total} rows")
 
     # The closing paragraph restates every verdict in prose. Restating a number in
     # two places is how this document was wrong three times, so both are checked.

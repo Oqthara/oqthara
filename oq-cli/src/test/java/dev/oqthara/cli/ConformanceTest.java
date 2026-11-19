@@ -100,6 +100,39 @@ class ConformanceTest {
     }
 
     /**
+     * A fixture must never be discovered as a case.
+     *
+     * <p>{@code module-helper.oq} is imported by {@code 259-modules.oq}, not run on its own.
+     * While it sat in this directory it was globbed as a program, counted in the corpus and
+     * compared against an expected output it does not have, so the suite reported a feature
+     * as broken that the CLI ran correctly. It now lives in {@code conformance/modules/},
+     * which is the documented second entry in the module search order, so no glob reaches it
+     * and no harness has to know its name. This asserts the shape, because the failure it
+     * prevents was silent: both harnesses counted 260 programs where the corpus had 259.
+     */
+    @Test
+    void fixturesAreNotDiscoveredAsCases() throws Exception {
+        List<String> names;
+        try (Stream<Path> stream = Files.list(CASES)) {
+            names = stream.map(p -> p.getFileName().toString())
+                    .filter(n -> n.endsWith(".oq"))
+                    .toList();
+        }
+        assertEquals(names.size(), names.stream().distinct().count(),
+                "two conformance cases share a name");
+        for (Path dir : List.of(CASES.resolve("modules"), CASES.resolve("lib"))) {
+            if (!Files.isDirectory(dir)) continue;
+            try (Stream<Path> fixtures = Files.list(dir)) {
+                for (Path fixture : fixtures.filter(p -> p.toString().endsWith(".oq")).toList()) {
+                    assertFalse(names.contains(fixture.getFileName().toString()),
+                            "the fixture " + fixture.getFileName() + " in " + dir.getFileName()
+                                    + "/ is also a top-level case, so it would be run as one");
+                }
+            }
+        }
+    }
+
+    /**
      * The name of a case that promises a position must be backed by the harness rule that
      * checks one. This used to be a comment-level promise: case 200 is called
      * `error-message-includes-position` but asserted only a message.

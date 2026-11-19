@@ -351,6 +351,49 @@ class TheCapabilityMatrixCountsItsOwnRows(unittest.TestCase):
         self.assertTrue(problems)
         self.assertIn("'Intentionally refused'", problems[0])
 
+    def test_a_zeroed_verdict_counter_is_still_checked(self):
+        # Recounting only the verdicts that appear leaves a counter unguarded the
+        # moment one falls to zero. With "| Missing | 0 |" and no Missing row, a
+        # stray "| Missing | 1 |" passed this gate until the loop was closed over
+        # the six defined verdicts.
+        stated = re.search(r"^\| Missing \| (\d+) \|", self.MATRIX_TEXT, re.M)
+        self.assertIsNotNone(stated, "the matrix no longer counts Missing rows")
+        current = int(stated.group(1))
+        problems = self.matrix_problems_after(
+            f"| Missing | {current} |", f"| Missing | {current + 1} |"
+        )
+        self.assertTrue(problems)
+        self.assertIn(f"{current + 1} 'Missing'", problems[0])
+        self.assertIn("holds 0", problems[0])
+
+    def test_a_verdict_outside_the_defined_six_is_caught(self):
+        # A new verdict word would otherwise be counted and then silently skipped
+        # by the closed loop, so the table could grow a sixth-plus category with
+        # no stated arithmetic behind it.
+        row = next(
+            line for line in self.MATRIX_TEXT.splitlines() if line.startswith("| L1.1 ")
+        )
+        mutated = row.replace("| Complete |", "| Probably |", 1)
+        self.assertNotEqual(row, mutated, "L1.1 is no longer a Complete row")
+        problems = checker.check_capability_matrix(
+            self.MATRIX_TEXT.replace(row, mutated, 1)
+        )
+        self.assertIn(
+            "the matrix uses the verdict 'Probably', which is not one of the six it defines",
+            problems,
+        )
+
+    def test_the_defined_verdicts_are_the_six_the_matrix_names(self):
+        self.assertEqual(6, len(checker.VERDICTS))
+        self.assertEqual(len(set(checker.VERDICTS)), len(checker.VERDICTS))
+        for verdict in checker.VERDICTS:
+            with self.subTest(verdict=verdict):
+                self.assertIn(
+                    verdict.replace("*", ""),
+                    self.MATRIX_TEXT.replace("*", ""),
+                    f"the matrix never names the verdict {verdict!r}",
+                )
+
     def test_an_emptied_matrix_is_caught(self):
         # Deleting every row leaves the counts and the prose agreeing at zero,
         # which would otherwise read as success.

@@ -1,0 +1,10 @@
+use "oq:module-helper"
+
+print twice(3)
+print greet("oq")
+p = Point(1, 2)
+print p.x
+print p.y
+
+use "oq:module-helper"
+print twice(21)

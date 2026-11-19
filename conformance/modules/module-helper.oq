@@ -1,0 +1,11 @@
+fun twice(n)
+  return n * 2
+end
+
+fun greet(name)
+  return "hello, {name}"
+end
+
+data Point(x, y)
+
+print "helper loaded"

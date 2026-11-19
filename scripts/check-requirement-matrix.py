@@ -10,8 +10,14 @@ Four things are checkable without judging prose, and each is checked here:
 
 1. Every cited `conformance/NNN` exists as `conformance/NNN-*.oq`.
 2. Every cited `scripts/*.py`, ADR and source path exists.
-3. Every quoted conformance figure (`215 compiled`, `224 executable`, `257
-   programs`) matches a measurement derived from `conformance/` itself.
+3. Every quoted conformance figure matches a measurement. `executable` and
+   `programs` are counted from `conformance/` directly. `compiled` cannot be:
+   knowing it means compiling and running all 259 cases, which is what
+   `verify-conformance.py` does and far too slow to repeat in a gate. That
+   figure is instead reconciled against `verify-conformance.py`'s `BASELINE`,
+   the one place it is recorded after a measured run, so the two documents
+   cannot drift apart. This was a documented-but-missing check until the
+   Alpha 7 conformance pair changed `compiled` to 216 and nothing objected.
 4. Every quoted probe total matches `run.py`'s `PROBES`, and the row that says
    "all 12 `NOT STARTED` rows exit 1" carries a count equal to the number of
    rows actually marked `NOT STARTED`.
@@ -98,10 +104,38 @@ def display_probe_total() -> int:
 
 
 def executable_programs() -> tuple[int, int]:
-    """`(executable, all)` conformance programs, by the `.err` convention."""
-    programs = sorted((ROOT / "conformance").glob("*.oq"))
+    """`(executable, all)` conformance programs, by the `.err` convention.
+
+    Fixtures are shared files a case imports, not cases, so they are excluded
+    here exactly as `verify-conformance.py` excludes them. The list is imported
+    from that file rather than restated: when the module fixture was added, this
+    counter and that one disagreed about the size of the same corpus, and only
+    one of them was wrong.
+    """
+    fixtures = conformance_fixtures()
+    programs = sorted(
+        p for p in (ROOT / "conformance").glob("*.oq") if p.name not in fixtures
+    )
     executable = [p for p in programs if not p.with_suffix(".err").exists()]
     return len(executable), len(programs)
+
+
+def conformance_baseline() -> dict:
+    """The measured figures `verify-conformance.py` fails against."""
+    path = ROOT / "scripts/verify-conformance.py"
+    spec = importlib.util.spec_from_file_location("verify_conformance_baseline", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.BASELINE
+
+
+def conformance_fixtures() -> set[str]:
+    """The fixture names `verify-conformance.py` knows it must not count."""
+    path = ROOT / "scripts/verify-conformance.py"
+    spec = importlib.util.spec_from_file_location("verify_conformance", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return set(module.FIXTURES)
 
 
 def cited_paths_are_real(text: str) -> None:
@@ -139,7 +173,30 @@ def conformance_figures_agree(text: str) -> None:
                     problems.append(
                         f"the matrix says {value} {what}, but conformance/ holds {measured}"
                     )
-    note(f"conformance figures agree ({executable} executable of {total} programs)")
+    # `compiled` is not countable here without running the corpus, so it is
+    # reconciled against the single file that records a measured value.
+    baseline = conformance_baseline()
+    # The trailing comma matters: "A6.1 compiled code calls Java" is a row ID,
+    # not a figure, and a bare "(\d+) compiled" reported 1 and 3 as stale counts.
+    for match in re.finditer(r"(\d+) compiled,", text):
+        if int(match.group(1)) != baseline["compiled"]:
+            problems.append(
+                f"the matrix says {match.group(1)} compiled conformance programs, but"
+                f" verify-conformance.py's measured baseline says {baseline['compiled']}"
+            )
+    # Every executable program either compiles or falls back, so the fallback
+    # count is arithmetic on the two figures already established, not a third
+    # measurement that could silently rot.
+    fallback = executable - baseline["compiled"]
+    for match in re.finditer(r"(\d+) fallback", text):
+        if int(match.group(1)) != fallback:
+            problems.append(
+                f"the matrix says {match.group(1)} fallback conformance programs, but"
+                f" {executable} executable minus {baseline['compiled']} compiled is"
+                f" {fallback}"
+            )
+    note(f"conformance figures agree ({executable} executable of {total} programs,"
+         f" {baseline['compiled']} compiled)")
 
 
 def probe_figures_agree(text: str) -> None:
