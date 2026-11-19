@@ -69,6 +69,26 @@ ADR_DIR = Path("docs/adr")
 PROBE_DIR = Path("docs/governance/alpha-5/java-bridge-probes")
 PROBE_HARNESS = PROBE_DIR / "run.py"
 RISK_GATE = Path("scripts/check-risk-register.py")
+# The twelve refusals are a claim about a file this gate did not previously
+# read. §4's scope record now states the figure, so it is derived rather than
+# trusted: mutating "twelve" to "thirteen" used to pass every gate.
+REFUSAL_MATRIX = Path("docs/governance/alpha-6-requirement-matrix.md")
+# The capability matrix is §4's first deliverable and states its own arithmetic.
+# Hand-counting it produced three different wrong totals in one sitting, which is
+# exactly the argument for deriving the verdicts from the rows instead.
+CAPABILITY_MATRIX = Path("docs/governance/alpha-7-language-core-capability-matrix.md")
+# Every verdict the matrix is allowed to reach. Recounting only the verdicts that
+# happen to appear leaves a counter unguarded the moment one drops to zero: with
+# "| Missing | 0 |" a stray "| Missing | 1 |" passed, because there was no row to
+# iterate over. The set is closed so a zeroed verdict is still reconciled.
+VERDICTS = (
+    "Complete",
+    "Missing",
+    "Undocumented",
+    "Ambiguous",
+    "Intentionally refused",
+    "Defective",
+)
 
 # Prose spells small counts out. Leaving these unreadable is how "thirteen
 # directions" survived four reviews while every numeral in the file was checked.
@@ -122,6 +142,12 @@ NOUNS = [
     # a sentence saying "the register holds 30 risks" passed unread, and the
     # register holds 31.
     ("risks", "risk_total"),
+    # Bare, in §4's scope record: "the twelve ADR-0062 refusals remain
+    # refusals". The figure was unchecked while the scope record was being
+    # written, which is the failure the report charges elsewhere. The phrase
+    # always reads "<number> ADR-0062 refusals", so the figure reaches the noun
+    # through an optional ident, never through the number inside the id.
+    ("refusals", "refusals"),
 ]
 # Keyed lowercase because the lookup lowercases the matched text. Keying this on
 # the noun as written made "ADRs" unreachable and turned any live "69 ADRs" into
@@ -130,6 +156,7 @@ NOUNS = [
 NOUN_KEY = {noun.lower(): key for noun, key in NOUNS}
 FIGURE = re.compile(
     rf"\b({NUMBER})\s+(?:(?:pure|real|confirmed|live)\s+)?"
+    rf"(?:ADR-\d+\s+)?"
     rf"({'|'.join(re.escape(noun) for noun, _ in NOUNS)})\b",
     re.IGNORECASE,
 )
@@ -320,6 +347,12 @@ def derive(cwd: Path = Path(".")) -> dict:
     for name in ("Open", "Mitigated", "Accepted"):
         values[name] = sum(1 for row in rows if row["status"] == name)
     values["open_ids"] = sorted(row["id"] for row in rows if row["status"] == "Open")
+
+    # Refusal rows in the Alpha 6 matrix, counted the same way the matrix counts
+    # them: a `NOT STARTED` status cell. The status legend lines are prose, not
+    # table rows, so anchoring on a leading pipe keeps them out.
+    matrix = (cwd / REFUSAL_MATRIX).read_text(encoding="utf-8")
+    values["refusals"] = len(re.findall(r"^\|.*?\|\s*`NOT STARTED`\s*\|", matrix, re.M))
     return values
 
 
@@ -560,8 +593,171 @@ def classify(raw: str, sentence: str, line: int, values: dict) -> list[str]:
     return problems
 
 
+# A figure recorded in the report is only worth gating if the section holding it
+# still exists. Deleting Item 6b outright passed every gate: the refusals figure
+# and the §4 status both vanished and nothing noticed, because every rule below
+# searches for what is present and none requires anything to be.
+REQUIRED_SECTIONS = [
+    # (heading, phrases the section must still state)
+    (
+        "## Item 6b — §4's scope, recorded",
+        [
+            # The in-scope surface, sampled at both ends: a section that loses
+            # its first and last bullets is a section that was rewritten, not
+            # edited.
+            "Operator precedence and expression evaluation.",
+            "Interpreter and compiled-backend agreement for supported language behavior.",
+            # The out-of-scope boundary. These are the rows a future pass is most
+            # likely to delete while "tidying" a table, and deleting one silently
+            # widens §4.
+            "| Java Bridge Full |",
+            "| Generics as a distinct pre-0.2.0 deliverable |",
+            "| Grafeno and OQSS |",
+            # The refusal rule, which is the one boundary that protects decisions
+            # already made.
+            "The twelve ADR-0062 refusals remain refusals",
+            # The ownership table, so a scope record cannot outlive its owner.
+            "`oq-hive-language-syntax` | Language design, syntax decisions",
+            # The first deliverable, which is what makes the scope actionable.
+            "A language-core capability matrix, before broad implementation.",
+        ],
+    ),
+]
+
+
+def check_required_sections(text: str) -> list[str]:
+    """Problems where a section that must exist is missing or hollowed out."""
+    problems: list[str] = []
+    for heading, phrases in REQUIRED_SECTIONS:
+        start = text.find(heading)
+        if start < 0:
+            problems.append(f"the report no longer has a {heading!r} section")
+            continue
+        nxt = text.find("\n## ", start + len(heading))
+        section = text[start : nxt if nxt >= 0 else len(text)]
+        for phrase in phrases:
+            if phrase not in section:
+                problems.append(
+                    f"{heading!r} no longer states {phrase!r}; a scope record that"
+                    " drops a boundary is worse than none"
+                )
+    return problems
+
+
+def check_capability_matrix(text: str | None = None) -> list[str]:
+    """Problems where the matrix's stated arithmetic disagrees with its own rows.
+
+    The verdict counts are derived from the table, never from the prose. Three
+    hand-counts of the same document gave 29, 49 and 50 before this existed.
+    """
+    problems: list[str] = []
+    if text is None:
+        try:
+            text = CAPABILITY_MATRIX.read_text(encoding="utf-8")
+        except OSError as unreadable:
+            return [f"cannot read {CAPABILITY_MATRIX}: {unreadable}"]
+
+    verdicts: dict[str, int] = {}
+    total = 0
+    for line in text.splitlines():
+        if not re.match(r"^\| L\d", line):
+            continue
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if len(cells) < 3:
+            continue
+        total += 1
+        verdict = cells[2].replace("*", "").strip()
+        verdicts[verdict] = verdicts.get(verdict, 0) + 1
+    total = total
+
+    if total == 0:
+        return [f"{CAPABILITY_MATRIX} has no capability rows; the matrix was emptied"]
+
+    stated_total = re.search(r"^(\d+) rows, counted from the table IDs", text, re.M)
+    if not stated_total:
+        problems.append("the matrix no longer states its row total")
+    elif int(stated_total.group(1)) != total:
+        problems.append(
+            f"the matrix says {stated_total.group(1)} rows but its table holds {total}"
+        )
+
+    unknown = sorted(set(verdicts) - set(VERDICTS))
+    for verdict in unknown:
+        problems.append(
+            f"the matrix uses the verdict {verdict!r}, which is not one of the six it defines"
+        )
+
+    # Iterate the closed set, not the observed verdicts, so a verdict that fell to
+    # zero still has its counter read. Otherwise "| Missing | 0 |" could be edited
+    # to any number and nothing would notice.
+    for verdict in VERDICTS:
+        count = verdicts.get(verdict, 0)
+        stated = re.search(rf"^\| {verdict} \| (\d+) \|", text, re.M)
+        if not stated:
+            problems.append(f"the matrix lists {count} {verdict!r} rows but does not count them")
+        elif int(stated.group(1)) != count:
+            problems.append(
+                f"the matrix says {stated.group(1)} {verdict!r} rows but the table holds {count}"
+            )
+
+    summed = sum(verdicts.values())
+    if summed != total:
+        problems.append(f"the verdicts sum to {summed} but the table holds {total} rows")
+
+    # The closing paragraph restates every verdict in prose. Restating a number in
+    # two places is how this document was wrong three times, so both are checked.
+    # Each clause is read on its own: the verb varies ("two are ambiguous" but "one
+    # is undocumented"), and a single pattern across all six silently matched
+    # nothing when it required "are" everywhere. Reading them from the closing
+    # paragraph only, because "L3.11 is missing" earlier in the document matches the
+    # Missing clause and reads "L3" as the count.
+    words = {
+        "zero": 0, "none": 0, "no": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+        "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    }
+    anchor = text.find("rows behave as")
+    if anchor >= 0:
+        # Back up over "**N " so the Complete clause can read its own total.
+        line_start = text.rfind("\n", 0, anchor)
+        anchor = line_start + 1 if line_start >= 0 else 0
+    closing = text[anchor : text.find("\n## ", anchor)] if anchor >= 0 else ""
+    clauses = [
+        (r"\*\*(\d+) rows behave as", "Complete"),
+        (r"(\w+)\s+(?:are|is)\s+ambiguous", "Ambiguous"),
+        (r"(\w+)\s+(?:are|is)\s+undocumented", "Undocumented"),
+        (r"(\w+)\s+(?:are|is)\s+missing", "Missing"),
+        (r"(\w+)\s+(?:are|is)\s+defective", "Defective"),
+        (r"(\w+)\s+(?:are|is)\s+refused deliberately", "Intentionally refused"),
+    ]
+    if not closing:
+        problems.append("the matrix's closing paragraph no longer states the row total")
+    else:
+        for pattern, verdict in clauses:
+            found = re.search(pattern, closing)
+            if not found:
+                problems.append(
+                    f"the matrix's closing paragraph no longer states how many"
+                    f" {verdict!r} rows there are"
+                )
+                continue
+            raw = found.group(1)
+            claimed = int(raw) if raw.isdigit() else words.get(raw, -1)
+            if claimed != verdicts.get(verdict, 0):
+                problems.append(
+                    f"the matrix's closing paragraph says {claimed} {verdict!r}"
+                    f" rows but the table holds {verdicts.get(verdict, 0)}"
+                )
+
+    return problems
+
+
 def check(text: str, values: dict) -> list[str]:
-    """Every problem in the report; empty means every claim agrees."""
+    """Every figure problem in the report; empty means every claim agrees.
+
+    Structure is checked separately by `check_required_sections`, because a
+    synthetic one-line text is a legitimate input to this function and is not
+    a report.
+    """
     problems: list[str] = []
     for line, unit, fenced in paragraphs(text):
         if fenced:
@@ -596,7 +792,7 @@ def main() -> int:
         print(f"cannot read a file the check needs: {unreadable}", file=sys.stderr)
         return 2
 
-    problems = check(text, values)
+    problems = check_required_sections(text) + check(text, values) + check_capability_matrix()
     if problems:
         print(f"report claims: {len(problems)} problem(s)")
         for problem in problems:

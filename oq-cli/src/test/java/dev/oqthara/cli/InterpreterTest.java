@@ -13,6 +13,15 @@ class InterpreterTest {
     }
 
     @Test
+    void aDisplayNameThatIsNotAPathIsNotTreatedAsOne() {
+        // Windows rejects `<` in a path name, so resolving the display name `<test>` threw
+        // InvalidPathException before the program ran. macOS and Linux allow such a file name and
+        // quietly found nothing, which is why the whole class passed here and failed there. The
+        // name is a label, not a location, and the runner must treat it as one.
+        assertEquals("ok\n", run("print \"ok\""));
+    }
+
+    @Test
     void printsHello() {
         assertEquals("Hello, World!\n", run("print \"Hello, World!\""));
     }

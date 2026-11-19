@@ -179,6 +179,65 @@ def keyword_budget_is_honest() -> None:
     note(f"agent-facing keyword counts match the lexer in {len(agent_facing)} files")
 
 
+def the_editor_grammar_knows_every_keyword() -> None:
+    # The keyword chain had three links -- Lexer.KEYWORDS, the reference, CONTRIBUTING.md --
+    # and a fourth that nothing read: the TextMate grammar that ships in the editor
+    # extension. A keyword added to the lexer failed two checks and reached the editor
+    # silently, so highlighting was wrong on an installed extension with a green build.
+    #
+    # The grammar's keywords are split across three repository groups -- `keywords`,
+    # `constants` and `operators` -- because they are coloured differently. Only the
+    # `\b(...)\b` alternations are read; the operator group also holds `\*\*`, `==` and
+    # brackets, which are not keywords and must not be counted.
+    lexer = read("oq-core/src/main/java/dev/oqthara/core/Lexer.java")
+    block = re.search(r"KEYWORDS\s*=\s*Set\.of\((.*?)\);", lexer, re.S)
+    if not block:
+        problems.append("could not read Lexer.KEYWORDS")
+        return
+    keywords = set(re.findall(r'"([^"]+)"', block.group(1)))
+
+    grammar_path = "editors/vscode/syntaxes/oq.tmLanguage.json"
+    try:
+        grammar = json.loads(read(grammar_path))
+    except (OSError, ValueError) as unreadable:
+        problems.append(f"cannot read {grammar_path}: {unreadable}")
+        return
+    groups = grammar.get("repository", {})
+    if not groups:
+        problems.append(f"{grammar_path} has no repository groups")
+        return
+
+    highlighted: set[str] = set()
+    for group in ("keywords", "constants", "operators"):
+        if group not in groups:
+            problems.append(
+                f"{grammar_path} has no {group!r} group; the keyword check would pass "
+                "against whatever is left")
+            return
+        for pattern in groups[group].get("patterns", []):
+            # Only the bare-word alternation forms a keyword set. `\*\*|==|...` and the
+            # bracket class are operators and punctuation.
+            alternation = re.fullmatch(r"\\b\(([^)]+)\)\\b", pattern.get("match", ""))
+            if alternation:
+                highlighted |= set(alternation.group(1).split("|"))
+
+    if not highlighted:
+        problems.append(f"{grammar_path} highlights no keywords at all")
+        return
+
+    missing = sorted(keywords - highlighted)
+    extra = sorted(highlighted - keywords)
+    if missing:
+        problems.append(
+            f"{grammar_path} does not highlight {missing}; a keyword that reaches the "
+            "lexer but not the grammar is highlighted as an identifier in every editor")
+    if extra:
+        problems.append(
+            f"{grammar_path} highlights {extra}, which the lexer does not treat as keywords")
+    if not missing and not extra:
+        note(f"{grammar_path} highlights all {len(keywords)} keywords")
+
+
 def command_form_matches_the_spec() -> None:
     # The spec said "Both accept any number of arguments" of two names, then its example
     # called a third, `write_text`, in command form -- which the parser rejects. Nothing
@@ -1500,6 +1559,7 @@ CHECKS = (
     review_records_are_not_in_the_docs_catalog,
     stdlib_reference_is_current,
     keyword_budget_is_honest,
+    the_editor_grammar_knows_every_keyword,
     command_form_matches_the_spec,
     documented_commands_exist,
     catalog_is_current,

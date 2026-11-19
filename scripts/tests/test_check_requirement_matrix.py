@@ -15,6 +15,7 @@ rejected everything would fail here rather than looking thorough.
 import importlib.util
 import pathlib
 import sys
+import re
 import unittest
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent.parent
@@ -71,12 +72,55 @@ class ItCatchesDrift(unittest.TestCase):
         self.assertTrue(any("27 probes" in problem for problem in found), found)
 
     def test_a_stale_executable_conformance_count(self):
-        found = problems_for(replaced("224 of 224 executable", "223 of 224 executable"))
-        self.assertTrue(any("223 executable" in problem for problem in found), found)
+        # Read the live figure out of the matrix instead of naming it. Pinning
+        # "224 of 224" here broke the moment two conformance cases were added,
+        # which is the drift the gate is meant to report, not a test failure.
+        stated = re.search(r"(\d+) of \d+ executable", MATRIX.read_text(encoding="utf-8"))
+        self.assertIsNotNone(stated, "the matrix no longer states an executable count")
+        current = int(stated.group(1))
+        found = problems_for(replaced(f"{current} of", f"{current - 1} of"))
+        self.assertTrue(any(f"{current - 1} executable" in p for p in found), found)
 
     def test_a_stale_conformance_program_total(self):
-        found = problems_for(replaced("across 257 programs", "across 256 programs"))
-        self.assertTrue(any("256 conformance programs" in problem for problem in found), found)
+        stated = re.search(r"across (\d+) programs", MATRIX.read_text(encoding="utf-8"))
+        self.assertIsNotNone(stated, "the matrix no longer states a program total")
+        current = int(stated.group(1))
+        found = problems_for(
+            replaced(f"across {current} programs", f"across {current - 1} programs")
+        )
+        self.assertTrue(
+            any(f"{current - 1} conformance programs" in p for p in found), found
+        )
+
+    def test_a_stale_compiled_count(self):
+        # `compiled` is reconciled against verify-conformance.py's measured
+        # baseline rather than recounted, because recounting means running the
+        # whole corpus. This clause was described in the module docstring but
+        # absent from the code until the Alpha 7 pair changed the figure.
+        stated = re.search(r"(\d+) compiled,", MATRIX.read_text(encoding="utf-8"))
+        self.assertIsNotNone(stated, "the matrix no longer states a compiled count")
+        current = int(stated.group(1))
+        found = problems_for(
+            replaced(f"{current} compiled,", f"{current - 1} compiled,")
+        )
+        self.assertTrue(any(f"{current - 1} compiled" in p for p in found), found)
+
+    def test_a_stale_fallback_count(self):
+        # Fallback is executable minus compiled, so it is checked as arithmetic
+        # against the two figures rather than as a third independent claim.
+        stated = re.search(r"(\d+) fallback", MATRIX.read_text(encoding="utf-8"))
+        self.assertIsNotNone(stated, "the matrix no longer states a fallback count")
+        current = int(stated.group(1))
+        found = problems_for(
+            replaced(f"{current} fallback", f"{current + 1} fallback")
+        )
+        self.assertTrue(any(f"{current + 1} fallback" in p for p in found), found)
+
+    def test_a_row_id_is_not_read_as_a_compiled_figure(self):
+        # "A6.1 compiled code calls Java" matches a bare r"(\d+) compiled" and
+        # reported counts 1 and 3 as stale figures before the comma was required.
+        found = problems_for(lambda text: text)
+        self.assertEqual([], found)
 
     def test_a_refusal_count_that_no_longer_matches_the_rows(self):
         found = problems_for(replaced("all 12 `NOT STARTED` rows exit 1", "all 13 `NOT STARTED` rows exit 1"))

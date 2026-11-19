@@ -428,6 +428,24 @@
       "slug": "docs/adr/0070-java-functional-values-stay-java-objects"
     },
     {
+      "path": "docs/adr/0071-plus-coerces-to-text.md",
+      "title": "ADR-0071 — `+` coerces to text when either side is text",
+      "section": "adr",
+      "slug": "docs/adr/0071-plus-coerces-to-text"
+    },
+    {
+      "path": "docs/adr/0072-list-methods-return-new-lists.md",
+      "title": "ADR-0072 — List methods return new lists and never mutate their receiver",
+      "section": "adr",
+      "slug": "docs/adr/0072-list-methods-return-new-lists"
+    },
+    {
+      "path": "docs/adr/0073-lambdas-are-expressions.md",
+      "title": "ADR-0073 — A lambda body is one expression, never a block",
+      "section": "adr",
+      "slug": "docs/adr/0073-lambdas-are-expressions"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
@@ -504,6 +522,12 @@
       "title": "Alpha 7 — Required first report",
       "section": "governance",
       "slug": "docs/governance/alpha-7-first-report"
+    },
+    {
+      "path": "docs/governance/alpha-7-language-core-capability-matrix.md",
+      "title": "Alpha 7 — Language Core Capability Matrix",
+      "section": "governance",
+      "slug": "docs/governance/alpha-7-language-core-capability-matrix"
     },
     {
       "path": "docs/governance/alpha-7-security-baseline.md",

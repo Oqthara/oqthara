@@ -37,9 +37,29 @@ JAR = ROOT / "oq-cli" / "build" / "libs" / "oq.jar"
 # cases the bytecode backend handles, matching BytecodeCompilerTest. A regressing number means
 # a real capability was lost; a growing number means the corpus changed and the pin is stale.
 # Update both only from a fresh measurement, and say so in the commit message.
-BASELINE = {"executable": 224, "compiled": 215}
+BASELINE = {"executable": 229, "compiled": 219}
 
+# Files copied beside every case without being treated as cases themselves. A case that
+# reads a file, or imports a module, needs that file reachable from both the scratch tree the
+# interpreter runs in and the build directory the jar is built in.
+#
+# Module fixtures live in `conformance/modules/`, not beside the cases: that is the second
+# entry in the documented search order, and it keeps them out of every glob that counts the
+# corpus. A fixture that sits in `conformance/` has to be excluded by name from each of those
+# globs separately, and the ones that were not -- `ConformanceTest` and
+# `BytecodeCompilerTest` -- tried to run the helper as a program of its own.
 FIXTURES = ["readme-fixture.txt"]
+MODULE_DIR = "modules"
+
+
+def copy_fixtures(cases, destination):
+    """Every fixture a case may reach, laid out as the module search order expects."""
+    for fixture in FIXTURES:
+        if (cases / fixture).exists():
+            shutil.copy2(cases / fixture, destination / fixture)
+    modules = cases / MODULE_DIR
+    if modules.is_dir():
+        shutil.copytree(modules, destination / MODULE_DIR, dirs_exist_ok=True)
 
 
 def run(cmd, cwd):
@@ -64,7 +84,10 @@ def measure_corpus(cases):
     A program with a sibling `.err` file is a case that must fail, so it is not part of the
     executable set even though it still takes part in the backend comparison.
     """
-    programs = sorted(cases.glob("*.oq"))
+    # A fixture is copied beside each case but is not one. `conformance/modules/` is a
+    # subdirectory, so a plain `*.oq` glob does not reach it and nothing has to be excluded
+    # by name -- which is the reason the module helper lives there.
+    programs = sorted(p for p in cases.glob("*.oq") if p.name not in FIXTURES)
     executable = [p for p in programs if not (cases / (p.stem + ".err")).exists()]
     return programs, executable
 
@@ -102,16 +125,12 @@ def check_program(program, cases, jar, case_root):
     work.mkdir(parents=True)
     build_dir.mkdir(parents=True)
 
-    for fixture in FIXTURES:
-        if (cases / fixture).exists():
-            shutil.copy2(cases / fixture, work / fixture)
+    for tree in (work, build_dir):
+        copy_fixtures(cases, tree)
     shutil.copy2(program, work / name)
 
     # `oq build` writes its jar beside the source, so the build directory holds this one
     # program: a sibling from another case can never change what gets compiled.
-    for fixture in FIXTURES:
-        if (cases / fixture).exists():
-            shutil.copy2(cases / fixture, build_dir / fixture)
     shutil.copy2(program, build_dir / name)
 
     local = work / name

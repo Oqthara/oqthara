@@ -1,0 +1,22 @@
+a, b = (1, 2)
+print a + b
+
+const c, d = [10, 20]
+print c + d
+
+x, y = "hi"
+print x + y
+
+first, second = {"a": 1, "b": 2}
+print first
+print second
+
+a, b = (30, 40)
+print a
+print b
+
+_ , b = (5, 6)
+print b
+
+p, q = 7 to 8
+print p + q

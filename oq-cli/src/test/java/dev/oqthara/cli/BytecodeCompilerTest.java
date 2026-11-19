@@ -1584,10 +1584,26 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(215, compiled,
+        assertEquals(219, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
-        // Measured 2026-11-18: 215 compiled / 9 fallback / 0 divergences over 257 programs
-        // (224 executable). 257-swing-runs-with-no-display added the Swing path to the ordinary
+        // Measured 2026-11-20: 218 compiled / 10 fallback / 0 divergences over 261 programs
+        // (228 executable). 260-plus-text-coercion and 261-list-methods-copy close the two rows
+        // the audit recorded as Undocumented (L2.6) and Ambiguous (L5.7). Both compile: they
+        // exercise operators and list methods the lowerer already handles, so the compiled count
+        // rose by two and the fallback count did not move. The two ADRs (0071, 0072) decide what
+        // the cases pin, and the cases are what make the rows Complete rather than decisions.
+        //
+        // Measured 2026-11-18: 216 compiled / 10 fallback / 0 divergences over 259 programs
+        // (226 executable). 258-destructuring and 259-modules added the first coverage of the
+        // two surfaces the language-core audit found untested: every destructuring source the
+        // spec names, and a module import reached from a program. Destructuring compiles;
+        // modules fall back to the interpreter launcher, because `oq build` splices a module
+        // into the built program by running it, not by compiling it -- so 259 is one of the 10
+        // fallback programs rather than one of the 216 compiled, and the fallback count rose by
+        // one for the same reason the compiled count did.
+        //
+        // Measured 2026-11-18 (earlier): 215 compiled / 9 fallback / 0 divergences over 257
+        // programs (224 executable). 257-swing-runs-with-no-display added the Swing path to the ordinary
         // suite, and it compiles: the bridge calls it makes were already lowered, so this is a
         // newly measured capability rather than a compiler change.
         //
