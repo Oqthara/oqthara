@@ -17,7 +17,7 @@ This closes the `§4.1 workstream assignment` row of
 | # | Workstream | Primary owner | Supporting roles | Artefacts the role produces | Coverage |
 |---|---|---|---|---|---|
 | 1 | Language Architecture & Syntax | `oq-hive-language-syntax` | `oq-hive-architecture-governance`, `oq-hive-development` | `oq-core/src/main/java/dev/oqthara/core/Lexer.java`, `Parser.java`, `Ast.java`; `docs/spec/language.md`; `conformance/*.oq`; `docs/adr/0001-syntax.md`, `0013-destructuring.md`, `0014-try-as-an-expression.md`, `0026-range-membership-follows-the-walk.md` | Covered |
-| 2 | Type System & Values | `oq-hive-development` (de facto) | `oq-hive-language-syntax` | `oq-runtime/src/main/java/dev/oqthara/runtime/Values.java`, `Value.java`; `docs/adr/0015-type-families.md`, `0017-equality-and-hashing.md`, `0007-boxed-values.md`; `docs/spec/language.md` "Types" | **Under-covered** — no role names types |
+| 2 | Type System & Values | `oq-hive-language-syntax` | `oq-hive-development` (value classes in `oq-runtime/`; any analysis pass, if one is ever built) | `docs/spec/language.md` `## Values`, `## Data types`; `docs/adr/0015-type-families.md`, `0017-equality-and-hashing.md`, `0007-boxed-values.md`, `0069-oqthara-stays-dynamically-typed.md`, `0075-workstream-two-owns-the-type-model.md` | Covered (ownership resolved 2026-11-19) |
 | 3 | Collections & Iteration | `oq-hive-development` | `oq-hive-testing-security` | `oq-stdlib/src/main/java/dev/oqthara/stdlib/MethodResolverImpl.java`; `oq-runtime/src/main/java/dev/oqthara/runtime/{OqTuple,OqSet,OqFrozenSet,OqRange,OqIterator}.java`; `docs/adr/0020-iterator-protocol.md` through `0024-text-is-a-sequence-of-code-points.md`; `docs/governance/alpha-4-9-7-collection-evidence.md`; `bench-jmh/`; `scripts/bench-backends.py` | Covered |
 | 4 | Compiler & Bytecode | `oq-hive-development` | `oq-hive-testing-security` | `oq-compiler/src/main/java/dev/oqthara/compiler/{Lowering,BytecodeCompiler,ClassFileWriter,JarBuilder,Ir,Backends}.java`; `docs/spec/backend.md`; `docs/adr/0003-bytecode.md`, `0006-classfile-writer.md`; `oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java`; `oq-compiler/src/test/java/dev/oqthara/compiler/LoweringTest.java`; `oq-compiler/src/fuzz/java/dev/oqthara/compiler/PipelineFuzzTest.java` | Covered |
 | 5 | Interpreter & JVM Runtime | `oq-hive-development` | `oq-hive-testing-security` | `oq-core/src/main/java/dev/oqthara/core/Interpreter.java`; `oq-runtime/src/main/java/dev/oqthara/runtime/{OqTask,OqMutex,OutputBudget,WaitedBudget,OqHost}.java`; `oq-core/src/test/java/dev/oqthara/core/NestingLimitTest.java`; `docs/adr/0039-executors-and-cancellation.md` | Covered |
@@ -29,7 +29,7 @@ This closes the `§4.1 workstream assignment` row of
 | 11 | QA & Conformance | `oq-hive-testing-security` | `oq-hive-review-escalation` | `conformance/`; `scripts/verify-conformance.py`; `scripts/gen_conformance.py`; `oq-cli/src/test/java/dev/oqthara/cli/ConformanceTest.java`, `ExamplesRunTest.java`; `.github/workflows/ci.yml`, `.github/workflows/nightly.yml`; `.circleci/config.yml` | Covered |
 | 12 | Developer Experience & Website | `oq-hive-development` (CLI/LSP) / `oq-hive-architecture-governance` (publication contract) | `oq-hive-testing-security` (dispatch token scope) | `oq-cli/src/main/java/dev/oqthara/cli/{Main,OqRunner,Formatter,Repl,DocGenerator,Scaffold,Modules}.java`; `oq-lsp/src/main/java/dev/oqthara/lsp/{Main,Server,Hover,Formatter}.java`; `editors/vscode/`; `docs/reference/cli.md`; `scripts/dispatch-site-content.mjs`, `.github/workflows/site-content-dispatch.yml`, `docs/adr/0008-react-website.md`, `0011-standalone-website-repository.md` | Covered (split, resolved 2026-11-13) |
 
-Twelve rows, two verdicts: eleven `Covered`, one `Under-covered`, none unowned. The matrix's
+Twelve rows, one verdict: twelve `Covered`, none under-covered, none unowned. The matrix's
 `§4.2 independent review roles` row is separate and stays `BLOCKED`; it is a governance
 requirement, not one of the twelve workstreams.
 
@@ -37,8 +37,9 @@ requirement, not one of the twelve workstreams.
 
 The six roles were written for the code, not for the shipping. Two workstreams originally fell
 outside every one of them, and one was split between two roles without either owning it. All three
-have since been assigned: 9 on 2026-11-11, 12 on 2026-11-13, and 2 remains under-covered as a
-substantive gap rather than an ownership gap.
+have since been assigned: 9 on 2026-11-11, 12 on 2026-11-13, and 2 on 2026-11-19 by
+[ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md). Nothing in this mapping now
+reaches past an owner.
 
 ### Workstream 9 — Runtime Manager & Distribution (ownership resolved 2026-11-11)
 
@@ -95,18 +96,28 @@ The assignment is reflected in `.github/agents/oq-hive-architecture-governance.a
 same change that updated this document, so accountability moved in one step rather than being
 described in one place and applied in another.
 
-### Workstream 2 — Type System & Values is under-covered
+### Workstream 2 — Type System & Values, resolved 2026-11-19
 
-No role names the type system. It survives because `oq-hive-development` owns `oq-runtime`, where
-`Values.java` and `Value.java` live, and because `oq-hive-language-syntax` owns
-`docs/spec/language.md`, where the type families are specified. That is two halves of one
-workstream with no role accountable for the whole. The language has no static types, so there is
-less to cover than the workstream's name suggests — assignability and inference have nothing to
-attach to — but "there is less" is not the same as "someone owns it".
+Until 2026-11-19 no role named the type system. It survived because `oq-hive-development` owns
+`oq-runtime`, where `Values.java` and `Value.java` live, and because `oq-hive-language-syntax` owns
+`docs/spec/language.md`, where the type families are specified — two halves of one workstream with
+no role accountable for the whole. The language has no static types, so there is less to cover than
+the workstream's name suggests — assignability and inference have nothing to attach to — but "there
+is less" is not the same as "someone owns it".
 
-**Proposal.** Add the type system to `oq-hive-language-syntax`, which already owns the
-specification of the type families, and keep the runtime representation with `oq-hive-development`
-as it is today. This costs no new role.
+**Resolved by [ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md).** The type system
+belongs to `oq-hive-language-syntax`, which already owns the specification of the type families
+(`docs/spec/language.md`, `## Values` and `## Data types`, not the SQLite table under `## Databases`),
+with the runtime representation staying with `oq-hive-development` as a supporting owner. No new
+role was needed, which is what the proposal in this section said before it was decided. That
+paragraph is now the resolution above rather than a separate proposal: the gap it proposed to close
+is closed.
+
+**The row reads `Covered` while typing remains closed.** [ADR-0069](../adr/0069-oqthara-stays-dynamically-typed.md)
+still governs the language: Oqthara is dynamically typed, `data` fields stay untyped, and the
+`246`/`247` conformance cases still refuse annotations. `Covered` is a statement about ownership,
+not a schedule. ADR-0075 records both halves separately so that closing the ownership gap is never
+mistaken for reversing the typing decision.
 
 ## Accountability rule
 
@@ -125,7 +136,7 @@ one model endpoint, not two reviewers. A `oq-hive-review-escalation` verdict is 
 supplemental assurance about a specific diff; it is never independent human review, and no
 document in this repository may describe it as such.
 
-The consequence for this table is direct: the nine `Covered` verdicts above assert that a named
+The consequence for this table is direct: the twelve `Covered` verdicts above assert that a named
 role's scope includes the work. They do not assert that anyone other than the maintainer has
 looked at it.
 
@@ -137,4 +148,16 @@ agent adds a column of accountability and requires re-reading all twelve rows. T
 [`alpha-4-risk-register.md`](alpha-4-risk-register.md) cites workstream numbers from this table,
 so renumbering a workstream is a change to two documents.
 
-**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.
+**Last verified:** 2026-11-12 at `27cac46` (merge of PR #136) for the table as a whole, and
+2026-11-19 for row 2 in the branch that adds
+[ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md). Row 2 changed owner there, and
+`.github/agents/oq-hive-language-syntax.agent.md` changed with it in the same pull request, as the
+rule below requires. The other eleven rows were re-read against their roles and are unchanged since
+`27cac46`.
+
+Both pins name commits reachable from `main`. The `2026-11-19` half is deliberately forward-declared
+in the form [`alpha-7-security-baseline.md`](alpha-7-security-baseline.md) also uses: the state it
+describes exists on the branch, and squash-merge discards the branch SHA, so the commit that will
+carry this table is the merge commit of the pull request that merges it. That merge commit is the
+pin, resolved when it exists. `27cac46` remains the pin for everything the row 2 change did not
+touch, and it is not retired: it is still the last time the other eleven rows were read.

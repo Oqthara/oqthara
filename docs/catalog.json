@@ -452,6 +452,12 @@
       "slug": "docs/adr/0074-platform-validation-requires-the-platform"
     },
     {
+      "path": "docs/adr/0075-workstream-two-owns-the-type-model.md",
+      "title": "ADR-0075 — Workstream 2 owns the type model, and optional annotation stays closed",
+      "section": "adr",
+      "slug": "docs/adr/0075-workstream-two-owns-the-type-model"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

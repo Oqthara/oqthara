@@ -5,7 +5,8 @@ questions 2 and 3 as **Option A, no typed fields**. See "Decision" below. Nothin
 implemented, and under Option A nothing needs to be.
 **Scope:** Directive §4 ("Language architecture and type model"), and
 [ADR-0028](../../adr/0028-data-evolution.md)'s "typed fields" rejection, which this brief
-reopens as a decision rather than a settled matter.
+reopened as a decision rather than treating it as settled. It is settled again now: ADR-0069
+answered the question and ADR-0075 assigned the workstream.
 **Blocks:** nothing merged. Every behaviour described as current is shipped and tested.
 
 This brief exists because §4 asks for a decision that had not been made, and because the
@@ -235,19 +236,38 @@ Two things are not decisions:
 ## The workstream gap
 
 Directive §4 records that workstream 2, Type System & Values, is "under-covered in the current
-workstream assignment". Row 2 of that document does exist, but it marks itself
-**Under-covered** and names `oq-hive-development` only as a *"(de facto)"* owner — no role is
-assigned to own the type model. The gap the directive names is therefore real and is about
-ownership rather than a missing row, and this brief does not fix it by inventing an owner.
+workstream assignment". Row 2 of that document did exist, but it marked itself **Under-covered**
+and named `oq-hive-development` only as a *"(de facto)"* owner — no role was assigned to own the
+type model. The gap the directive named was therefore real and was about ownership rather than a
+missing row, and this brief did not fix it by inventing an owner.
 
-**Recommended action:** revise row 2 to name a real primary owner —
+**This gap is now closed** — see the resolution note below. The tense in this section is the tense
+it was written in, kept because the brief is the record of the measurement, not a live status page.
+
+**Recommended action (superseded — see the resolution note below):** revise row 2 to name a real
+primary owner —
 `oq-hive-architecture-governance` is the natural candidate, because the open questions are value
 model and ADR decisions rather than implementation — with `oq-hive-development` as supporting and
 this brief as its first artefact. It is left undone here because changing who owns a workstream
 belongs in its own governance commit, not bundled into a technical brief; it is the natural
 follow-up to whichever option is chosen.
 
+**Resolved 2026-11-19, differently from the recommendation above.**
+[ADR-0075](../../adr/0075-workstream-two-owns-the-type-model.md) assigned row 2 to
+`oq-hive-language-syntax` as primary, with `oq-hive-development` supporting on the runtime
+representation, and amended that role's agent file in the same change. The recommendation here
+named `oq-hive-architecture-governance` instead; ADR-0075 rejects that option on the grounds that a
+role whose artefacts are ADRs and registries cannot maintain a normative spec section. The
+paragraph above is left standing as what this brief recommended, not as the current state: the
+ownership gap it describes is closed, and the typing decision it recommends is unchanged and is
+ADR-0069's.
+
 ## Recommended next step
+
+**Largely discharged.** Question 1 was answered by ADR-0069 — remains dynamically typed — and the
+workstream row it names as the outstanding §4 work is row 2, now `Covered` under ADR-0075. What
+remains live in this section is only the "if typed fields are wanted" branch, which no ADR has
+taken and no program has asked for. The text below is kept as the sequencing it would have required.
 
 Answer question 1. If the answer is "remains dynamically typed" (recommended), then the
 outstanding §4 work is the workstream row above and nothing else, and ADR-0028's rejection of
