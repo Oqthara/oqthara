@@ -15,6 +15,8 @@ recorded defect reproducing exactly — which is the only case where nothing has
 Usage:
     python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar>
     python3 docs/governance/alpha-5/java-bridge-probes/run.py <path-to-oq.jar> --both
+    xvfb-run -a --server-args="-screen 0 1024x768x24" \
+        python3 .../run.py <path-to-oq.jar> --both --under-display
 
 `--both` additionally compiles every probe with `oq build` and runs the resulting jar, then
 requires two things. The compiled output must equal the interpreted output line for line, which
@@ -115,6 +117,17 @@ EXTRA_CLASSPATH = {"c11_user_classpath": "Hello.java"}
 # developer's machine and `true` / `caught` on CI, and the recorded expectation would only ever
 # match one of them.
 HEADLESS = {"c13_window"}
+
+# Probes that need a display the harness provides, rather than whatever the host happens to
+# have. They are excluded from the default run because a developer machine with a real display
+# and a bare CI runner would otherwise disagree, and included only under `--under-display`,
+# which the CI workflow invokes inside `xvfb-run`.
+#
+# The distinction matters for what a green line means. `c13_display` is deliberately not here:
+# it asserts an invariant that holds with and without a display, so it runs everywhere and its
+# pass is evidence about the invariant. `c13_mapped` asserts that a display *exists* and that a
+# window was realised, so it can only pass where the display-backed path actually ran.
+DISPLAY = {"c13_mapped"}
 CLI_MAIN = "dev.oqthara.cli.Main"
 # What `oq build` writes into the manifest of every jar it produces.
 COMPILED_MAIN = "oq.generated.Program"
@@ -278,7 +291,18 @@ PROBES = [
     # thing under test. `headless` and `worked` are complementary by definition of the JDK
     # check, so printing whether they agree gives the same answer on a machine with a display
     # and one without, and the second line refuses the degenerate case where both are false.
+    #
+    # This probe cannot prove display-backed coverage, and must not be cited as if it did: on a
+    # host with no display its `worked` branch is unreachable, so a green line there says the
+    # invariant held, not that a window was ever mapped. `c13_mapped` is the probe that requires
+    # a display and fails without one.
     ("c13_display", ["true", "true"], None),
+    # The display-backed half, run only under `--under-display`. It asserts positively that the
+    # JVM accepted a display (`false`), that a window was realised (`true`) and that disposing it
+    # took effect (`true`). All three lines would be different -- or the program would die before
+    # printing them -- on a host without a display, which is what stops a headless run from
+    # standing in for this one.
+    ("c13_mapped", ["false", "true", "true"], None),
 ]
 
 
@@ -549,9 +573,21 @@ def check_probe(name, expected, defect, jar, both, tally, failures, defects):
         failures.append(f"{name}: no expectation and no defect record")
 
 
+def select_probes(under_display: bool) -> list[tuple[str, object, object]]:
+    """The probes this mode runs. Extracted so the two modes can be compared directly.
+
+    `--under-display` adds the display-backed probes rather than restricting the run to them:
+    the display-backed job also has to prove that everything else still passes on the same
+    machine, and running only one probe there would make the job cheap enough to be the only
+    thing anyone trusts.
+    """
+    return [(n, e, d) for n, e, d in PROBES if under_display or n not in DISPLAY]
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     both = "--both" in sys.argv[1:]
+    under_display = "--under-display" in sys.argv[1:]
     if len(args) != 1:
         print(__doc__.strip())
         return 2
@@ -560,10 +596,29 @@ def main() -> int:
         print(f"no jar at {jar}")
         return 2
 
+    # `--under-display` is meaningless without a display, and a silent fallback to headless
+    # would make `c13_mapped` fail with a puzzling output mismatch instead of naming the actual
+    # problem. It is refused before any probe runs, and the message says which variable is
+    # missing rather than only that something went wrong.
+    #
+    # The check is Linux-only because it is a check about *how* a display is reached there. On
+    # macOS and Windows AWT talks to the window server directly and never sets `DISPLAY`, so
+    # requiring the variable would refuse to run on the one kind of machine that certainly has
+    # a screen. The probe itself is what decides whether a display is really usable: it prints
+    # `false` for headless and dies before printing anything if realisation fails.
+    if under_display and sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        print("--under-display needs a display, and DISPLAY is unset")
+        print("  run it under a virtual display, for example:")
+        print('  xvfb-run -a --server-args="-screen 0 1024x768x24"')
+        print("      python3 .../run.py <path-to-oq.jar> --both --under-display")
+        return 2
+
+    selected = select_probes(under_display)
+
     failures = []
     defects = []
     tally = Tally()
-    for name, expected, defect in PROBES:
+    for name, expected, defect in selected:
         check_probe(name, expected, defect, jar, both, tally, failures, defects)
 
     if failures:
@@ -572,8 +627,12 @@ def main() -> int:
             print(f"  {failure}")
         return 1
 
-    matched = sum(1 for _, e, d in PROBES if e is not None and d is None)
-    print(f"ok: {matched} probes match their expectation")
+    matched = sum(1 for _, e, d in selected if e is not None and d is None)
+    if under_display:
+        where = os.environ.get("DISPLAY") or "the host's own display"
+        print(f"ok: {matched} probes match their expectation under {where}")
+    else:
+        print(f"ok: {matched} probes match their expectation")
     if both:
         for line in tally.summary():
             print(line)

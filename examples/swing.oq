@@ -1,0 +1,38 @@
+use java.awt.GraphicsEnvironment
+use javax.swing.JFrame
+use javax.swing.JLabel
+use javax.swing.SwingConstants
+
+# Swing is ordinary Java, so `use` is all a desktop program needs. The part worth showing is the
+# question every GUI program has to answer first: is there a screen? A build machine has no
+# display, and a program that assumes one dies there with an exception it did not expect. Asking
+# means the same file runs on a desktop and in CI.
+headless = GraphicsEnvironment.isHeadless()
+print "headless: {headless}"
+
+if headless
+  # Nothing below would work: constructing a frame throws instead of returning an unusable one.
+  # A real program would run its logic and skip only the window, which is why the check is a
+  # branch rather than an early exit.
+  print "no display here, so the window is skipped"
+  print "the same code runs unchanged on a desktop"
+else
+  frame = JFrame("hello from Oqthara")
+  label = JLabel("Hello, World!", SwingConstants.CENTER)
+  frame.add(label)
+  frame.setSize(240, 90)
+
+  # `setVisible` is what asks the window system to realise the frame. Before it, the frame is
+  # only an object; afterwards it has a peer and a place on screen.
+  frame.setVisible(true)
+  print "showing: {frame.isShowing()}"
+
+  # Without an event loop nothing keeps the window open, so a script that exits would leave it
+  # to be torn down by process exit. Closing it explicitly shows the tidy version, and it is the
+  # difference between a script and an application: an application calls `EventQueue.invokeLater`
+  # here and returns to it, which is a loop rather than a sequence of statements.
+  frame.dispose()
+  print "closed: {frame.isDisplayable() == false}"
+end
+
+print "done"

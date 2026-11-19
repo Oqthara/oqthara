@@ -552,7 +552,7 @@ $ ls docs/adr/ | wc -l
 
 The `19` is the one figure in that block that has since moved, and it moved because the gap it
 counted was closed rather than because the measurement was wrong: every direction the inventory
-lists is now probed, C13 included, so the command counts 28 probe files where it counted 19. That
+lists is now probed, C13 included, so the command counts 29 probe files where it counted 19. That
 is the intended direction of change — the count grew because coverage grew — and it is why this
 paragraph reads in the past tense instead of claiming a number that a reader would immediately
 contradict.
@@ -561,7 +561,7 @@ The other three figures in that block need the same care, and the first draft of
 not give it. It said the block had one stale figure and quoted the rest as current. In fact the
 inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
 so by the time this paragraph was written the block held **two** figures that had moved, not one.
-Measured now: 13 directions, 54 capability rows, 28 probe files, 69 ADRs. Two of the four differ
+Measured now: 13 directions, 54 capability rows, 29 probe files, 69 ADRs. Two of the four differ
 from the block above, which is the **two** this paragraph just said had moved.
 
 That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites

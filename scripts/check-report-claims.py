@@ -271,9 +271,14 @@ def derive(cwd: Path = Path(".")) -> dict:
     """Every figure the report might state, read from the file that owns it."""
     values = {}
 
-    values["probes"] = len(_load("oq_probe_harness", cwd / PROBE_HARNESS).PROBES)
+    harness = _load("oq_probe_harness", cwd / PROBE_HARNESS)
+    # The default run's total, which is what an unqualified "N probes" describes. Probes in
+    # `DISPLAY` run only under `--under-display` and are excluded here for the same reason the
+    # harness excludes them: a figure quoted without a mode has to count the run a reader gets
+    # by default. `--under-display` adds them, and that figure is stated with the mode named.
+    values["probes"] = sum(1 for n, _, _ in harness.PROBES if n not in harness.DISPLAY)
     # A second, different quantity that prose states as "probes": the files on
-    # disk. They agree at 27 today and did not two commits ago, so the two are
+    # disk. They agree at 28 today and did not two commits ago, so the two are
     # kept apart rather than folded together — a rule that swaps them is a rule
     # that reports the right number for the wrong reason.
     values["probe_files"] = len(list((cwd / PROBE_DIR).glob("*.oq")))
