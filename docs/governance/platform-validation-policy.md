@@ -118,19 +118,21 @@ each documented context is a job the workflow actually produces.
 | `Standalone jar` | `ci.yml` | the shipped artifact runs a program |
 | `analyze` | `codeql.yml` | the security analysis |
 | `ci/circleci: jazzer-fuzz` | `.circleci/config.yml` | the fuzz targets |
+| `Display-backed Swing` | `ci.yml` | a frame is realized under a real X server, not merely headless |
 
 ### Not required, and therefore not evidence
 
-Two jobs run on every pull request and are **not** in the required set:
+Some jobs run on every pull request and are **not** in the required set:
 
 | Job | What it proves | Why this is a gap |
 | --- | --- | --- |
-| `Display-backed Swing` | a frame is realized under a real X server | no merge-blocking job proves it, so a broken change cannot fail a required context |
 | `ci/circleci: macOS / JDK 21`, `JDK 25` | a second opinion on macOS | the GitHub `macos-latest` legs already hold that requirement |
 
-The `display-backed` gap is recorded rather than fixed here, because changing the required set is a
-repository-settings change that this policy cannot perform or verify. It is listed so the gap is
-stated where the rest of the evidence is stated.
+`Display-backed Swing` was in this table and is not any more. It ran green on #273 and the context
+was added to `main-protection` on 2026-11-19, so the gap the section previously recorded — "no
+merge-blocking job proves a frame realizes under a real X server" — no longer exists. The two
+CircleCI macOS legs stay listed because they are genuinely redundant rather than missing: the
+GitHub legs already require the same property, and a duplicated requirement is not a stronger one.
 
 ## What this policy does not claim
 

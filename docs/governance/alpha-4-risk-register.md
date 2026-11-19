@@ -44,7 +44,7 @@ by the reviewer, and the reviewer is the thing that was supposed to catch it. Th
 account `JoaoGaValentim` belongs to the same person and does not constitute independence.
 
 *Mitigation.* Everything a single maintainer can satisfy honestly remains enforced: pull requests
-required, squash-only merges, no bypass actors, 12 required status checks with
+required, squash-only merges, no bypass actors, 13 required status checks with
 `strict_required_status_checks_policy`, required review-thread resolution, stale-review dismissal
 on push. Review is supplemented by machine evidence that does not depend on opinion — JaCoCo
 `coverageGate` at 80% for `dev/oqthara/core` (`build.gradle.kts`), the interpreter-versus-jar
@@ -536,7 +536,7 @@ defend.
 | R-031 | A gate's allow-list silently stops matching, so a required context goes permanently red | High | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
-The `main-protection` ruleset requires twelve status contexts. Between 2026-11-11 and 2026-11-12,
+The `main-protection` ruleset requires thirteen status contexts. Between 2026-11-11 and 2026-11-12,
 CircleCI stopped dispatching the `macOS / JDK 21` and `macOS / JDK 25` jobs on three consecutive
 pull requests while continuing to report `ci/circleci: jazzer-fuzz` normally. The missing contexts
 were **absent**, not failing, so `statusCheckRollup` read SUCCESS while `mergeStateStatus` read
@@ -583,6 +583,29 @@ sentence that names the cause sits below a summary line that does not. This is t
 the two mechanisms above: the required context is absent or red for a reason that has nothing to do
 with the change being reviewed.
 
+**A fourth mechanism, documented twice.** A job can be scheduled and never run. `macos-latest /
+JDK 21` reported `conclusion: cancelled` after 15m1s wall-clock with `runner_name: ""` and zero
+completed steps, so no runner was ever assigned and no step ever executed. The job's own
+`timeout-minutes` is 40; the 15m1s is therefore queue time rather than step time, and it matches
+the GitHub-hosted runner queue limit. On #273 the CircleCI `macOS / JDK 21` fallback passed
+throughout, so the required evidence existed while the required context read red.
+
+The second instance arrived on #274 while this paragraph was being repaired, in the same shape:
+`macos-latest / JDK 25`, `conclusion: cancelled`, `runner_name: ""`, zero steps, started
+17:46:31Z and completed 18:01:32Z — 15m1s again. That the duration repeats to the second across
+two different jobs six months apart is what identifies a queue limit rather than a coincidence.
+
+*Not every cancellation counts.* A cancelled job on a superseded push carries the same
+`conclusion`, because `.github/workflows/ci.yml` sets `concurrency: cancel-in-progress`; only
+`runner_name` and the step count separate the two. Both instances above have an empty
+`runner_name` and zero steps, so neither can be a superseded-push cancellation — a job that was
+ever assigned a runner has a populated `runner_name` and its steps recorded.
+
+The read is the same as the other three and the fix is the same: re-run. The distinguishing field
+is `runner_name`, which is empty for a queue expiry and populated for a job that actually ran. This
+one is weather rather than a defect in the branch, and treating the first red macOS leg as a real
+failure costs a debugging session that finds nothing.
+
 *Residual.* The failure mode itself is unavoidable: a required context is identified by name alone,
 and GitHub cannot distinguish "not dispatched" from "still queued". A conflicted branch is a third
 case with the same read, and there is no signal that separates them. The same silent stop could
@@ -600,7 +623,8 @@ cannot review its own change. The allow-list held `dependabot[bot]` and `renovat
 how an older installation reports them. GitHub now reports an App-authored pull request as
 `app/<slug>`, so Dependabot answers `app/dependabot` and the exemption stopped matching. The gate
 then reported "PR has no AI review record" for every dependency pull request, and
-`ubuntu-latest / JDK 21` — one of the twelve required contexts — went red and stayed red. PR #251, a
+`ubuntu-latest / JDK 21` — one of the twelve contexts required at the time — went red and stayed
+red. PR #251, a
 one-line gradle-wrapper bump, was unmergeable for this reason alone, and the red check said nothing
 about the dependency.
 
@@ -1118,7 +1142,7 @@ methods across 5 classes rather than to files (R-001); the CodeQL cron (R-001, R
 50,000,000-step budget and 16 MiB
 output budget (R-004), `eclipse-temurin` tags and the six workflow files (R-007, R-008),
 `MAX_SLEEP_MILLIS = 10_000` and `WaitedBudget.MAX_MILLIS = 60_000` (R-010), 256 conformance cases
-(R-017), the 80% coverage gate and its scope (R-019), the 12 required contexts (R-024), 146 fenced
+(R-017), the 80% coverage gate and its scope (R-019), the 13 required contexts (R-024), 146 fenced
 blocks in the specification (R-025), and `gradle/actions/setup-gradle@v6` (R-026). All nine cited
 `*Test` classes exist; all ten cited ADR paths exist; every `§` reference exists in the matrix.
 

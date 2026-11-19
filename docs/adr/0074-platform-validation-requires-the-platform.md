@@ -72,12 +72,18 @@ declaration.
    not merge-blocking, then no merge-blocking job proves it, and its green tick is a fact about a
    runner that a broken change cannot affect.
 
-   **As measured, it is not required.** The `main-protection` ruleset requires twelve contexts and
-   `Display-backed Swing` is not one of them, so the gap is live rather than hypothetical. The
-   policy records it under *Not required, and therefore not evidence* rather than describing it as
-   a requirement it is not. Closing the gap is a repository-settings change that this ADR cannot
-   perform and no gate can verify; recording it is what this decision can do, and pretending
-   otherwise would be the exact failure the policy is written against.
+   **As measured, it was not required, and is now.** The `main-protection` ruleset required twelve
+   contexts and `Display-backed Swing` was not one of them, so the gap was live rather than
+   hypothetical. The policy recorded it under *Not required, and therefore not evidence* rather
+   than describing it as a requirement it was not.
+
+   The gap is closed as of 2026-11-19: the context ran green on #273 and was added to
+   `main-protection`, taking the required set to thirteen. A green run came first, then the
+   ruleset change, because promoting a context that has never passed would have made every pull
+   request unmergeable rather than making it safer. That ordering was imposed by the review of
+   #273 (`docs/governance/reviews/PR-273.md`), not by this ADR, which does not state one. The
+   policy and this decision are updated in the same change that records the run; the ruleset itself
+   remains, as the consequences below say, an observation rather than a checked invariant.
 
 6. **The matrix stays at six legs.** `./gradlew build` already runs the full suite on every leg, so
    the cost of platform coverage is already being paid and no test is opted into extra runs. The

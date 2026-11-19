@@ -1224,7 +1224,7 @@ correlated review cannot find either.
 position: `required_approving_review_count` was lowered from 1 to 0 on ruleset `26650412` because
 a second human approver does not exist, and the second GitHub account `JoaoGaValentim` belongs to
 the same person. What remains enforced is mechanical — required pull requests, squash-only merges,
-no bypass actors, twelve required status checks with `strict_required_status_checks_policy`,
+no bypass actors, thirteen required status checks with `strict_required_status_checks_policy`,
 required review-thread resolution, and stale-review dismissal on push. None of that is
 independent review.
 

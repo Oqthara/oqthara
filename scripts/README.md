@@ -25,7 +25,7 @@ library only, no install step. Every script is run from the repository root.
 | Path | What it does |
 | --- | --- |
 | `check-circleci.py` | Fail-closed release gate: requires fuzzing plus macOS evidence for JDK 21 and 25 on a commit, accepting either GitHub Actions or CircleCI for the macOS legs. |
-| `apply-branch-protection.sh` | Applies the `main` ruleset (12 required checks, macOS from GitHub Actions, no bypass, squash-only). |
+| `apply-branch-protection.sh` | Applies the `main` ruleset (13 required checks, macOS from GitHub Actions, no bypass, squash-only). |
 | `verify-conformance.py` | Runs `oq run` and the compiled jar over the whole corpus and reports divergences. |
 
 ## Benchmarks
