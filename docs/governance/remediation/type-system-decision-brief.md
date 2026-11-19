@@ -5,7 +5,8 @@ questions 2 and 3 as **Option A, no typed fields**. See "Decision" below. Nothin
 implemented, and under Option A nothing needs to be.
 **Scope:** Directive §4 ("Language architecture and type model"), and
 [ADR-0028](../../adr/0028-data-evolution.md)'s "typed fields" rejection, which this brief
-reopens as a decision rather than a settled matter.
+reopened as a decision rather than treating it as settled. It is settled again now: ADR-0069
+answered the question and ADR-0075 assigned the workstream.
 **Blocks:** nothing merged. Every behaviour described as current is shipped and tested.
 
 This brief exists because §4 asks for a decision that had not been made, and because the

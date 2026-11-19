@@ -6,8 +6,8 @@
 does not reverse) · [ADR-0015](0015-type-families.md) (the inventory it builds on)
 **Related:** [`alpha-4-workstream-assignment.md`](../governance/alpha-4-workstream-assignment.md)
 (row 2, the gap this closes), [`alpha-7-first-report.md`](../governance/alpha-7-first-report.md)
-(Item 5, whose table read of this workstream that assigning it "is itself an ADR" — it now reads
-`Covered`, so the sentence is quoted as what it said before this record), ADR-0001, ADR-0017,
+(Item 5, where the row for this workstream said assigning it "is itself an ADR"; it reads
+`Covered` now, so the sentence is quoted as what it said before this record), ADR-0001, ADR-0017,
 ADR-0027, ADR-0028
 
 ## Context
@@ -31,8 +31,16 @@ distinguish from an assignment. That role's scope does name the *value model* �
 "Owns implementation — the interpreter, value model, …" — so it was not absent from the subject.
 What it never named is the type model as a model: the families, what a value belongs to, and how
 the specification states them. It produced the files the type model lives in without owning the
-contract those files implement, which is the gap `"(de facto)"` was marking. Every other
-workstream has a role whose written scope names its subject outright.
+contract those files implement, which is the gap `"(de facto)"` was marking. Row 2 was the only row
+marked `Under-covered`, which is the narrower claim this record relies on. It is not the only row
+whose owner never names the workstream's subject in those words: rows 3 and 7 are also owned by
+`oq-hive-development`, whose scope names modules rather than subjects. Those rows are marked
+`Covered` because the modules that role names contain all of the work — a collection lives in
+`oq-stdlib`, a class in `oq-core`. Row 2 is different in kind: only half of it is in a module that
+role names, the value classes in `oq-runtime`, and the other half — the specification's account of
+the families — is in `docs/spec/language.md`, which that role's scope does not mention. That is why
+the row was not `Covered` and why the fix is a second owner rather than a wider reading of the
+first.
 
 The report's table said of workstream 2 that assigning it "is itself an ADR", and this is that
 record. It is written
@@ -51,18 +59,27 @@ specification, and the value classes are where that model is implemented rather 
 split has three parts, all of them written into the amended agent file: syntax owns the model and
 its specification, `oq-hive-development` owns the value classes *and* the semantic-analysis pass
 that would consume an annotation, and `oq-hive-testing-security` owns the `conformance/` corpus.
-Row 2 becomes `Covered` with `oq-hive-development` as supporting owner — the inverse of the de facto
-arrangement — and its artefacts column names what the primary now produces:
-`docs/spec/language.md` `## Values` and `## Data types`, plus ADRs 0015, 0069 and 0075. The runtime
-classes stay with `oq-hive-development` in the supporting cell, where they were, because no row
-itemises `Values.java` and this record does not invent one.
+Row 2 becomes `Covered` with `oq-hive-development` as supporting owner, and its artefacts column
+names what the primary produces: `docs/spec/language.md` `## Values` and `## Data types`, plus
+ADRs 0015, 0069 and 0075.
+
+**The artefacts cell moved, and that is part of the decision.** On `origin/main` row 2 listed
+`Values.java` and `Value.java` — the files the type model is implemented *in* — as the artefacts of
+`oq-hive-development` marked `(de facto)`, with `oq-hive-language-syntax` in the supporting cell.
+The split here reverses those two cells and changes the artefacts to match the new primary. The row
+keeps `docs/adr/0007-boxed-values.md` and `docs/adr/0017-equality-and-hashing.md`, which it listed
+before this record and which no other row cites; dropping them would have silently unassigned two
+decisions. What the row gives up is the claim that the runtime classes are the artefacts of the
+primary owner, which was the misattribution the `(de facto)` marking was papering over.
 
 **This decision required amending the role, and the amendment is part of it.** The cell above is
 the second half of the sentence, not a footnote to it: the role's agent file previously said, in a
 section written to close Alpha 7 Item 6, that the role owns "the syntax surface, **not the type
 system** or the value model". Workstream assignment defines `Covered` as "that role's scope, as
 written in its own agent file", and its own rule permits an owner change only when "the agent file
-that defines the role changes in the same pull request".
+that defines the role changes in the same pull request, *or* when this document records why the
+mapping is being read differently". This record takes the first route, not the second: a reading
+would have left the role's file still disclaiming the model.
 `.github/agents/oq-hive-language-syntax.agent.md` therefore changes here, in the same change: the
 exclusion becomes the split this record states, and the `conformance/` corpus is attributed to
 `oq-hive-testing-security`, which the assignment already names for it.
@@ -97,7 +114,7 @@ ADR may reverse ADR-0069 without touching ownership. Neither implies the other.
 | Reverse ADR-0069 and build optional typing | A superseding ADR, grammar, both backends, adversarial tests for the refusal and its absence, then a conformance re-measurement | The condition ADR-0069 set has not been met: no program needs it. It was also decided *while the maintainer was unavailable*, expressly because it was the only option reversible at zero cost — so reversing it would reverse a decision taken on someone else's behalf, which needs the maintainer, not an agent |
 | Leave workstream 2 `Under-covered` | Record the gap and proceed | The report found §5 could not begin without an owner, and §5 is a directive section. An `Under-covered` row is an accurate record of a gap, not a way to satisfy the section that names it |
 | Assign workstream 2 to `oq-hive-development` formally | Make the de facto owner explicit | It would leave one role owning both the contract and the implementation of the contract, which is the arrangement that let the gap exist unnoticed. It also gives the role that would *implement* typing the authority to decide whether types are wanted |
-| Assign to `oq-hive-architecture-governance` | Give the ADR-writing role the type model | It owns decisions, not language surface. A role whose artefacts are ADRs and registries cannot maintain a normative spec section — and the type model is specified in `docs/spec/language.md`, which that role does not own. This is the option the decision brief recommended, and decision 1 explains why it was not taken |
+| Assign to `oq-hive-architecture-governance` | Give the ADR-writing role the type model | It owns decisions, not language surface. That role does list `docs/spec/`, but only "for structural coherence, never for syntax detail" — the qualification is exactly the part the type model needs, since the model is stated in the specification's normative sections. A role that owns the directory for coherence and not for the content cannot maintain the contract. This is the option the decision brief recommended, and decision 1 explains why it was not taken |
 
 ## Consequences
 
@@ -126,7 +143,9 @@ half of the finding, not as its resolution.
   the typing decision, its reversal condition, and the warning that ownership is a separate change.
 - [`docs/governance/alpha-4-workstream-assignment.md`](../governance/alpha-4-workstream-assignment.md)
   — row 2, now `Covered`. The "(de facto)" qualifier the previous marking carried is gone with the
-  marking it qualified; `origin/main` is where it survives, not this tree.
+  marking it qualified. The quoted sentence also survives elsewhere in this tree, in ADR-0069 and in
+  the decision brief, both of which this list cites: what does not survive here is the row's live
+  `Under-covered` verdict.
 - [`.github/agents/oq-hive-language-syntax.agent.md`](../../.github/agents/oq-hive-language-syntax.agent.md)
   — the role's written scope, amended in this change from an explicit exclusion to the split above.
 - [`docs/governance/alpha-7-first-report.md`](../governance/alpha-7-first-report.md) Item 5 — the

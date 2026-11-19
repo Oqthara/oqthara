@@ -496,8 +496,10 @@ scope. The assignment is reflected in that role's agent file in the same change.
 `315a7574325b45c63d0383e65168f42c2a777305`
 ([#198](https://github.com/Oqthara/oqthara/pull/198)).
 
-No workstream is now unowned. Workstream 2 remains `Under-covered`: a substantive gap in what the
-roles name, not an ownership gap, and it is not dissolved by this change.
+No workstream was unowned as of this report. Workstream 2 remained `Under-covered` then: a
+substantive gap in what the roles name, not an ownership gap, and it was not dissolved by this
+change. It was closed later, by ADR-0075, which assigned the type model to a role and amended that
+role's agent file; this report is left as it was written.
 
 ### 8.3 Dispatch reliability, verified rather than assumed
 
