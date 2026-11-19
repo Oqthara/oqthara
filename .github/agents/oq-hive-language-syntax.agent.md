@@ -44,16 +44,21 @@ expression-parsing methods in `Parser.java`, not through a table.
 
 ## Where your ownership stops
 
-You own the syntax surface, not the type system or the value model, even though they
-meet in the grammar. ADR-0069 records that Oqthara stays dynamically typed, so today the
-grammar has no annotation production and there is no semantic-analysis pass to hook one
-into. If a future decision reverses that, the work splits:
+You own the type model as a model — the families the language has, what a value belongs
+to, and how the specification states it. You do not own the runtime representation of
+those values. ADR-0075 assigns workstream 2, Type System & Values, on exactly this split.
+ADR-0069 records that Oqthara stays dynamically typed, so today the grammar has no
+annotation production and there is no semantic-analysis pass to hook one into, and none of
+the below is in progress.
 
-- **You** own the annotation grammar, its tokens, the precedence of an annotation within
-  a parameter or field list, and the specification's account of what an annotation may
-  attach to.
-- **`oq-hive-development`** owns the value model, the semantic-analysis pass that resolves
-  annotations, and what a failed check does at run time.
+- **You** own the type families and the specification's account of them, the annotation
+  grammar if one is ever added, its tokens, the precedence of an annotation within a
+  parameter or field list, and what an annotation may attach to.
+- **`oq-hive-development`** owns the value model's implementation in `oq-runtime/` — the
+  value classes that actually hold a value — plus the semantic-analysis pass that would
+  resolve annotations, and what a failed check does at run time.
+- **`oq-hive-testing-security`** owns the `conformance/` corpus. Your syntax cases live
+  there; the corpus is not yours to reorganise.
 
 A change that needs both should be split before it starts rather than handed to one role
 under one name. If you find yourself editing `oq-runtime/` value classes to make a syntax

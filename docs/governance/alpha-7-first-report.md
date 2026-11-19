@@ -202,7 +202,7 @@ decision was already taken. The owner exists; the decision was not reversed.
 | --- | --- | --- |
 | R-018 fuzzing reach (A7.8) | `oq-hive-testing-security` | Already owns `docs/spec/fuzzing.md` and both `src/fuzz` trees (workstream 10) |
 | Language-core evolution (§4) | `oq-hive-language-syntax` | Sole owner per its own scope; workstream 1 |
-| Optional typing and generics (§5) | `oq-hive-language-syntax` | Workstream 2 is now `Covered`; ADR-0075 names the owner and ADR-0069 closes the typing decision |
+| Optional typing and generics (§5) | `oq-hive-language-syntax`, `oq-hive-development` supporting | Workstream 2 is now `Covered`; ADR-0075 names the split — syntax owns the type model and the grammar, development owns the value classes and the analysis pass — and ADR-0069 closes the typing decision |
 | Java Bridge Full (§6) | `oq-hive-development` | Workstream 6, `Covered`; owns `JavaBridge.java` |
 | Runtime and observability (§5) | `oq-hive-development` | Workstreams 4 and 5 |
 | Security continuation | `oq-hive-testing-security` | Workstreams 10 and 11 |
@@ -284,8 +284,12 @@ charges elsewhere: prose about the tree, not checked against the tree.
 The third row's split — syntax owns the annotation grammar and the spec's account of it,
 `oq-hive-development` owns the value model and the analysis pass — is now the workstream-level split
 too: [ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md) makes `oq-hive-language-syntax`
-primary on row 2 with `oq-hive-development` supporting on the runtime representation. The agent
-scopes and the workstream assignment now say the same thing, which is not how they started.
+primary on row 2 with `oq-hive-development` supporting on the runtime representation. That took a
+second edit, because the fix for this item had written the role out of the type system entirely
+("you own the syntax surface, not the type system"), which would have made ADR-0075's assignment
+false by this document's own definition of `Covered`. The agent file was amended in the same change
+as the ADR, which is the only sequence this document permits. The two now agree; they did not
+before either edit, and they did not between them.
 
 **The fourth obstacle was a missing definition, and it is discharged too.** The three adjustments
 above bounded ownership. They did not bound the work, because nothing in this repository said what
@@ -435,9 +439,12 @@ not one migration." The decision was originally made because the maintainer was 
 Option A was "the only option reversible at zero cost". ADR-0069 re-affirmed that reasoning,
 reversal cost included.
 
-**Next ADR number is 0071** (70 exist; highest are `0069-oqthara-stays-dynamically-typed.md` and
-`0070-java-functional-values-stay-java-objects.md`). ADR-0070 was written by §2.3, not by the
-typing work this item anticipates; §4's supersession therefore takes 0071.
+**Next ADR number was 0071 when this was written** (70 existed; the highest were
+`0069-oqthara-stays-dynamically-typed.md` and `0070-java-functional-values-stay-java-objects.md`).
+ADR-0070 was written by §2.3, not by the typing work this item anticipates. The figure has since
+decayed as every figure in this report does — `0071` through `0074` landed, and `0075` is ADR-0075;
+the tree now holds 75. The numbering conclusion still holds: a superseding ADR takes the next free
+number, not a reserved one.
 
 ## Item 8 — Java Bridge Full validation matrix
 
@@ -541,8 +548,8 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
 | 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split were discharged by Item 6's Resolution, and Item 6b now records §4's scope in this repository, which was the last thing missing. The next deliverable is the language-core capability matrix Item 6b defines, owned by `oq-hive-language-syntax` |
 | 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), and the no-display failure is gated by `c13_window` (Item 9j). Only displaying a window on a real screen is still open |
-| 5 | §5 typing and generics | **Answered, not executed** — ADR-0069 closed the decision (dynamically typed, as decided) and ADR-0075 assigned workstream 2 to `oq-hive-language-syntax`. The section is answerable now; it is not scheduled and not implemented |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
+| 5 (follow-on) | §5 typing and generics | **Answered, not executed** — ADR-0069 closed the decision (dynamically typed, as decided) and ADR-0075 assigned workstream 2 to `oq-hive-language-syntax` with `oq-hive-development` supporting. The section is answerable now; it is not scheduled and not implemented |
 
 ## Item 9a — Runtime and observability: what the tree actually needed
 

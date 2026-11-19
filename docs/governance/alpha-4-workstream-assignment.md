@@ -17,7 +17,7 @@ This closes the `§4.1 workstream assignment` row of
 | # | Workstream | Primary owner | Supporting roles | Artefacts the role produces | Coverage |
 |---|---|---|---|---|---|
 | 1 | Language Architecture & Syntax | `oq-hive-language-syntax` | `oq-hive-architecture-governance`, `oq-hive-development` | `oq-core/src/main/java/dev/oqthara/core/Lexer.java`, `Parser.java`, `Ast.java`; `docs/spec/language.md`; `conformance/*.oq`; `docs/adr/0001-syntax.md`, `0013-destructuring.md`, `0014-try-as-an-expression.md`, `0026-range-membership-follows-the-walk.md` | Covered |
-| 2 | Type System & Values | `oq-hive-language-syntax` | `oq-hive-development` (runtime representation) | `oq-runtime/src/main/java/dev/oqthara/runtime/Values.java`, `Value.java`; `docs/adr/0015-type-families.md`, `0017-equality-and-hashing.md`, `0007-boxed-values.md`, `0069-oqthara-stays-dynamically-typed.md`, `0075-workstream-two-owns-the-type-model.md`; `docs/spec/language.md` "Types" | Covered (ownership resolved 2026-11-19) |
+| 2 | Type System & Values | `oq-hive-language-syntax` | `oq-hive-development` (runtime representation) | `oq-runtime/src/main/java/dev/oqthara/runtime/Values.java`, `Value.java`; `docs/adr/0015-type-families.md`, `0017-equality-and-hashing.md`, `0007-boxed-values.md`, `0069-oqthara-stays-dynamically-typed.md`, `0075-workstream-two-owns-the-type-model.md`; `docs/spec/language.md` `## Values`, `## Data types` | Covered (ownership resolved 2026-11-19) |
 | 3 | Collections & Iteration | `oq-hive-development` | `oq-hive-testing-security` | `oq-stdlib/src/main/java/dev/oqthara/stdlib/MethodResolverImpl.java`; `oq-runtime/src/main/java/dev/oqthara/runtime/{OqTuple,OqSet,OqFrozenSet,OqRange,OqIterator}.java`; `docs/adr/0020-iterator-protocol.md` through `0024-text-is-a-sequence-of-code-points.md`; `docs/governance/alpha-4-9-7-collection-evidence.md`; `bench-jmh/`; `scripts/bench-backends.py` | Covered |
 | 4 | Compiler & Bytecode | `oq-hive-development` | `oq-hive-testing-security` | `oq-compiler/src/main/java/dev/oqthara/compiler/{Lowering,BytecodeCompiler,ClassFileWriter,JarBuilder,Ir,Backends}.java`; `docs/spec/backend.md`; `docs/adr/0003-bytecode.md`, `0006-classfile-writer.md`; `oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java`; `oq-compiler/src/test/java/dev/oqthara/compiler/LoweringTest.java`; `oq-compiler/src/fuzz/java/dev/oqthara/compiler/PipelineFuzzTest.java` | Covered |
 | 5 | Interpreter & JVM Runtime | `oq-hive-development` | `oq-hive-testing-security` | `oq-core/src/main/java/dev/oqthara/core/Interpreter.java`; `oq-runtime/src/main/java/dev/oqthara/runtime/{OqTask,OqMutex,OutputBudget,WaitedBudget,OqHost}.java`; `oq-core/src/test/java/dev/oqthara/core/NestingLimitTest.java`; `docs/adr/0039-executors-and-cancellation.md` | Covered |
@@ -106,9 +106,10 @@ the workstream's name suggests — assignability and inference have nothing to a
 is less" is not the same as "someone owns it".
 
 **Resolved by [ADR-0075](../adr/0075-workstream-two-owns-the-type-model.md).** The type system
-belongs to `oq-hive-language-syntax`, which already owns the specification of the type families,
+belongs to `oq-hive-language-syntax`, which already owns the specification of the type families
+(`docs/spec/language.md`, `## Values` and `## Data types`, not the SQLite table under `## Databases`),
 with the runtime representation staying with `oq-hive-development` as a supporting owner. No new
-role was needed, which is what the proposal below said before it was decided.
+role was needed, which is what the proposal in this section said before it was decided.
 
 **The row reads `Covered` while typing remains closed.** [ADR-0069](../adr/0069-oqthara-stays-dynamically-typed.md)
 still governs the language: Oqthara is dynamically typed, `data` fields stay untyped, and the
@@ -133,7 +134,7 @@ one model endpoint, not two reviewers. A `oq-hive-review-escalation` verdict is 
 supplemental assurance about a specific diff; it is never independent human review, and no
 document in this repository may describe it as such.
 
-The consequence for this table is direct: the nine `Covered` verdicts above assert that a named
+The consequence for this table is direct: the twelve `Covered` verdicts above assert that a named
 role's scope includes the work. They do not assert that anyone other than the maintainer has
 looked at it.
 
@@ -145,4 +146,5 @@ agent adds a column of accountability and requires re-reading all twelve rows. T
 [`alpha-4-risk-register.md`](alpha-4-risk-register.md) cites workstream numbers from this table,
 so renumbering a workstream is a change to two documents.
 
-**Last verified:** `27cac46` (merge of PR #136), 2026-11-12.
+**Last verified:** 2026-11-19, against the agent files as they stand at ADR-0075. Row 2 changed
+owner in that change; the other eleven rows were re-read against their roles and are unchanged.

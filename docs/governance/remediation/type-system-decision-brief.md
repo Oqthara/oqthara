@@ -247,6 +247,16 @@ this brief as its first artefact. It is left undone here because changing who ow
 belongs in its own governance commit, not bundled into a technical brief; it is the natural
 follow-up to whichever option is chosen.
 
+**Resolved 2026-11-19, differently from the recommendation above.**
+[ADR-0075](../../adr/0075-workstream-two-owns-the-type-model.md) assigned row 2 to
+`oq-hive-language-syntax` as primary, with `oq-hive-development` supporting on the runtime
+representation, and amended that role's agent file in the same change. The recommendation here
+named `oq-hive-architecture-governance` instead; ADR-0075 rejects that option on the grounds that a
+role whose artefacts are ADRs and registries cannot maintain a normative spec section or a
+conformance corpus. The paragraph above is left standing as what this brief recommended, not as the
+current state: the ownership gap it describes is closed, and the typing decision it recommends is
+unchanged and is ADR-0069's.
+
 ## Recommended next step
 
 Answer question 1. If the answer is "remains dynamically typed" (recommended), then the
