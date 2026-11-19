@@ -92,7 +92,7 @@ deliberate act with a paper trail.
 
 *Residual.* Both measurements come from the same source tree and the same authors, so they detect
 divergence between the two backends but cannot detect a shared misreading of the specification.
-See R-008.
+See R-017, which is that risk stated on its own.
 
 *Evidence.* `docs/spec/backend.md` "The compiled subset, measured" · `scripts/verify-conformance.py`
 line 40 (`BASELINE`) · `oq-cli/src/test/java/dev/oqthara/cli/BytecodeCompilerTest.java` ·

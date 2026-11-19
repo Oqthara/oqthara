@@ -1457,8 +1457,12 @@ unchanged.
   `sudo`, and no workflow here has ever escalated. Whether to take the container route, carry the
   packages in an image, or leave the property recorded as unmeasured is a decision about CI's
   shape, and the report records it as one rather than closing it by quietly adding a step.
-- **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
-  deliberately deferred and still deferred.
+- ~~**R-002's dangling "See R-008."** at line 95~~ — a pre-existing inaccuracy, wrong since
+  `1e87f00`, recorded as deferred in the review of #250 and closed here. R-002's residual is that both backends
+  share one author and so cannot detect a shared misreading; R-008 is "no action pinning by digest",
+  which is unrelated. The intended target is R-017, "Conformance corpus is circular: tests and
+  implementation share one author", which has said that since the file was created. The reference
+  now reads `See R-017, which is that risk stated on its own.`
 - **The security baseline's "measured starting point" table has drifted, and the new gate already
   shows it.** `docs/governance/alpha-7-security-baseline.md` said its figures "were re-derived from
   the tree on the commit that carries this file, none is carried forward". Run against today's tree,
