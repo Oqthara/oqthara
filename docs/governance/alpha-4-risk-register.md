@@ -391,7 +391,7 @@ table · `SECURITY.md` "Scope" · `oq-runtime/src/main/java/dev/oqthara/runtime/
 |---|---|---|---|---|---|---|
 | R-012 | Standard-library breadth has no denominator | High | Low | Low | 8 | Open |
 | R-013 | `data` cannot carry methods or implement contracts | High | Low | Low | 7 | Accepted |
-| R-014 | A Java callback cannot return an Oqthara function to its caller | Medium | Low | Low | 6 | Open |
+| R-014 | A Java function value is callable but not fully a `fun` | Medium | Low | Low | 6 | Open |
 | R-015 | Local and UTC time are easy to confuse | Medium | Low | Low | 8 | Mitigated |
 | R-016 | XML is deliberately absent | Medium | Low | Low | 8 | Accepted |
 
@@ -440,7 +440,7 @@ The decision is recorded, and `§14.2` remains `PARTIAL` for this reason.
 *Evidence.* `docs/governance/alpha-4-requirement-matrix.md` `§14.2` · `docs/adr/0028-data-evolution.md`
 · `docs/adr/0013-destructuring.md` · `oq-cli/src/test/java/dev/oqthara/cli/DataTest.java`.
 
-**R-014 — A Java callback cannot return an Oqthara function to its caller.**
+**R-014 — A Java function value is callable but not fully a `fun`.**
 The direction *into* Java is closed: a function argument that meets an interface with exactly one
 abstract method becomes a `java.lang.reflect.Proxy` that calls back through the host that created
 it, so `xs.forEach(fun(x) print x end)` and `Collections.sort(xs, (a, b) -> a - b)` both work on
@@ -448,13 +448,12 @@ both backends, and a callback over a `List<Integer>` is handed `long` rather tha
 earlier entry described two independent failures and blamed dispatch for skipping reflection on a
 non-`Class<?>` receiver. That was wrong — `xs.ensureCapacity(100)` and `Collections.sort(xs)`
 both reach reflection — and the correction is recorded in ADR-0032 D5. The direction *out of*
-Java remains closed: a method that takes a `Function` and hands one back on return yields a JDK
-object that Oqthara can call through its methods but cannot hold as a `fun` value, and a Java lambda
-never becomes a value the language can pass to `map`. Nothing in the standard library needs that
-shape today, which is why this is Low rather than Medium.
-
-The first half of that sentence was itself untrue until it was measured. Calling such a value did
-not work: `Comparator.naturalOrder()` answers a package-private `Comparators$NaturalOrderComparator`
+Java is closed as well, since #122 made a functional-interface value callable: a method that takes
+a `Function` and hands one back on return yields a JDK object that Oqthara can call with `()`, can
+hand to `map` and to a `fun` parameter, and can compose and re-pass to Java. The paragraph below
+records how that half was closed; it was misread as describing a live gap until 2026-11-19
+because the sentence it corrects had not been withdrawn.
+Calling such a value did not originally work: `Comparator.naturalOrder()` answers a package-private `Comparators$NaturalOrderComparator`
 and `Function.identity()` answers a hidden lambda class, and reflection reports the *declaring*
 class's accessibility rather than the interface's, so `compare` and `apply` were both refused with
 "cannot access a member of class ... with modifiers public". The same signature is now resolved on a
@@ -463,12 +462,24 @@ corrected with it — `map(xs, Comparator.naturalOrder())` used to say the value
 which contradicted the method call that had just succeeded, and now says that it is a Java object
 whose methods are callable but which cannot stand where a `fun` is expected.
 
-*Mitigation.* None available at the language level. The gap is named precisely, with the two distinct
-causes distinguished, so it is not mistaken for a missing method.
+What is still missing, measured 2026-11-19, is narrower than the heading: a function held in a
+`data` field cannot be called through the field (`b.mapper(5)` reports "expects 0 arguments") even
+when the function is plain Oqthara, and a default method is not reachable from the Oqthara side of
+a proxy, so `cmp.reversed()` on a lambda is refused while `Comparator.naturalOrder().reversed()` is
+not. Neither is a conversion question, and both are decided in the brief below.
 
-*Why open.* This is the most-requested shape of Java interoperability that does not exist, and it is
-open rather than accepted because no decision has been taken about whether a function value should
-convert to a single-method interface implicitly. That decision needs an ADR.
+*Mitigation.* The supporting direction is shipped and tested, and the two remaining gaps are named
+with reproductions so they are not mistaken for the conversion question they were originally
+filed as.
+
+*Why open.* A decision was proposed about whether a function value should convert to a
+single-method interface implicitly — Option A, the behaviour that exists, without adding an
+implicit adapter in either direction. It is not yet accepted, so this row stays Open; what
+remains open beyond it is the two narrower defects above, not the shape of the conversion.
+
+*Decision.* [`docs/governance/remediation/java-function-conversion-decision-brief.md`](remediation/java-function-conversion-decision-brief.md)
+(Alpha 7 §2.1) measures the current behaviour on both backends and proposes Option A. It awaits
+acceptance; nothing in it is implemented.
 
 *Evidence.* `docs/governance/alpha-4-requirement-matrix.md` `§16 JavaBridge expansion` gaps column ·
 `docs/adr/0032-static-fields-and-varargs.md` · `oq-core/src/main/java/dev/oqthara/core/JavaBridge.java`.
