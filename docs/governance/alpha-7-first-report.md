@@ -466,16 +466,18 @@ exists.
 §6 orders Swing first, and this pass executed it. Two of the three obstacles the report used to
 list are gone; one stands:
 
-- ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — still true of the suite,
-  but the probes below ran the toolkit, and Direction 13 records the results.
+- ~~No Swing or AWT program exists in `examples/` or `conformance/`~~ — the probes below ran
+  the toolkit first, and then the gap itself closed: `examples/swing.oq` (#267) and
+  `conformance/257-swing-runs-with-no-display` (#264). Direction 13 records the probes.
 - ~~The inventory has no Swing row~~ — Direction 13 now has six, C13.1–C13.6, all executed.
 - **Was open, now half closed:** layout, painting, input dispatch and look-and-feel were untested
   because this section assumed a headless runner cannot cover them. That assumption was wrong:
-  `c13_offscreen` now gates all four on both backends with no display. What remains open is
-  *displaying* a window — and with it the platform's own window manager — which a headless runner
-  genuinely cannot cover. The failure a program gets when there is no display *is* covered, by
-  `c13_window` (Item 9j), which pins `-Djava.awt.headless=true` so the answer does not depend on
-  the host.
+  `c13_offscreen` now gates all four on both backends with no display. Displaying a window closed
+  too, by #267: a dedicated CI job runs `c13_mapped` under `xvfb-run`, so a window is realised and
+  reported mapped on a Linux runner. The failure a program gets when there is no display is
+  covered separately, by `c13_window` (Item 9j), which pins `-Djava.awt.headless=true` so the
+  answer does not depend on the host. What neither covers is compositing by a real window
+  manager: Xvfb maps a window and reports it mapped; it does not composite.
 
 What the pass established: components construct and answer, a closure runs on the event dispatch
 thread, a closure is accepted as an `ActionListener` and receives the real `ActionEvent`, captures
@@ -1398,19 +1400,30 @@ unchanged.
   adjustment. Alpha 7's revised execution order supplied that text, and **Item 6b** now records its
   scope, exclusions, ownership boundaries, and first deliverable here. Status is **Unblocked**; the
   outstanding work is the capability matrix, not a definition.
-- **Swing has no example and no conformance case.** This entry used to add two claims that were
-  wrong when written and are now demonstrated wrong. "Nothing in CI would notice a regression" was
-  false: the probes runner is a CI step on the Ubuntu leg, and deleting either direction 13
-  probe makes it exit non-zero on both backends. Deleting `c13_offscreen.oq` and re-running the
-  harness gives `FAILED / c13_offscreen: missing probe file` and exit 1; restoring it gives
-  `ok: 28 probes match their expectation` and exit 0. "What cannot be covered headlessly
-  is still unmeasured" was the premise Item 9i overturned — only *realising* a window needs a
-  display, and layout, painting, input dispatch and look-and-feel all run under
-  `-Djava.awt.headless=true` and are gated by C13.7. What is genuinely absent is smaller than
-  either claim: no `examples/*.oq` and no `conformance/*.oq` exercises Swing, so the bridge's Swing
-  path is gated by a governance harness rather than by the ordinary test suite, and a reader
-  looking for how to use it has nothing to read. The remaining unmeasurable is one thing: painting
-  as composited by a real window manager, which needs a virtual framebuffer on the Linux runner.
+- **Swing has an example and a conformance case, and this bullet said otherwise.** The heading and
+  its last clause were both false when this pass began and are false again now for a different
+  reason: `examples/swing.oq` landed in #267 and `conformance/257-swing-runs-with-no-display`
+  landed in #264, and this bullet was never re-derived after either. The report cited case 257 in
+  Item 9j while this entry denied it existed. What the two cases actually cover is narrower than
+  "Swing works": the example branches on `GraphicsEnvironment.isHeadless()` and so runs unchanged
+  on a desktop and on a runner, and the conformance case asserts layout, painting into an
+  offscreen image, input dispatch and a closure on the event dispatch thread — all under
+  `-Djava.awt.headless=true`, and none of them look-and-feel, which no case names because it varies
+  by host.
+
+  This entry has now carried three claims that were wrong when written. "Nothing in CI would
+  notice a regression" was false: the probes runner is a CI step on the Ubuntu leg, and deleting
+  either direction 13 probe makes it exit non-zero on both backends — deleting `c13_offscreen.oq`
+  and re-running the harness gives `FAILED / c13_offscreen: missing probe file` and exit 1, and
+  restoring it gives `ok: 28 probes match their expectation` and exit 0. "What cannot be covered
+  headlessly is still unmeasured" was the premise Item 9i overturned. And the assertion that no
+  example or conformance case existed was simply out of date. The lesson is not that any one of
+  them was careless; it is that an entry about *absence* decays the moment someone fills the gap,
+  and absence is the one thing no gate here re-checks.
+
+  The remaining unmeasurable is still one thing: how a real window manager composites the painted
+  window. Xvfb maps a window and reports it mapped, which is what #267's display-backed job
+  requires and what `c13_mapped` asserts; it is not a compositor.
 - **R-002's dangling "See R-008."** at line 95 is a pre-existing inaccuracy, wrong since `1e87f00`,
   deliberately deferred and still deferred.
 - **The security baseline's "measured starting point" table has drifted, and the new gate already
