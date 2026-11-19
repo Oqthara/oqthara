@@ -14,6 +14,7 @@ import java.io.PrintStream;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,8 +39,8 @@ public final class OqRunner {
             // source, so a module case passed through the CLI and failed through every harness
             // that used this method -- the corpus said the feature worked and the suite said
             // it did not. Resolve imports here for the same reason: there is one semantics.
-            Path entry = cwd == null ? null : cwd.resolve(sourceName);
-            if (entry != null && Files.isRegularFile(entry)) {
+            Path entry = entryPoint(cwd, sourceName);
+            if (entry != null) {
                 program = Modules.resolve(entry, program);
             }
             Interpreter interpreter = new Interpreter(out, err, in, args, cwd, new MethodResolverImpl());
@@ -88,6 +89,27 @@ public final class OqRunner {
 
     private static String normalize(ByteArrayOutputStream bytes) {
         return bytes.toString(StandardCharsets.UTF_8).replace("\r\n", "\n");
+    }
+
+    /**
+     * The file the program came from, or null when the name is only a label.
+     *
+     * Harnesses pass display names like {@code <t>}, which are not paths. macOS and Linux allow
+     * such a file name, so resolving one simply finds nothing; Windows rejects the angle brackets
+     * in {@code Path.resolve} itself and the whole run fails. Treating an unresolvable name as
+     * "not a file" keeps one behaviour on all three platforms, which is the point of resolving
+     * imports here at all.
+     */
+    private static Path entryPoint(Path cwd, String sourceName) {
+        if (cwd == null) {
+            return null;
+        }
+        try {
+            Path entry = cwd.resolve(sourceName);
+            return Files.isRegularFile(entry) ? entry : null;
+        } catch (InvalidPathException notAPath) {
+            return null;
+        }
     }
 
     public static List<String> lines(String text) {
