@@ -446,6 +446,12 @@
       "slug": "docs/adr/0073-lambdas-are-expressions"
     },
     {
+      "path": "docs/adr/0074-platform-validation-requires-the-platform.md",
+      "title": "ADR-0074 — A platform is validated only by a run on that platform",
+      "section": "adr",
+      "slug": "docs/adr/0074-platform-validation-requires-the-platform"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",
@@ -540,6 +546,12 @@
       "title": "Baseline audit — November 2026",
       "section": "governance",
       "slug": "docs/governance/audit/baseline-2026-11"
+    },
+    {
+      "path": "docs/governance/platform-validation-policy.md",
+      "title": "Cross-platform validation policy",
+      "section": "governance",
+      "slug": "docs/governance/platform-validation-policy"
     },
     {
       "path": "docs/governance/remediation/alpha-3-audit-report-2026-11-09.md",
