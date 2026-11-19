@@ -274,6 +274,116 @@ correction is recorded here rather than quietly applied, because a governance re
 a remaining gap is as misleading as one that understates it, and this is the same failure the report
 charges elsewhere: prose about the tree, not checked against the tree.
 
+**The fourth obstacle was a missing definition, and it is discharged too.** The three adjustments
+above bounded ownership. They did not bound the work, because nothing in this repository said what
+§4 ordered. **Item 6b** now records §4's scope, its exclusions, the ownership boundaries within it,
+and the first deliverable. The prose above describing that absence is left standing as the record of
+what was wrong and for how long; it is no longer the current state, and Item 6b is.
+
+## Item 6b — §4's scope, recorded
+
+Item 6 established that §4 was blocked because nothing in this repository said what it ordered, and
+that the unblocking step was text from outside the repository. That text now exists: Alpha 7's
+revised execution order, §3, supplies it. This item records the scope so the boundary lives in the
+repository rather than in a directive a later session cannot read.
+
+### What §4 covers
+
+The normative language surface and its semantics:
+
+- Lexer, tokens, grammar, parser, and AST.
+- Operator precedence and expression evaluation.
+- Statements, control flow, assignment, binding, and scope rules.
+- Functions, lambdas, closures, and call semantics.
+- Iteration, destructuring, and collection-related language constructs.
+- Module and import semantics.
+- Error and diagnostic behavior that forms part of the language contract.
+- Interpreter and compiled-backend agreement for supported language behavior.
+- Synchronization of syntax-facing editor grammars with the normative specification.
+
+Existing object-oriented behavior may be audited for consistency, but OOP completion remains an
+Alpha 9 objective. It is not part of §4's implementation scope.
+
+### What §4 does not cover
+
+| Excluded | Where it belongs instead |
+| --- | --- |
+| Java Bridge Full | §6, this report's Items 8 and 9 |
+| Optional strict typing and annotations | §5, gated on ADR-0071 superseding ADR-0069 (Item 7) |
+| Generics as a distinct pre-0.2.0 deliverable | Its own deliverable, not §4 |
+| Standard-library breadth | Not §4 |
+| Runtime Manager and observability | Item 9a, which names what the tree already needed |
+| Alpha 7/8 security engineering | `alpha-7-security-baseline.md` |
+| Grafeno and OQSS | Outside this repository's Alpha 7 work |
+
+**The twelve ADR-0062 refusals remain refusals** unless a specific proposal formally reverses the
+relevant decision. §4 is not permission to quietly revive rejected constructs, and this scope record
+grants no authority to reopen them. They are the `NOT STARTED` rows of
+[`alpha-6-requirement-matrix.md`](alpha-6-requirement-matrix.md) lines 38–50 — `match`/`case`, list,
+map, set and generator comprehensions, `yield`, lazy range iteration, `switch`, `import` as a
+statement, `throw`, `def`, and `async`/`await` — and each states the diagnostic it produces.
+`docs/adr/0062-a-diagnostic-names-the-construct.md` records why the leader words among them are
+refused by name rather than by a bare parse error. The matrix's row 70 pins the refusal with a test
+that all twelve exit 1 and none exits 0.
+
+### Ownership
+
+`oq-hive-language-syntax` is the **sole technical design owner and author** for language-core
+evolution, with authority to inspect the existing language and propose improvements from its own
+technical judgment. Other agents must not create competing syntax designs or independently author
+conflicting language contracts.
+
+| Agent | Boundary |
+| --- | --- |
+| `oq-hive-language-syntax` | Language design, syntax decisions, the normative specification |
+| `oq-hive-development` | Implements runtime, interpreter and compiler mechanics **against that specification** |
+| `oq-hive-testing-security` | Adversarial tests, fuzzing, conformance review |
+| `oq-hive-architecture-governance` | Records decisions requiring ADRs |
+
+Implementation support does not grant another agent authority to replace or independently redesign
+the language contract. This is not a new boundary: `.github/agents/oq-hive-language-syntax.agent.md`
+line 45 already states it under "Where your ownership stops". `AGENTS.md` names both agent sets but
+does not carry that section, so the agent file is the binding text and the operating instructions are
+not — the same split Item 6 recorded when it found the operating instructions naming only `.kilo/`.
+
+### First deliverable
+
+A language-core capability matrix, before broad implementation. Each row needs:
+
+1. The current documented behavior.
+2. The implementing lexer/parser/AST/runtime/compiler locations.
+3. Existing conformance and regression evidence.
+4. A verdict: complete, defective, ambiguous, intentionally refused, or missing.
+5. A proposed correction or improvement, where justified.
+6. Compatibility implications and acceptance tests.
+
+Every proposed improvement must carry a minimal Oqthara example and precise expected behavior.
+Proposals beyond the initial inventory are permitted; unbounded change is not. Each one needs a
+defined semantic contract, a compatibility analysis, and measurable acceptance criteria. After the
+audit establishes a bounded backlog, it is implemented in focused milestones — not as a broad parser
+rewrite or an uncontrolled keyword expansion.
+
+### Why this is recorded here
+
+The report is the canonical Alpha 7 governance document, and only two things cite it by path:
+`alpha-7-security-baseline.md` line 16 calls it "the report which reviews the risk-register
+boundary", and `scripts/check-report-claims.py` parses it. That second one is the reason to record
+the scope here rather than in a new file: a checker already reads this document, so a scope
+recorded here can be gated, and a scope recorded in a fresh file would be one more document nothing
+verifies.
+
+The risk register and the threat model do **not** cite it — the paragraph this replaces said they
+did, which was an assumption rather than a check. The argument survives without them, because the
+gate is the stronger reader.
+
+Item 6's own history is the evidence that an unscoped section is invisible: it reported "Unblocked"
+for three passes on the strength of ownership adjustments while the section it cleared the way for
+was described nowhere.
+
+The scope above is a transcription of the order, not an interpretation of it. Where the order and
+this repository disagree, the discrepancy is a finding to record, not a licence to pick the more
+convenient reading.
+
 ## Item 7 — Type-system decisions requiring superseding ADRs
 
 This is the report's most consequential finding, and it is why §5 cannot begin as written.
@@ -395,9 +505,10 @@ Ordered by what actually blocks what, not by what reads best.
    report. Verified: the five `d1_*` probes pass and `ListSortTest` covers the arity refusal, so
    §6's callback-dependent surface is unblocked. Nothing to do here; recorded because the ordering
    below previously gated §6 on it.
-6. **§4 language-core evolution**, after item 2 so the owner is reading a correct count — and only
-   once §4's text is available. The three ownership adjustments are discharged; the scope is not
-   written down in this repository, so this entry cannot be started as specified.
+6. **§4 language-core evolution**, after item 2 so the owner is reading a correct count. The three
+   ownership adjustments are discharged and Item 6b records the scope, so nothing blocks this entry
+   any longer. Its first deliverable is the capability matrix Item 6b specifies: an inventory with a
+   verdict per row, not an implementation sweep.
 7. **§6 Java Bridge Full**, after the inventory row creation (item 5 is already done, so it gates
    nothing).
 8. **Runtime and observability**, independent of 4–7.
@@ -415,7 +526,7 @@ all: D1 was already fixed in PR #231 before this report was written.
 | 3 | A7.8, R-018 fuzzing reach | **Done** — PR #253 |
 | 4 | ADR superseding ADR-0015 | **Done** — ADR-0069, PR #255 |
 | 5 | Fix D1 | **Already done** — PR #231, two days before this report |
-| 6 | §4 language-core evolution | **Blocked as written** — ownership, keyword count and the type-system scope split are all discharged (Item 6's Resolution), but §4's own text is not in this repository, so the work has no boundary. Two of three prerequisites met; the third is a definition, not an adjustment |
+| 6 | §4 language-core evolution | **Unblocked** — ownership, keyword count and the type-system scope split were discharged by Item 6's Resolution, and Item 6b now records §4's scope in this repository, which was the last thing missing. The next deliverable is the language-core capability matrix Item 6b defines, owned by `oq-hive-language-syntax` |
 | 7 | §6 Java Bridge Full | Partly done — direction 13 added (C13.1–C13.7). Layout, painting, input dispatch and look-and-feel are gated by `c13_offscreen` with no display (Item 9i), and the no-display failure is gated by `c13_window` (Item 9j). Only displaying a window on a real screen is still open |
 | 8 | Runtime and observability | Partly done — six of the seven file-taking subcommands answered `--help` by treating it as a filename, and `oq new --help` created a directory; all six are fixed and tested (PR #259). No execution tracing exists |
 
@@ -631,9 +742,12 @@ quoting this report. The seven are this report's own references. **No document s
 orders.** Since Items 7 and 8 both paraphrase their section in one sentence each, the absence here is
 an omission in the report, not a convention of the directive.
 
-The status is now **Blocked as written**, and the unblocking step is to obtain §4's text. Recording
-it as blocked is more useful than recording it as unblocked, because "unblocked" invites someone to
-start, and starting an unbounded task is how a 30-minute task becomes a rewrite.
+The status was corrected from **Unblocked** to **Blocked as written** at the time, with the
+unblocking step being to obtain §4's text rather than make another adjustment. Recording it as
+blocked was more useful than recording it as unblocked, because "unblocked" invites someone to start,
+and starting an unbounded task is how a 30-minute task becomes a rewrite. That text has since been
+supplied and **Item 6b** records it, so the status is now **Unblocked** on a written scope rather
+than on an absent one — which is the distinction the original correction was making.
 
 This is also the third consecutive pass to find that absence, and the first to act on it. That
 pattern — noticed, deferred, noticed again — is the same one that let Items 2, 3, 4 and 7 drift, and
@@ -1246,12 +1360,14 @@ unchanged.
   files, not their other prose. A statement about, say, which backend supports which feature could
   still drift unobserved.
 - **Workstream 2 is `Under-covered`** and §5 lands entirely inside it.
-- **§4's directive text is not in this repository.** Item 6 reported "Unblocked" for three passes on
-  the strength of the ownership adjustments, which are real. But the section it clears the way for is
-  described nowhere: items 7 and 8 both state what their section orders, item 6 states what it clears
-  and not what it authorizes. The ownership fixes were necessary and are not sufficient, and the
-  difference has been deferred twice. Status is now **Blocked as written**, and the unblocking step is
-  to obtain §4's text, not to make another adjustment.
+- **§4's directive text was not in this repository, and now the scope is.** Item 6 reported
+  "Unblocked" for three passes on the strength of the ownership adjustments, which were real but
+  insufficient: items 7 and 8 both stated what their section ordered, while item 6 stated what it
+  cleared and not what it authorized. The status was corrected to **Blocked as written** rather than
+  left overstated, and the unblocking step was to obtain §4's text rather than make another
+  adjustment. Alpha 7's revised execution order supplied that text, and **Item 6b** now records its
+  scope, exclusions, ownership boundaries, and first deliverable here. Status is **Unblocked**; the
+  outstanding work is the capability matrix, not a definition.
 - **Swing has no example and no conformance case.** This entry used to add two claims that were
   wrong when written and are now demonstrated wrong. "Nothing in CI would notice a regression" was
   false: the probes runner is a CI step on the Ubuntu leg, and deleting either direction 13

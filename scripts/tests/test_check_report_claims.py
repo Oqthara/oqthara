@@ -65,6 +65,9 @@ class TheRealReportIsConsistent(unittest.TestCase):
         self.assertEqual(6, VALUES["defects"])
         self.assertEqual(31, VALUES["risk_total"])
         self.assertEqual(5, VALUES["Open"])
+        # §4's scope record states this one, and nothing read it while it was
+        # being written: mutating "twelve" to "thirteen" passed every gate.
+        self.assertEqual(12, VALUES["refusals"])
         self.assertEqual(13, VALUES["probed_groups"])
 
 
@@ -190,6 +193,24 @@ class DriftIsCaught(unittest.TestCase):
         )
         self.assertTrue(problems)
         self.assertIn("30 risks", problems[0])
+
+    def test_a_mutated_refusal_count_is_caught(self):
+        # The refusals live in the Alpha 6 matrix, which this gate did not read.
+        # §4's scope record is the first place to state the figure in prose, so
+        # it is derived from that matrix rather than trusted.
+        problems = problems_after(
+            "**The twelve ADR-0062 refusals remain refusals**",
+            "**The eleven ADR-0062 refusals remain refusals**",
+        )
+        self.assertTrue(problems)
+        # The message quotes the sentence as written, which is the word form.
+        self.assertIn("says eleven refusals", problems[0])
+        self.assertIn("has 12", problems[0])
+
+    def test_the_derivation_reads_the_matrix_not_the_report(self):
+        # The control for the test above: a figure read out of the sentence it
+        # is checking would agree with itself no matter what was written.
+        self.assertEqual(12, checker.derive()["refusals"])
 
     def test_a_noun_before_the_number_is_caught(self):
         # The mirror shape. Every rule above reads "41 capability rows"; a

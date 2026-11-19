@@ -69,6 +69,10 @@ ADR_DIR = Path("docs/adr")
 PROBE_DIR = Path("docs/governance/alpha-5/java-bridge-probes")
 PROBE_HARNESS = PROBE_DIR / "run.py"
 RISK_GATE = Path("scripts/check-risk-register.py")
+# The twelve refusals are a claim about a file this gate did not previously
+# read. §4's scope record now states the figure, so it is derived rather than
+# trusted: mutating "twelve" to "thirteen" used to pass every gate.
+REFUSAL_MATRIX = Path("docs/governance/alpha-6-requirement-matrix.md")
 
 # Prose spells small counts out. Leaving these unreadable is how "thirteen
 # directions" survived four reviews while every numeral in the file was checked.
@@ -122,6 +126,12 @@ NOUNS = [
     # a sentence saying "the register holds 30 risks" passed unread, and the
     # register holds 31.
     ("risks", "risk_total"),
+    # Bare, in §4's scope record: "the twelve ADR-0062 refusals remain
+    # refusals". The figure was unchecked while the scope record was being
+    # written, which is the failure the report charges elsewhere. The phrase
+    # always reads "<number> ADR-0062 refusals", so the figure reaches the noun
+    # through an optional ident, never through the number inside the id.
+    ("refusals", "refusals"),
 ]
 # Keyed lowercase because the lookup lowercases the matched text. Keying this on
 # the noun as written made "ADRs" unreachable and turned any live "69 ADRs" into
@@ -130,6 +140,7 @@ NOUNS = [
 NOUN_KEY = {noun.lower(): key for noun, key in NOUNS}
 FIGURE = re.compile(
     rf"\b({NUMBER})\s+(?:(?:pure|real|confirmed|live)\s+)?"
+    rf"(?:ADR-\d+\s+)?"
     rf"({'|'.join(re.escape(noun) for noun, _ in NOUNS)})\b",
     re.IGNORECASE,
 )
@@ -320,6 +331,12 @@ def derive(cwd: Path = Path(".")) -> dict:
     for name in ("Open", "Mitigated", "Accepted"):
         values[name] = sum(1 for row in rows if row["status"] == name)
     values["open_ids"] = sorted(row["id"] for row in rows if row["status"] == "Open")
+
+    # Refusal rows in the Alpha 6 matrix, counted the same way the matrix counts
+    # them: a `NOT STARTED` status cell. The status legend lines are prose, not
+    # table rows, so anchoring on a leading pipe keeps them out.
+    matrix = (cwd / REFUSAL_MATRIX).read_text(encoding="utf-8")
+    values["refusals"] = len(re.findall(r"^\|.*?\|\s*`NOT STARTED`\s*\|", matrix, re.M))
     return values
 
 
