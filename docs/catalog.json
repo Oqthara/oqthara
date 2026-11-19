@@ -428,6 +428,18 @@
       "slug": "docs/adr/0070-java-functional-values-stay-java-objects"
     },
     {
+      "path": "docs/adr/0071-plus-coerces-to-text.md",
+      "title": "ADR-0071 — `+` coerces to text when either side is text",
+      "section": "adr",
+      "slug": "docs/adr/0071-plus-coerces-to-text"
+    },
+    {
+      "path": "docs/adr/0072-list-methods-return-new-lists.md",
+      "title": "ADR-0072 — List methods return new lists and never mutate their receiver",
+      "section": "adr",
+      "slug": "docs/adr/0072-list-methods-return-new-lists"
+    },
+    {
       "path": "docs/alpha-4-phase-0-assessment.md",
       "title": "Alpha 4 Phase 0 — Gate Assessment After Alpha 3 Remediation",
       "section": "",

@@ -1584,8 +1584,15 @@ class BytecodeCompilerTest {
                 compiled++;
             }
         }
-        assertEquals(216, compiled,
+        assertEquals(218, compiled,
                 "compiled conformance programs (raise this only with newly measured evidence)");
+        // Measured 2026-11-20: 218 compiled / 10 fallback / 0 divergences over 261 programs
+        // (228 executable). 260-plus-text-coercion and 261-list-methods-copy close the two rows
+        // the audit recorded as Undocumented (L2.6) and Ambiguous (L5.7). Both compile: they
+        // exercise operators and list methods the lowerer already handles, so the compiled count
+        // rose by two and the fallback count did not move. The two ADRs (0071, 0072) decide what
+        // the cases pin, and the cases are what make the rows Complete rather than decisions.
+        //
         // Measured 2026-11-18: 216 compiled / 10 fallback / 0 divergences over 259 programs
         // (226 executable). 258-destructuring and 259-modules added the first coverage of the
         // two surfaces the language-core audit found untested: every destructuring source the

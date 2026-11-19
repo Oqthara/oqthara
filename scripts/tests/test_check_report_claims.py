@@ -114,8 +114,11 @@ class DriftIsCaught(unittest.TestCase):
         # The same defect's harder half. Backticks are masked to spaces before
         # any noun rule runs, so a tuple of four units-dropped figures was
         # invisible twice over: no unit word, and the digits themselves blanked.
+        match = re.search(r"Measured now: \d+ directions, \d+ capability rows, "
+                          r"\d+ probe files, \d+ ADRs\.", REPORT_TEXT)
+        self.assertIsNotNone(match, "the report no longer states its measured-now totals")
         problems = problems_after(
-            "Measured now: 13 directions, 55 capability rows, 29 probe files, 70 ADRs.",
+            match.group(0),
             "Re-running it today gives `13`, `52`, `26`, `71`.",
         )
         self.assertTrue(problems)
@@ -140,10 +143,20 @@ class DriftIsCaught(unittest.TestCase):
         # "now" as a pairing marker checked only the trailing figure, and a
         # stale "27 probe files" sat in this sentence through the pass that
         # added the 28th probe. Every figure in the list must be read.
-        sentence = "Measured now: 13 directions, 55 capability rows, 29 probe files, 70 ADRs."
-        problems = problems_after(sentence, sentence.replace("29 probe files", "27 probe files"))
+        # Read the sentence out of the report rather than pinning it: the
+        # totals in it move whenever a probe file or an ADR is added, and a
+        # test that breaks on a correct update teaches the next person to edit
+        # the number instead of reading it.
+        match = re.search(r"Measured now: \d+ directions, \d+ capability rows, "
+                          r"\d+ probe files, \d+ ADRs\.", REPORT_TEXT)
+        self.assertIsNotNone(match, "the report no longer states its measured-now totals")
+        sentence = match.group(0)
+        live = re.search(r"(\d+) probe files", sentence).group(1)
+        stale = str(int(live) - 2)
+        problems = problems_after(sentence, sentence.replace(f"{live} probe files",
+                                                             f"{stale} probe files"))
         self.assertTrue(problems)
-        self.assertIn("27 probe files", problems[0])
+        self.assertIn(f"{stale} probe files", problems[0])
 
     def test_a_mutated_bare_target_count_is_caught(self):
         # The repaired line 664. Written in the present tense, so a dating

@@ -673,7 +673,7 @@ The other three figures in that block need the same care, and the first draft of
 not give it. It said the block had one stale figure and quoted the rest as current. In fact the
 inventory gained a capability row and a probe file in `ec8947a`, the commit that closed the C13 gap,
 so by the time this paragraph was written the block held **two** figures that had moved, not one.
-Measured now: 13 directions, 55 capability rows, 29 probe files, 70 ADRs. Two of the four differ
+Measured now: 13 directions, 55 capability rows, 29 probe files, 72 ADRs. Two of the four differ
 from the block above, which is the **two** this paragraph just said had moved.
 
 That matters for the conclusion: the decay is not uniform, and the reason is mechanical. Item 8 cites

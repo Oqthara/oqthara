@@ -1,0 +1,20 @@
+# L5.7 / ADR-0072: list methods copy; six of them mutate.
+xs = [3, 1, 2, 1]
+print xs.sort()
+print xs
+print xs.sort(x -> -x)
+print xs.reverse()
+print xs
+print xs.unique()
+print xs.take(2)
+print xs.skip(2)
+print xs.clone()
+print xs.map(x -> x * 2)
+print xs
+xs.push(9)
+print xs.pop()
+print xs
+print xs.remove(0)
+print xs
+print xs.clear()
+print xs

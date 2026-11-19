@@ -37,7 +37,7 @@ JAR = ROOT / "oq-cli" / "build" / "libs" / "oq.jar"
 # cases the bytecode backend handles, matching BytecodeCompilerTest. A regressing number means
 # a real capability was lost; a growing number means the corpus changed and the pin is stale.
 # Update both only from a fresh measurement, and say so in the commit message.
-BASELINE = {"executable": 226, "compiled": 216}
+BASELINE = {"executable": 228, "compiled": 218}
 
 # Files copied beside every case without being treated as cases themselves. A case that
 # reads a file, or imports a module, needs that file reachable from both the scratch tree the

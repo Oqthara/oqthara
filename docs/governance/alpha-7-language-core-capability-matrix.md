@@ -40,18 +40,19 @@ formally reversing the relevant decision.
 
 | Verdict | Rows | Which |
 |---|---|---|
-| Complete | 53 | every row not listed below |
+| Complete | 55 | every row not listed below |
 | Missing | 0 | none |
-| Ambiguous | 2 | L4.9, L5.7 |
-| Undocumented | 1 | L2.6 |
+| Ambiguous | 1 | L4.9 |
+| Undocumented | 0 | none |
 | Intentionally refused | 1 | L4.8 |
 | Defective | 0 | — |
 
-The four non-Complete rows — two Ambiguous, one Undocumented, one refused — are §4's open
-backlog. Three of the audit's seven non-Complete findings were closed on this branch (L3.11, L6.6,
-L9.3) and are recorded Complete below with the evidence that closed them, rather than deleted,
-because the audit found them and a reader should be able to see what became of every row the audit
-touched.
+The two non-Complete rows — one Ambiguous, one refused — are §4's open backlog. Five of the
+audit's seven non-Complete findings were closed on this branch (L3.11, L6.6, L9.3, L2.6, L5.7) and
+are recorded Complete below with the evidence that closed them, rather than deleted, because the
+audit found them and a reader should be able to see what became of every row the audit touched.
+L2.6 and L5.7 are the two that needed a decision before a change: neither could be documented from
+the code alone, so each got an ADR (0071, 0072) and a conformance case that pins the decision.
 
 Rows are grouped into the nine scope areas of §3. Each area is one direction below.
 
@@ -78,13 +79,15 @@ No executable test runs the TextMate grammar, and none can without a VS Code hos
 | L2.3 | `and` binds tighter than `or` | Complete | `true or false and false` → `true` | `Parser.java` |
 | L2.4 | Comparisons do not chain | Complete | `1 < 2 < 3` → `error: cannot compare boolean with number`, which is the honest answer given comparisons yield booleans | `Values.java` |
 | L2.5 | `+` refuses operands it cannot combine, and says what it can do | Complete | `1 + [1]` → `error: cannot add number and list` with `help: + works with numbers, text, lists, maps and sets.` | `Values.java:601` |
-| L2.6 | `+` with text on either side stringifies both operands | **Undocumented** | `1 + "a"` → `1a`; `"a" + 1` → `a1`; `"a" + [1]` → `a[1]`; `"a" + nothing` → `anothing`. The rule is `if (a instanceof String \|\| b instanceof String) return display(a) + display(b)` at `Values.java:577`. The specification never states it, and no conformance file exercises it | `Values.java:577` |
+| L2.6 | `+` with text on either side stringifies both operands | **Complete** | `1 + "a"` → `1a`; `"a" + 1` → `a1`; `"a" + [1, 2]` → `a[1, 2]`; `"a" + nothing` → `anothing`; `"a" + (1 to 3)` → `a1 to 3`; `[1] + [2]` → `[1, 2]`. The rule is text on either side wins and the other operand is converted with `display`, the same conversion `print` uses. `1 + nothing` fails, because `nothing` is converted only when text is on the other side. Documented by ADR-0071 and pinned by `260-plus-text-coercion.oq`. | `Values.java:577`, spec precedence table, [ADR-0071](../../docs/adr/0071-plus-coerces-to-text.md) |
 
-**L2.6 is the matrix's most consequential finding.** `+` is documented as "add, subtract"
-(`docs/spec/language.md:312`) with no mention of coercion, yet text silently absorbs every other
-type while `1 + [1]` is refused. A reader comparing the two help messages would conclude the
-language is inconsistent; it is simply undocumented. Either the rule is stated normatively or it
-is removed. §4 should not leave it as a de facto contract.
+**L2.6 was the matrix's most consequential finding, and it is closed by a decision.** `+` was
+documented as "add, subtract" (`docs/spec/language.md:312`) with no mention of coercion, yet text
+silently absorbed every other type while `1 + [1]` was refused. A reader comparing the two help
+messages would have concluded the language was inconsistent; it was simply undocumented.
+[ADR-0071](../../docs/adr/0071-plus-coerces-to-text.md) keeps the coercion, states it as `display`
+on the other operand, names the `nothing` asymmetry, and the spec now carries all of it.
+`260-plus-text-coercion.oq` pins ten lines, including the refusal.
 
 ## Direction 3 — Statements, control flow, assignment, binding, and scope
 
@@ -134,12 +137,15 @@ a capability gap to close.
 | L5.4 | Negative indices count from the end | Complete | `[1,2,3][-1]` → `3` | `Values.java` |
 | L5.5 | Map iteration order is the map's own order | Complete | `{"z":1,"a":2}` iterates `z` then `a`; the specification says "the map's own order" and never promises sorted or insertion order | `OqMap` |
 | L5.6 | Mutating a collection during iteration is defined | Complete | Documented under "Changing a collection while looping over it" at `docs/spec/language.md:379` | `Interpreter.java` |
-| L5.7 | `.sort()` return and mutation behaviour | **Ambiguous** | `x = [3,1,2]; x.sort(); print x` → `[3, 1, 2]`, unchanged; `y = x.sort()` → `[1, 2, 3]`. So `.sort()` is **non-mutating despite its name**, while `.push`, `.pop`, `.insert`, `.remove` and `.clear` are mutating. `docs/spec/language.md:507` lists `.sort()` among list methods and `:689` states that the free function `sorted` returns a new list, but the spec never states what `.sort()` does. This is a genuine trap: a name that reads as a mutation and is not one | `OqList.sort` |
+| L5.7 | `.sort()` return and mutation behaviour | **Complete** | `xs = [3, 1, 2, 1]; print xs.sort()` → `[1, 1, 2, 3]` while `print xs` still gives `[3, 1, 2, 1]`, so `.sort()` copies. `.sort(key)`, `.reverse()`, `.unique()`, `.take`, `.skip`, `.clone`, `.map` and `.filter` copy too; only `.push`, `.pop`, `.insert`, `.remove`, `.remove_value` and `.clear` mutate, and they return what they removed (`.clear()` returns `nothing`). Documented by ADR-0072 and pinned by `261-list-methods-copy.oq`. | `MethodResolverImpl.java:244` (`new ArrayList<>(list)` before sorting), spec list methods, [ADR-0072](../../docs/adr/0072-list-methods-return-new-lists.md) |
 
-L5.7 is the clearest **Ambiguous** verdict in the audit. It is not a bug — the behaviour is
-consistent between backends — but a reader who writes `x.sort()` and expects `x` reordered gets
-silence. Either the specification states that `.sort()` returns a new list and never reorders *x*,
-or the method should mutate, matching every sibling in the list. The decision belongs in an ADR.
+L5.7 was the clearest **Ambiguous** verdict in the audit, and it is now decided. It was never a
+bug — the behaviour is consistent between backends — but a reader who writes `x.sort()` and
+expects `x` reordered got silence. [ADR-0072](../../docs/adr/0072-list-methods-return-new-lists.md)
+keeps the copy, names the six methods that do mutate, and states that the mutators return what they
+removed rather than the list. The probe that settled it found more than the row asked: `.reverse()`
+copies too, which the audit had not checked, and `.clear()` returns `nothing`.
+`261-list-methods-copy.oq` pins all of it.
 
 ## Direction 6 — Module and import semantics
 
@@ -178,7 +184,7 @@ no requirement in scope asks for it.
 |---|---|---|---|---|
 | L8.1 | The two backends agree on arithmetic, collections, tuples, and `data` | Complete | A ten-statement program (`fib(10)`, `x.sort()`, map insert, `7 / 2`, `7.0 / 2`, a tuple and a `data` instance) produced **byte-identical** output interpreted and as a built jar: `55 / [3, 1, 2] / {"k": 1} / 3.5 / 3.5 / (1, "a") / P(x: 1, y: 2)` | `Compiler`, `Interpreter` |
 | L8.2 | `.sort()` is non-mutating on both backends | Complete | The same program shows `[3, 1, 2]` after `x.sort()` on both. Consistent, which is why L5.7 is Ambiguous rather than Defective | Both |
-| L8.3 | Agreement is verified systematically, not by sample | Complete | `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` runs **every** `.oq` file in `conformance/`, skips the 10 that declare a compiler fallback, and asserts the compiled output equals `oq run`'s. Measured 2026-11-18: **216 compiled / 10 fallback / 0 divergences over 259 programs (226 executable)**. The contract is stated in the test: "a program is only compiled when the compiler can prove it, and once compiled it must behave exactly like `oq run`" | `BytecodeCompilerTest.java:1560` |
+| L8.3 | Agreement is verified systematically, not by sample | Complete | `BytecodeCompilerTest.everyCompilableConformanceProgramMatchesTheInterpreter` runs **every** `.oq` file in `conformance/`, skips the 10 that declare a compiler fallback, and asserts the compiled output equals `oq run`'s. Measured 2026-11-18: **218 compiled / 10 fallback / 0 divergences over 261 programs (228 executable)**. The contract is stated in the test: "a program is only compiled when the compiler can prove it, and once compiled it must behave exactly like `oq run`" | `BytecodeCompilerTest.java:1560` |
 
 L8.3 was the row I expected to record as Missing — the tree only ever *demonstrated* backend
 agreement, case by case, and never stated the invariant. It is Complete: the invariant is the test's
@@ -204,29 +210,32 @@ either would narrow the comparison until it agreed with whatever was left.
 
 ## What this audit does not establish
 
-It does not establish that the language is complete. It establishes that **53 rows behave as
-documented, two are ambiguous, one is undocumented, none is missing, none is defective, and one is
+It does not establish that the language is complete. It establishes that **55 rows behave as
+documented, one is ambiguous, none is undocumented, none is missing, none is defective, and one is
 refused deliberately** — across the nine scope areas the order names.
 
 It does not review Alpha 9's object-oriented surface. `data` and classes appear only where an
 audit row needed them; OOP completion is an Alpha 9 objective and §4 does not absorb it.
 
-It does not propose ADRs. Every "Ambiguous" and "Undocumented" finding above is a question for
-§4's backlog, and each needs its own decision record (ADR-0071 onward; ADR-0070 is consumed by
-§2.3) before implementation.
+It does not propose ADRs beyond the two it needed. The "Ambiguous" and "Undocumented" findings
+above were questions for §4's backlog, and each needed its own decision record (ADR-0071 onward;
+ADR-0070 is consumed by §2.3) before implementation. L2.6 and L5.7 have them now — ADR-0071 and
+ADR-0072 — and each is pinned by a conformance case rather than by inspection alone. L4.9 is the
+one row that remains ambiguous, and it has no record yet.
 
 It does not revive a refusal. The ten leader words and `finally` stay refused. Default parameters
 (L4.8) are recorded as refused and are not proposed.
 
 ## The bounded backlog this audit establishes
 
-Two of §4's four remaining non-Complete findings are worth acting on. L9.3, L3.11 and L6.6 were
-the other three and are now closed:
+§4's four actionable findings are all closed. L9.3, L3.11 and L6.6 came first; L2.6 and L5.7 were
+the two that needed a decision, and they now have one each:
 
-1. **L2.6 and L5.7 — decide, then document.** The text-coercion rule for `+` and the non-mutating
-   `.sort()` are the two places where the tree behaves one way and the specification says another
-   or nothing. Both need an ADR before either an implementation change or a documentation change;
-   picking one without the other would make the divergence official.
+1. **L2.6 — decided, then documented.** The text-coercion rule for `+` is stated normatively
+   (ADR-0071) rather than removed, because it is already load-bearing and removing it would be a
+   language redesign §4 does not authorize.
+2. **L5.7 — decided, then documented.** `.sort()` and `.reverse()` copy; six named methods mutate.
+   ADR-0072 records the choice and the composition argument for it.
 
 The remaining two are recorded, not actioned. **L4.9** (block-bodied lambda) would expand the audit
 into a parser rewrite that §4 explicitly forbids, and no 0.2.0 requirement depends on it. **L4.8**

@@ -325,6 +325,13 @@ chaining.
 `in` tests membership. For a list, map, set, range or text it reports whether the right
 side contains the left side; text uses substring membership. It is not a `for` loop.
 
+`+` is addition when both sides are numbers and text concatenation when either side is
+text, converting the other side with `display` — the same conversion `print` uses. So
+`1 + "a"` is `1a`, `"a" + [1, 2]` is `a[1, 2]`, and `"a" + nothing` is `anothing`. When
+neither side is text, the operands must belong to the same family: two lists concatenate,
+and a number plus a list fails. A value that is `nothing` is converted only when text is
+on the other side, so `1 + nothing` fails. See ADR-0071.
+
 ```
 print 3 in [1, 2, 3]        # true
 print "ell" in "hello"      # true
@@ -508,6 +515,13 @@ List methods: `.length()`, `.push(x)`, `.pop()`, `.first()`, `.last()`, `.get(i)
 `.sort(key)`, `.reverse()`, `.join(sep)`, `.contains(x)`, `.unique()`, `.flatten()`,
 `.take(n)`, `.skip(n)`, `.subList(from, to)`, `.sum()`, `.min()`, `.max()`, `.clone()`,
 `.clear()`, `.remove_value(x)`.
+
+A list method returns a **new list** and leaves its receiver unchanged, unless it is one
+of the six that mutate: `.push`, `.pop`, `.insert`, `.remove`, `.remove_value`, and
+`.clear`. So `.sort()`, `.sort(key)` and `.reverse()` copy rather than reorder in place,
+`xs.sort()` can be chained or printed without changing `xs`, and only the six change the
+list they are called on. The mutating methods return what they removed — `.pop()` and
+`.remove(i)` return the element, `.clear()` returns `nothing` — not the list. See ADR-0072.
 
 Map methods: `.length()`, `.keys()`, `.values()`, `.entries()`, `.get(k, fallback)`,
 `.set(k, v)`, `.has(k)`, `.has_value(v)`, `.remove(k)`, `.clear()`, `.each(f)`,
