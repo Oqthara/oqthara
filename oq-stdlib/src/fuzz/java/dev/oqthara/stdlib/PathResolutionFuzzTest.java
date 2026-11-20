@@ -51,7 +51,7 @@ class PathResolutionFuzzTest {
     private static final String[] RESOLVING_BUILTINS = {
             "exists", "is_file", "is_dir", "file_size", "list_files", "walk", "stat",
             "path_absolute", "path_normalize", "path_name", "path_parent", "path_join",
-            "glob",
+            "glob", "read", "read_lines", "read_bytes", "read_lines_or_empty",
     };
 
     @FuzzTest(maxDuration = "30s")

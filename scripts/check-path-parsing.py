@@ -7,9 +7,10 @@ caught `InvalidPathException`. A path holding a NUL is reachable from a program 
 escapes the interpreter, which prints "This is a bug in Oqthara" and exits 70 for a
 program that merely passed bad text.
 
-Consolidating the copies fixed the defect. It did not stop a fifth. R-032's mitigation
-paragraph ends with an admission that nothing in the build fails when a new copy appears;
-a convention nobody enforces is exactly how the first four copies happened.
+Consolidating the copies fixed the defect. It did not stop a fifth. R-032's *Evidence*
+bullet ends with an admission that nothing in the build fails when a new copy appears -- the
+mitigation column makes the same point in the register's own words; a convention nobody
+enforces is exactly how the first four copies happened.
 
 Scope is every module a program can reach with its own text — `oq-stdlib`, `oq-core` and
 `oq-runtime`. An earlier version of this gate covered `oq-stdlib` alone and argued the

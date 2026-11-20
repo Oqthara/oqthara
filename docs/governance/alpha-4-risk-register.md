@@ -528,7 +528,7 @@ defend.
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
 |---|---|---|---|---|---|---|
 | R-017 | Conformance corpus is circular: tests and implementation share one author | High | Medium | Medium | 11 | Accepted |
-| R-018 | Fuzzing does not reach path resolution, directory traversal or semantic analysis | Low | Medium | Low | 11 | Mitigated |
+| R-018 | Fuzzing reaches path resolution but not directory traversal or semantic analysis | Low | Medium | Low | 11 | Mitigated |
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
@@ -1205,8 +1205,8 @@ now exists. Calling that `Accepted` would imply the asymmetry is deliberate. It 
 **Twenty-nine entries were re-derived and held.** Every remaining rating, count and citation was
 checked against the tree and found accurate, so no rating was changed for the sake of appearing
 thorough. Specifically re-measured rather than taken on trust: all 18 agent files — 12 under
-`.kilo/agents/` and the six Hive roles — pin one model, and the count of 8 refers to `@FuzzTest`
-methods across 5 classes rather than to files (R-001); the CodeQL cron (R-001, R-018); the
+`.kilo/agents/` and the six Hive roles — pin one model, and the count of 17 refers to `@FuzzTest`
+methods across 8 classes rather than to the 8 fuzz source files (R-001); the CodeQL cron (R-001, R-018); the
 50,000,000-step budget and 16 MiB
 output budget (R-004), `eclipse-temurin` tags and the six workflow files (R-007, R-008),
 `MAX_SLEEP_MILLIS = 10_000` and `WaitedBudget.MAX_MILLIS = 60_000` (R-010), 256 conformance cases
