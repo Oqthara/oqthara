@@ -48,7 +48,7 @@ required, squash-only merges, no bypass actors, 13 required status checks with
 `strict_required_status_checks_policy`, required review-thread resolution, stale-review dismissal
 on push. Review is supplemented by machine evidence that does not depend on opinion — JaCoCo
 `coverageGate` at 80% for `dev/oqthara/core` (`build.gradle.kts`), the interpreter-versus-jar
-conformance comparison in `scripts/verify-conformance.py`, eight fuzz targets, and CodeQL on a
+conformance comparison in `scripts/verify-conformance.py`, seventeen fuzz targets, and CodeQL on a
 weekly schedule (`.github/workflows/codeql.yml`).
 
 *Why accepted rather than mitigated.* The alternative is fabricated review. The exception record
@@ -761,7 +761,7 @@ This entry previously said path resolution could not be fuzzed at all because it
 seven-method interface, and the actual obstacle — that the working root varies per machine, so a
 seed could not be replayed — is answered by resolving against a fixed empty temporary directory.
 Because the reason was written down wrong, nobody looked, and four copies of path resolution
-drifted with only one of them guarded. `glob` and fifteen other builtins let
+drifted with only one of them guarded. `glob` and twenty-five other builtins let
 `InvalidPathException` escape on a NUL in a path and reported "internal error ... This is a bug in
 Oqthara", exit 70. `PathResolutionFuzzTest` found it on its first run against the unfixed tree.
 
@@ -1056,7 +1056,7 @@ here; the specific silent-misbinding class is closed, the general ordering quest
 The stdlib resolved a user-supplied path in four places: `FileSystem.resolve`, `Stdlib.resolve`,
 `Patterns.resolve` and `DatabaseModule.withConnection`, and the three lexical `path_*` functions
 called `Path.of` directly on a fifth path. `Path.of` throws `InvalidPathException` for text it
-cannot parse; only `FileSystem`'s copy caught it, so `glob` and fifteen other builtins let it escape
+cannot parse; only `FileSystem`'s copy caught it, so `glob` and twenty-five other builtins let it escape
 and the interpreter reported "internal error ... This is a bug in Oqthara" and exited 70 for a
 program that had merely passed a NUL in a path. Nothing about the *fix* was hard — the missing guard
 is five lines. What made it survive every gate was that the four copies had three different message
@@ -1078,21 +1078,33 @@ arity groups rather than the two functions that had tests, so a new path builtin
 through `OqPaths` fails the suite. `PathResolutionFuzzTest` covers the same property from the other
 end, over generated input.
 
-`scripts/check-path-parsing.py` closes the gap this entry originally recorded. It fails when
-`Path.of` or `Paths.get` appears anywhere in `oq-stdlib`'s main sources except `OqPaths.java`,
-including fully-qualified `java.nio.file.Path.of`, and it treats a missing `OqPaths.java` as a
-failure rather than a pass. String-literal constants (`Path.of(".")`, `Path.of("")`) are exempt and
-the exemption is the regex, not a list somebody maintains. Mutation-tested by appending a
-`java.nio.file.Path.of(text)` call to `Patterns.java`, which it caught by file and line.
+`scripts/check-path-parsing.py` closes the gap this entry originally recorded. It reads the main
+sources of `oq-stdlib`, `oq-core`, and `oq-runtime`, and fails on a path parse in any file not on a
+short written list of guarded sites — including fully-qualified `java.nio.file.Path.of`, spaced
+`Path . of (`, `Paths.get`, `FileSystems.getDefault().getPath`, a static import of any of those, and
+a call split across two lines. String-literal constants (`Path.of(".")`, `Path.of("")`) are exempt;
+an escaped literal is not, because `Path.of("a\u0000b")` is the text this gate exists to catch. A
+missing scope, a listed file that is absent, and a listed file that no longer parses anything are
+all failures: an exemption nobody rechecks is how a gate rots. Two floors stop it passing on a tree
+it never read — 55 sources and 7 sites. Mutation-tested by adding an unguarded `Path.of(text)` to a
+real `oq-core` source, which it caught by file and line, and by 19 evasion and lookalike cases in
+`scripts/tests/test_check_path_parsing.py`.
 
-*Why mitigated rather than closed.* The gate covers this family, in this module. It does not find
-the next family, and it does not see a path parse in `oq-core` or `oq-cli` — those are out of scope
-by argument rather than by accident, because they parse command-line arguments and URIs that a
-program cannot supply, and because `JavaBridge`'s coercion of an Oqthara string to `Path` already
-converts the exception into an `OqError` (checked with a jar, not assumed).
+Three sites in the covered modules parse program-supplied text and each turns
+`InvalidPathException` into an `OqError`: `OqPaths`, `JavaBridge.bridgePath`, and
+`Modules.resolveModule`. The other four listed sites parse the literal `.`.
+
+*Why mitigated rather than closed.* The gate now covers this family across the three modules that
+take text from a program. It does not cover `oq-cli`, which parses command-line arguments, or
+`oq-compiler`. The `oq-cli` exclusion was tested rather than argued: `oq run` with a NUL in the
+file-name argument reports `Cannot find file 'xy.oq'.` and exits 2, and a NUL written inside a
+source string is unescaped by the lexer and reaches the now-guarded bridge.
 
 *Evidence.* `oq-stdlib/src/main/java/dev/oqthara/stdlib/OqPaths.java` ·
+`oq-core/src/main/java/dev/oqthara/core/JavaBridge.java` ·
+`oq-core/src/main/java/dev/oqthara/core/Modules.java` ·
 `FileSystemModuleTest.everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` ·
+`JavaBridgePathArgumentTest` · `ModulesTest.aNulInAQuotedModuleNameIsAnErrorNotAStackTrace` ·
 `oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/PathResolutionFuzzTest.java` ·
 `scripts/check-path-parsing.py` · `scripts/tests/test_check_path_parsing.py` ·
 `docs/spec/fuzzing.md`.

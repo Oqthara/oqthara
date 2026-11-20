@@ -59,6 +59,25 @@ class FileSystemModuleTest {
         return host;
     }
 
+    @Test
+    void theDatabaseBuiltinsRefuseAnEmptyPathInTheSameWordsAsEverythingElse() {
+        // An empty path is not invalid text -- it parses fine -- so it never reached the
+        // InvalidPathException catch and kept a hand-written message of its own: "needs a
+        // database path" with no "is not one" clause and a hint about characters that a
+        // zero-length string does not have. Routing it through the shared refusal is what makes
+        // the fourth spelling go away rather than merely become accurate.
+        for (String function : List.of("db_query", "db_execute")) {
+            OqError error = assertThrows(OqError.class,
+                    () -> call(function, "", "SELECT 1", List.of()), function);
+            assertRefusedAsAPath(function, "database path", error);
+            // The hint names the actual mistake. The old one -- "text without a NUL character" --
+            // described the parse failure, which is not what a zero-length path is.
+            assertTrue(error.hint().contains("needs a name, not empty text"),
+                    function + " -> " + error.hint());
+            assertFalse(error.hint().contains("NUL"), function + " -> " + error.hint());
+        }
+    }
+
     private Object call(String name, Object... args) {
         OqCallable callable = host().builtins().get(name);
         List<Object> values = new ArrayList<>(args.length);
@@ -520,20 +539,28 @@ class FileSystemModuleTest {
     void everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError() {
         // Three copies of resolve() existed, and only FileSystem's caught InvalidPathException.
         // The Stdlib copy let it escape, so a program that passed bad text saw "internal error
-        // ... This is a bug in Oqthara" and exit 70 for fifteen functions. A guarded copy with
-        // no test is how that happened twice, so this covers the whole family rather than the
-        // two functions that happened to be tested.
+        // ... This is a bug in Oqthara" and exit 70 for twenty-three functions. A guarded copy
+        // with no test is how that happened twice, so this covers the whole family rather than
+        // the two functions that happened to be tested. The list is every builtin that reaches
+        // OqPaths -- twenty-nine of them -- because the regression is "one was missed", and a
+        // list that omits the one that was missed is the defect restated.
         // Arity is passed explicitly: handing a one-argument function two arguments would make
         // it refuse on arity and the assertion would pass without the guard ever running.
-        String[] oneArgument = {"read", "read_lines", "exists", "list_files", "delete",
-                "make_dir", "file_size", "is_file", "is_dir", "read_bytes", "walk", "stat",
-                "path_name", "path_parent"};
+        String[] oneArgument = {"read", "read_lines", "read_lines_or_empty", "exists",
+                "list_files", "delete", "make_dir", "file_size", "is_file", "is_dir",
+                "read_bytes", "walk", "stat", "touch", "path_name", "path_parent",
+                "path_normalize", "path_absolute"};
         // save, append and write_bytes take (path, payload): only the first argument is a path.
         String[] pathThenText = {"save", "append", "write_bytes"};
-        // db_query and db_execute reach Path.of through DatabaseModule. They say "database
-        // path" rather than "path" because "needs a path" reads oddly for a connection.
+        // copy_tree takes (path, path), and glob takes (path, pattern).
+        String[] pathThenOther = {"glob"};
+        // The three database builtins reach OqPaths through DatabaseModule.withConnection. They
+        // say "database path" rather than "path" because "needs a path" reads oddly for a
+        // connection.
         String[] database = {"db_query", "db_execute"};
-        String[] bothPaths = {"path_join", "copy_file", "move_file"};
+        // db_transaction takes (path, body) rather than (path, sql, parameters).
+        String[] databaseWithBody = {"db_transaction"};
+        String[] bothPaths = {"path_join", "copy_file", "move_file", "copy_tree"};
         for (String function : oneArgument) {
             OqError error = assertThrows(OqError.class, () -> call(function, "a\u0000b"),
                     function);
@@ -548,6 +575,20 @@ class FileSystemModuleTest {
             OqError error = assertThrows(OqError.class,
                     () -> call(function, "a\u0000b", "select 1", List.of()), function);
             assertRefusedAsAPath(function, "database path", error);
+        }
+        // db_transaction's second argument is a callable, so it is refused on the path before the
+        // body is ever invoked; the body still has to be a callable or arity refuses first.
+        dev.oqthara.runtime.NativeFunction body =
+                new dev.oqthara.runtime.NativeFunction("body", 0, 0, (h, a, sp) -> "done");
+        for (String function : databaseWithBody) {
+            OqError error = assertThrows(OqError.class,
+                    () -> call(function, "a\u0000b", body), function);
+            assertRefusedAsAPath(function, "database path", error);
+        }
+        for (String function : pathThenOther) {
+            OqError error = assertThrows(OqError.class,
+                    () -> call(function, "a\u0000b", "*"), function);
+            assertRefusedAsAPath(function, error);
         }
         for (String function : bothPaths) {
             OqError first = assertThrows(OqError.class, () -> call(function, "a\u0000b", "x"),

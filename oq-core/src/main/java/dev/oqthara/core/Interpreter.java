@@ -1205,11 +1205,6 @@ public final class Interpreter implements OqHost {
         return workingDirectory;
     }
 
-    public Path resolve(String path) {
-        Path p = Path.of(path);
-        return p.isAbsolute() ? p : workingDirectory.resolve(p);
-    }
-
     public String readLine(Span span) {
         try {
             return in.readLine();

@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ModulesTest {
@@ -118,6 +119,21 @@ class ModulesTest {
         OqRunner.Result result = run(dir, "main.oq");
         assertEquals(0, result.code(), result.stderr());
         assertEquals("42\n", result.stdout());
+    }
+
+    @Test
+    void aNulInAQuotedModuleNameIsAnErrorNotAStackTrace(@TempDir Path dir) throws Exception {
+        // The lexer rejects a NUL written bare in source, so the earlier check of this route
+        // passed while the string-literal spelling still crashed: `resolveModule` handed the
+        // name to `base.resolve`, which throws InvalidPathException, and `Main` wraps only
+        // OqError, so the user saw a twelve-frame stack trace and exit 1. The assertion is on
+        // the exception type, because that type is what decides which message the CLI prints.
+        Files.writeString(dir.resolve("main.oq"), "use \"oq:a\u0000b\"\nprint \"ok\"\n");
+        var program = dev.oqthara.core.Parser.parse("main.oq",
+                Files.readString(dir.resolve("main.oq")));
+        dev.oqthara.runtime.OqError error = assertThrows(dev.oqthara.runtime.OqError.class,
+                () -> Modules.resolve(dir.resolve("main.oq"), program));
+        assertTrue(error.getMessage().contains("is not a module name"), error.getMessage());
     }
 
     private OqRunner.Result run(Path dir, String file) throws Exception {

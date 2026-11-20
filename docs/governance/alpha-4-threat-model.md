@@ -753,7 +753,7 @@ approximating cancellation.
 `NotSupportedException("too many variables for one method")` rather than emitting invalid
 bytecode. A refusal is the safe direction: the program does not run wrong, it does not run.
 
-**TH-35 — partially mitigated by eight fuzz targets and a named gap list.**
+**TH-35 — partially mitigated by seventeen fuzz targets and a named gap list.**
 `docs/spec/fuzzing.md` "What is not covered yet" (line 140) is unusually candid: text operations,
 path resolution and CSV are unfuzzed; semantic analysis has no separate pass; class files are
 checked for magic only at fuzz time and fully verified when the JVM loads them in

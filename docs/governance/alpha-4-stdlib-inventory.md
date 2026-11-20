@@ -108,75 +108,75 @@ Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
 lines is one name and three registrations.
 
-**Core** (22) — `print`:149`write_text`:162`write`:169`input`:176 and 180`text`:188`repr`:190`number`:192`type_of`:194`is_nothing`:196`is_number`:198`is_text`:200`length`:202`range`:204, 208, 211`error`:220`assert`:223 and 230`args`:236`exit`:238 and 241`sort_by`:247`map`:256`filter`:258`list_sort`:266`clone`:268.
+**Core** (22) — `print`:149, `write_text`:162, `write`:169, `input`:176 and 180, `text`:188, `repr`:190, `number`:192, `type_of`:194, `is_nothing`:196, `is_number`:198, `is_text`:200, `length`:202, `range`:204, 208, 211, `error`:220, `assert`:223 and 230, `args`:236, `exit`:238 and 241, `sort_by`:247, `map`:256, `filter`:258, `list_sort`:266, `clone`:268 .
 
-**Text** (10) — `format`:273`join`:275`upper`:288`lower`:290`trim`:292`contains`:294`split`:296`replace`:301`regex`:304`matches`:321.
+**Text** (10) — `format`:273, `join`:275, `upper`:288, `lower`:290, `trim`:292, `contains`:294, `split`:296, `replace`:301, `regex`:304, `matches`:321 .
 
-**Collections** (14) — `keys`:327`values`:333`push`:339`pop`:348`sum`:353`sort`:355`reverse`:357`unique`:359`set`:361`frozenset`:368`list`:374`enumerate`:380`zip`:391`range_list`:401.
+**Collections** (14) — `keys`:327, `values`:333, `push`:339, `pop`:348, `sum`:353, `sort`:355, `reverse`:357, `unique`:359, `set`:361, `frozenset`:368, `list`:374, `enumerate`:380, `zip`:391, `range_list`:401 .
 
-**Math** (29) — `abs`:408`floor`:410`ceil`:412`round`:414 and 416`sqrt`:435`pow`:438`sin`:443`cos`:446`tan`:449`asin`:452`acos`:455`atan`:458`atan2`:461`hypot`:466`ln`:472`log10`:476`log2`:480`exp`:484`degrees`:487`radians`:490`pi`:493`e`:494`tau`:495`min`:498`max`:500`sorted`:502`clamp`:504`random`:510 and 512`random_item`:518.
+**Math** (29) — `abs`:408, `floor`:410, `ceil`:412, `round`:414 and 416, `sqrt`:435, `pow`:438, `sin`:443, `cos`:446, `tan`:449, `asin`:452, `acos`:455, `atan`:458, `atan2`:461, `hypot`:466, `ln`:472, `log10`:476, `log2`:480, `exp`:484, `degrees`:487, `radians`:490, `pi`:493, `e`:494, `tau`:495, `min`:498, `max`:500, `sorted`:502, `clamp`:504, `random`:510 and 512, `random_item`:518 .
 
-**Files** (13) — `read`:526`read_lines`:530`save`:541`append`:554`exists`:568`list_files`:570`delete`:601`make_dir`:608`file_size`:616`path_join`:623`path_name`:627`path_parent`:631`cwd`:635.
+**Files** (13) — `read`:526, `read_lines`:530, `save`:541, `append`:554, `exists`:568, `list_files`:570, `delete`:601, `make_dir`:608, `file_size`:616, `path_join`:623, `path_name`:627, `path_parent`:631, `cwd`:635 .
 
-**File operations** (7) — `is_file`:649`is_dir`:651`read_bytes`:653`write_bytes`:669`copy_file`:692`move_file`:697`walk`:712.
+**File operations** (7) — `is_file`:649, `is_dir`:651, `read_bytes`:653, `write_bytes`:669, `copy_file`:692, `move_file`:697, `walk`:712 .
 
-**Files and directories** (7) — `stat`:72`touch`:74`temp_dir`:78`copy_tree`:80`read_lines_or_empty`:85`path_absolute`:88`path_normalize`:90all in `FileSystem.java`.
+**Files and directories** (7) — `stat`:72, `touch`:74, `temp_dir`:78, `copy_tree`:80, `read_lines_or_empty`:85, `path_absolute`:88, `path_normalize`:90 all in `FileSystem.java`.
 One registration per name, so the section adds 7 to both columns. No ADR: the module adds no
 new representation. Its bound is the point worth recording — `copy_tree` charges the bytes it
 moves against a single 16 MiB budget for the whole tree, the same figure `copy_file` allows one
 file, because an entry cap alone would permit a 1.6 TiB tree.
 
-**Configuration formats** (4) — `ini_parse`:54`ini_write`:56`properties_parse`:58`toml_get`:60all in `ConfigFormats.java`. One registration per name, so the section adds 4 to
+**Configuration formats** (4) — `ini_parse`:54, `ini_write`:56, `properties_parse`:58, `toml_get`:60 all in `ConfigFormats.java`. One registration per name, so the section adds 4 to
 both columns. No ADR: `toml_get` deliberately reads one scalar-or-array value at a dotted path
 and refuses tables of tables, inline tables and dates by name rather than guessing, which keeps
 the grammar small enough to state exactly in its Javadoc.
 
-**Patterns** (2) — `fnmatch`:40`glob`:49both in `Patterns.java`.
+**Patterns** (2) — `fnmatch`:38, `glob`:47, both in `Patterns.java`.
 
-**Statistics, identifiers, ordered search** (12) — `mean`:35`median`:37`variance`:39`stdev`:41`mode`:44`percentile`:46`uuid`:51`is_uuid`:53`heap_push`:56`heap_pop`:58`bisect_left`:60`bisect_right`:63all in `Statistics.java`. One registration per name, so the
+**Statistics, identifiers, ordered search** (12) — `mean`:35, `median`:37, `variance`:39, `stdev`:41, `mode`:44, `percentile`:46, `uuid`:51, `is_uuid`:53, `heap_push`:56, `heap_pop`:58, `bisect_left`:60, `bisect_right`:63 all in `Statistics.java`. One registration per name, so the
 section adds 12 to both columns. Specified by [ADR-0041](../adr/0041-statistics-identifiers-and-ordered-search.md).
 
-**Text layout** (6) — `wrap_text`:27`fill_text`:32`dedent_text`:37`indent_text`:39`shorten_text`:44`unified_diff`:49all in `TextWrap.java`. One registration per name, so the
+**Text layout** (6) — `wrap_text`:27, `fill_text`:32, `dedent_text`:37, `indent_text`:39, `shorten_text`:44, `unified_diff`:49 all in `TextWrap.java`. One registration per name, so the
 section adds 6 to both columns. Specified by
 [ADR-0043](../adr/0043-word-wrapping-and-text-diffs.md), whose one deliberate divergence from
 Python is that a hyphen is an ordinary character rather than a break opportunity.
 
-**Compression** (6) — `zlib_compress`:50`zlib_decompress`:52`gzip_compress`:55`gzip_decompress`:57`zip_compress`:60`zip_decompress`:62all in `Compression.java`.
+**Compression** (6) — `zlib_compress`:50, `zlib_decompress`:52, `gzip_compress`:55, `gzip_decompress`:57, `zip_compress`:60, `zip_decompress`:62 all in `Compression.java`.
 One registration per name, so the section adds 6 to both columns. Specified by
 [ADR-0042](../adr/0042-whole-value-compression.md), whose reason for existing is the output cap:
 the defence counts the bytes actually produced rather than trusting a length field, because a
 hostile producer writes whatever length it likes.
 
-**Fractions** (17) — `fraction`:37`fraction_of`:40`fraction_text`:42`fraction_num`:44`fraction_den`:47`fraction_add`:50`fraction_sub`:54`fraction_mul`:58`fraction_div`:62`fraction_neg`:66`fraction_abs`:68`fraction_compare`:70`fraction_floor`:74`fraction_ceil`:77`fraction_round`:80`fraction_pow`:83`fraction_to_decimal`:87all
+**Fractions** (17) — `fraction`:37, `fraction_of`:40, `fraction_text`:42, `fraction_num`:44, `fraction_den`:47, `fraction_add`:50, `fraction_sub`:54, `fraction_mul`:58, `fraction_div`:62, `fraction_neg`:66, `fraction_abs`:68, `fraction_compare`:70, `fraction_floor`:74, `fraction_ceil`:77, `fraction_round`:80, `fraction_pow`:83, `fraction_to_decimal`:87all
 in `Fractions.java`. One registration per name, so the section adds 17 to both columns. Specified by
 [ADR-0053](../adr/0053-exact-rational-arithmetic.md), whose value type lives in the runtime
 because `Values` has to name and display it, and whose whole point is that no operation converts
 to a `double`: `fraction_compare` cross-multiplies, and `fraction_to_decimal` is the one
 conversion outward, with the precision stated by the caller.
 
-**JSON** (4) — `json_parse`:926`json`:928`json_write`:930`json_pretty`:932.
+**JSON** (4) — `json_parse`:926, `json`:928, `json_write`:930, `json_pretty`:932 .
 
-**Encoding** (11) — `hex_encode`:945`hex_decode`:947`base64_encode`:949`base64_decode`:951`sha256`:953`sha1`:955`md5`:957`hmac_sha256`:959`secure_random_hex`:961`secure_equal`:971`pbkdf2_sha256`:979.
+**Encoding** (11) — `hex_encode`:945, `hex_decode`:947, `base64_encode`:949, `base64_decode`:951, `sha256`:953, `sha1`:955, `md5`:957, `hmac_sha256`:959, `secure_random_hex`:961, `secure_equal`:971, `pbkdf2_sha256`:979 .
 
-**Logging** (6) — `log_debug`:1063`log_info`:1065`log_warn`:1067`log_error`:1069`log_level`:1071`log_enabled`:1081.
+**Logging** (6) — `log_debug`:1063, `log_info`:1065, `log_warn`:1067, `log_error`:1069, `log_level`:1071, `log_enabled`:1081 .
 
-**Arguments** (1) — `arg_parse`:1107.
+**Arguments** (1) — `arg_parse`:1107 .
 
-**CSV** (2) — `csv_parse`:1257, 1259, 1262`csv_write`:1266 and 1268.
+**CSV** (2) — `csv_parse`:1257, 1259, 1262, `csv_write`:1266 and 1268 .
 
-**Dates** (2) — `date_parse`:1424`instant_parse`:1426.
+**Dates** (2) — `date_parse`:1424, `instant_parse`:1426 .
 
-**Time** (6) — `now`:1463`today`:1465`datetime`:1467`timestamp`:1469`tz_convert`:1471`sleep`:1498.
+**Time** (6) — `now`:1463, `today`:1465, `datetime`:1467, `timestamp`:1469, `tz_convert`:1471, `sleep`:1498 .
 
-**URLs** (6) — `url_parse`:1526`url_encode`:1550`url_decode`:1554`query_parse`:1558`query_encode`:1577`url_join`:1617.
+**URLs** (6) — `url_parse`:1526, `url_encode`:1550, `url_decode`:1554, `query_parse`:1558, `query_encode`:1577, `url_join`:1617 .
 
-**HTTP** (2) — `http_get`:1915`http_post`:1917.
+**HTTP** (2) — `http_get`:1915, `http_post`:1917 .
 
-**Concurrency** (5) — `spawn`:2071`await`:2079 and 2086`done`:2100`mutex`:2107`par_map`:2109.
+**Concurrency** (5) — `spawn`:2071, `await`:2079 and 2086, `done`:2100, `mutex`:2107, `par_map`:2109 .
 
-**Process** (4) — `env`:2137`run_command`:2139`cpu_count`:2191`memory_mb`:2193.
+**Process** (4) — `env`:2137, `run_command`:2139, `cpu_count`:2191, `memory_mb`:2193 .
 
-**Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
+**Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89 . These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),
 called from `Stdlib.install`, so by the definition used here — a name callable without a
 qualifier — they are globals. Architecturally they are a module, which is why they live in
@@ -400,13 +400,13 @@ Conventions used in the tables:
 | Attribute | Value |
 |---|---|
 | Modules | `pathlib` [P]; `glob`, `fnmatch` [C]; `os.path`, `stat`, `shutil` [P]; `tempfile` [P]; `filecmp` [A]; `linecache` [X] |
-| Oqthara equivalent | `read`:516, `read_lines`:520, `save`:531, `append`:544, `exists`:558, `list_files`:560, `delete`:585, `make_dir`:592, `file_size`:600, `path_join`:607, `path_name`:610, `path_parent`:614, `cwd`:618, `is_file`:632, `is_dir`:634, `read_bytes`:636, `write_bytes`:652, `copy_file`:664, `move_file`:669, `walk`:684, and in `FileSystem.java` `stat`:73, `touch`:75, `temp_dir`:79, `copy_tree`:81, `read_lines_or_empty`:86, `path_absolute`:89, `path_normalize`:91 |
-| Missing | No temporary *file* — only `temp_dir`, and the caller deletes it because there is no `close`; no recursive delete, deliberately, because `delete` removing a tree needs an explicit flag and a flag is a language decision; no file comparison (`filecmp`); no ownership, no ACLs and no nanosecond timestamps; no symbolic-link creation or resolution exposed as a builtin; no path value — paths are text. `stat` reports `size`, `is_file`, `is_dir`, `is_symlink`, `modified`, `created`, `readable`/`writable`/`executable` and `mode`, and omits `mode` rather than inventing one on a platform without POSIX permissions. `copy_tree` refuses a tree over 16 MiB in total, which is the same budget `copy_file` gives one file. `glob`:48 and `fnmatch`:39 in `Patterns.java` cover name matching, with `**` recursion and `*` matching a leading dot (unlike a POSIX shell) |
+| Oqthara equivalent | `read`:526, `read_lines`:530, `save`:541, `append`:554, `exists`:568, `list_files`:570, `delete`:601, `make_dir`:608, `file_size`:616, `path_join`:623, `path_name`:627, `path_parent`:631, `cwd`:635, `is_file`:649, `is_dir`:651, `read_bytes`:653, `write_bytes`:669, `copy_file`:692, `move_file`:697, `walk`:712, and in `FileSystem.java` `stat`:72, `touch`:74, `temp_dir`:78, `copy_tree`:80, `read_lines_or_empty`:85, `path_absolute`:88, `path_normalize`:90 |
+| Missing | No temporary *file* — only `temp_dir`, and the caller deletes it because there is no `close`; no recursive delete, deliberately, because `delete` removing a tree needs an explicit flag and a flag is a language decision; no file comparison (`filecmp`); no ownership, no ACLs and no nanosecond timestamps; no symbolic-link creation or resolution exposed as a builtin; no path value — paths are text. `stat` reports `size`, `is_file`, `is_dir`, `is_symlink`, `modified`, `created`, `readable`/`writable`/`executable` and `mode`, and omits `mode` rather than inventing one on a platform without POSIX permissions. `copy_tree` refuses a tree over 16 MiB in total, which is the same budget `copy_file` gives one file. `fnmatch`:38 and `glob`:47 in `Patterns.java` cover name matching, with `**` recursion and `*` matching a leading dot (unlike a POSIX shell) |
 | JVM fit | Yes — `PathMatcher("glob:...")`, `Files.walkFileTree`, `Files.createTempDirectory` and `BasicFileAttributes` supply all of it. This is the cheapest high-value chapter on the list |
 | Lifetime | Per-call for everything above, and that is the whole reason it is cheap. `temp_dir` is the one exception and it is handled by refusing to hide it: it returns a directory the caller owns explicitly, says so in its own documentation string, and is not scoped, because the language has no `close` ([ADR-0036](../adr/0036-time-zones-and-filesystem.md)). A temp *file* would be the same shape, so the directory is what shipped |
 | Security | The filesystem is trusted by [ADR-0036](../adr/0036-time-zones-and-filesystem.md) Decision 7 and `read("../../../etc/hosts")` is documented to work, so path traversal is a known and accepted property, not a bug. `delete` must never be recursive without an explicit flag, and `copy_file`/`move_file`/`copy_tree` refusing to overwrite is a safety property to preserve. A glob over an attacker-controlled directory can enumerate a very large tree, so it needs the `MAX_LIST_ENTRIES`-style cap that `list_files` already has — and a copy needs a *byte* cap, not only an entry cap: 100,000 entries of 16 MiB is 1.6 TiB, so `copy_tree` bounds the whole tree at 16 MiB and counts the bytes it moves rather than trusting a reported size |
 | Contract | Every path operation returns text joined with the platform separator and never a `Path` value; `walk` continues not to follow symlinks; glob must define its syntax (the `PathMatcher` dialect, not Python's `**`) and its ordering (sorted, deterministic) so output is reproducible |
-| Test | `GlobTest` — 26 cases. `aStarMatchesWithinOneSegment`, `aGlobstarMatchesAcrossSeparators`, `aQuestionMarkMatchesExactlyOneCharacter`, `aDashInAClassIsARange`, `anUnclosedClassIsRefused` and `resultsUseForwardSlashesOnEveryPlatform` pin the dialect. `FileSystemModuleTest` — 36 cases for the new names: `stat` on a file, a directory, a symbolic link and a missing path; `copyTreeRefusesATreeThatExceedsTheByteBudget` asserting a tree over the budget is refused before anything is written; `copyTreeRefusesASymlinkInTheTree`; `copyTreeRefusesANonEmptyTarget`; and `copyBounded` stopping when the reported size is a lie, which lives in `FileOperationsTest` |
+| Test | `GlobTest` — 37 cases. `aStarMatchesWithinOneSegment`, `aGlobstarMatchesAcrossSeparators`, `aQuestionMarkMatchesExactlyOneCharacter`, `aDashInAClassIsARange`, `anUnclosedClassIsRefused` and `resultsUseForwardSlashesOnEveryPlatform` pin the dialect. `FileSystemModuleTest` — 39 cases, `stat` on a file, a directory, a symbolic link and a missing path; `copyTreeRefusesATreeThatExceedsTheByteBudget` asserting a tree over the budget is refused before anything is written; `copyTreeRefusesASymlinkInTheTree`; `copyTreeRefusesANonEmptyTarget`; and `copyBounded` stopping when the reported size is a lie, which lives in `FileOperationsTest` |
 | Acc. | Documented dialect with a test per metacharacter; deterministic ordering; an entry cap and a byte cap that both raise rather than truncating silently |
 | Excluded | `linecache` (source-line caching exists to feed tracebacks in a CPython-style debugger; Oqthara has no `linecache` consumer and adding a cache with no reader is dead surface) |
 

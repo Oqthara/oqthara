@@ -15,7 +15,7 @@ import java.nio.file.Path;
  * caught {@link InvalidPathException}. {@code Path.of} throws it for text it cannot parse — a NUL
  * being the reachable case — and an uncaught copy does not fail at the call site: it escapes the
  * interpreter, which reports "internal error ... This is a bug in Oqthara" and exits 70 for a
- * program that merely passed bad text. Sixteen builtins did exactly that.
+ * program that merely passed bad text. Twenty-six builtins did exactly that.
  *
  * <p>Four copies with one guard is the defect; the guard is only the symptom. New path builtins
  * call this and nothing else, so the next copy cannot drift. There is deliberately no overload
@@ -38,9 +38,12 @@ final class OqPaths {
     /**
      * As {@link #lexical}, but the diagnostic names the kind of path expected.
      *
-     * <p>{@code db_query} says "needs a database path" because "needs a path" reads oddly for
-     * something that is really a connection. The wording differs; the parse and the guard do not,
-     * which is the point of routing it here rather than leaving the fourth copy in place.
+     * <p>The three database builtins, {@code db_query}, {@code db_execute} and
+     * {@code db_transaction}, say "needs a database path" because "needs a path" reads oddly for
+     * something that is really a connection. They all reach this through
+     * {@code DatabaseModule.withConnection}, so the code is the list. The wording differs; the
+     * parse and the guard do not, which is the point of routing them here rather than leaving
+     * another copy in place.
      */
     static Path lexical(Object value, String builtin, Span span, String noun) {
         try {
@@ -71,6 +74,12 @@ final class OqPaths {
      * "internal error": the whole failure being repaired was that a user mistake was reported as
      * an Oqthara bug.
      */
+    static OqError refused(Object value, String builtin, Span span, String noun) {
+        return new OqError(builtin + "() needs a " + noun + ", and '" + Values.display(value)
+                + "' is not one", span,
+                builtin + "() needs a name, not empty text.");
+    }
+
     private static OqError refused(Object value, String builtin, Span span, String noun,
             InvalidPathException cause) {
         return new OqError(builtin + "() needs a " + noun + ", and '" + Values.display(value)

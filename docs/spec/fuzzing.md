@@ -168,21 +168,23 @@ been reported as "internal error: StackOverflowError" to a user.
 - Path resolution is fuzzed by `PathResolutionFuzzTest`, which fixed the base directory to an
   empty temporary directory so a seed means the same thing on every machine. This paragraph
   said the opposite — that path resolution "still needs an `OqHost`" and was unreachable — and
-  the stated blocker was never the real one. `OqHost` is a seven-method interface; a fixed base
+  the stated blocker was never the real one. `OqHost` is a six-method interface; a fixed base
   is all that replay needs. The cost of the wrong reason being written down is that nobody
-  looked: `glob` and fourteen other builtins let `InvalidPathException` escape and reported
+  looked: `glob` and twenty-five other builtins let `InvalidPathException` escape and reported
   "internal error ... This is a bug in Oqthara" for a NUL in a path, and the fuzz target added
   for this gap found it on its first run. There were four copies of the parse and one guard;
   adding the missing guards would have left four copies, so they are one function, `OqPaths`.
   Guarding a duplicated function is the symptom; the copy is the defect. `OqPaths` is now the
-  place the compiler will not let a fifth copy hide: `scripts/check-path-parsing.py` fails when
-  `Path.of` or `Paths.get` appears anywhere else in `oq-stdlib`'s main sources, including
-  fully-qualified. A new path builtin that parses for itself is a red build, not a red test.
+  place nothing will quietly hide a fifth copy: `scripts/check-path-parsing.py` reads the main
+  sources of `oq-stdlib`, `oq-core`, and `oq-runtime` and fails on a path parse in any file not
+  on a short written list of guarded sites — including fully-qualified `Path.of`, `Paths.get`,
+  `FileSystems.getDefault().getPath`, a static import, and a call split across two lines. A new
+  path builtin that parses for itself is a red build, not a red test.
 - The builtins that resolve a path and change the tree, `save`, `append`, `write_bytes`,
   `delete`, `make_dir`, `copy_file` and `move_file`, are still not fuzzed, because a seed that
   writes leaves a different base for the next replay. They share `OqPaths.resolve` with the
-  target above, which is now the only place a path is parsed; they are otherwise covered by
-  `FileOperationsTest`.
+  target above; they are otherwise covered by `FileOperationsTest`, whose 35 tests drive the
+  tree-changing builtins by name.
 - `Patterns.glob`'s directory walk is only covered through `GlobTest`; the format targets call
   `matchesText`, so the traversal itself is not fuzzed. `PathResolutionFuzzTest` calls `glob` but
   against a base the targets never populate, so it reaches the resolution and not the walk.

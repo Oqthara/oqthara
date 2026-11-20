@@ -277,10 +277,10 @@ final class DatabaseModule {
 
     private static String requirePath(Object value, String call, Span span) {
         String path = Values.display(value);
-        if (path.isEmpty()) {
-            throw new OqError(call + "() needs a database path", span,
-                    "Pass a file name like \"app.db\", or \":memory:\" for a scratch database.");
-        }
+        // An empty path is the commoner mistake and it never reaches OqPaths: every other
+        // builtin treats "" as the working directory, so the refusal has to happen here. It
+        // borrows OqPaths' wording rather than writing a fourth shape of its own.
+        if (path.isEmpty()) throw OqPaths.refused(value, call, span, "database path");
         return path;
     }
 

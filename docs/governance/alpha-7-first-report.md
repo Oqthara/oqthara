@@ -830,7 +830,7 @@ mutations and eight silence mutations, all correct:
 ```
 $ python3 scripts/check-report-claims.py
 report claims: every figure agrees — 28 probes, 29 probe files, 55 capability rows,
-13 directions, 22 keywords, 14 fuzz targets, 70 ADRs, 6 defects, 31 risks (5 Open)
+13 directions, 22 keywords, 17 fuzz targets, 75 ADRs, 6 defects, 32 risks (5 Open)
 exit=0
 ```
 
@@ -1494,7 +1494,7 @@ unchanged.
   the gaps R-018 and `docs/spec/fuzzing.md` name by name were gaps when this item was written. The
   path-resolution gap has since closed: three of the seventeen targets are
   `PathResolutionFuzzTest`, and the first of them found an unguarded `InvalidPathException` that
-  made `glob` and fourteen other builtins report "internal error ... This is a bug in Oqthara" for
+  made `glob` and twenty-five other builtins report "internal error ... This is a bug in Oqthara" for
   a NUL in a path. It does not claim a count of "unreached builtins": any such number depends on
   calling a builtin "pure", and this item measured reachability by grep, which cannot make that
   judgement.

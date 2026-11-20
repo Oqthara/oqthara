@@ -5,6 +5,32 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Text that is not a path crashed twenty-three builtins as though the interpreter were
+  broken.** `read("a\u0000b")`, `glob` with a malformed pattern, and `db_query` against a path
+  the platform rejects all reached a `Path.of` whose `InvalidPathException` escaped to the
+  top-level handler, so the program printed `internal error ... This is a bug in Oqthara` and
+  exited 70 — a message that blames the implementation and tells the reader to report a defect
+  that does not exist. The exception is now converted where the parse happens and reported as
+  what it is: `read() needs a path, and '...' is not one`, exit 1. Measured by running the same
+  twenty-nine-builtin matrix against a jar built from `main` and one built from this branch:
+  `main` printed the internal-error shape for 23 of them, this branch for 0. Five were already
+  guarded with no test, which is how the other twenty-three went unnoticed.
+- **A module name the platform rejects crashed `oq` before the program ran.** `Modules` resolved
+  the name with `Path.resolve` outside any `catch`, and `Main` wraps only `OqError`, so
+  `oq run 'a\u0000b.oq'` exited 70 with the same internal-error shape. An invalid module name is
+  now an `OqError` naming the name.
+- **One behaviour had four wordings because four copies of the path parse each wrote its own.**
+  The twenty-six builtins that call `OqPaths` and the three database builtins that reach it
+  through `DatabaseModule.withConnection` now share one refusal, including the empty-string case,
+  which previously said `needs a database path` with no `is not one` clause and a hint about NUL
+  characters that a zero-length path does not have. `OqPaths` is now the only place in
+  `oq-stdlib`, `oq-core` or `oq-runtime` that parses a path, and `scripts/check-path-parsing.py`
+  fails the build on a fifth copy — a gate, because a comment saying "use `OqPaths`" had already
+  failed to stop the fourth.
+
 ## [0.1.0-alpha.6] - 2026-11-17
 
 ### Fixed
