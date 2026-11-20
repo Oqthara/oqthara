@@ -8,7 +8,7 @@ inventory §8 and §17, the requirement matrix §17
 ## Context
 
 `FileSystem.java` and `ConfigFormats.java` were delivered in PR #192 with their contracts
-argued in the commit message and pinned by `FileSystemModuleTest` (37 tests) and
+argued in the commit message and pinned by `FileSystemModuleTest` (38 tests) and
 `ConfigFormatsTest` (57 tests). The standard-library inventory records both chapters in full —
 `Oqthara equivalent`, `Missing`, `JVM fit`, `Lifetime`, `Security`, `Contract`, `Test`,
 `Acc.` and `Excluded`. What neither had was a decision record, and ten builtins were

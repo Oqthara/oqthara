@@ -9,6 +9,7 @@ import dev.oqthara.runtime.Values;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -46,7 +47,7 @@ final class Patterns {
             return new Glob(pattern, span).matchesText(name);
         }).named("name", "pattern"));
         interpreter.defineBuiltin(NativeFunction.of("glob", 2, (host, args, span) -> {
-            Path directory = resolve(host, args.get(0));
+            Path directory = resolve(host, args.get(0), span);
             String pattern = Values.display(args.get(1));
             return search(directory, pattern, host, span);
         }).named("directory", "pattern"));
@@ -377,8 +378,16 @@ final class Patterns {
         }
     }
 
-    private static Path resolve(OqHost host, Object value) {
-        Path path = Path.of(Values.display(value));
+    private static Path resolve(OqHost host, Object value, Span span) {
+        Path path;
+        try {
+            path = Path.of(Values.display(value));
+        } catch (InvalidPathException e) {
+            // Same guard as FileSystem.resolve: without it a NUL in the directory text escaped
+            // as an uncaught InvalidPathException and glob() reported an Oqthara bug.
+            throw new OqError("glob() needs a path, and '" + Values.display(value) + "' is not one",
+                    span, "A path is text without a NUL character. (" + e.getMessage() + ")");
+        }
         if (path.isAbsolute()) return path;
         Path base = host.workingDirectory();
         if (base == null) base = Path.of("").toAbsolutePath();

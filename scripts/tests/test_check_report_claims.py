@@ -61,7 +61,7 @@ class TheRealReportIsConsistent(unittest.TestCase):
         self.assertEqual(28, VALUES["probes"])
         self.assertEqual(55, VALUES["capability_rows"])
         self.assertEqual(13, VALUES["directions"])
-        self.assertEqual(14, VALUES["fuzz_targets"])
+        self.assertEqual(17, VALUES["fuzz_targets"])
         self.assertEqual(22, VALUES["keywords"])
         self.assertEqual(6, VALUES["defects"])
         self.assertEqual(31, VALUES["risk_total"])
@@ -162,7 +162,7 @@ class DriftIsCaught(unittest.TestCase):
         # The repaired line 664. Written in the present tense, so a dating
         # exemption does not apply and the count must match the build file.
         problems = problems_after(
-            "claims fourteen targets exist", "claims eight targets exist"
+            "claims seventeen targets exist", "claims eight targets exist"
         )
         self.assertTrue(problems)
 

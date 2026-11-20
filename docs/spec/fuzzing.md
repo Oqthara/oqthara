@@ -165,9 +165,18 @@ been reported as "internal error: StackOverflowError" to a user.
 
 ## What is not covered yet
 
-- Path resolution still needs an `OqHost`, so it is the one stdlib area the targets cannot
-  reach: every entry point that resolves a path against the working directory is exercised
-  through `matchesText` and the format builtins instead.
+- Path resolution is fuzzed by `PathResolutionFuzzTest`, which fixed the base directory to an
+  empty temporary directory so a seed means the same thing on every machine. This paragraph
+  said the opposite — that path resolution "still needs an `OqHost`" and was unreachable — and
+  the stated blocker was never the real one. `OqHost` is a seven-method interface; a fixed base
+  is all that replay needs. The cost of the wrong reason being written down is that nobody
+  looked: `glob` and fourteen other builtins let `InvalidPathException` escape and reported
+  "internal error ... This is a bug in Oqthara" for a NUL in a path, and the fuzz target added
+  for this gap found it on its first run.
+- The builtins that resolve a path and change the tree, `save`, `append`, `write_bytes`,
+  `delete`, `make_dir`, `copy_file` and `move_file`, are still not fuzzed, because a seed that
+  writes leaves a different base for the next replay. They share the resolution code the
+  target above covers, and are otherwise covered by `FileOperationsTest`.
 - `Patterns.glob`'s directory walk is only covered through `GlobTest`; the fuzz targets call
   `matchesText`, so the filesystem traversal is not fuzzed.
 - Swing, which has no coverage at all yet.

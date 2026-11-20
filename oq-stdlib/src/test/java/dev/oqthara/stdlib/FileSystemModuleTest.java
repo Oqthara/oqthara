@@ -66,6 +66,18 @@ class FileSystemModuleTest {
         return callable.call(host(), values, Span.synthetic());
     }
 
+    private static void assertRefusedAsAPath(String function, OqError error) {
+        String message = error.getMessage();
+        // Two wordings exist: "x() needs a path, and '...' is not one" and "not a path: '...'".
+        // Asserting on the shared shape rather than on one spelling keeps the check about the
+        // guard existing, not about which of the two the function happens to use.
+        assertTrue(message.startsWith("not a path") || message.contains("is not one"),
+                function + " -> " + message);
+        // The escaped exception said "internal error" and named Oqthara as the culprit. Any
+        // message that survives this assertion is one the program can act on.
+        assertFalse(message.contains("internal error"), function + " -> " + message);
+    }
+
     private OqMap stat(String path) {
         return (OqMap) call("stat", path);
     }
@@ -496,6 +508,49 @@ class FileSystemModuleTest {
         OqError absolute = assertThrows(OqError.class, () -> call("path_absolute", "a\u0000b"));
         assertTrue(absolute.getMessage().startsWith("path_absolute() needs a path"),
                 absolute.getMessage());
+    }
+
+    @Test
+    void everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError() {
+        // Three copies of resolve() existed, and only FileSystem's caught InvalidPathException.
+        // The Stdlib copy let it escape, so a program that passed bad text saw "internal error
+        // ... This is a bug in Oqthara" and exit 70 for fifteen functions. A guarded copy with
+        // no test is how that happened twice, so this covers the whole family rather than the
+        // two functions that happened to be tested.
+        // Arity is passed explicitly: handing a one-argument function two arguments would make
+        // it refuse on arity and the assertion would pass without the guard ever running.
+        String[] oneArgument = {"read", "read_lines", "exists", "list_files", "delete",
+                "make_dir", "file_size", "is_file", "is_dir", "read_bytes", "walk", "stat",
+                "path_name", "path_parent"};
+        // save, append and write_bytes take (path, payload): only the first argument is a path.
+        String[] pathThenText = {"save", "append", "write_bytes"};
+        // db_query, db_execute and db_transaction reach Path.of through a fourth copy, in
+        // DatabaseModule; the first two are checked here because a transaction needs a body.
+        String[] database = {"db_query", "db_execute"};
+        String[] bothPaths = {"path_join", "copy_file", "move_file"};
+        for (String function : oneArgument) {
+            OqError error = assertThrows(OqError.class, () -> call(function, "a\u0000b"),
+                    function);
+            assertRefusedAsAPath(function, error);
+        }
+        for (String function : pathThenText) {
+            OqError error = assertThrows(OqError.class, () -> call(function, "a\u0000b", "x"),
+                    function);
+            assertRefusedAsAPath(function, error);
+        }
+        for (String function : database) {
+            OqError error = assertThrows(OqError.class,
+                    () -> call(function, "a\u0000b", "select 1", List.of()), function);
+            assertRefusedAsAPath(function, error);
+        }
+        for (String function : bothPaths) {
+            OqError first = assertThrows(OqError.class, () -> call(function, "a\u0000b", "x"),
+                    function);
+            assertRefusedAsAPath(function, first);
+            OqError second = assertThrows(OqError.class, () -> call(function, "x", "a\u0000b"),
+                    function);
+            assertRefusedAsAPath(function, second);
+        }
     }
 
     @Test

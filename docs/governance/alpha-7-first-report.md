@@ -855,9 +855,10 @@ told me about.
 **It found a real defect in this report, not only in the tests.** Line 664 read "It claims eight
 targets exist" in the present tense, true on `d306833` and false since `e43d384` added three. Every
 prior pass had checked the fuzz counts it was looking for and not this one. The sentence now reads
-"fourteen targets exist today, that the run at `d306833` covered eight of them", which is what was
-always meant. It read eleven from `e43d384` until Item 9h added the compression targets, so the same
-sentence has now gone stale twice, once per target batch.
+"seventeen targets exist today, that the run at `d306833` covered eight of them", which is what was
+always meant. It read eight from `d306833`, then eleven from `e43d384`, then fourteen once Item 9h
+added the compression targets, then seventeen when `PathResolutionFuzzTest` added three: the same
+sentence has gone stale once per target batch, and it will again.
 
 The gate also forced a decision it had been avoiding. Its first version treated any sentence with two
 figures as a before/after pair, which silenced almost everything; its second treated every figure as
@@ -1486,11 +1487,15 @@ unchanged.
 
 - It does not claim the risk register is wrong beyond the two corrections named; the other five Open
   entries were re-checked and hold.
-- It does not claim the fuzz suite is trustworthy because it passes. It claims fourteen targets exist
-  today, that the run at `d306833` covered eight of them and found seven defects, and that the gaps
-  R-018 and `docs/spec/fuzzing.md` name by name are still gaps. It does not claim a count of "unreached
-  builtins": any such number depends on calling a builtin "pure", and this item measured reachability
-  by grep, which cannot make that judgement.
+- It does not claim the fuzz suite is trustworthy because it passes. It claims seventeen targets exist
+  today, that the run at `d306833` covered eight of them and found seven defects, and that
+  the gaps R-018 and `docs/spec/fuzzing.md` name by name were gaps when this item was written. The
+  path-resolution gap has since closed: three of the seventeen targets are
+  `PathResolutionFuzzTest`, and the first of them found an unguarded `InvalidPathException` that
+  made `glob` and fourteen other builtins report "internal error ... This is a bug in Oqthara" for
+  a NUL in a path. It does not claim a count of "unreached builtins": any such number depends on
+  calling a builtin "pure", and this item measured reachability by grep, which cannot make that
+  judgement.
 - It does not claim §5 is illegal. It claims §5 contradicts a *decided* question and therefore needs
   a superseding record, which the brief's own "one decision, not one migration" makes affordable.
 - It does not claim `oq-hive-language-syntax` is unusable. It claimed it was not where `AGENTS.md`
