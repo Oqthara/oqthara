@@ -743,16 +743,26 @@ best-anchored part of the library.
 *Evidence.* `conformance/` · `scripts/verify-conformance.py` · `docs/governance/README.md`
 OQ-DEC-2026-008 · `docs/governance/alpha-4-requirement-matrix.md` `§17` (published vectors).
 
-**R-018 — Fuzzing does not reach path resolution, directory traversal or semantic analysis.**
-Fourteen targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
-shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties, three glob shapes and three
-compression shapes (decompress, zlib/gzip round trip, zip round trip). `./gradlew -q printFuzzTargets` prints
-them, and is the authority this sentence follows.
-`docs/spec/fuzzing.md` "What is not covered yet" names what is left: path resolution still needs an
-`OqHost`, so every entry point that resolves a path against the working directory is unreachable;
-`Patterns.glob`'s directory walk is exercised only by `GlobTest`, because the target calls
-`matchesText`; and semantic analysis still has no separate pass. Generated class files are checked
-for magic only; full verification happens when the JVM loads them in `BytecodeCompilerTest`.
+**R-018 — Fuzzing does not reach every path builtin, directory traversal or semantic analysis.**
+Seventeen targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
+shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties, three glob shapes, three
+compression shapes (decompress, zlib/gzip round trip, zip round trip) and three path-resolution shapes.
+`./gradlew -q printFuzzTargets` prints them, and is the authority this sentence follows.
+`docs/spec/fuzzing.md` "What is not covered yet" names what is left: the seven write-side path
+builtins (`save`, `append`, `write_bytes`, `delete`, `make_dir`, `copy_file`, `move_file`), because
+a seed that writes leaves a different base directory for the next replay; `Patterns.glob`'s
+directory walk, exercised only by `GlobTest`, because the target calls `matchesText`; and semantic
+analysis, which still has no separate pass. Generated class files are checked for magic only; full
+verification happens when the JVM loads them in `BytecodeCompilerTest`.
+
+This entry previously said path resolution could not be fuzzed at all because it "still needs an
+`OqHost`". That was wrong, and the wrong reason cost the most of any gap here: `OqHost` is a
+seven-method interface, and the actual obstacle — that the working root varies per machine, so a
+seed could not be replayed — is answered by resolving against a fixed empty temporary directory.
+Because the reason was written down wrong, nobody looked, and four copies of path resolution
+drifted with only one of them guarded. `glob` and fifteen other builtins let
+`InvalidPathException` escape on a NUL in a path and reported "internal error ... This is a bug in
+Oqthara", exit 70. `PathResolutionFuzzTest` found it on its first run against the unfixed tree.
 
 *Mitigation.* `fuzzTest` is not part of `check`, so ordinary builds stay fast, but it does run in the
 `jazzer-fuzz` CircleCI job on every push and pull request and in `.github/workflows/nightly.yml` every

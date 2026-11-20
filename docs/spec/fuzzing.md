@@ -177,8 +177,9 @@ been reported as "internal error: StackOverflowError" to a user.
   `delete`, `make_dir`, `copy_file` and `move_file`, are still not fuzzed, because a seed that
   writes leaves a different base for the next replay. They share the resolution code the
   target above covers, and are otherwise covered by `FileOperationsTest`.
-- `Patterns.glob`'s directory walk is only covered through `GlobTest`; the fuzz targets call
-  `matchesText`, so the filesystem traversal is not fuzzed.
+- `Patterns.glob`'s directory walk is only covered through `GlobTest`; the format targets call
+  `matchesText`, so the traversal itself is not fuzzed. `PathResolutionFuzzTest` calls `glob` but
+  against a base the targets never populate, so it reaches the resolution and not the walk.
 - Swing, which has no coverage at all yet.
 - Compression framing beyond the three shapes in `CompressionFuzzTest`: gzip members past the
   first are refused by policy rather than fuzzed, and the 16 MiB amplification cap is not
