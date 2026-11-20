@@ -174,7 +174,10 @@ been reported as "internal error: StackOverflowError" to a user.
   "internal error ... This is a bug in Oqthara" for a NUL in a path, and the fuzz target added
   for this gap found it on its first run. There were four copies of the parse and one guard;
   adding the missing guards would have left four copies, so they are one function, `OqPaths`.
-  Guarding a duplicated function is the symptom; the copy is the defect.
+  Guarding a duplicated function is the symptom; the copy is the defect. `OqPaths` is now the
+  place the compiler will not let a fifth copy hide: `scripts/check-path-parsing.py` fails when
+  `Path.of` or `Paths.get` appears anywhere else in `oq-stdlib`'s main sources, including
+  fully-qualified. A new path builtin that parses for itself is a red build, not a red test.
 - The builtins that resolve a path and change the tree, `save`, `append`, `write_bytes`,
   `delete`, `make_dir`, `copy_file` and `move_file`, are still not fuzzed, because a seed that
   writes leaves a different base for the next replay. They share `OqPaths.resolve` with the

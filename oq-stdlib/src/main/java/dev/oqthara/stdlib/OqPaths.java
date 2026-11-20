@@ -32,10 +32,21 @@ final class OqPaths {
      * refuse text that is not a path, which is the half worth sharing.
      */
     static Path lexical(Object value, String builtin, Span span) {
+        return lexical(value, builtin, span, "path");
+    }
+
+    /**
+     * As {@link #lexical}, but the diagnostic names the kind of path expected.
+     *
+     * <p>{@code db_query} says "needs a database path" because "needs a path" reads oddly for
+     * something that is really a connection. The wording differs; the parse and the guard do not,
+     * which is the point of routing it here rather than leaving the fourth copy in place.
+     */
+    static Path lexical(Object value, String builtin, Span span, String noun) {
         try {
             return Path.of(Values.display(value));
         } catch (InvalidPathException e) {
-            throw refused(value, builtin, span, e);
+            throw refused(value, builtin, span, noun, e);
         }
     }
 
@@ -60,9 +71,9 @@ final class OqPaths {
      * "internal error": the whole failure being repaired was that a user mistake was reported as
      * an Oqthara bug.
      */
-    private static OqError refused(Object value, String builtin, Span span,
+    private static OqError refused(Object value, String builtin, Span span, String noun,
             InvalidPathException cause) {
-        return new OqError(builtin + "() needs a path, and '" + Values.display(value)
+        return new OqError(builtin + "() needs a " + noun + ", and '" + Values.display(value)
                 + "' is not one", span,
                 "A path is text without a NUL character. (" + cause.getMessage() + ")");
     }

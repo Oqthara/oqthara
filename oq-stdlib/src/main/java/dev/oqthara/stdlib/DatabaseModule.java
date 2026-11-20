@@ -9,7 +9,6 @@ import dev.oqthara.runtime.Span;
 import dev.oqthara.runtime.Values;
 
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -147,16 +146,7 @@ final class DatabaseModule {
         loadDriver(span);
         String url = path.equals(":memory:") ? "jdbc:sqlite::memory:" : "jdbc:sqlite:" + path;
         if (!path.equals(":memory:")) {
-            Path file;
-            try {
-                file = Path.of(path);
-            } catch (InvalidPathException e) {
-                // The JDBC URL below is built by concatenation, so without this the NUL reaches
-                // the driver and, before that, Path.of threw an uncaught exception that the CLI
-                // reported as a bug in Oqthara.
-                throw new OqError(call + "() needs a database path, and '" + path + "' is not one",
-                        span, "A path is text without a NUL character. (" + e.getMessage() + ")");
-            }
+            Path file = OqPaths.lexical(path, call, span, "database path");
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null && !Files.isDirectory(parent)) {
                 throw new OqError("no such directory for database: '" + parent + "'", span,

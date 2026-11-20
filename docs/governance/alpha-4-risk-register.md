@@ -1072,20 +1072,29 @@ the bug.
 
 *Mitigation.* The four copies are one function, `OqPaths.resolve`, which is now the only place a
 path is parsed; `OqPaths.lexical` is the spelling-only variant and its name carries the reason it
-exists. `everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` covers the whole builtin
-family in arity groups rather than the two functions that had tests, so a new path builtin that does
-not route through `OqPaths` fails the suite. `PathResolutionFuzzTest` covers the same property from
-the other end, over generated input.
+exists, plus a `noun` overload so `db_query` can still say "database path" without a sixth copy.
+`everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` covers the whole builtin family in
+arity groups rather than the two functions that had tests, so a new path builtin that does not route
+through `OqPaths` fails the suite. `PathResolutionFuzzTest` covers the same property from the other
+end, over generated input.
 
-*Why mitigated rather than closed.* Consolidating this family does not find the next family, and
-nothing in the build fails when a new copy appears: two functions that parse a path in two modules
-compile, pass, and produce two wordings. The mitigation is that the one function is convenient to
-find — the hazard is a convention, not a gate. A gate would have to recognise duplication in
-general, which no check here attempts.
+`scripts/check-path-parsing.py` closes the gap this entry originally recorded. It fails when
+`Path.of` or `Paths.get` appears anywhere in `oq-stdlib`'s main sources except `OqPaths.java`,
+including fully-qualified `java.nio.file.Path.of`, and it treats a missing `OqPaths.java` as a
+failure rather than a pass. String-literal constants (`Path.of(".")`, `Path.of("")`) are exempt and
+the exemption is the regex, not a list somebody maintains. Mutation-tested by appending a
+`java.nio.file.Path.of(text)` call to `Patterns.java`, which it caught by file and line.
+
+*Why mitigated rather than closed.* The gate covers this family, in this module. It does not find
+the next family, and it does not see a path parse in `oq-core` or `oq-cli` — those are out of scope
+by argument rather than by accident, because they parse command-line arguments and URIs that a
+program cannot supply, and because `JavaBridge`'s coercion of an Oqthara string to `Path` already
+converts the exception into an `OqError` (checked with a jar, not assumed).
 
 *Evidence.* `oq-stdlib/src/main/java/dev/oqthara/stdlib/OqPaths.java` ·
 `FileSystemModuleTest.everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` ·
 `oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/PathResolutionFuzzTest.java` ·
+`scripts/check-path-parsing.py` · `scripts/tests/test_check_path_parsing.py` ·
 `docs/spec/fuzzing.md`.
 
 ## Summary by exposure
