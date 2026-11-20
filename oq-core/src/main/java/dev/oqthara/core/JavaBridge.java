@@ -13,6 +13,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -67,7 +68,7 @@ public final class JavaBridge {
         int bestScore = Integer.MIN_VALUE;
         for (Constructor<?> ctor : type.getConstructors()) {
             Object[] converted = tryConvert(ctor.getParameterTypes(), args, cwd,
-                    ctor.isVarArgs(), host);
+                    ctor.isVarArgs(), host, span);
             if (converted == null) continue;
             int score = score(ctor.getParameterTypes(), args, ctor.isVarArgs());
             if (score > bestScore) {
@@ -105,7 +106,7 @@ public final class JavaBridge {
         for (Method method : candidates) {
             if (!method.getName().equals(name)) continue;
             Object[] converted = tryConvert(method.getParameterTypes(), args, cwd,
-                    method.isVarArgs(), host);
+                    method.isVarArgs(), host, span);
             if (converted == null) continue;
             int score = score(method.getParameterTypes(), args, method.isVarArgs());
             if (score > bestScore) {
@@ -267,7 +268,7 @@ public final class JavaBridge {
         for (Method method : type.getMethods()) {
             if (!method.getName().equals(name) || !Modifier.isStatic(method.getModifiers())) continue;
             Object[] converted = tryConvert(method.getParameterTypes(), args, cwd,
-                    method.isVarArgs(), host);
+                    method.isVarArgs(), host, span);
             if (converted == null) continue;
             int score = score(method.getParameterTypes(), args, method.isVarArgs());
             if (score > bestScore) {
@@ -483,10 +484,6 @@ public final class JavaBridge {
         return value;
     }
 
-    private static Object[] tryConvert(Class<?>[] types, List<Object> args, Path cwd) {
-        return tryConvert(types, args, cwd, false, null);
-    }
-
     /**
      * Converts arguments to a method's parameter types, or null when they do not fit.
      *
@@ -496,12 +493,12 @@ public final class JavaBridge {
      * fresh array, which is what the compiler would have emitted at the call site.
      */
     private static Object[] tryConvert(Class<?>[] types, List<Object> args, Path cwd,
-                                       boolean varargs, OqHost host) {
+                                       boolean varargs, OqHost host, Span span) {
         if (!varargs) {
             if (types.length != args.size()) return null;
             Object[] converted = new Object[types.length];
             for (int i = 0; i < types.length; i++) {
-                Object value = convert(args.get(i), types[i], cwd, host);
+                Object value = convert(args.get(i), types[i], cwd, host, span);
                 if (value == NOT_FOUND) return null;
                 converted[i] = value;
             }
@@ -511,14 +508,14 @@ public final class JavaBridge {
         if (args.size() < fixed) return null;
         Object[] converted = new Object[types.length];
         for (int i = 0; i < fixed; i++) {
-            Object value = convert(args.get(i), types[i], cwd, host);
+            Object value = convert(args.get(i), types[i], cwd, host, span);
             if (value == NOT_FOUND) return null;
             converted[i] = value;
         }
         Class<?> component = types[fixed].getComponentType();
         Object packed = java.lang.reflect.Array.newInstance(component, args.size() - fixed);
         for (int i = fixed; i < args.size(); i++) {
-            Object value = convert(args.get(i), component, cwd, host);
+            Object value = convert(args.get(i), component, cwd, host, span);
             if (value == NOT_FOUND) return null;
             java.lang.reflect.Array.set(packed, i - fixed, value);
         }
@@ -526,7 +523,7 @@ public final class JavaBridge {
         return converted;
     }
 
-    private static Object convert(Object value, Class<?> type, Path cwd, OqHost host) {
+    private static Object convert(Object value, Class<?> type, Path cwd, OqHost host, Span span) {
         if (value == null) {
             return type.isPrimitive() ? NOT_FOUND : null;
         }
@@ -554,8 +551,8 @@ public final class JavaBridge {
         if (type == char.class || type == Character.class) {
             return value instanceof String s && s.length() == 1 ? s.charAt(0) : NOT_FOUND;
         }
-        if (type == Path.class) return Path.of(Values.display(value));
-        if (type == java.io.File.class) return Path.of(Values.display(value)).toFile();
+        if (type == Path.class) return bridgePath(Values.display(value), span);
+        if (type == java.io.File.class) return bridgePath(Values.display(value), span).toFile();
         if (type.isEnum()) {
             for (Object constant : type.getEnumConstants()) {
                 if (String.valueOf(constant).equals(Values.display(value))) return constant;
@@ -570,6 +567,26 @@ public final class JavaBridge {
             return functionalInterface(type, function, host, cwd);
         }
         return NOT_FOUND;
+    }
+
+    /**
+     * Parses text that a Java method wants as a {@link Path}, refusing bad text as a user error.
+     *
+     * <p>{@code Path.of} throws {@link InvalidPathException} for text it cannot parse, and the
+     * reachable case is a NUL: {@code Files.exists(url_decode("%00"))} does not fail at the call
+     * site, it escapes {@link #callMethod} — whose {@code catch} covers the reflective
+     * invocation and not the argument conversion above it — and the interpreter reports
+     * "internal error ... This is a bug in Oqthara", exiting 70 for a program that merely passed
+     * bad text. The stdlib's {@code OqPaths} refuses the same input the same way; this is the
+     * interop half of that guard.
+     */
+    private static Path bridgePath(String text, Span span) {
+        try {
+            return Path.of(text);
+        } catch (InvalidPathException e) {
+            throw new OqError("a Java method needs a path, and '" + text + "' is not one", span,
+                    "A path is text without a NUL character. (" + e.getMessage() + ")");
+        }
     }
 
     /**
@@ -645,7 +662,7 @@ public final class JavaBridge {
                     Object result = function.call(host, passed, Span.synthetic());
                     Class<?> wanted = method.getReturnType();
                     if (wanted == void.class) return null;
-                    Object back = convert(result, wanted, cwd, host);
+                    Object back = convert(result, wanted, cwd, host, Span.synthetic());
                     // A value the interface cannot hold is a fault in the program, not a reason
                     // for Java to see a half-converted object, so it is refused rather than null.
                     if (back == NOT_FOUND) {

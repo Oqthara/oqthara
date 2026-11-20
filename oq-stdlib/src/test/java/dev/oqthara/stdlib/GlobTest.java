@@ -67,6 +67,14 @@ class GlobTest {
         Files.writeString(file, "");
     }
 
+    @Test
+    void globRefusesADirectoryWithANulByName() {
+        // Patterns.resolve had no InvalidPathException guard, so a NUL in the directory text
+        // escaped as an uncaught exception and the CLI called it an Oqthara bug.
+        OqError error = assertThrows(OqError.class, () -> call("glob", "a\u0000b", "*"));
+        assertTrue(error.getMessage().startsWith("glob() needs a path"), error.getMessage());
+    }
+
     // --- fnmatch -----------------------------------------------------------------------------
 
     @Test

@@ -48,7 +48,7 @@ required, squash-only merges, no bypass actors, 13 required status checks with
 `strict_required_status_checks_policy`, required review-thread resolution, stale-review dismissal
 on push. Review is supplemented by machine evidence that does not depend on opinion — JaCoCo
 `coverageGate` at 80% for `dev/oqthara/core` (`build.gradle.kts`), the interpreter-versus-jar
-conformance comparison in `scripts/verify-conformance.py`, eight fuzz targets, and CodeQL on a
+conformance comparison in `scripts/verify-conformance.py`, seventeen fuzz targets, and CodeQL on a
 weekly schedule (`.github/workflows/codeql.yml`).
 
 *Why accepted rather than mitigated.* The alternative is fabricated review. The exception record
@@ -528,12 +528,13 @@ defend.
 | ID | Risk | Likelihood | Impact | Exposure | Workstream | Status |
 |---|---|---|---|---|---|---|
 | R-017 | Conformance corpus is circular: tests and implementation share one author | High | Medium | Medium | 11 | Accepted |
-| R-018 | Fuzzing does not reach path resolution, directory traversal or semantic analysis | Low | Medium | Low | 11 | Mitigated |
+| R-018 | Fuzzing reaches path resolution but not directory traversal or semantic analysis | Low | Medium | Low | 11 | Mitigated |
 | R-019 | A defect can survive in the one path `scripts/verify-conformance.py` does not compare | Low | Medium | Low | 11 | Mitigated |
 | R-024 | A required CI context can vanish without failing | Medium | High | High | 11 | Mitigated |
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
 | R-028 | A timing test asserts exact zero and fails only under CI load | Medium | Medium | Medium | 11 | Mitigated |
 | R-031 | A gate's allow-list silently stops matching, so a required context goes permanently red | High | Medium | Medium | 11 | Mitigated |
+| R-032 | The same logic is written twice, so a fix reaches one copy and the others keep the defect | High | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
 The `main-protection` ruleset requires thirteen status contexts. Between 2026-11-11 and 2026-11-12,
@@ -743,16 +744,26 @@ best-anchored part of the library.
 *Evidence.* `conformance/` · `scripts/verify-conformance.py` · `docs/governance/README.md`
 OQ-DEC-2026-008 · `docs/governance/alpha-4-requirement-matrix.md` `§17` (published vectors).
 
-**R-018 — Fuzzing does not reach path resolution, directory traversal or semantic analysis.**
-Fourteen targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
-shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties, three glob shapes and three
-compression shapes (decompress, zlib/gzip round trip, zip round trip). `./gradlew -q printFuzzTargets` prints
-them, and is the authority this sentence follows.
-`docs/spec/fuzzing.md` "What is not covered yet" names what is left: path resolution still needs an
-`OqHost`, so every entry point that resolves a path against the working directory is unreachable;
-`Patterns.glob`'s directory walk is exercised only by `GlobTest`, because the target calls
-`matchesText`; and semantic analysis still has no separate pass. Generated class files are checked
-for magic only; full verification happens when the JVM loads them in `BytecodeCompilerTest`.
+**R-018 — Fuzzing does not reach every path builtin, directory traversal or semantic analysis.**
+Seventeen targets cover the lexer, the parser (three shapes), the whole parse→lower→emit pipeline, JSON (two
+shapes) and the pure stdlib builtins, plus CSV, text wrapping, INI/properties, three glob shapes, three
+compression shapes (decompress, zlib/gzip round trip, zip round trip) and three path-resolution shapes.
+`./gradlew -q printFuzzTargets` prints them, and is the authority this sentence follows.
+`docs/spec/fuzzing.md` "What is not covered yet" names what is left: the seven write-side path
+builtins (`save`, `append`, `write_bytes`, `delete`, `make_dir`, `copy_file`, `move_file`), because
+a seed that writes leaves a different base directory for the next replay; `Patterns.glob`'s
+directory walk, exercised only by `GlobTest`, because the target calls `matchesText`; and semantic
+analysis, which still has no separate pass. Generated class files are checked for magic only; full
+verification happens when the JVM loads them in `BytecodeCompilerTest`.
+
+This entry previously said path resolution could not be fuzzed at all because it "still needs an
+`OqHost`". That was wrong, and the wrong reason cost the most of any gap here: `OqHost` is a
+seven-method interface, and the actual obstacle — that the working root varies per machine, so a
+seed could not be replayed — is answered by resolving against a fixed empty temporary directory.
+Because the reason was written down wrong, nobody looked, and four copies of path resolution
+drifted with only one of them guarded. `glob` and twenty-five other builtins let
+`InvalidPathException` escape on a NUL in a path and reported "internal error ... This is a bug in
+Oqthara", exit 70. `PathResolutionFuzzTest` found it on its first run against the unfixed tree.
 
 *Mitigation.* `fuzzTest` is not part of `check`, so ordinary builds stay fast, but it does run in the
 `jazzer-fuzz` CircleCI job on every push and pull request and in `.github/workflows/nightly.yml` every
@@ -1041,15 +1052,72 @@ the Java compiler's rules, and ambiguity is still resolved by list order when tw
 overloads score equally. Widening the compiler's ruleset is a larger change and is not attempted
 here; the specific silent-misbinding class is closed, the general ordering question is not.
 
+**R-032 — The same logic is written twice, so a fix reaches one copy and the others keep the defect.**
+The stdlib resolved a user-supplied path in four places: `FileSystem.resolve`, `Stdlib.resolve`,
+`Patterns.resolve` and `DatabaseModule.withConnection`, and the three lexical `path_*` functions
+called `Path.of` directly on a fifth path. `Path.of` throws `InvalidPathException` for text it
+cannot parse; only `FileSystem`'s copy caught it, so `glob` and twenty-five other builtins let it escape
+and the interpreter reported "internal error ... This is a bug in Oqthara" and exited 70 for a
+program that had merely passed a NUL in a path. Nothing about the *fix* was hard — the missing guard
+is five lines. What made it survive every gate was that the four copies had three different message
+wordings, so the two functions with tests asserted on the wording they happened to produce and no
+test compared the family. A reader had to notice that one copy was guarded and ask why the others
+were not.
+
+This is the seventh instance in Alpha 7 of a defect whose shape is "the same thing is in more than
+one place, and the gate reads one of them": keyword counts written in six documents (R-023), the
+threat-model totals, the claim figures in the report, the CI context names, and the two agent sets
+in `.kilo/agents/` and `.github/agents/`. Each was repaired by finding the copies, not by finding
+the bug.
+
+*Mitigation.* The four copies are one function, `OqPaths.resolve`, which is now the only place a
+path is parsed; `OqPaths.lexical` is the spelling-only variant and its name carries the reason it
+exists, plus a `noun` overload so `db_query` can still say "database path" without a sixth copy.
+`everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` covers the whole builtin family in
+arity groups rather than the two functions that had tests, so a new path builtin that does not route
+through `OqPaths` fails the suite. `PathResolutionFuzzTest` covers the same property from the other
+end, over generated input.
+
+`scripts/check-path-parsing.py` closes the gap this entry originally recorded. It reads the main
+sources of `oq-stdlib`, `oq-core`, and `oq-runtime`, and fails on a path parse in any file not on a
+short written list of guarded sites — including fully-qualified `java.nio.file.Path.of`, spaced
+`Path . of (`, `Paths.get`, `FileSystems.getDefault().getPath`, a static import of any of those, and
+a call split across two lines. String-literal constants (`Path.of(".")`, `Path.of("")`) are exempt;
+an escaped literal is not, because `Path.of("a\u0000b")` is the text this gate exists to catch. A
+missing scope, a listed file that is absent, and a listed file that no longer parses anything are
+all failures: an exemption nobody rechecks is how a gate rots. Two floors stop it passing on a tree
+it never read — 55 sources and 7 sites. Mutation-tested by adding an unguarded `Path.of(text)` to a
+real `oq-core` source, which it caught by file and line, and by 19 evasion and lookalike cases in
+`scripts/tests/test_check_path_parsing.py`.
+
+Three sites in the covered modules parse program-supplied text and each turns
+`InvalidPathException` into an `OqError`: `OqPaths`, `JavaBridge.bridgePath`, and
+`Modules.resolveModule`. The other four listed sites parse the literal `.`.
+
+*Why mitigated rather than closed.* The gate now covers this family across the three modules that
+take text from a program. It does not cover `oq-cli`, which parses command-line arguments, or
+`oq-compiler`. The `oq-cli` exclusion was tested rather than argued: `oq run` with a NUL in the
+file-name argument reports `Cannot find file 'xy.oq'.` and exits 2, and a NUL written inside a
+source string is unescaped by the lexer and reaches the now-guarded bridge.
+
+*Evidence.* `oq-stdlib/src/main/java/dev/oqthara/stdlib/OqPaths.java` ·
+`oq-core/src/main/java/dev/oqthara/core/JavaBridge.java` ·
+`oq-core/src/main/java/dev/oqthara/core/Modules.java` ·
+`FileSystemModuleTest.everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` ·
+`JavaBridgePathArgumentTest` · `ModulesTest.aNulInAQuotedModuleNameIsAnErrorNotAStackTrace` ·
+`oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/PathResolutionFuzzTest.java` ·
+`scripts/check-path-parsing.py` · `scripts/tests/test_check_path_parsing.py` ·
+`docs/spec/fuzzing.md`.
+
 ## Summary by exposure
 
 | Exposure | Count | IDs |
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 4 | R-002, R-008, R-024, R-030 |
-| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029, R-031 |
+| Medium | 13 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029, R-031, R-032 |
 | Low | 14 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-018, R-019, R-021, R-022, R-023, R-025, R-027 |
-| **Total** | **31** | |
+| **Total** | **32** | |
 
 ## Review cadence
 
@@ -1059,7 +1127,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 31 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 32 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to
@@ -1101,7 +1169,7 @@ only true while their paths are absent.
 
 ### The Alpha 7 boundary re-read
 
-Cadence rule 2 asks for all 31 entries to be re-read at an Alpha boundary. It was done, on
+Cadence rule 2 asks for all 32 entries to be re-read at an Alpha boundary. It was done, on
 2026-11-17, at `b5e758f` (`v0.1.0-alpha.6`), and this subsection is its record rather than a claim
 that it will happen.
 
@@ -1137,8 +1205,8 @@ now exists. Calling that `Accepted` would imply the asymmetry is deliberate. It 
 **Twenty-nine entries were re-derived and held.** Every remaining rating, count and citation was
 checked against the tree and found accurate, so no rating was changed for the sake of appearing
 thorough. Specifically re-measured rather than taken on trust: all 18 agent files — 12 under
-`.kilo/agents/` and the six Hive roles — pin one model, and the count of 8 refers to `@FuzzTest`
-methods across 5 classes rather than to files (R-001); the CodeQL cron (R-001, R-018); the
+`.kilo/agents/` and the six Hive roles — pin one model, and the count of 17 refers to `@FuzzTest`
+methods across 8 classes rather than to the 8 fuzz source files (R-001); the CodeQL cron (R-001, R-018); the
 50,000,000-step budget and 16 MiB
 output budget (R-004), `eclipse-temurin` tags and the six workflow files (R-007, R-008),
 `MAX_SLEEP_MILLIS = 10_000` and `WaitedBudget.MAX_MILLIS = 60_000` (R-010), 256 conformance cases

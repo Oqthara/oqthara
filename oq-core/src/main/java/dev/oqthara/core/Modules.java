@@ -6,6 +6,7 @@ import dev.oqthara.runtime.Span;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -142,13 +143,25 @@ public final class Modules {
     public static Path resolveModule(String name, Path base, Span span) {
         List<Path> candidates = new ArrayList<>();
         String fileName = name.endsWith(".oq") ? name : name + ".oq";
-        if (base != null) {
-            candidates.add(base.resolve(fileName));
-            candidates.add(base.resolve("modules").resolve(fileName));
-            candidates.add(base.resolve("lib").resolve(fileName));
+        // `base.resolve` throws InvalidPathException for a name the filesystem cannot hold, and
+        // nothing above this wraps it: `use "oq:a\0b"` used to print a twelve-frame stack trace
+        // and exit 1. The name is a string literal, so the lexer is no defence here — it rejected
+        // the same text only when written bare. Parsing once here means the three candidates
+        // below are built from a Path that is known to hold, rather than each parsing again.
+        Path file;
+        try {
+            file = Path.of(fileName);
+        } catch (InvalidPathException e) {
+            throw new OqError("'" + name + "' is not a module name", span,
+                    "A module name is text without a NUL character. (" + e.getMessage() + ")");
         }
-        candidates.add(Path.of(fileName));
-        candidates.add(Path.of("modules").resolve(fileName));
+        if (base != null) {
+            candidates.add(base.resolve(file));
+            candidates.add(base.resolve("modules").resolve(file));
+            candidates.add(base.resolve("lib").resolve(file));
+        }
+        candidates.add(file);
+        candidates.add(Path.of("modules").resolve(file));;
         for (Path candidate : candidates) {
             if (Files.isRegularFile(candidate)) return candidate;
         }

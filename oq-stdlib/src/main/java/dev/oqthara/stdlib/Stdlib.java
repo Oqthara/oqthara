@@ -524,11 +524,11 @@ public final class Stdlib {
 
     private static void installFiles(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("read", 1, (host, args, span) -> {
-            Path path = resolve(host, args.get(0));
+            Path path = resolve(host, args.get(0), "read", span);
             return readBounded(host, path, span, "the file");
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("read_lines", 1, (host, args, span) -> {
-            Path path = resolve(host, args.get(0));
+            Path path = resolve(host, args.get(0), "read_lines", span);
             // Same cap and same charge as `read`, so splitting a file into lines is not a way
             // around the limit.
             String text = readBounded(host, path, span, "the file");
@@ -539,7 +539,7 @@ public final class Stdlib {
             return lines;
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("save", 2, (host, args, span) -> {
-            Path path = resolve(host, args.get(0));
+            Path path = resolve(host, args.get(0), "save", span);
             String text = Values.display(args.get(1));
             int written = chargeWrittenText(text, "save", span);
             chargeTransfer(host, written);
@@ -552,7 +552,7 @@ public final class Stdlib {
             }
         }).named("path", "text"));
         interpreter.defineBuiltin(NativeFunction.of("append", 2, (host, args, span) -> {
-            Path path = resolve(host, args.get(0));
+            Path path = resolve(host, args.get(0), "append", span);
             String text = Values.display(args.get(1));
             int written = chargeWrittenText(text, "append", span);
             chargeTransfer(host, written);
@@ -566,9 +566,9 @@ public final class Stdlib {
             }
         }).named("path", "text"));
         interpreter.defineBuiltin(NativeFunction.of("exists", 1, (host, args, span) ->
-                Files.exists(resolve(host, args.get(0)))).named("path"));
+                Files.exists(resolve(host, args.get(0), "exists", span))).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("list_files", 1, (host, args, span) -> {
-            Path dir = resolve(host, args.get(0));
+            Path dir = resolve(host, args.get(0), "list_files", span);
             try (var stream = Files.list(dir)) {
                 Iterator<Path> entries = stream.iterator();
                 List<String> names = new ArrayList<>();
@@ -600,14 +600,14 @@ public final class Stdlib {
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("delete", 1, (host, args, span) -> {
             try {
-                return Files.deleteIfExists(resolve(host, args.get(0)));
+                return Files.deleteIfExists(resolve(host, args.get(0), "delete", span));
             } catch (IOException e) {
                 throw new OqError("cannot delete '" + args.get(0) + "'", span, e.getMessage());
             }
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("make_dir", 1, (host, args, span) -> {
             try {
-                Files.createDirectories(resolve(host, args.get(0)));
+                Files.createDirectories(resolve(host, args.get(0), "make_dir", span));
                 return null;
             } catch (IOException e) {
                 throw new OqError("cannot create directory '" + args.get(0) + "'", span, e.getMessage());
@@ -615,20 +615,21 @@ public final class Stdlib {
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("file_size", 1, (host, args, span) -> {
             try {
-                return Files.size(resolve(host, args.get(0)));
+                return Files.size(resolve(host, args.get(0), "file_size", span));
             } catch (IOException e) {
                 throw new OqError("cannot read size of '" + args.get(0) + "'", span, e.getMessage());
             }
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("path_join", 2, (host, args, span) ->
-                Path.of(Values.display(args.get(0))).resolve(Values.display(args.get(1))).toString())
+                lexical(args.get(0), "path_join", span)
+                        .resolve(lexical(args.get(1), "path_join", span)).toString())
                         .named("base", "name"));
         interpreter.defineBuiltin(NativeFunction.of("path_name", 1, (host, args, span) -> {
-            Path path = Path.of(Values.display(args.get(0)));
+            Path path = lexical(args.get(0), "path_name", span);
             return path.getFileName() == null ? "" : path.getFileName().toString();
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("path_parent", 1, (host, args, span) -> {
-            Path parent = Path.of(Values.display(args.get(0))).getParent();
+            Path parent = lexical(args.get(0), "path_parent", span).getParent();
             return parent == null ? "" : parent.toString();
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("cwd", 0, (host, args, span) ->
@@ -646,11 +647,11 @@ public final class Stdlib {
      */
     private static void installFileOps(Interpreter interpreter) {
         interpreter.defineBuiltin(NativeFunction.of("is_file", 1, (host, args, span) ->
-                Files.isRegularFile(resolve(host, args.get(0)))).named("path"));
+                Files.isRegularFile(resolve(host, args.get(0), "is_file", span))).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("is_dir", 1, (host, args, span) ->
-                Files.isDirectory(resolve(host, args.get(0)))).named("path"));
+                Files.isDirectory(resolve(host, args.get(0), "is_dir", span))).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("read_bytes", 1, (host, args, span) -> {
-            Path path = resolve(host, args.get(0));
+            Path path = resolve(host, args.get(0), "read_bytes", span);
             try (java.io.InputStream stream = Files.newInputStream(path)) {
                 byte[] bytes = stream.readNBytes(MAX_TEXT_BYTES + 1);
                 if (bytes.length > MAX_TEXT_BYTES) {
@@ -666,7 +667,7 @@ public final class Stdlib {
             }
         }).named("path"));
         interpreter.defineBuiltin(NativeFunction.of("write_bytes", 2, (host, args, span) -> {
-            Path path = resolve(host, args.get(0));
+            Path path = resolve(host, args.get(0), "write_bytes", span);
             String hex = Values.display(args.get(1));
             // Refuse on the hex length before decoding it: bytesOfHex allocates the array up
             // front, so an oversized payload would be allocated in full and only then refused,
@@ -689,13 +690,13 @@ public final class Stdlib {
             }
         }).named("path", "hex"));
         interpreter.defineBuiltin(NativeFunction.of("copy_file", 2, (host, args, span) -> {
-            Path source = resolve(host, args.get(0));
-            Path target = resolve(host, args.get(1));
+            Path source = resolve(host, args.get(0), "copy_file", span);
+            Path target = resolve(host, args.get(1), "copy_file", span);
             return copyCharged(host, source, target, span);
         }).named("source", "target"));
         interpreter.defineBuiltin(NativeFunction.of("move_file", 2, (host, args, span) -> {
-            Path source = resolve(host, args.get(0));
-            Path target = resolve(host, args.get(1));
+            Path source = resolve(host, args.get(0), "move_file", span);
+            Path target = resolve(host, args.get(1), "move_file", span);
             // Copy, then delete, rather than Files.move: a cross-filesystem move that fails
             // halfway leaves a partial target, and Files.move does not promise otherwise.
             // Deleting only after the copy succeeded keeps the failure recoverable.
@@ -709,7 +710,7 @@ public final class Stdlib {
             }
         }).named("source", "target"));
         interpreter.defineBuiltin(NativeFunction.of("walk", 1, (host, args, span) -> {
-            Path root = resolve(host, args.get(0));
+            Path root = resolve(host, args.get(0), "walk", span);
             if (!Files.isDirectory(root)) {
                 throw new OqError("not a directory: " + root, span,
                         "walk() lists the files under a directory. Use list_files for one level.");
@@ -2193,14 +2194,12 @@ public final class Stdlib {
                 Runtime.getRuntime().totalMemory() / (1024 * 1024)));
     }
 
-    private static Path resolve(OqHost host, Object value) {
-        Path path = Path.of(Values.display(value));
-        if (path.isAbsolute()) return path;
-        // Relative paths resolve against the interpreter's working directory, so `oq run`
-        // and a generated jar behave identically no matter where the process was started.
-        Path base = host.workingDirectory();
-        if (base == null) base = Path.of("").toAbsolutePath();
-        return base.toAbsolutePath().resolve(path).normalize();
+    private static Path lexical(Object value, String builtin, Span span) {
+        return OqPaths.lexical(value, builtin, span);
+    }
+
+    private static Path resolve(OqHost host, Object value, String builtin, Span span) {
+        return OqPaths.resolve(host, value, builtin, span);
     }
 
     /**

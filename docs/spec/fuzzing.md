@@ -93,8 +93,37 @@ fuzzGlobClasses        63,011 runs in 151 s   PASSED
 ```
 
 The glob target ran with the `RegexInjection` sanitizer **enabled**: the finding that started
-this work was a true positive, so the sanitizer is not suppressed anywhere in the build, and the
+this work was a true positive, so that sanitizer is not suppressed anywhere in the build, and the
 run above is the evidence that the replacement matcher no longer trips it.
+
+### One sanitizer is guided away, deliberately
+
+`PathResolutionFuzzTest` turns off the path-traversal sanitizer's *guidance* for the duration of
+each builtin call, and nothing else:
+
+```java
+try (SilentCloseable ignored = BugDetectors.setFilePathTraversalTarget(() -> null)) {
+```
+
+Jazzer does not merely watch for `../`; left alone it steers inputs towards
+`<module>/../jazzer-traversal` and reports a critical finding the moment one arrives, naming its
+own sentinel. For an application that must not leave its directory that is the right default. For
+a language runtime it is a false positive, because reading `../x` is the program doing what it was
+written to do — accepted under TH-02 and spelled out in section 4 of the threat model. CircleCI
+failed on exactly that: `File path traversal: /home/circleci/project/jazzer-traversal`, reached at
+`Files.newInputStream` inside `Stdlib.readBounded`.
+
+Only the guidance is off. `checkPath` still defaults to allowing everything, so a target that
+installs a predicate can still be failed by a real finding. The hook also stays *installed* rather
+than being unregistered, because a blanket `jazzer.disabled_hooks` would blind the archive targets,
+where a traversal in a jar entry name is zip slip and is a real vulnerability.
+
+**Evidence, both directions.** Pinning the input to the absolute sentinel and removing the
+suppression reproduces the CI error verbatim (`FuzzerSecurityIssueCritical: File path traversal:
+<worktree>/jazzer-traversal`, `BUILD FAILED`); restoring the suppression with the same pinned
+input finishes with zero findings and `BUILD SUCCESSFUL`. Both runs are a few seconds long because
+the input is fixed rather than fuzzed.
+
 
 ## Reproducing a finding
 
@@ -165,11 +194,29 @@ been reported as "internal error: StackOverflowError" to a user.
 
 ## What is not covered yet
 
-- Path resolution still needs an `OqHost`, so it is the one stdlib area the targets cannot
-  reach: every entry point that resolves a path against the working directory is exercised
-  through `matchesText` and the format builtins instead.
-- `Patterns.glob`'s directory walk is only covered through `GlobTest`; the fuzz targets call
-  `matchesText`, so the filesystem traversal is not fuzzed.
+- Path resolution is fuzzed by `PathResolutionFuzzTest`, which fixed the base directory to an
+  empty temporary directory so a seed means the same thing on every machine. This paragraph
+  said the opposite — that path resolution "still needs an `OqHost`" and was unreachable — and
+  the stated blocker was never the real one. `OqHost` is a six-method interface; a fixed base
+  is all that replay needs. The cost of the wrong reason being written down is that nobody
+  looked: `glob` and twenty-five other builtins let `InvalidPathException` escape and reported
+  "internal error ... This is a bug in Oqthara" for a NUL in a path, and the fuzz target added
+  for this gap found it on its first run. There were four copies of the parse and one guard;
+  adding the missing guards would have left four copies, so they are one function, `OqPaths`.
+  Guarding a duplicated function is the symptom; the copy is the defect. `OqPaths` is now the
+  place nothing will quietly hide a fifth copy: `scripts/check-path-parsing.py` reads the main
+  sources of `oq-stdlib`, `oq-core`, and `oq-runtime` and fails on a path parse in any file not
+  on a short written list of guarded sites — including fully-qualified `Path.of`, `Paths.get`,
+  `FileSystems.getDefault().getPath`, a static import, and a call split across two lines. A new
+  path builtin that parses for itself is a red build, not a red test.
+- The builtins that resolve a path and change the tree, `save`, `append`, `write_bytes`,
+  `delete`, `make_dir`, `copy_file` and `move_file`, are still not fuzzed, because a seed that
+  writes leaves a different base for the next replay. They share `OqPaths.resolve` with the
+  target above; they are otherwise covered by `FileOperationsTest`, whose 35 tests drive the
+  tree-changing builtins by name.
+- `Patterns.glob`'s directory walk is only covered through `GlobTest`; the format targets call
+  `matchesText`, so the traversal itself is not fuzzed. `PathResolutionFuzzTest` calls `glob` but
+  against a base the targets never populate, so it reaches the resolution and not the walk.
 - Swing, which has no coverage at all yet.
 - Compression framing beyond the three shapes in `CompressionFuzzTest`: gzip members past the
   first are refused by policy rather than fuzzed, and the 16 MiB amplification cap is not

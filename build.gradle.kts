@@ -45,6 +45,12 @@ val allFuzzTargets = listOf(
         "compressionRoundTripsItsOwnOutput"),
     FuzzTarget("ZipRoundTrip", "dev.oqthara.stdlib.CompressionFuzzTest",
         "zipRoundTripsOneEntry"),
+    FuzzTarget("PathResolve", "dev.oqthara.stdlib.PathResolutionFuzzTest",
+        "resolvedPathsNeverEscapeAsAnInternalError"),
+    FuzzTarget("PathNulRefusal", "dev.oqthara.stdlib.PathResolutionFuzzTest",
+        "aNulInAPathIsRefusedByName"),
+    FuzzTarget("PathAbsolute", "dev.oqthara.stdlib.PathResolutionFuzzTest",
+        "pathAbsoluteAlwaysAnswersAnAbsolutePath"),
 )
 
 tasks.register("printFuzzTargets") {

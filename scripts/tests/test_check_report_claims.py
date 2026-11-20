@@ -61,10 +61,10 @@ class TheRealReportIsConsistent(unittest.TestCase):
         self.assertEqual(28, VALUES["probes"])
         self.assertEqual(55, VALUES["capability_rows"])
         self.assertEqual(13, VALUES["directions"])
-        self.assertEqual(14, VALUES["fuzz_targets"])
+        self.assertEqual(17, VALUES["fuzz_targets"])
         self.assertEqual(22, VALUES["keywords"])
         self.assertEqual(6, VALUES["defects"])
-        self.assertEqual(31, VALUES["risk_total"])
+        self.assertEqual(32, VALUES["risk_total"])
         self.assertEqual(5, VALUES["Open"])
         # §4's scope record states this one, and nothing read it while it was
         # being written: mutating "twelve" to "thirteen" passed every gate.
@@ -162,19 +162,19 @@ class DriftIsCaught(unittest.TestCase):
         # The repaired line 664. Written in the present tense, so a dating
         # exemption does not apply and the count must match the build file.
         problems = problems_after(
-            "claims fourteen targets exist", "claims eight targets exist"
+            "claims seventeen targets exist", "claims eight targets exist"
         )
         self.assertTrue(problems)
 
     def test_a_mutated_status_cell_is_caught(self):
-        for name, held in (("Open", "5"), ("Mitigated", "12"), ("Accepted", "14")):
+        for name, held in (("Open", "5"), ("Mitigated", "13"), ("Accepted", "14")):
             with self.subTest(status=name):
                 other = str(int(held) - 1)
                 problems = problems_after(f"| {name} | {held} |", f"| {name} | {other} |")
                 self.assertTrue(problems)
 
     def test_a_mutated_table_total_is_caught(self):
-        problems = problems_after("| **Total** | **31** |", "| **Total** | **30** |")
+        problems = problems_after("| **Total** | **32** |", "| **Total** | **31** |")
         self.assertTrue(problems)
 
     def test_a_wrong_open_id_is_caught(self):

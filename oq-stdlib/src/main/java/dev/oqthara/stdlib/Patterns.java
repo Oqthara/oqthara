@@ -10,7 +10,6 @@ import dev.oqthara.runtime.Values;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -46,7 +45,7 @@ final class Patterns {
             return new Glob(pattern, span).matchesText(name);
         }).named("name", "pattern"));
         interpreter.defineBuiltin(NativeFunction.of("glob", 2, (host, args, span) -> {
-            Path directory = resolve(host, args.get(0));
+            Path directory = resolve(host, args.get(0), span);
             String pattern = Values.display(args.get(1));
             return search(directory, pattern, host, span);
         }).named("directory", "pattern"));
@@ -377,11 +376,7 @@ final class Patterns {
         }
     }
 
-    private static Path resolve(OqHost host, Object value) {
-        Path path = Path.of(Values.display(value));
-        if (path.isAbsolute()) return path;
-        Path base = host.workingDirectory();
-        if (base == null) base = Path.of("").toAbsolutePath();
-        return base.toAbsolutePath().resolve(path).normalize();
+    private static Path resolve(OqHost host, Object value, Span span) {
+        return OqPaths.resolve(host, value, "glob", span);
     }
 }
