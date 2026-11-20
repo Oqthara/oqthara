@@ -1,6 +1,8 @@
 package dev.oqthara.stdlib;
 
+import com.code_intelligence.jazzer.api.BugDetectors;
 import com.code_intelligence.jazzer.api.FuzzedDataProvider;
+import com.code_intelligence.jazzer.api.SilentCloseable;
 import com.code_intelligence.jazzer.junit.FuzzTest;
 import dev.oqthara.core.Interpreter;
 import dev.oqthara.runtime.OqCallable;
@@ -143,7 +145,36 @@ class PathResolutionFuzzTest {
     private static Object call(String name, List<Object> args) {
         OqCallable callable = INTERPRETER.builtins().get(name);
         if (callable == null) throw new AssertionError("stdlib does not define '" + name + "'");
-        return callable.call(INTERPRETER, args, Span.synthetic());
+        try (SilentCloseable ignored = withoutTraversalGuidance()) {
+            return callable.call(INTERPRETER, args, Span.synthetic());
+        }
+    }
+
+    /**
+     * Turns off Jazzer's path-traversal <em>guidance</em> while a builtin runs.
+     *
+     * <p>Jazzer steers inputs towards {@code ../jazzer-traversal} and reports a critical finding
+     * the moment one arrives there. That is useful for an application that must not escape its
+     * directory and wrong for this one: reading {@code ../x} is the program doing what it was
+     * written to do, which TH-02 accepts and section 4 of the threat model spells out. Left on,
+     * the guidance does the steering itself, so the finding is about Jazzer's own sentinel rather
+     * than about Oqthara — CircleCI failed on exactly that, at
+     * {@code Files.newInputStream} resolving to {@code <module>/../jazzer-traversal}.
+     *
+     * <p>Only the guidance is disabled. The sanitizer's {@code checkPath} predicate is untouched
+     * and still defaults to allowing everything, so a real finding remains possible for whoever
+     * installs a predicate; and the hook is left installed rather than unregistered, because a
+     * blanket {@code jazzer.disabled_hooks} would also blind the targets that read archives, where
+     * a traversal in a jar entry name is zip slip and is a real vulnerability.
+     */
+    private static SilentCloseable withoutTraversalGuidance() {
+        try {
+            return BugDetectors.setFilePathTraversalTarget(() -> null);
+        } catch (RuntimeException | LinkageError e) {
+            // The sanitizer is absent (unit-test runs) or its internals moved; the property under
+            // test does not depend on it, so fall through rather than fail the target.
+            return null;
+        }
     }
 
     /**

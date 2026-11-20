@@ -176,6 +176,7 @@ jobs:
             find . -path '*/src/fuzz/resources/*' -type f 2>/dev/null | head -50 > build/fuzz-artifacts/regressions/list.txt || true
             cp -R oq-core/src/fuzz/resources/* build/fuzz-artifacts/regressions/ 2>/dev/null || true
             cp -R oq-compiler/src/fuzz/resources/* build/fuzz-artifacts/regressions/ 2>/dev/null || true
+            cp -R oq-stdlib/src/fuzz/resources/* build/fuzz-artifacts/regressions/ 2>/dev/null || true
       - store_artifacts:
           path: build/fuzz-artifacts
           destination: jazzer

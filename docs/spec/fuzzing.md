@@ -93,8 +93,37 @@ fuzzGlobClasses        63,011 runs in 151 s   PASSED
 ```
 
 The glob target ran with the `RegexInjection` sanitizer **enabled**: the finding that started
-this work was a true positive, so the sanitizer is not suppressed anywhere in the build, and the
+this work was a true positive, so that sanitizer is not suppressed anywhere in the build, and the
 run above is the evidence that the replacement matcher no longer trips it.
+
+### One sanitizer is guided away, deliberately
+
+`PathResolutionFuzzTest` turns off the path-traversal sanitizer's *guidance* for the duration of
+each builtin call, and nothing else:
+
+```java
+try (SilentCloseable ignored = BugDetectors.setFilePathTraversalTarget(() -> null)) {
+```
+
+Jazzer does not merely watch for `../`; left alone it steers inputs towards
+`<module>/../jazzer-traversal` and reports a critical finding the moment one arrives, naming its
+own sentinel. For an application that must not leave its directory that is the right default. For
+a language runtime it is a false positive, because reading `../x` is the program doing what it was
+written to do — accepted under TH-02 and spelled out in section 4 of the threat model. CircleCI
+failed on exactly that: `File path traversal: /home/circleci/project/jazzer-traversal`, reached at
+`Files.newInputStream` inside `Stdlib.readBounded`.
+
+Only the guidance is off. `checkPath` still defaults to allowing everything, so a target that
+installs a predicate can still be failed by a real finding. The hook also stays *installed* rather
+than being unregistered, because a blanket `jazzer.disabled_hooks` would blind the archive targets,
+where a traversal in a jar entry name is zip slip and is a real vulnerability.
+
+**Evidence, both directions.** Pinning the input to the absolute sentinel and removing the
+suppression reproduces the CI error verbatim (`FuzzerSecurityIssueCritical: File path traversal:
+<worktree>/jazzer-traversal`, `BUILD FAILED`); restoring the suppression with the same pinned
+input finishes with zero findings and `BUILD SUCCESSFUL`. Both runs are a few seconds long because
+the input is fixed rather than fuzzed.
+
 
 ## Reproducing a finding
 
