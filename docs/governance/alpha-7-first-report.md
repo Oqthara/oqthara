@@ -34,12 +34,14 @@ because the reason they changed is the subject of this correction.
 | Status | Count |
 | --- | --- |
 | Open | 5 |
-| Mitigated | 12 |
+| Mitigated | 13 |
 | Accepted | 14 |
-| **Total** | **31** |
+| **Total** | **32** |
 
 Exposure buckets, which `scripts/check-risk-register.py` enforces arithmetically: Critical 1,
-High 4, Medium 12, Low 14. The arithmetic closes.
+High 4, Medium 13, Low 14. The arithmetic closes. R-032 was added after this report was
+written, when consolidating four copies of path resolution into `OqPaths`; it is the entry that
+names the duplication pattern, not a new discovery about the language.
 
 The five Open entries are **R-012, R-021, R-022, R-023, R-027**. Four of the five are
 documentation-or-tooling defects, not language defects. That distribution is itself the finding:

@@ -108,19 +108,19 @@ Each entry is `name` at `Stdlib.java:line` unless marked `DB:`, which means
 `DatabaseModule.java:line`. Overloads appear once per registration line, so a name with three
 lines is one name and three registrations.
 
-**Core** (22) — `print`:150`write_text`:163`write`:170`input`:177 and 181`text`:189`repr`:191`number`:193`type_of`:195`is_nothing`:197`is_number`:199`is_text`:201`length`:203`range`:205, 209, 212`error`:221`assert`:224 and 231`args`:237`exit`:239 and 242`sort_by`:248`map`:257`filter`:259`list_sort`:267`clone`:269.
+**Core** (22) — `print`:149`write_text`:162`write`:169`input`:176 and 180`text`:188`repr`:190`number`:192`type_of`:194`is_nothing`:196`is_number`:198`is_text`:200`length`:202`range`:204, 208, 211`error`:220`assert`:223 and 230`args`:236`exit`:238 and 241`sort_by`:247`map`:256`filter`:258`list_sort`:266`clone`:268.
 
-**Text** (10) — `format`:274`join`:276`upper`:289`lower`:291`trim`:293`contains`:295`split`:297`replace`:302`regex`:305`matches`:322.
+**Text** (10) — `format`:273`join`:275`upper`:288`lower`:290`trim`:292`contains`:294`split`:296`replace`:301`regex`:304`matches`:321.
 
-**Collections** (14) — `keys`:328`values`:334`push`:340`pop`:349`sum`:354`sort`:356`reverse`:358`unique`:360`set`:362`frozenset`:369`list`:375`enumerate`:381`zip`:392`range_list`:402.
+**Collections** (14) — `keys`:327`values`:333`push`:339`pop`:348`sum`:353`sort`:355`reverse`:357`unique`:359`set`:361`frozenset`:368`list`:374`enumerate`:380`zip`:391`range_list`:401.
 
-**Math** (29) — `abs`:409`floor`:411`ceil`:413`round`:415 and 417`sqrt`:436`pow`:439`sin`:444`cos`:447`tan`:450`asin`:453`acos`:456`atan`:459`atan2`:462`hypot`:467`ln`:473`log10`:477`log2`:481`exp`:485`degrees`:488`radians`:491`pi`:494`e`:495`tau`:496`min`:499`max`:501`sorted`:503`clamp`:505`random`:511 and 513`random_item`:519.
+**Math** (29) — `abs`:408`floor`:410`ceil`:412`round`:414 and 416`sqrt`:435`pow`:438`sin`:443`cos`:446`tan`:449`asin`:452`acos`:455`atan`:458`atan2`:461`hypot`:466`ln`:472`log10`:476`log2`:480`exp`:484`degrees`:487`radians`:490`pi`:493`e`:494`tau`:495`min`:498`max`:500`sorted`:502`clamp`:504`random`:510 and 512`random_item`:518.
 
-**Files** (13) — `read`:527`read_lines`:531`save`:542`append`:555`exists`:569`list_files`:571`delete`:602`make_dir`:609`file_size`:617`path_join`:624`path_name`:628`path_parent`:632`cwd`:636.
+**Files** (13) — `read`:526`read_lines`:530`save`:541`append`:554`exists`:568`list_files`:570`delete`:601`make_dir`:608`file_size`:616`path_join`:623`path_name`:627`path_parent`:631`cwd`:635.
 
-**File operations** (7) — `is_file`:650`is_dir`:652`read_bytes`:654`write_bytes`:670`copy_file`:693`move_file`:698`walk`:713.
+**File operations** (7) — `is_file`:649`is_dir`:651`read_bytes`:653`write_bytes`:669`copy_file`:692`move_file`:697`walk`:712.
 
-**Files and directories** (7) — `stat`:73`touch`:75`temp_dir`:79`copy_tree`:81`read_lines_or_empty`:86`path_absolute`:89`path_normalize`:91all in `FileSystem.java`.
+**Files and directories** (7) — `stat`:72`touch`:74`temp_dir`:78`copy_tree`:80`read_lines_or_empty`:85`path_absolute`:88`path_normalize`:90all in `FileSystem.java`.
 One registration per name, so the section adds 7 to both columns. No ADR: the module adds no
 new representation. Its bound is the point worth recording — `copy_tree` charges the bytes it
 moves against a single 16 MiB budget for the whole tree, the same figure `copy_file` allows one
@@ -154,27 +154,27 @@ because `Values` has to name and display it, and whose whole point is that no op
 to a `double`: `fraction_compare` cross-multiplies, and `fraction_to_decimal` is the one
 conversion outward, with the precision stated by the caller.
 
-**JSON** (4) — `json_parse`:927`json`:929`json_write`:931`json_pretty`:933.
+**JSON** (4) — `json_parse`:926`json`:928`json_write`:930`json_pretty`:932.
 
-**Encoding** (11) — `hex_encode`:946`hex_decode`:948`base64_encode`:950`base64_decode`:952`sha256`:954`sha1`:956`md5`:958`hmac_sha256`:960`secure_random_hex`:962`secure_equal`:972`pbkdf2_sha256`:980.
+**Encoding** (11) — `hex_encode`:945`hex_decode`:947`base64_encode`:949`base64_decode`:951`sha256`:953`sha1`:955`md5`:957`hmac_sha256`:959`secure_random_hex`:961`secure_equal`:971`pbkdf2_sha256`:979.
 
-**Logging** (6) — `log_debug`:1064`log_info`:1066`log_warn`:1068`log_error`:1070`log_level`:1072`log_enabled`:1082.
+**Logging** (6) — `log_debug`:1063`log_info`:1065`log_warn`:1067`log_error`:1069`log_level`:1071`log_enabled`:1081.
 
-**Arguments** (1) — `arg_parse`:1108.
+**Arguments** (1) — `arg_parse`:1107.
 
-**CSV** (2) — `csv_parse`:1258, 1260, 1263`csv_write`:1267 and 1269.
+**CSV** (2) — `csv_parse`:1257, 1259, 1262`csv_write`:1266 and 1268.
 
-**Dates** (2) — `date_parse`:1425`instant_parse`:1427.
+**Dates** (2) — `date_parse`:1424`instant_parse`:1426.
 
-**Time** (6) — `now`:1464`today`:1466`datetime`:1468`timestamp`:1470`tz_convert`:1472`sleep`:1499.
+**Time** (6) — `now`:1463`today`:1465`datetime`:1467`timestamp`:1469`tz_convert`:1471`sleep`:1498.
 
-**URLs** (6) — `url_parse`:1527`url_encode`:1551`url_decode`:1555`query_parse`:1559`query_encode`:1578`url_join`:1618.
+**URLs** (6) — `url_parse`:1526`url_encode`:1550`url_decode`:1554`query_parse`:1558`query_encode`:1577`url_join`:1617.
 
-**HTTP** (2) — `http_get`:1916`http_post`:1918.
+**HTTP** (2) — `http_get`:1915`http_post`:1917.
 
-**Concurrency** (5) — `spawn`:2072`await`:2080 and 2087`done`:2101`mutex`:2108`par_map`:2110.
+**Concurrency** (5) — `spawn`:2071`await`:2079 and 2086`done`:2100`mutex`:2107`par_map`:2109.
 
-**Process** (4) — `env`:2138`run_command`:2140`cpu_count`:2192`memory_mb`:2194.
+**Process** (4) — `env`:2137`run_command`:2139`cpu_count`:2191`memory_mb`:2193.
 
 **Database** (3) — `db_query` DB:45, `db_execute` DB:70, `db_transaction` DB:89. These are
 installed into the global namespace by `DatabaseModule.install` (`DatabaseModule.java:44`),

@@ -172,11 +172,14 @@ been reported as "internal error: StackOverflowError" to a user.
   is all that replay needs. The cost of the wrong reason being written down is that nobody
   looked: `glob` and fourteen other builtins let `InvalidPathException` escape and reported
   "internal error ... This is a bug in Oqthara" for a NUL in a path, and the fuzz target added
-  for this gap found it on its first run.
+  for this gap found it on its first run. There were four copies of the parse and one guard;
+  adding the missing guards would have left four copies, so they are one function, `OqPaths`.
+  Guarding a duplicated function is the symptom; the copy is the defect.
 - The builtins that resolve a path and change the tree, `save`, `append`, `write_bytes`,
   `delete`, `make_dir`, `copy_file` and `move_file`, are still not fuzzed, because a seed that
-  writes leaves a different base for the next replay. They share the resolution code the
-  target above covers, and are otherwise covered by `FileOperationsTest`.
+  writes leaves a different base for the next replay. They share `OqPaths.resolve` with the
+  target above, which is now the only place a path is parsed; they are otherwise covered by
+  `FileOperationsTest`.
 - `Patterns.glob`'s directory walk is only covered through `GlobTest`; the format targets call
   `matchesText`, so the traversal itself is not fuzzed. `PathResolutionFuzzTest` calls `glob` but
   against a base the targets never populate, so it reaches the resolution and not the walk.

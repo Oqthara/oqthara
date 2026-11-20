@@ -10,7 +10,6 @@ import dev.oqthara.runtime.Values;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -442,30 +441,13 @@ final class FileSystem {
      * the path names, spelled the way it is spelled everywhere else.
      */
     private static String normalize(Object value, Span span) {
-        Path normalized;
-        try {
-            normalized = Path.of(Values.display(value)).normalize();
-        } catch (InvalidPathException e) {
-            throw new OqError("not a path: '" + Values.display(value) + "'", span,
-                    "A path cannot contain a NUL character. (" + e.getMessage() + ")");
-        }
+        Path normalized = OqPaths.lexical(value, "path_normalize", span).normalize();
         String text = normalized.toString();
         return text.isEmpty() ? "." : text;
     }
 
     private static Path resolve(OqHost host, Object value, String builtin, Span span) {
-        Path path;
-        try {
-            path = Path.of(Values.display(value));
-        } catch (InvalidPathException e) {
-            throw new OqError(builtin + "() needs a path, and '" + Values.display(value)
-                    + "' is not one", span,
-                    "A path is text without a NUL character. (" + e.getMessage() + ")");
-        }
-        if (path.isAbsolute()) return path;
-        Path base = host.workingDirectory();
-        if (base == null) base = Path.of("").toAbsolutePath();
-        return base.toAbsolutePath().resolve(path).normalize();
+        return OqPaths.resolve(host, value, builtin, span);
     }
 
     private static String text(Object value, String builtin, Span span) {

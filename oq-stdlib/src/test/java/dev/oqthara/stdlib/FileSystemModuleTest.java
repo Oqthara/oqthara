@@ -67,12 +67,17 @@ class FileSystemModuleTest {
     }
 
     private static void assertRefusedAsAPath(String function, OqError error) {
+        assertRefusedAsAPath(function, "path", error);
+    }
+
+    private static void assertRefusedAsAPath(String function, String noun, OqError error) {
         String message = error.getMessage();
-        // Two wordings exist: "x() needs a path, and '...' is not one" and "not a path: '...'".
-        // Asserting on the shared shape rather than on one spelling keeps the check about the
-        // guard existing, not about which of the two the function happens to use.
-        assertTrue(message.startsWith("not a path") || message.contains("is not one"),
+        // One wording outside the database module, and it names the function that refused: the
+        // reason three spellings appeared was that three copies of the parse each wrote their own
+        // message, which is also why only one of them remembered to catch the exception.
+        assertTrue(message.startsWith(function + "() needs a " + noun + ", and '"),
                 function + " -> " + message);
+        assertTrue(message.endsWith("' is not one"), function + " -> " + message);
         // The escaped exception said "internal error" and named Oqthara as the culprit. Any
         // message that survives this assertion is one the program can act on.
         assertFalse(message.contains("internal error"), function + " -> " + message);
@@ -504,7 +509,8 @@ class FileSystemModuleTest {
     @Test
     void aPathWithANulCharacterIsRefusedByName() {
         OqError error = assertThrows(OqError.class, () -> call("path_normalize", "a\u0000b"));
-        assertTrue(error.getMessage().startsWith("not a path"), error.getMessage());
+        assertTrue(error.getMessage().startsWith("path_normalize() needs a path"),
+                error.getMessage());
         OqError absolute = assertThrows(OqError.class, () -> call("path_absolute", "a\u0000b"));
         assertTrue(absolute.getMessage().startsWith("path_absolute() needs a path"),
                 absolute.getMessage());
@@ -524,8 +530,8 @@ class FileSystemModuleTest {
                 "path_name", "path_parent"};
         // save, append and write_bytes take (path, payload): only the first argument is a path.
         String[] pathThenText = {"save", "append", "write_bytes"};
-        // db_query, db_execute and db_transaction reach Path.of through a fourth copy, in
-        // DatabaseModule; the first two are checked here because a transaction needs a body.
+        // db_query and db_execute reach Path.of through DatabaseModule. They say "database
+        // path" rather than "path" because "needs a path" reads oddly for a connection.
         String[] database = {"db_query", "db_execute"};
         String[] bothPaths = {"path_join", "copy_file", "move_file"};
         for (String function : oneArgument) {
@@ -541,7 +547,7 @@ class FileSystemModuleTest {
         for (String function : database) {
             OqError error = assertThrows(OqError.class,
                     () -> call(function, "a\u0000b", "select 1", List.of()), function);
-            assertRefusedAsAPath(function, error);
+            assertRefusedAsAPath(function, "database path", error);
         }
         for (String function : bothPaths) {
             OqError first = assertThrows(OqError.class, () -> call(function, "a\u0000b", "x"),

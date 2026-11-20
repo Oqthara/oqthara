@@ -534,6 +534,7 @@ defend.
 | R-026 | The build cache replays a Linux test result as a macOS or Windows one | High | Medium | Medium | 11 | Mitigated |
 | R-028 | A timing test asserts exact zero and fails only under CI load | Medium | Medium | Medium | 11 | Mitigated |
 | R-031 | A gate's allow-list silently stops matching, so a required context goes permanently red | High | Medium | Medium | 11 | Mitigated |
+| R-032 | The same logic is written twice, so a fix reaches one copy and the others keep the defect | High | Medium | Medium | 11 | Mitigated |
 
 **R-024 — A required CI context can vanish without failing, blocking every merge.**
 The `main-protection` ruleset requires thirteen status contexts. Between 2026-11-11 and 2026-11-12,
@@ -1051,15 +1052,51 @@ the Java compiler's rules, and ambiguity is still resolved by list order when tw
 overloads score equally. Widening the compiler's ruleset is a larger change and is not attempted
 here; the specific silent-misbinding class is closed, the general ordering question is not.
 
+**R-032 — The same logic is written twice, so a fix reaches one copy and the others keep the defect.**
+The stdlib resolved a user-supplied path in four places: `FileSystem.resolve`, `Stdlib.resolve`,
+`Patterns.resolve` and `DatabaseModule.withConnection`, and the three lexical `path_*` functions
+called `Path.of` directly on a fifth path. `Path.of` throws `InvalidPathException` for text it
+cannot parse; only `FileSystem`'s copy caught it, so `glob` and fifteen other builtins let it escape
+and the interpreter reported "internal error ... This is a bug in Oqthara" and exited 70 for a
+program that had merely passed a NUL in a path. Nothing about the *fix* was hard — the missing guard
+is five lines. What made it survive every gate was that the four copies had three different message
+wordings, so the two functions with tests asserted on the wording they happened to produce and no
+test compared the family. A reader had to notice that one copy was guarded and ask why the others
+were not.
+
+This is the seventh instance in Alpha 7 of a defect whose shape is "the same thing is in more than
+one place, and the gate reads one of them": keyword counts written in six documents (R-023), the
+threat-model totals, the claim figures in the report, the CI context names, and the two agent sets
+in `.kilo/agents/` and `.github/agents/`. Each was repaired by finding the copies, not by finding
+the bug.
+
+*Mitigation.* The four copies are one function, `OqPaths.resolve`, which is now the only place a
+path is parsed; `OqPaths.lexical` is the spelling-only variant and its name carries the reason it
+exists. `everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` covers the whole builtin
+family in arity groups rather than the two functions that had tests, so a new path builtin that does
+not route through `OqPaths` fails the suite. `PathResolutionFuzzTest` covers the same property from
+the other end, over generated input.
+
+*Why mitigated rather than closed.* Consolidating this family does not find the next family, and
+nothing in the build fails when a new copy appears: two functions that parse a path in two modules
+compile, pass, and produce two wordings. The mitigation is that the one function is convenient to
+find — the hazard is a convention, not a gate. A gate would have to recognise duplication in
+general, which no check here attempts.
+
+*Evidence.* `oq-stdlib/src/main/java/dev/oqthara/stdlib/OqPaths.java` ·
+`FileSystemModuleTest.everyPathFunctionRefusesANulByNameRatherThanAsAnInternalError` ·
+`oq-stdlib/src/fuzz/java/dev/oqthara/stdlib/PathResolutionFuzzTest.java` ·
+`docs/spec/fuzzing.md`.
+
 ## Summary by exposure
 
 | Exposure | Count | IDs |
 |---|---|---|
 | **Critical** | 1 | R-001 |
 | High | 4 | R-002, R-008, R-024, R-030 |
-| Medium | 12 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029, R-031 |
+| Medium | 13 | R-004, R-006, R-007, R-009, R-010, R-011, R-017, R-020, R-026, R-028, R-029, R-031, R-032 |
 | Low | 14 | R-003, R-005, R-012, R-013, R-014, R-015, R-016, R-018, R-019, R-021, R-022, R-023, R-025, R-027 |
-| **Total** | **31** | |
+| **Total** | **32** | |
 
 ## Review cadence
 
@@ -1069,7 +1106,7 @@ because it was written down once.
 1. **Before every release.** Any entry whose status changed must have its evidence and its ADR in
    the same pull request. A release note may not claim a risk is mitigated while this table says
    `Open`.
-2. **At every Alpha boundary.** All 31 entries are re-read against the repository as it then
+2. **At every Alpha boundary.** All 32 entries are re-read against the repository as it then
    stands, and every likelihood and impact is re-derived rather than carried forward. A register
    whose ratings never move is a register nobody is reading.
 3. **When an anchored file changes.** Each entry names the artefact that anchors it. A change to
@@ -1111,7 +1148,7 @@ only true while their paths are absent.
 
 ### The Alpha 7 boundary re-read
 
-Cadence rule 2 asks for all 31 entries to be re-read at an Alpha boundary. It was done, on
+Cadence rule 2 asks for all 32 entries to be re-read at an Alpha boundary. It was done, on
 2026-11-17, at `b5e758f` (`v0.1.0-alpha.6`), and this subsection is its record rather than a claim
 that it will happen.
 

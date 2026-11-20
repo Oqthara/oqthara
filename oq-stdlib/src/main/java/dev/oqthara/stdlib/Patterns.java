@@ -379,18 +379,6 @@ final class Patterns {
     }
 
     private static Path resolve(OqHost host, Object value, Span span) {
-        Path path;
-        try {
-            path = Path.of(Values.display(value));
-        } catch (InvalidPathException e) {
-            // Same guard as FileSystem.resolve: without it a NUL in the directory text escaped
-            // as an uncaught InvalidPathException and glob() reported an Oqthara bug.
-            throw new OqError("glob() needs a path, and '" + Values.display(value) + "' is not one",
-                    span, "A path is text without a NUL character. (" + e.getMessage() + ")");
-        }
-        if (path.isAbsolute()) return path;
-        Path base = host.workingDirectory();
-        if (base == null) base = Path.of("").toAbsolutePath();
-        return base.toAbsolutePath().resolve(path).normalize();
+        return OqPaths.resolve(host, value, "glob", span);
     }
 }
